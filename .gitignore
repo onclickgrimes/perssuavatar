@@ -73,6 +73,13 @@ test-credentials.ts
 *.bmp
 *.webp
 
+# Arquivos de áudio
+*.mp3
+
+# Arquivos de vídeo
+*.mp4
+*.webm
+
 # Arquivos de backup
 *.bak
 *.backup

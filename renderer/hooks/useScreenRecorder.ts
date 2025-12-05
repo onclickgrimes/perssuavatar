@@ -4,13 +4,31 @@ export const useScreenRecorder = () => {
     const [isRecording, setIsRecording] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
+    const accumulatedSizeRef = useRef<number>(0);
+    const stopTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const debugIntervalRef = useRef<NodeJS.Timeout | null>(null);
+    const startTimeRef = useRef<number>(0);
+
+    const stopRecording = useCallback(() => {
+        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+            mediaRecorderRef.current.stop();
+        }
+        if (stopTimeoutRef.current) {
+            clearTimeout(stopTimeoutRef.current);
+            stopTimeoutRef.current = null;
+        }
+        if (debugIntervalRef.current) {
+            clearInterval(debugIntervalRef.current);
+            debugIntervalRef.current = null;
+        }
+        setIsRecording(false);
+    }, []);
 
     const startRecording = useCallback(async () => {
         try {
             console.log("Solicitando fontes de tela...");
             const sources = await window.electron.getScreenSources();
             
-            // Preferência por tela inteira ou a primeira disponível
             const source = sources.find((s: any) => s.name === 'Entire Screen' || s.name === 'Screen 1') || sources[0];
             
             if (!source) {
@@ -36,20 +54,36 @@ export const useScreenRecorder = () => {
                         chromeMediaSourceId: source.id,
                         maxWidth: halfWidth, 
                         maxHeight: halfHeight,
-                        maxFrameRate: 10 
+                        maxFrameRate: 15 // Aumentado para 15 conforme pedido
                     }
                 } as any
             });
 
-            const options = { mimeType: 'video/webm; codecs=vp9' };
+            // Limite de segurança (19.5MB)
+            const MAX_VIDEO_SIZE = 19.5 * 1024 * 1024;
+            
+            const options = { 
+                mimeType: 'video/webm; codecs=vp9',
+                bitsPerSecond: 1500000 // 1.5 Mbps bitrate control
+            };
+            
             const mediaRecorder = new MediaRecorder(stream, options);
             
             mediaRecorderRef.current = mediaRecorder;
             chunksRef.current = [];
+            accumulatedSizeRef.current = 0;
+            startTimeRef.current = Date.now();
 
             mediaRecorder.ondataavailable = (e) => {
                 if (e.data.size > 0) {
                     chunksRef.current.push(e.data);
+                    accumulatedSizeRef.current += e.data.size;
+
+                    // CORTE AUTOMÁTICO (Hard Limit)
+                    if (accumulatedSizeRef.current >= MAX_VIDEO_SIZE) {
+                        console.warn("Limite de tamanho atingido! Parando gravação...");
+                        stopRecording();
+                    }
                 }
             };
 
@@ -57,42 +91,43 @@ export const useScreenRecorder = () => {
                 console.log("Gravação finalizada. Processando...");
                 const blob = new Blob(chunksRef.current, { type: 'video/webm' });
                 
-                // Conversão para ArrayBuffer para envio via IPC
                 const arrayBuffer = await blob.arrayBuffer();
                 
-                if (blob.size > 20 * 1024 * 1024) {
-                    console.warn("Vídeo muito grande. Tente gravar menos tempo.");
-                    // Poderíamos implementar lógica de corte ou rejeição aqui.
-                }
-
                 console.log(`Enviando vídeo para análise (${(blob.size / 1024 / 1024).toFixed(2)} MB)...`);
                 window.electron.analyzeVideo(arrayBuffer);
                 
-                // Cleanup stream
                 stream.getTracks().forEach(track => track.stop());
             };
 
-            mediaRecorder.start();
+            // start(1000) para disparar ondataavailable a cada 1s e checar o tamanho
+            mediaRecorder.start(1000); 
             setIsRecording(true);
             console.log("Gravação iniciada...");
 
-            // Parar automaticamente após 5 segundos para garantir tamanho pequeno (< 20MB)
-            // 5s a 10fps e baixa resolução deve ser bem pequeno.
-            setTimeout(() => {
-                if (mediaRecorder.state !== 'inactive') {
-                    mediaRecorder.stop();
-                    setIsRecording(false);
-                }
-            }, 5000);
+            // Timeout de segurança opcional (ex: 60s) para não gravar eternamente se o vídeo for muito leve
+            // Removido timeout curto de 5s. Agora para pelo tamanho ou manually.
+            // Mas vamos colocar um limite máximo de tempo por precaução (e.g. 5 minutos)
+            stopTimeoutRef.current = setTimeout(() => {
+                console.warn("Tempo máximo de gravação atingido (5 min). Parando...");
+                stopRecording();
+            }, 5 * 60 * 1000);
+
+            // Debug Interval
+            debugIntervalRef.current = setInterval(() => {
+                const duration = ((Date.now() - startTimeRef.current) / 1000).toFixed(1);
+                const sizeMB = (accumulatedSizeRef.current / 1024 / 1024).toFixed(2);
+                console.log(`🎥 Gravando: ${duration}s | Tamanho: ${sizeMB} MB`);
+            }, 1000); 
 
         } catch (err) {
             console.error("Erro ao iniciar gravação:", err);
             setIsRecording(false);
         }
-    }, []);
+    }, [stopRecording]);
 
     return {
         isRecording,
-        startRecording
+        startRecording,
+        stopRecording
     };
 };

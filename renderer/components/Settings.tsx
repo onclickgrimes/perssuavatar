@@ -13,7 +13,7 @@ export default function Settings({ onSizeChange, onDragToggle, onBackgroundToggl
   const [dragEnabled, setDragEnabled] = useState(true);
   const [bgVisible, setBgVisible] = useState(false);
   
-  const { isRecording, startRecording } = useScreenRecorder();
+  const { isRecording, startRecording, stopRecording } = useScreenRecorder();
 
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = parseFloat(e.target.value);
@@ -97,15 +97,14 @@ export default function Settings({ onSizeChange, onDragToggle, onBackgroundToggl
 
             <div className="pt-2 border-t border-gray-700 space-y-2">
                 <button 
-                    onClick={() => startRecording()}
-                    disabled={isRecording}
+                    onClick={() => isRecording ? stopRecording() : startRecording()}
                     className={`w-full py-2 rounded text-sm transition-colors ${
                         isRecording 
-                        ? 'bg-red-600 animate-pulse text-white' 
+                        ? 'bg-red-600 animate-pulse text-white hover:bg-red-700' 
                         : 'bg-green-600 hover:bg-green-700 text-white'
                     }`}
                 >
-                    {isRecording ? 'Gravando...' : '📷 Analisar Tela (5s)'}
+                    {isRecording ? '⏹ Parar Gravação' : '📷 Analisar Tela (Max 20MB)'}
                 </button>
 
                 <button 

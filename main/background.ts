@@ -127,6 +127,12 @@ ipcMain.handle('get-screen-sources', async () => {
 
 ipcMain.on('analyze-video', (event, buffer) => {
     const nodeBuffer = Buffer.from(buffer);
+    
+    // Save for debugging
+    const debugPath = path.join(app.getPath('userData'), 'latest_recording.webm');
+    require('fs').writeFileSync(debugPath, nodeBuffer);
+    console.log(`🎥 Vídeo salvo para debug em: ${debugPath}`);
+
     assistant.analyzeVideo(nodeBuffer).catch(err => {
         console.error("Error analyzing video:", err);
     });

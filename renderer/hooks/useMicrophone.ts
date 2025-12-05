@@ -21,7 +21,7 @@ export function useMicrophone() {
             workletNode.port.onmessage = (event) => {
                 // Receive Int16 buffer from worklet
                 const buffer = event.data;
-                console.log("🎤 Mic Data sent to Main:", buffer.byteLength); // Uncomment for verbose debugging
+                // console.log("🎤 Mic Data sent to Main:", buffer.byteLength); // Uncomment for verbose debugging
                 window.electron.sendAudioData(buffer);
             };
             
