@@ -20,18 +20,23 @@ export const useScreenRecorder = () => {
 
             console.log("Fonte selecionada:", source.name);
 
-            // Resolução reduzida (Metade do monitor, assumindo 1920x1080 -> 960x540 ou similar)
-            // Para ser dinâmico, pegaríamos window.screen e dividiríamos.
-            // Mas getUserMedia constraint 'maxWidth' pode ajudar.
+            // Resolução Dinâmica (Metade do monitor)
+            const screenWidth = window.screen.width;
+            const screenHeight = window.screen.height;
+            const halfWidth = Math.round(screenWidth / 2);
+            const halfHeight = Math.round(screenHeight / 2);
+
+            console.log(`Configurando captura para: ${halfWidth}x${halfHeight} (Metade de ${screenWidth}x${screenHeight})`);
+
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: false,
                 video: {
                     mandatory: {
                         chromeMediaSource: 'desktop',
                         chromeMediaSourceId: source.id,
-                        maxWidth: 1920 / 2, // Limite para ajudar no tamanho
-                        maxHeight: 1080 / 2,
-                        maxFrameRate: 10 // Baixo fps para economizar tamanho
+                        maxWidth: halfWidth, 
+                        maxHeight: halfHeight,
+                        maxFrameRate: 10 
                     }
                 } as any
             });
