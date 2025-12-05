@@ -22,7 +22,7 @@ export const tools: ChatCompletionTool[] = [
       type: "function",
       function: {
         name: "control_screen_recording",
-        description: "Start or stop the screen recording based on user request. Use this when the user asks to see the screen, record the screen, stop recording, or analyze the screen.",
+        description: "Start or stop the SCREEN RECORDING (video) based on user request. Use this when the user asks to record a video of the screen, stop recording, or analyze a VIDEO of the screen action over time.",
         parameters: {
             type: "object",
             properties: {
@@ -33,6 +33,18 @@ export const tools: ChatCompletionTool[] = [
                 },
             },
             required: ["action"],
+        },
+      }
+  },
+  {
+      type: "function",
+      function: {
+        name: "take_screenshot",
+        description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', or simply 'look'.",
+        parameters: {
+            type: "object",
+            properties: {},
+            required: [],
         },
       }
   },

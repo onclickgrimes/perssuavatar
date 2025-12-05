@@ -160,3 +160,39 @@ assistant.on('control-recording', (action) => {
       mainWindow.webContents.send('control-recording', action);
   }
 });
+
+assistant.on('take-screenshot', async () => {
+    try {
+        console.log("📸 Tirando screenshot...");
+        const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
+        const primarySource = sources[0]; // Usually the first one or filter by name
+
+        if (primarySource) {
+            const display = screen.getPrimaryDisplay();
+            const { width, height } = display.size;
+            
+            // Half resolution
+            const halfWidth = Math.round(width / 2);
+            const halfHeight = Math.round(height / 2);
+
+            console.log(`Redimensionando screenshot para: ${halfWidth}x${halfHeight}`);
+            
+            // Resize using NativeImage
+            const resizedImage = primarySource.thumbnail.resize({ width: halfWidth, height: halfHeight });
+            
+            // Salvar imagem localmente para debug
+            const debugPath = path.join(app.getPath('userData'), 'last_screenshot.png');
+            require('fs').writeFileSync(debugPath, resizedImage.toPNG());
+            console.log(`📸 Screenshot salvo em: ${debugPath}`);
+
+            const base64Image = resizedImage.toPNG().toString('base64');
+            
+            // Send back to assistant for analysis
+            assistant.analyzeScreenshot(base64Image).catch(err => {
+                console.error("Erro ao analisar screenshot:", err);
+            });
+        }
+    } catch (error) {
+        console.error("Erro ao capturar screenshot:", error);
+    }
+});

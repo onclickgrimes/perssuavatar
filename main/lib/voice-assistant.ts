@@ -88,6 +88,33 @@ export class VoiceAssistant extends EventEmitter {
     }
   }
 
+  public async analyzeScreenshot(base64Image: string) {
+      try {
+          const context = this.recordingContext || undefined;
+          console.log(`Analisando screenshot com contexto: ${context || 'Nenhum'}`);
+
+          const analysis = await this.openAIService.analyzeImage(base64Image, context);
+          console.log("🤖 OpenAI Vision Analysis:", analysis);
+          
+          this.recordingContext = null;
+
+          // Adiciona a análise ao histórico
+          this.conversationHistory.push({ 
+              role: 'user', 
+              content: `[SYSTEM: O usuário enviou um screenshot da tela. Análise da OpenAI: ${analysis}]` 
+          });
+
+          // Gera resposta da Yuki
+          await this.processUserMessage("O que você achou dessa imagem da tela?");
+          
+          return analysis;
+      } catch (error) {
+          console.error("Erro na análise de screenshot:", error);
+          this.emit('error', error);
+          throw error;
+      }
+  }
+
   public updateContext() {
     this.systemPrompt = `
     Tu tá interpretando a Yuki, Uma avatar2d que interage com o usuário no computador. Ela é grossa, debochada, sarcástica e sem paciência nenhuma.
@@ -143,18 +170,30 @@ export class VoiceAssistant extends EventEmitter {
       
       let aiContent = message?.content;
       const toolCalls = message?.tool_calls;
+      let shouldSuppressAudio = false;
+      let shortFeedbackPhrase = "";
 
       if (toolCalls) {
           this.conversationHistory.push(message); 
 
           for (const toolCall of toolCalls) {
-              if ((toolCall as any).function.name === 'control_screen_recording') {
+              const fnName = (toolCall as any).function.name;
+              
+              if (fnName === 'control_screen_recording') {
                   const args = JSON.parse((toolCall as any).function.arguments);
                   console.log(`Tool Call: control_screen_recording ACTION=${args.action}`);
                   
                   if (args.action === 'start') {
                       this.recordingContext = text;
                       console.log(`Contexto da gravação definido: "${text}"`);
+                      
+                      shouldSuppressAudio = true;
+                      const responses = ["Gravando!", "Iniciando...", "Luz, câmera, ação!", "Valendo!", "Rodando..."];
+                      shortFeedbackPhrase = responses[Math.floor(Math.random() * responses.length)];
+                  } else {
+                      shouldSuppressAudio = true;
+                      const responses = ["Parando...", "Analisando vídeo...", "Só um segundo.", "Processando...", "Pronto."];
+                      shortFeedbackPhrase = responses[Math.floor(Math.random() * responses.length)];
                   }
 
                   this.emit('control-recording', args.action);
@@ -164,7 +203,31 @@ export class VoiceAssistant extends EventEmitter {
                       tool_call_id: toolCall.id,
                       content: `Screen recording action '${args.action}' executed successfully.`
                   });
+              } else if (fnName === 'take_screenshot') {
+                  console.log(`Tool Call: take_screenshot`);
+                  this.recordingContext = text; // User's request is the context
+                  
+                  // Request main process to take screenshot
+                  this.emit('take-screenshot');
+
+                  this.conversationHistory.push({
+                      role: "tool",
+                      tool_call_id: toolCall.id,
+                      content: `Screenshot captured and sent for analysis.`
+                  });
+                  
+                  shouldSuppressAudio = true;
+                  const responses = ["Ok!", "Vou ver.", "Analisando...", "Só um instante.", "Deixa comigo.", "Tirando print..."];
+                  shortFeedbackPhrase = responses[Math.floor(Math.random() * responses.length)];
               }
+          }
+          
+          if (shouldSuppressAudio) {
+              console.log(`Providing short feedback: "${shortFeedbackPhrase}"`);
+              if (shortFeedbackPhrase) {
+                  await this.generateAndPlayAudio(shortFeedbackPhrase);
+              }
+              return; 
           }
 
           // Follow-up after tool execution
