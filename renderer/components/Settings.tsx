@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
+import { useScreenRecorder } from '../hooks/useScreenRecorder';
 
 interface SettingsProps {
   onSizeChange: (size: number) => void;
@@ -11,6 +12,8 @@ export default function Settings({ onSizeChange, onDragToggle, onBackgroundToggl
   const [size, setSize] = useState(1);
   const [dragEnabled, setDragEnabled] = useState(true);
   const [bgVisible, setBgVisible] = useState(false);
+  
+  const { isRecording, startRecording } = useScreenRecorder();
 
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = parseFloat(e.target.value);
@@ -35,7 +38,6 @@ export default function Settings({ onSizeChange, onDragToggle, onBackgroundToggl
       className="absolute top-4 right-4 z-[200] no-drag"
       // Ensure the container itself is interactive when hovering
       onMouseEnter={() => {
-          console.log("Settings Mouse Enter");
           window.electron.setIgnoreMouseEvents(false);
       }}
       onMouseLeave={() => {
@@ -93,7 +95,19 @@ export default function Settings({ onSizeChange, onDragToggle, onBackgroundToggl
               </button>
             </div>
 
-            <div className="pt-2 border-t border-gray-700">
+            <div className="pt-2 border-t border-gray-700 space-y-2">
+                <button 
+                    onClick={() => startRecording()}
+                    disabled={isRecording}
+                    className={`w-full py-2 rounded text-sm transition-colors ${
+                        isRecording 
+                        ? 'bg-red-600 animate-pulse text-white' 
+                        : 'bg-green-600 hover:bg-green-700 text-white'
+                    }`}
+                >
+                    {isRecording ? 'Gravando...' : '📷 Analisar Tela (5s)'}
+                </button>
+
                 <button 
                     onClick={() => window.electron.openSettings()}
                     className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm transition-colors"

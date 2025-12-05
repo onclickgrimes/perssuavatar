@@ -48,6 +48,8 @@ const handler = {
   },
   resizeWindow: (width: number, height: number) => ipcRenderer.send('resize-window', width, height),
   openSettings: () => ipcRenderer.send('open-settings'),
+  getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
+  analyzeVideo: (buffer: ArrayBuffer) => ipcRenderer.send('analyze-video', buffer),
 }
 
 contextBridge.exposeInMainWorld('electron', handler)

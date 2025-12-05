@@ -1,5 +1,5 @@
 import path from 'path'
-import { app, ipcMain, BrowserWindow, screen } from 'electron'
+import { app, ipcMain, BrowserWindow, screen, desktopCapturer } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import { VoiceAssistant } from './lib/voice-assistant';
@@ -113,6 +113,23 @@ ipcMain.on('audio-data', (event, buffer) => {
   // Converta ArrayBuffer para Buffer se necessário e envie para o assistant
   const nodeBuffer = Buffer.from(buffer);
   assistant.processAudioStream(nodeBuffer);
+});
+
+// Screen Recording Logic
+ipcMain.handle('get-screen-sources', async () => {
+    const sources = await desktopCapturer.getSources({ types: ['window', 'screen'] });
+    return sources.map(source => ({
+        id: source.id,
+        name: source.name,
+        thumbnail: source.thumbnail.toDataURL() // Send as DataURL due to serialization
+    }));
+});
+
+ipcMain.on('analyze-video', (event, buffer) => {
+    const nodeBuffer = Buffer.from(buffer);
+    assistant.analyzeVideo(nodeBuffer).catch(err => {
+        console.error("Error analyzing video:", err);
+    });
 });
 
 // Eventos do Assistant -> Frontend

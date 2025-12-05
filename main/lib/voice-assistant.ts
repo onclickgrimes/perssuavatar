@@ -1,3 +1,4 @@
+import { GoogleGenerativeAI } from "@google/generative-ai";
 import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk';
 import { OpenAI } from 'openai';
 import AWS from 'aws-sdk';
@@ -11,33 +12,20 @@ import { EventEmitter } from 'events';
 dotenv.config();
 
 // --- Interfaces ---
-export interface NpcInfo {
-  streetName?: string;
-  crossStreetName?: string;
-  playerDistance?: number;
-  npcCoords?: { x: number; y: number; z: number; };
-  health?: number;
-  armor?: number;
-  pedGender?: string;
-  vehicleNear?: boolean;
-  vehicleModelName?: string | boolean;
-  playerVehiclesInside?: boolean;
-  worldInput?: string;
-}
-
 interface AIResponse {
   text: string;
   action: string;
   expressao_facial: string;
 }
 
-// --- Configurações ---
 // Ensure keys are present or handle missing keys gracefully
 const deepgramApiKey = process.env.DEEPGRAM_API_KEY || '';
 const openaiApiKey = process.env.OPENAI_API_KEY || '';
+const geminiApiKey = process.env.GOOGLE_API_KEY || '';
 
 const deepgram = createClient(deepgramApiKey);
-const openai = new OpenAI({ apiKey: openaiApiKey, dangerouslyAllowBrowser: true }); // Allow browser for Electron Renderer
+const openai = new OpenAI({ apiKey: openaiApiKey, dangerouslyAllowBrowser: true });
+const genAI = new GoogleGenerativeAI(geminiApiKey);
 
 // Configuração AWS Polly
 if (process.env.AWS_ACCESS_KEY_ID) {
@@ -54,27 +42,81 @@ const elevenlabs = new ElevenLabsClient({
   apiKey: process.env.ELEVENLABS_API_KEY_2 // Removed _4 suffix to be more standard, user can adjust
 });
 
-// --- Classe Principal ---
+// ... existing config
+
 export class VoiceAssistant extends EventEmitter {
   private deepgramLive: any;
   private isProcessing: boolean = false;
   private conversationHistory: any[] = [];
   private systemPrompt: string = '';
-  private currentNpcInfo: NpcInfo | null = null;
-  private ttsProvider: "polly" | "elevenlabs" = "elevenlabs"; // Configuração padrão
+  private ttsProvider: "polly" | "elevenlabs" = "elevenlabs"; 
+  private geminiModel: any;
 
   constructor(ttsProvider: "polly" | "elevenlabs" = "elevenlabs") {
     super();
     this.ttsProvider = ttsProvider;
-    this.updateContext({}); // Initialize with empty context
+    this.updateContext(); 
+    // Initialize Gemini Model
+    this.geminiModel = genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
   }
+
+  /**
+   * Analisa um vídeo usando o Gemini 2.0 Flash.
+   * @param videoBuffer Buffer do vídeo
+   * @param mimeType Tipo MIME (ex: 'video/webm' ou 'video/mp4')
+   */
+  public async analyzeVideo(videoBuffer: Buffer, mimeType: string = 'video/webm') {
+    try {
+        console.log("Iniciando análise de vídeo com Gemini...");
+        this.emit('status', 'Thinking');
+        
+        // Convert buffer to base64
+        const videoBase64 = videoBuffer.toString('base64');
+
+        const analysisPrompt = "Analise este vídeo da minha tela. Descreva o que você vê, identifique aplicativos abertos, textos importantes ou contexto relevante para me ajudar. Seja breve e direta, como a Yuki.";
+
+        const result = await this.geminiModel.generateContent([
+            {
+                inlineData: {
+                    data: videoBase64,
+                    mimeType: mimeType
+                }
+            },
+            analysisPrompt
+        ]);
+
+        const response = await result.response;
+        const mediaAnalysis = response.text();
+
+        console.log(`📊 Análise do vídeo: ${mediaAnalysis}`);
+        
+        // Adiciona a análise ao histórico de conversa como contexto do sistema ou user message especial
+        this.conversationHistory.push({ 
+            role: 'user', 
+            content: `[SYSTEM: O usuário enviou uma gravação de tela. Análise do Gemini: ${mediaAnalysis}]` 
+        });
+
+        // Gera uma resposta da Yuki baseada nisso
+        await this.processUserMessage("O que você achou do que eu te mostrei na tela?");
+        
+        return mediaAnalysis;
+
+    } catch (error) {
+        console.error("Erro na análise de vídeo do Gemini:", error);
+        this.emit('error', error);
+        throw error;
+    } finally {
+        this.emit('status', 'Idle');
+    }
+  }
+
+  // ... rest of the class
 
   /**
    * Atualiza as informações do NPC e regenera o System Prompt.
    * Deve ser chamado sempre que o contexto do jogo mudar (ex: via IPC ou rota).
    */
-  public updateContext(npcInfo: NpcInfo) {
-    this.currentNpcInfo = npcInfo;
+  public updateContext() {
 
     this.systemPrompt = `
     Tu tá interpretando a Yuki, Uma avatar2d que interage com o usuário no computador. Ela é grossa, debochada, sarcástica e sem paciência nenhuma.
