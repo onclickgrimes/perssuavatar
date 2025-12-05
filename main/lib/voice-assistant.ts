@@ -6,14 +6,12 @@ import { GeminiService } from './services/gemini-service';
 import { TTSService } from './services/tts-service';
 import { Readable } from 'stream';
 
-// --- Interfaces ---
 interface AIResponse {
   text: string;
   action: string;
   expressao_facial: string;
 }
 
-// --- Classe Principal ---
 export class VoiceAssistant extends EventEmitter {
   private deepgramService: DeepgramService;
   private openAIService: OpenAIService;
@@ -24,6 +22,7 @@ export class VoiceAssistant extends EventEmitter {
   private conversationHistory: any[] = [];
   private systemPrompt: string = '';
   private ttsProvider: "polly" | "elevenlabs" = "elevenlabs"; 
+  private recordingContext: string | null = null;
 
   constructor(ttsProvider: "polly" | "elevenlabs" = "elevenlabs") {
     super();
@@ -63,15 +62,16 @@ export class VoiceAssistant extends EventEmitter {
       }
   }
 
-  /**
-   * Analisa um vídeo usando o Gemini 2.0 Flash.
-   * @param videoBuffer Buffer do vídeo
-   * @param mimeType Tipo MIME (ex: 'video/webm' ou 'video/mp4')
-   */
   public async analyzeVideo(videoBuffer: Buffer, mimeType: string = 'video/webm') {
     try {
-        const mediaAnalysis = await this.geminiService.analyzeVideo(videoBuffer, mimeType);
+        const context = this.recordingContext || undefined;
+        console.log(`Analisando vídeo com contexto: ${context || 'Nenhum'}`);
+
+        const mediaAnalysis = await this.geminiService.analyzeVideo(videoBuffer, mimeType, context);
         
+        // Clear context after use
+        this.recordingContext = null;
+
         // Adiciona a análise ao histórico
         this.conversationHistory.push({ 
             role: 'user', 
@@ -88,9 +88,6 @@ export class VoiceAssistant extends EventEmitter {
     }
   }
 
-  /**
-   * Atualiza as informações do NPC e regenera o System Prompt.
-   */
   public updateContext() {
     this.systemPrompt = `
     Tu tá interpretando a Yuki, Uma avatar2d que interage com o usuário no computador. Ela é grossa, debochada, sarcástica e sem paciência nenhuma.
@@ -99,19 +96,10 @@ export class VoiceAssistant extends EventEmitter {
     `;
   }
 
-  /**
-   * Inicia a conexão com o Deepgram.
-   * @param audioStream Stream de áudio (opcional). Se não fornecido, use processAudioStream(chunk).
-   */
   public startDeepgram(audioStream?: Readable) {
       this.deepgramService.start(audioStream);
   }
 
-  /**
-   * Envia um chunk de áudio para o Deepgram.
-   * Útil quando o áudio vem via IPC ou outras fontes que não são Streams diretos.
-   * @param chunk Buffer de áudio (Raw Int16 ou conforme configurado)
-   */
   public processAudioStream(chunk: Buffer) {
       this.deepgramService.processAudioStream(chunk);
   }
@@ -120,9 +108,6 @@ export class VoiceAssistant extends EventEmitter {
       this.deepgramService.stop();
   }
 
-  /**
-   * Processa a mensagem do usuário com a OpenAI e gera áudio.
-   */
   private async processUserMessage(text: string) {
     if (this.isProcessing) return;
     this.isProcessing = true;
@@ -167,6 +152,11 @@ export class VoiceAssistant extends EventEmitter {
                   const args = JSON.parse((toolCall as any).function.arguments);
                   console.log(`Tool Call: control_screen_recording ACTION=${args.action}`);
                   
+                  if (args.action === 'start') {
+                      this.recordingContext = text;
+                      console.log(`Contexto da gravação definido: "${text}"`);
+                  }
+
                   this.emit('control-recording', args.action);
 
                   this.conversationHistory.push({
@@ -234,9 +224,6 @@ export class VoiceAssistant extends EventEmitter {
        }
   }
 
-  /**
-   * Gera o áudio usando Polly ou ElevenLabs
-   */
   private async generateAndPlayAudio(text: string) {
       try {
           const { filePath, buffer } = await this.ttsService.generateAudio(text, this.ttsProvider);
