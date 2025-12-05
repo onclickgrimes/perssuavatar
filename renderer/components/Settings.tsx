@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useScreenRecorder } from '../hooks/useScreenRecorder';
 
 interface SettingsProps {
@@ -14,6 +14,25 @@ export default function Settings({ onSizeChange, onDragToggle, onBackgroundToggl
   const [bgVisible, setBgVisible] = useState(false);
   
   const { isRecording, startRecording, stopRecording } = useScreenRecorder();
+
+  useEffect(() => {
+    // Listen for voice commands to control recording
+    const unsubscribe = window.electron.onControlRecording((action) => {
+      console.log(`[IPC] Received control-recording action: ${action}`);
+      if (action === 'start') {
+        if (!isRecording) {
+            console.log("Starting recording via Voice Command");
+            startRecording();
+        }
+      } else if (action === 'stop') {
+        if (isRecording) {
+            console.log("Stopping recording via Voice Command");
+            stopRecording();
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [isRecording, startRecording, stopRecording]);
 
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = parseFloat(e.target.value);

@@ -50,6 +50,13 @@ const handler = {
   openSettings: () => ipcRenderer.send('open-settings'),
   getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
   analyzeVideo: (buffer: ArrayBuffer) => ipcRenderer.send('analyze-video', buffer),
+  onControlRecording: (callback: (action: 'start' | 'stop') => void) => {
+    const subscription = (_: any, action: 'start' | 'stop') => callback(action);
+    ipcRenderer.on('control-recording', subscription);
+    return () => {
+        ipcRenderer.removeListener('control-recording', subscription);
+    };
+  },
 }
 
 contextBridge.exposeInMainWorld('electron', handler)

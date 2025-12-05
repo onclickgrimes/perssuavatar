@@ -8,6 +8,7 @@ import * as path from 'path';
 import { Readable } from 'stream';
 import * as dotenv from 'dotenv';
 import { EventEmitter } from 'events';
+import { tools } from './tools';
 
 dotenv.config();
 
@@ -39,11 +40,10 @@ const polly = new AWS.Polly();
 
 // Configuração ElevenLabs
 const elevenlabs = new ElevenLabsClient({
-  apiKey: process.env.ELEVENLABS_API_KEY_2 // Removed _4 suffix to be more standard, user can adjust
+  apiKey: process.env.ELEVENLABS_API_KEY_2 
 });
 
-// ... existing config
-
+// --- Classe Principal ---
 export class VoiceAssistant extends EventEmitter {
   private deepgramLive: any;
   private isProcessing: boolean = false;
@@ -110,14 +110,10 @@ export class VoiceAssistant extends EventEmitter {
     }
   }
 
-  // ... rest of the class
-
   /**
    * Atualiza as informações do NPC e regenera o System Prompt.
-   * Deve ser chamado sempre que o contexto do jogo mudar (ex: via IPC ou rota).
    */
   public updateContext() {
-
     this.systemPrompt = `
     Tu tá interpretando a Yuki, Uma avatar2d que interage com o usuário no computador. Ela é grossa, debochada, sarcástica e sem paciência nenhuma.
     Usa "tu" em vez de "você". Fala informal, com sotaque de rua, cortando o "r" do fim das palavras (tipo "andá", "falá", "pegá").
@@ -158,8 +154,8 @@ export class VoiceAssistant extends EventEmitter {
         const transcript = data.channel.alternatives[0].transcript.trim();
 
         if (transcript.length > 0) {
+          console.log(`Transcrição recebida: "${transcript}"`);
           transcriptionBuffer += (transcriptionBuffer ? ' ' : '') + transcript;
-          console.log(`Transcrição parcial acumulada: "${transcriptionBuffer}" (Speech Final: ${data.speech_final})`);
 
           // Condições para enviar para a OpenAI:
           // 1. Ponto final, interrogação ou exclamação detectado.
@@ -203,8 +199,6 @@ export class VoiceAssistant extends EventEmitter {
   public processAudioStream(chunk: Buffer) {
     if (this.deepgramLive && this.deepgramLive.getReadyState() === 1) {
       this.deepgramLive.send(chunk);
-    } else {
-      // console.log("Deepgram not ready yet. State:", this.deepgramLive ? this.deepgramLive.getReadyState() : 'null');
     }
   }
 
@@ -245,59 +239,61 @@ export class VoiceAssistant extends EventEmitter {
       }
 
       const response = await openai.chat.completions.create({
-        model: "gpt-4o-mini", // ou gpt-4.1-nano
-        // model: "gpt-5-nano-2025-08-07", 
-        // 'temperature' does not support 0.7 with this model. Only the default (1) value is supported.
+        model: "gpt-4o-mini",
         temperature: 0.7,
         messages: [
           { role: "system", content: currentSystemPrompt },
           ...this.conversationHistory
         ],
-        //'reasoning_effort' does not support 'none' with this model. Supported values are: 'minimal', 'low', 'medium', and 'high'.
-        // reasoning_effort: "minimal"
+        tools: tools,
         max_tokens: 150
       });
 
-      const aiContent = response.choices[0].message?.content;
-      if (!aiContent) throw new Error("Resposta vazia da OpenAI");
+      const message = response.choices[0].message;
+      const aiContent = message?.content;
+      const toolCalls = message?.tool_calls;
 
-      // Try to parse JSON if the prompt enforces it, otherwise treat as text
-      let responseText = aiContent;
-      try {
-        const parsed: AIResponse = JSON.parse(aiContent);
-        console.log("OpenAI Resposta JSON:", parsed);
-        responseText = parsed.text;
-        // this.emit('action', parsed.action, parsed.expressao_facial);
-      } catch (e) {
-        // Not JSON, use raw text
-        console.log("OpenAI Resposta Texto:", aiContent);
+      if (toolCalls) {
+          this.conversationHistory.push(message); 
+
+          for (const toolCall of toolCalls) {
+              // Cast to any to avoid TS issues with specific OpenAI version types
+              if ((toolCall as any).function.name === 'control_screen_recording') {
+                  const args = JSON.parse((toolCall as any).function.arguments);
+                  console.log(`Tool Call: control_screen_recording ACTION=${args.action}`);
+                  
+                  this.emit('control-recording', args.action);
+
+                  this.conversationHistory.push({
+                      role: "tool",
+                      tool_call_id: toolCall.id,
+                      content: `Screen recording action '${args.action}' executed successfully.`
+                  });
+              }
+          }
+
+          if (!aiContent) {
+              const secondResponse = await openai.chat.completions.create({
+                  model: "gpt-4o-mini",
+                  messages: [
+                      { role: "system", content: currentSystemPrompt },
+                      ...this.conversationHistory
+                  ],
+              });
+             const secondMessage = secondResponse.choices[0].message?.content;
+             if (secondMessage) {
+                 await this.handleAIResponseText(secondMessage);
+             }
+             return; 
+          }
       }
 
-      this.conversationHistory.push({ role: 'assistant', content: responseText });
-      this.emit('ai-response', responseText);
-
-      // Check for code blocks
-      const codeBlockRegex = /```[\s\S]*?```/g;
-      const codeBlocks = responseText.match(codeBlockRegex);
-
-      let spokenText = responseText;
-
-      if (codeBlocks && codeBlocks.length > 0) {
-        console.log(`Code blocks detected: ${codeBlocks.length}`);
-        // Remove code blocks from spoken text to save tokens and improve experience
-        spokenText = responseText.replace(codeBlockRegex, " [action] Mandei o código aí na tela pra tu ver. ");
-
-        // Emit event to show code in UI
-        // Join multiple blocks if necessary, or send array
-        this.emit('code-detected', codeBlocks.join('\n\n'));
-      } else {
-        console.log('No code blocks detected.');
+      if (!aiContent) {
+          if (!toolCalls) throw new Error("Resposta vazia da OpenAI");
+          return;
       }
 
-      if (spokenText) {
-        this.emit('status', 'Speaking');
-        await this.generateAndPlayAudio(spokenText);
-      }
+      await this.handleAIResponseText(aiContent);
 
     } catch (error) {
       console.error("Erro no processamento AI:", error);
@@ -306,6 +302,38 @@ export class VoiceAssistant extends EventEmitter {
       this.isProcessing = false;
       this.emit('status', 'Idle');
     }
+  }
+
+  private async handleAIResponseText(aiContent: string) {
+       let responseText = aiContent;
+       try {
+         const parsed: AIResponse = JSON.parse(aiContent);
+         console.log("OpenAI Resposta JSON:", parsed);
+         responseText = parsed.text;
+       } catch (e) {
+         console.log("OpenAI Resposta Texto:", aiContent);
+       }
+ 
+       this.conversationHistory.push({ role: 'assistant', content: responseText });
+       this.emit('ai-response', responseText);
+ 
+       const codeBlockRegex = /```[\s\S]*?```/g;
+       const codeBlocks = responseText.match(codeBlockRegex);
+ 
+       let spokenText = responseText;
+ 
+       if (codeBlocks && codeBlocks.length > 0) {
+         console.log(`Code blocks detected: ${codeBlocks.length}`);
+         spokenText = responseText.replace(codeBlockRegex, " [action] Mandei o código aí na tela pra tu ver. ");
+         this.emit('code-detected', codeBlocks.join('\n\n'));
+       } else {
+         console.log('No code blocks detected.');
+       }
+ 
+       if (spokenText) {
+         this.emit('status', 'Speaking');
+         await this.generateAndPlayAudio(spokenText);
+       }
   }
 
   /**
@@ -319,7 +347,7 @@ export class VoiceAssistant extends EventEmitter {
         const params = {
           OutputFormat: 'mp3',
           Text: text,
-          VoiceId: 'Camila', // Camila is a good pt-BR voice
+          VoiceId: 'Camila', 
           LanguageCode: 'pt-BR',
         };
         const data = await polly.synthesizeSpeech(params).promise();
@@ -331,9 +359,7 @@ export class VoiceAssistant extends EventEmitter {
           throw new Error("Formato de áudio Polly inválido");
         }
       } else {
-        // ElevenLabs
-        // ElevenLabs (Updated SDK usage)
-        const voiceId = process.env.VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; // Bella
+        const voiceId = process.env.VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; 
         const response = await elevenlabs.textToSpeech.convert(voiceId, {
           text: text,
           modelId: 'eleven_v3',
@@ -343,7 +369,6 @@ export class VoiceAssistant extends EventEmitter {
         if (Buffer.isBuffer(response)) {
           audioBuffer = response;
         } else if (typeof response === 'object' && response !== null && 'pipe' in response) {
-          // Node.js Readable Stream
           const chunks: any[] = [];
           for await (const chunk of (response as any)) {
             chunks.push(chunk);
@@ -352,7 +377,6 @@ export class VoiceAssistant extends EventEmitter {
         } else if ((response as any) instanceof ArrayBuffer) {
           audioBuffer = Buffer.from(response as unknown as ArrayBuffer);
         } else if (typeof ReadableStream !== 'undefined' && (response as any) instanceof ReadableStream) {
-          // Web API ReadableStream (Electron Renderer)
           const reader = (response as any).getReader();
           const chunks: any[] = [];
           while (true) {
@@ -362,9 +386,7 @@ export class VoiceAssistant extends EventEmitter {
           }
           audioBuffer = Buffer.concat(chunks);
         } else {
-          // Fallback or unknown type (maybe Web Stream?)
           console.warn("Unknown ElevenLabs response type:", response);
-          // Try to treat as async iterable if possible, or just fail gracefully
           try {
             const chunks: any[] = [];
             for await (const chunk of (response as any)) {
@@ -372,13 +394,11 @@ export class VoiceAssistant extends EventEmitter {
             }
             audioBuffer = Buffer.concat(chunks);
           } catch (e) {
-            // If it fails, maybe it's a plain object or something else
             throw new Error("Could not convert ElevenLabs response to Buffer");
           }
         }
       }
 
-      // Salvar o Áudio
       const audioFilePath = path.join(__dirname, '../temp_audio.mp3');
       fs.writeFileSync(audioFilePath, audioBuffer);
 

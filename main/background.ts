@@ -154,3 +154,9 @@ assistant.on('ai-response', (text) => {
 assistant.on('code-detected', (code) => {
   mainWindow.webContents.send('show-code', code);
 });
+
+assistant.on('control-recording', (action) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('control-recording', action);
+  }
+});
