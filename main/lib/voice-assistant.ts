@@ -34,6 +34,14 @@ export class VoiceAssistant extends EventEmitter {
     this.openAIService = new OpenAIService();
     this.geminiService = new GeminiService();
     this.ttsService = new TTSService();
+    
+    // Forward TTS Events
+    this.ttsService.on('audio-chunk', (chunk) => {
+        this.emit('audio-chunk', chunk);
+    });
+    this.ttsService.on('audio-end', () => {
+        this.emit('audio-end');
+    });
 
     // Setup Deepgram Events
     this.deepgramService.on('transcription-final', (text: string) => {
@@ -309,11 +317,19 @@ export class VoiceAssistant extends EventEmitter {
   }
 
   private async generateAndPlayAudio(text: string) {
-      try {
-          const { filePath, buffer } = await this.ttsService.generateAudio(text, this.ttsProvider);
-          this.emit('audio-ready', filePath, buffer);
-      } catch (error) {
-          this.emit('error', error);
+      if (this.ttsProvider === 'elevenlabs') {
+           try {
+               await this.ttsService.streamAudio(text, this.ttsProvider);
+           } catch (error) {
+               this.emit('error', error);
+           }
+      } else {
+          try {
+              const { filePath, buffer } = await this.ttsService.generateAudio(text, this.ttsProvider);
+              this.emit('audio-ready', filePath, buffer);
+          } catch (error) {
+              this.emit('error', error);
+          }
       }
   }
 }

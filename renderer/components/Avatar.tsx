@@ -27,6 +27,13 @@ export default function Avatar({ modelName }: AvatarProps) {
   const currentModelWrapperRef = useRef<PIXI.Container | null>(null);
   const currentMoodRef = useRef<AvatarMood>('neutral');
 
+  // Streaming Audio Refs
+  const mediaSourceRef = useRef<MediaSource | null>(null);
+  const sourceBufferRef = useRef<SourceBuffer | null>(null);
+  const audioQueueRef = useRef<ArrayBuffer[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+
     // Helper to execute model actions
     const executeAction = (model: any, action: any) => {
         if (!model) return;
@@ -273,13 +280,39 @@ export default function Avatar({ modelName }: AvatarProps) {
   useEffect(() => {
     if (!model) return;
     // ... existing logic ...
-    const handlePlayAudio = (buffer: ArrayBuffer) => {
-        const blob = new Blob([buffer], { type: 'audio/mp3' });
-        const url = URL.createObjectURL(blob);
-        const audio = new Audio(url);
+    // --- Streaming Audio Logic ---
+
+    const cleanupAudio = () => {
+        if (audioContextRef.current) {
+            audioContextRef.current.close();
+            audioContextRef.current = null;
+        }
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current = null;
+        }
+        if (mediaSourceRef.current) {
+            // Check state before changing?
+            mediaSourceRef.current = null;
+        }
+        sourceBufferRef.current = null;
+        audioQueueRef.current = [];
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        
+        if (model.internalModel && model.internalModel.coreModel) {
+             model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
+        }
+    };
+
+    const setupAudioAnalysis = (audioElement: HTMLAudioElement) => {
+        // Reuse context if possible, or create new
+        if (audioContextRef.current) audioContextRef.current.close();
         
         const audioContext = new AudioContext();
-        const source = audioContext.createMediaElementSource(audio);
+        audioContextRef.current = audioContext;
+
+        const source = audioContext.createMediaElementSource(audioElement);
         const analyser = audioContext.createAnalyser();
         
         source.connect(analyser);
@@ -289,7 +322,6 @@ export default function Avatar({ modelName }: AvatarProps) {
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         
-
         setIsSpeaking(true);
         isSpeakingRef.current = true;
 
@@ -298,16 +330,15 @@ export default function Avatar({ modelName }: AvatarProps) {
         }
 
         const updateLipSync = () => {
-            if (audio.paused || audio.ended) {
-                if (appRef.current) {
-                    appRef.current.ticker.remove(updateLipSync);
-                }
-                if (model.internalModel && model.internalModel.coreModel) {
+            if (audioElement.paused || audioElement.ended) {
+                 if (appRef.current) appRef.current.ticker.remove(updateLipSync);
+                 setIsSpeaking(false);
+                 isSpeakingRef.current = false;
+                 // Reset mouth
+                 if (model.internalModel && model.internalModel.coreModel) {
                      model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
                 }
-                setIsSpeaking(false);
-                isSpeakingRef.current = false;
-                return;
+                 return;
             }
             
             analyser.getByteFrequencyData(dataArray);
@@ -323,29 +354,110 @@ export default function Avatar({ modelName }: AvatarProps) {
                  model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpen);
             }
         };
+
+        if (appRef.current) {
+            appRef.current.ticker.add(updateLipSync, undefined, PIXI.UPDATE_PRIORITY.UTILITY);
+        }
+
+        // Random Gesture
+        const randomGesture = Math.random() > 0.6;
+        if (randomGesture) {
+            const gestures: AvatarGesture[] = ['nod', 'shake_head', 'tilt_head_left', 'tilt_head_right', 'look_around'];
+            const selected = gestures[Math.floor(Math.random() * gestures.length)];
+            if (window.avatar) window.avatar.playGesture(selected);
+        }
+    };
+
+    const processAudioQueue = () => {
+        if (!sourceBufferRef.current || sourceBufferRef.current.updating) return;
+        
+        if (audioQueueRef.current.length > 0) {
+            const chunk = audioQueueRef.current.shift();
+            try {
+                if (chunk) sourceBufferRef.current.appendBuffer(chunk);
+            } catch (e) {
+                console.error("Error appending buffer:", e);
+            }
+        }
+    };
+
+    const initMediaSource = () => {
+        if (mediaSourceRef.current) return;
+        
+        cleanupAudio(); // Ensure clean slate
+
+        const ms = new MediaSource();
+        mediaSourceRef.current = ms;
+        
+        const audio = new Audio();
+        audio.src = URL.createObjectURL(ms);
+        audioRef.current = audio;
+
+        ms.addEventListener('sourceopen', () => {
+            if (mediaSourceRef.current?.readyState !== 'open') return;
+            
+            try {
+                // Check if sourceBuffer already exists (rare)
+                if (ms.sourceBuffers.length > 0) return;
+
+                const sb = ms.addSourceBuffer('audio/mpeg');
+                sourceBufferRef.current = sb;
+                sb.addEventListener('updateend', processAudioQueue);
+                
+                // Process any initial chunks
+                processAudioQueue();
+            } catch (e) {
+                console.error("Error creating SourceBuffer:", e);
+            }
+        });
+
+        // Start playing immediately (it will buffer)
+        audio.play().catch(e => console.error("Error playing stream:", e));
+        
+        // Setup LipSync
+        setupAudioAnalysis(audio);
+    };
+
+    const handleAudioChunk = (chunk: ArrayBuffer) => {
+        if (!mediaSourceRef.current) {
+            initMediaSource();
+        }
+        audioQueueRef.current.push(chunk);
+        
+        if (sourceBufferRef.current && !sourceBufferRef.current.updating) {
+             processAudioQueue();
+        }
+    };
+
+    const handleAudioEnd = () => {
+        if (mediaSourceRef.current && mediaSourceRef.current.readyState === 'open') {
+             // We can't end stream if buffer is updating, so we wait or just let it finish.
+             // Usually audio.onended will cleanup.
+             try {
+                mediaSourceRef.current.endOfStream();
+             } catch(e) { /* ignore if updating */ }
+        }
+    };
+
+    const handlePlayAudio = (buffer: ArrayBuffer) => {
+        cleanupAudio(); // Stop streaming or previous audio
+
+        const blob = new Blob([buffer], { type: 'audio/mp3' });
+        const url = URL.createObjectURL(blob);
+        const audio = new Audio(url);
+        audioRef.current = audio;
         
         audio.play()
-            .then(() => {
-                if (appRef.current) {
-                    // Adiciona com prioridade UTILITY (-50) para rodar APÓS o update padrão do modelo (NORMAL 0)
-                    // Garantindo que nosso valor de boca sobrescreva qualquer animação de idle
-                    appRef.current.ticker.add(updateLipSync, undefined, PIXI.UPDATE_PRIORITY.UTILITY);
-                }
-
-                // --- ADDED: Random Gesture on Speech ---
-                // Randomly trigger a gesture while speaking to feel more alive
-                const randomGesture = Math.random() > 0.6;
-                if (randomGesture) {
-                    const gestures: AvatarGesture[] = ['nod', 'shake_head', 'tilt_head_left', 'tilt_head_right', 'look_around'];
-                    const selected = gestures[Math.floor(Math.random() * gestures.length)];
-                    console.log("Triggering random speech gesture:", selected);
-                    if (window.avatar) window.avatar.playGesture(selected);
-                }
-            })
+            .then(() => setupAudioAnalysis(audio))
             .catch(e => console.error("Error playing audio:", e));
     };
 
     const unsubscribeAudio = window.electron.onPlayAudio(handlePlayAudio);
+    
+    // Subscribe to Streaming Events
+    const unsubscribeAudioChunk = (window.electron as any).onAudioChunk ? (window.electron as any).onAudioChunk(handleAudioChunk) : () => {};
+    const unsubscribeAudioEnd = (window.electron as any).onAudioEnd ? (window.electron as any).onAudioEnd(handleAudioEnd) : () => {};
+
     
     const unsubscribeTranscription = window.electron.onTranscription((text) => {
         console.log("🎤 User Transcription:", text);
@@ -387,10 +499,13 @@ export default function Avatar({ modelName }: AvatarProps) {
 
     return () => {
         unsubscribeAudio();
+        unsubscribeAudioChunk();
+        unsubscribeAudioEnd();
         unsubscribeTranscription();
         unsubscribeAi();
         unsubscribeGlobalMouse();
         unsubscribeAvatarAction();
+        cleanupAudio();
     };
   }, [model]);
 

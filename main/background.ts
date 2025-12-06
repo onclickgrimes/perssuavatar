@@ -147,6 +147,18 @@ assistant.on('audio-ready', (filePath, buffer) => {
   mainWindow.webContents.send('play-audio', buffer);
 });
 
+assistant.on('audio-chunk', (chunk) => {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('audio-chunk', chunk);
+  }
+});
+
+assistant.on('audio-end', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('audio-end');
+    }
+});
+
 assistant.on('ai-response', (text) => {
   mainWindow.webContents.send('ai-response', text);
 });

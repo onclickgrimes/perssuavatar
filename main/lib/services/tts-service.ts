@@ -27,7 +27,7 @@ export class TTSService extends EventEmitter {
 
         // ElevenLabs Config
         this.elevenlabs = new ElevenLabsClient({
-            apiKey: process.env.ELEVENLABS_API_KEY_2 
+            apiKey: process.env.ELEVENLABS_API_KEY_1 
         });
     }
 
@@ -79,6 +79,31 @@ export class TTSService extends EventEmitter {
         throw new Error("Formato de áudio Polly inválido");
     }
 
+    public async streamAudio(text: string, provider: 'polly' | 'elevenlabs' = 'elevenlabs'): Promise<void> {
+        try {
+            if (provider === 'polly') {
+                const buffer = await this.generatePollyAudio(text);
+                this.emit('audio-chunk', buffer);
+                this.emit('audio-end');
+            } else {
+                const voiceId = process.env.VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; 
+                const response = await this.elevenlabs.textToSpeech.convert(voiceId, {
+                    text: text,
+                    modelId: 'eleven_v3',
+                    outputFormat: 'mp3_44100_128',
+                });
+
+                for await (const chunk of (response as any)) {
+                    this.emit('audio-chunk', chunk);
+                }
+                this.emit('audio-end');
+            }
+        } catch (error) {
+            console.error("TTSService Stream Error:", error);
+            this.emit('error', error);
+        }
+    }
+
     private async generateElevenLabsAudio(text: string): Promise<Buffer> {
         const voiceId = process.env.VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; 
         const response = await this.elevenlabs.textToSpeech.convert(voiceId, {
@@ -97,26 +122,12 @@ export class TTSService extends EventEmitter {
             return Buffer.concat(chunks);
         } else if ((response as any) instanceof ArrayBuffer) {
             return Buffer.from(response as unknown as ArrayBuffer);
-        } else if (typeof ReadableStream !== 'undefined' && (response as any) instanceof ReadableStream) {
-            const reader = (response as any).getReader();
-            const chunks: any[] = [];
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                chunks.push(value);
-            }
-            return Buffer.concat(chunks);
         } else {
-             // Try async iterable fallback
-             try {
-                const chunks: any[] = [];
-                for await (const chunk of (response as any)) {
-                    chunks.push(chunk);
-                }
-                return Buffer.concat(chunks);
-              } catch (e) {
-                throw new Error("Could not convert ElevenLabs response to Buffer");
-              }
+             const chunks: any[] = [];
+             for await (const chunk of (response as any)) {
+                 chunks.push(chunk);
+             }
+             return Buffer.concat(chunks);
         }
     }
 }

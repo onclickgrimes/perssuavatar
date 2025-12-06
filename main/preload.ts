@@ -31,6 +31,16 @@ const handler = {
     ipcRenderer.on('play-audio', subscription);
     return () => ipcRenderer.removeListener('play-audio', subscription);
   },
+  onAudioChunk: (callback: (chunk: ArrayBuffer) => void) => {
+      const subscription = (_: any, chunk: ArrayBuffer) => callback(chunk);
+      ipcRenderer.on('audio-chunk', subscription);
+      return () => ipcRenderer.removeListener('audio-chunk', subscription);
+  },
+  onAudioEnd: (callback: () => void) => {
+      const subscription = () => callback();
+      ipcRenderer.on('audio-end', subscription);
+      return () => ipcRenderer.removeListener('audio-end', subscription);
+  },
   onShowCode: (callback: (code: string) => void) => {
     const subscription = (_: any, code: string) => callback(code);
     ipcRenderer.on('show-code', subscription);
