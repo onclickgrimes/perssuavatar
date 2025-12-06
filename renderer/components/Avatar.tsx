@@ -1,82 +1,125 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as PIXI from 'pixi.js';
 
-export default function Avatar() {
+interface AvatarProps {
+  modelName: string;
+}
+
+export default function Avatar({ modelName }: AvatarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [model, setModel] = useState<any>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
 
   const appRef = useRef<PIXI.Application | null>(null);
 
+  const currentModelWrapperRef = useRef<PIXI.Container | null>(null);
+
+  // 1. Initialize PIXI App (Once)
   useEffect(() => {
     if (!canvasRef.current) return;
 
     // Expose PIXI globally for pixi-live2d-display
     (window as any).PIXI = PIXI;
-    
-    let isMounted = true;
 
-    const init = () => {
-        if (!isMounted) return;
+    console.log("Initializing PIXI Application...");
+    const app = new PIXI.Application({
+      view: canvasRef.current,
+      backgroundAlpha: 0,
+      resizeTo: window,
+      autoStart: true,
+    });
+    appRef.current = app;
 
+    // Handle Window Resize for App
+    const handleResize = () => {
+        if (!appRef.current) return;
+        // Center wrapper if it exists
+        const wrapper = appRef.current.stage.children[0] as PIXI.Container;
+        if (wrapper) {
+            wrapper.x = window.innerWidth / 2;
+            wrapper.y = window.innerHeight / 2;
+        }
+    };
+    window.addEventListener('resize', handleResize);
+
+    return () => {
+      console.log("Destroying PIXI Application...");
+      window.removeEventListener('resize', handleResize);
+      if (appRef.current) {
+        appRef.current.destroy(true, { children: true });
+        appRef.current = null;
+      }
+    };
+  }, []); // Run once on mount
+
+  // 2. Load Model when modelName changes
+  useEffect(() => {
+    if (!appRef.current) return;
+
+    let isCancelled = false;
+    const app = appRef.current;
+
+    const loadModel = async () => {
+        // Init Live2D framework if needed
         if (!(window as any).Live2DCubismCore) {
             console.log('Waiting for Live2DCubismCore...');
-            setTimeout(init, 100);
+            setTimeout(loadModel, 100);
             return;
         }
 
-        // Import Live2DModel dynamically
         const { Live2DModel } = require('pixi-live2d-display/cubism4');
 
-        const app = new PIXI.Application({
-          view: canvasRef.current!,
-          backgroundAlpha: 0,
-          resizeTo: window,
-          autoStart: true,
-        });
-        appRef.current = app;
+        // Clean up previous model
+        if (currentModelWrapperRef.current) {
+            console.log("Removing previous model...");
+            app.stage.removeChild(currentModelWrapperRef.current);
+            currentModelWrapperRef.current.destroy({ children: true });
+            currentModelWrapperRef.current = null;
+            setModel(null);
+        }
 
-        // Load Model from public/models
-        const modelUrl = '/models/freeca/model.model3.json';
+        // Handle different naming conventions
+        let fileName = `${modelName}.model3.json`;
+        if (modelName === 'freeca') {
+            fileName = 'model.model3.json';
+        }
+        
+        const modelUrl = `/models/${modelName}/${fileName}`;
+        console.log(`Loading new model from: ${modelUrl}`);
 
-        Live2DModel.from(modelUrl).then((loadedModel: any) => {
-            if (!isMounted || !appRef.current) {
+        try {
+            const loadedModel = await Live2DModel.from(modelUrl);
+            
+            if (isCancelled || !app.renderer) {
                 loadedModel.destroy();
                 return;
             }
 
-            // Wrap model in a container to handle interaction safely
+            console.log("Model loaded successfully!", loadedModel);
+
+            // Wrap model
             const modelWrapper = new PIXI.Container();
             modelWrapper.interactive = true;
             modelWrapper.buttonMode = true;
-
-            // Center wrapper
             modelWrapper.x = window.innerWidth / 2;
             modelWrapper.y = window.innerHeight / 2;
 
-            // Setup model inside wrapper
-            // Model should be at (0,0) of the wrapper
+            // Setup model
             loadedModel.x = 0;
             loadedModel.y = 0;
             loadedModel.anchor.set(0.5, 0.5);
-            
-            // Auto-scale
+
+            console.log(`Dimensions: ${loadedModel.width}x${loadedModel.height}`);
             const scaleX = window.innerWidth / loadedModel.width;
             const scaleY = window.innerHeight / loadedModel.height;
             const scale = Math.min(scaleX, scaleY) * 0.8;
+            console.log(`Calculated Scale: ${scale}`);
+            
             loadedModel.scale.set(scale);
-
-            // Disable interaction on the model itself to prevent crashes
             loadedModel.interactive = false;
             loadedModel.interactiveChildren = false;
 
-            // Add model to wrapper
-            modelWrapper.addChild(loadedModel);
-
-            // Define hitArea for the wrapper based on model size
-            // Since model is centered at (0,0) with anchor 0.5, the bounds are -w/2 to w/2
-            const bounds = loadedModel.getBounds();
-            // We can use a simple rectangle based on scaled size
+            // Hit Area
             modelWrapper.hitArea = new PIXI.Rectangle(
                 -loadedModel.width / 2,
                 -loadedModel.height / 2,
@@ -84,55 +127,36 @@ export default function Avatar() {
                 loadedModel.height
             );
 
-            appRef.current.stage.addChild(modelWrapper);
-            setModel(loadedModel); // Keep reference to model for lip sync
+            modelWrapper.addChild(loadedModel);
+            app.stage.addChild(modelWrapper);
+            
+            currentModelWrapperRef.current = modelWrapper;
+            setModel(loadedModel);
 
-            // Mouse events on the wrapper
-            modelWrapper.on('pointerover', () => {
-                 window.electron.setIgnoreMouseEvents(false);
-            });
-            modelWrapper.on('pointerout', () => {
-                 window.electron.setIgnoreMouseEvents(true, { forward: true });
-            });
-        });
+            // Interaction
+            modelWrapper.on('pointerover', () => window.electron.setIgnoreMouseEvents(false));
+            modelWrapper.on('pointerout', () => window.electron.setIgnoreMouseEvents(true, { forward: true }));
+            
+            // Initial ignore
+            window.electron.setIgnoreMouseEvents(true, { forward: true });
 
-        // Initial ignore
-        window.electron.setIgnoreMouseEvents(true, { forward: true });
-    };
-
-    init();
-
-    // Handle Window Resize
-    const handleResize = () => {
-        if (!appRef.current) return;
-        const app = appRef.current;
-        
-        // Center wrapper
-        const modelWrapper = app.stage.children[0] as PIXI.Container; 
-        if (modelWrapper) {
-            modelWrapper.x = window.innerWidth / 2;
-            modelWrapper.y = window.innerHeight / 2;
+        } catch (e) {
+            console.error("FAILED to load Live2D model:", e);
         }
     };
 
-    window.addEventListener('resize', handleResize);
+    loadModel();
 
     return () => {
-        window.removeEventListener('resize', handleResize);
-        isMounted = false;
-        if (appRef.current) {
-            appRef.current.destroy(true, { children: true });
-            appRef.current = null;
-        }
+        isCancelled = true;
     };
-  }, []);
+  }, [modelName]); // Re-run when modelName changes
 
+  // 3. Audio/LipSync (Existing logic) - relies on 'model' state
   const isSpeakingRef = useRef(false);
-
-  // Handle Audio & Lip Sync
   useEffect(() => {
     if (!model) return;
-
+    // ... existing logic ...
     const handlePlayAudio = (buffer: ArrayBuffer) => {
         const blob = new Blob([buffer], { type: 'audio/mp3' });
         const url = URL.createObjectURL(blob);
@@ -149,18 +173,19 @@ export default function Avatar() {
         const bufferLength = analyser.frequencyBinCount;
         const dataArray = new Uint8Array(bufferLength);
         
-        let animationId: number;
+
         setIsSpeaking(true);
         isSpeakingRef.current = true;
 
-        // Force look forward immediately when speaking starts
         if (model.internalModel && model.internalModel.focusController) {
             model.internalModel.focusController.focus(0, 0);
         }
 
         const updateLipSync = () => {
             if (audio.paused || audio.ended) {
-                cancelAnimationFrame(animationId);
+                if (appRef.current) {
+                    appRef.current.ticker.remove(updateLipSync);
+                }
                 if (model.internalModel && model.internalModel.coreModel) {
                      model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
                 }
@@ -176,17 +201,22 @@ export default function Avatar() {
                 sum += dataArray[i];
             }
             const average = sum / bufferLength;
-            const mouthOpen = Math.min(1.0, average / 50);
+            const mouthOpen = Math.min(1.0, average / 40);
             
             if (model.internalModel && model.internalModel.coreModel) {
                  model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpen);
             }
-            
-            animationId = requestAnimationFrame(updateLipSync);
         };
         
-        audio.play().catch(e => console.error("Error playing audio:", e));
-        updateLipSync();
+        audio.play()
+            .then(() => {
+                if (appRef.current) {
+                    // Adiciona com prioridade UTILITY (-50) para rodar APÓS o update padrão do modelo (NORMAL 0)
+                    // Garantindo que nosso valor de boca sobrescreva qualquer animação de idle
+                    appRef.current.ticker.add(updateLipSync, undefined, PIXI.UPDATE_PRIORITY.UTILITY);
+                }
+            })
+            .catch(e => console.error("Error playing audio:", e));
     };
 
     const unsubscribeAudio = window.electron.onPlayAudio(handlePlayAudio);
@@ -199,32 +229,19 @@ export default function Avatar() {
         console.log("🤖 AI Response:", text);
     });
 
-    // Global Mouse Tracking
     const unsubscribeGlobalMouse = window.electron.onGlobalMouseMove(({ x, y }) => {
-        // Use ref to check current speaking state inside the closure
         if (!model || isSpeakingRef.current) return;
-
-        // Calculate position relative to the window center
-        // window.screenX/Y gives the window position on the screen
         const windowX = window.screenX;
         const windowY = window.screenY;
         const windowWidth = window.innerWidth;
         const windowHeight = window.innerHeight;
-
-        // Center of the window in screen coordinates
         const centerX = windowX + windowWidth / 2;
         const centerY = windowY + windowHeight / 2;
-
-        // Calculate offset from center
         const offsetX = x - centerX;
         const offsetY = y - centerY;
-
-        // Normalize to -1 to 1 range, but allow going beyond for "looking away" effect
-        // We use a reference size (e.g., screen size) to normalize sensitivity
-        const sensitivity = 1000; // Adjust this value to control how much head moves
-        
+        const sensitivity = 1000; 
         const lookX = Math.max(-1, Math.min(1, offsetX / sensitivity));
-        const lookY = Math.max(-1, Math.min(1, -offsetY / sensitivity)); // Invert Y for Live2D
+        const lookY = Math.max(-1, Math.min(1, -offsetY / sensitivity)); 
 
         if (model.internalModel && model.internalModel.focusController) {
             model.internalModel.focusController.focus(lookX, lookY);

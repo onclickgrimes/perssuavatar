@@ -10,13 +10,14 @@ export default function HomePage() {
 
   const [dragEnabled, setDragEnabled] = useState(true);
   const [bgVisible, setBgVisible] = useState(false);
+  const [selectedModel, setSelectedModel] = useState('freeca');
+  
+  const models = [
+    'freeca', 'Haru', 'Hiyori', 'Mao', 'Mark', 'Natori', 'Rice', 'Wanko', 'Yuino', '简'
+  ];
 
   const handleSizeChange = (scale: number) => {
-    // Base size is 1000x600 (from create-window.ts)
-    // We can resize relative to that or just resize relative to current?
-    // Let's assume base is 500x500 for the avatar view?
-    // Actually, create-window sets 1000x600.
-    // Let's resize based on a base size.
+    // ...
     const baseWidth = 500;
     const baseHeight = 500;
     window.electron.resizeWindow(Math.round(baseWidth * scale), Math.round(baseHeight * scale));
@@ -33,12 +34,15 @@ export default function HomePage() {
         />
       )}
       
-      <Avatar />
+      <Avatar modelName={selectedModel} />
       <CodePopup />
       <Settings 
         onSizeChange={handleSizeChange}
         onDragToggle={setDragEnabled}
         onBackgroundToggle={setBgVisible}
+        models={models}
+        selectedModel={selectedModel}
+        onModelChange={setSelectedModel}
       />
     </div>
   );

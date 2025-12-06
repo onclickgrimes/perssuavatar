@@ -5,9 +5,19 @@ interface SettingsProps {
   onSizeChange: (size: number) => void;
   onDragToggle: (enabled: boolean) => void;
   onBackgroundToggle: (visible: boolean) => void;
+  models: string[];
+  selectedModel: string;
+  onModelChange: (model: string) => void;
 }
 
-export default function Settings({ onSizeChange, onDragToggle, onBackgroundToggle }: SettingsProps) {
+export default function Settings({ 
+  onSizeChange, 
+  onDragToggle, 
+  onBackgroundToggle,
+  models,
+  selectedModel,
+  onModelChange
+}: SettingsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [size, setSize] = useState(1);
   const [dragEnabled, setDragEnabled] = useState(true);
@@ -112,6 +122,20 @@ export default function Settings({ onSizeChange, onDragToggle, onBackgroundToggl
               >
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${bgVisible ? 'left-7' : 'left-1'}`} />
               </button>
+            </div>
+
+            {/* Model Selection */}
+            <div>
+              <label className="block text-sm mb-1">Modelo Live2D</label>
+              <select 
+                value={selectedModel}
+                onChange={(e) => onModelChange(e.target.value)}
+                className="w-full bg-gray-800 text-white rounded p-1 border border-gray-600 text-sm"
+              >
+                {models.map(model => (
+                  <option key={model} value={model}>{model}</option>
+                ))}
+              </select>
             </div>
 
             <div className="pt-2 border-t border-gray-700 space-y-2">
