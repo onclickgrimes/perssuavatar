@@ -120,6 +120,13 @@ export class VoiceAssistant extends EventEmitter {
     Tu tá interpretando a Yuki, Uma avatar2d que interage com o usuário no computador. Ela é grossa, debochada, sarcástica e sem paciência nenhuma.
     Usa "tu" em vez de "você". Fala informal, com sotaque de rua, cortando o "r" do fim das palavras (tipo "andá", "falá", "pegá").
     Não use emojis.
+
+    **CONTROLE DO AVATAR:**
+    Além de falar, você controla suas expressões e gestos. Use as seguintes tags no meio do texto (elas não serão lidas em voz alta, apenas executadas visualmente):
+    - Mudar humor: {{mood:happy}}, {{mood:sad}}, {{mood:angry}}, {{mood:surprised}}, {{mood:embarrassed}}, {{mood:cry}}, {{mood:excited}}, {{mood:neutral}}
+    - Fazer gesto: {{gesture:wave}}, {{gesture:nod}}, {{gesture:shake_head}}, {{gesture:clap}}, {{gesture:think}}, {{gesture:look_around}}, {{gesture:tilt_head_left}}, {{gesture:tilt_head_right}}
+    
+    Exemplo: "{{mood:happy}} {{gesture:wave}} E aí, beleza? {{mood:neutral}} O que tu quer agora? {{gesture:tilt_head_left}} Hã?"
     `;
   }
 
@@ -149,11 +156,11 @@ export class VoiceAssistant extends EventEmitter {
         currentSystemPrompt += `
           Você DEVE enriquecer o texto de resposta utilizando **Audio Tags** para dar vida e expressividade à fala.
           **COMO USAR AS AUDIO TAGS (ElevenLabs v3):**
-          1. As tags devem estar sempre em inglês e entre colchetes, exemplo: \`[sighs]\`.
-          2. As tags controlam emoção, velocidade e efeitos sonoros.
-          3. Insira as tags no início de frases ou pausas lógicas para indicar como o trecho seguinte deve ser lido.
-
-          **LISTA DE TAGS DISPONÍVEIS (Exemplos):**
+          1. As tags de Áudio devem estar sempre em inglês e entre colchetes, exemplo: \`[sighs]\`.
+          2. As tags de Avatar usam chaves duplas \`{{mood:x}}\`. NÃO CONFUNDA.
+          3. As tags controlam emoção, velocidade e efeitos sonoros.
+          
+          **LISTA DE TAGS DE ÁUDIO DISPONÍVEIS:**
           - Emoções: \`[excited]\`, \`[sad]\`, \`[angry]\`, \`[whispers]\`, \`[shouting]\`, \`[sarcastically]\`.
           - Ações: \`[laughs]\`, \`[chuckles]\`, \`[giggles]\`, \`[coughs]\`, \`[clears throat]\`, \`[sighs]\`.
           - Ritmo: \`[slowly]\`, \`[fast]\`, \`[pause]\`.
@@ -280,6 +287,20 @@ export class VoiceAssistant extends EventEmitter {
          spokenText = responseText.replace(codeBlockRegex, " [action] Mandei o código aí na tela pra tu ver. ");
          this.emit('code-detected', codeBlocks.join('\n\n'));
        }
+
+       // --- AVATAR COMMAND EXTRACTION ---
+       const avatarRegex = /\{\{(mood|gesture):(\w+)\}\}/g;
+       let match;
+       while ((match = avatarRegex.exec(responseText)) !== null) {
+           const type = match[1]; // mood ou gesture
+           const value = match[2]; // happy, wave, etc.
+           console.log(`Avatar Action Detected: ${type} -> ${value}`);
+           this.emit('avatar-action', type, value);
+       }
+       
+       // Remove Avatar tags from spoken text (keep Audio tags [brackets] intact)
+       spokenText = spokenText.replace(avatarRegex, '').trim();
+       // ---------------------------------
  
        if (spokenText) {
          this.emit('status', 'Speaking');

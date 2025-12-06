@@ -2,7 +2,7 @@
     "Type": "Live2D Expression",
     "Parameters": [
         {
-            "Id": "Button4",
+            "Id": "Cry",
             "Value": 1.0,
             "Blend": "Add"
         }

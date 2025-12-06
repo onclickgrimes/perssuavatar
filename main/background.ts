@@ -4,7 +4,7 @@ import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import { VoiceAssistant } from './lib/voice-assistant';
 export let mainWindow;
-const assistant = new VoiceAssistant('polly');
+const assistant = new VoiceAssistant('elevenlabs');
 const isProd = process.env.NODE_ENV === 'production'
 
 if (isProd) {
@@ -161,6 +161,12 @@ assistant.on('control-recording', (action) => {
   }
 });
 
+assistant.on('avatar-action', (type, value) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('avatar-action', { type, value });
+    }
+});
+
 assistant.on('take-screenshot', async () => {
     try {
         console.log("📸 Tirando screenshot...");
@@ -194,5 +200,39 @@ assistant.on('take-screenshot', async () => {
         }
     } catch (error) {
         console.error("Erro ao capturar screenshot:", error);
+    }
+});
+
+// Helper para localizar o arquivo .model3.json
+ipcMain.handle('find-model-file', async (event, modelName) => {
+    try {
+        const fs = require('fs');
+        const path = require('path');
+        
+        let modelsPath;
+        if (process.env.NODE_ENV === 'production') {
+             modelsPath = path.join(process.resourcesPath, 'renderer', 'public', 'models', modelName);
+             // Failover for some production builds structure
+             if (!fs.existsSync(modelsPath)) {
+                 modelsPath = path.join(app.getAppPath(), 'renderer', 'public', 'models', modelName);
+             }
+        } else {
+             modelsPath = path.join(app.getAppPath(), 'renderer', 'public', 'models', modelName);
+        }
+
+        console.log(`Searching for model file in: ${modelsPath}`);
+
+        if (!fs.existsSync(modelsPath)) {
+            console.error(`Directory not found: ${modelsPath}`);
+            return null;
+        }
+
+        const files = await fs.promises.readdir(modelsPath);
+        const modelFile = files.find(file => file.endsWith('.model3.json'));
+        
+        return modelFile || null;
+    } catch (error) {
+        console.error("Error finding model file:", error);
+        return null;
     }
 });

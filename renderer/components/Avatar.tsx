@@ -1,5 +1,16 @@
 import React, { useEffect, useRef, useState } from 'react';
 import * as PIXI from 'pixi.js';
+import { AVATAR_CONFIG, AvatarGesture, AvatarMood } from '../lib/avatar-config';
+
+// Declare type for window.avatar
+declare global {
+  interface Window {
+    avatar: {
+      setMood: (mood: AvatarMood) => void;
+      playGesture: (gesture: AvatarGesture) => void;
+    }
+  }
+}
 
 interface AvatarProps {
   modelName: string;
@@ -9,10 +20,108 @@ export default function Avatar({ modelName }: AvatarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [model, setModel] = useState<any>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const isSpeakingRef = useRef(false);
+  const isGesturingRef = useRef(false);
 
   const appRef = useRef<PIXI.Application | null>(null);
-
   const currentModelWrapperRef = useRef<PIXI.Container | null>(null);
+  const currentMoodRef = useRef<AvatarMood>('neutral');
+
+    // Helper to execute model actions
+    const executeAction = (model: any, action: any) => {
+        if (!model) return;
+
+        console.log('Executing Avatar Action:', action);
+
+        if (action.type === 'expression') {
+            model.expression(action.name);
+        } else if (action.type === 'motion') {
+            // Priority 3 = Force play
+            model.motion(action.group, action.index, 3);
+        } else if (action.type === 'parameter') {
+            const coreModel = model.internalModel?.coreModel;
+            if (!coreModel) return;
+
+            // Se for um valor único, aplica diretamente
+            if (typeof action.value === 'number') {
+                coreModel.setParameterValueById(action.id, action.value);
+            } 
+            // Se for Array, executa animação procedural
+            else if (Array.isArray(action.value)) {
+                if (!appRef.current) return;
+
+                const values = action.value;
+                const duration = action.duration || 1000;
+                const startTime = Date.now();
+                const totalSteps = values.length - 1;
+                
+                const animate = () => {
+                    const now = Date.now();
+                    const progress = Math.min((now - startTime) / duration, 1);
+                    
+                    // Encontrar em qual segmento da animação estamos
+                    // Ex: 5 valores = 4 segmentos (0-0.25, 0.25-0.5, etc)
+                    const segmentProgress = progress * totalSteps; 
+                    const currentIndex = Math.floor(segmentProgress);
+                    const nextIndex = Math.min(currentIndex + 1, totalSteps);
+                    const localProgress = segmentProgress - currentIndex; // Progresso dentro do segmento (0 a 1)
+
+                    const startVal = values[currentIndex];
+                    const endVal = values[nextIndex];
+                    
+                    // Interpolação Linear Simples
+                    const currentVal = startVal + (endVal - startVal) * localProgress;
+                    
+                    // Aplica valor com prioridade UTILITY pra vencer as físicas padrão
+                    coreModel.setParameterValueById(action.id, currentVal);
+
+                    if (progress >= 1) {
+                         appRef.current?.ticker.remove(animate);
+                         // Garante valor final
+                         coreModel.setParameterValueById(action.id, values[values.length - 1]);
+                    }
+                };
+
+                // Adiciona ao ticker
+                appRef.current.ticker.add(animate, undefined, PIXI.UPDATE_PRIORITY.UTILITY);
+            }
+        }
+    };
+
+    // Expose control methods to window
+    useEffect(() => {
+        window.avatar = {
+            setMood: (mood: AvatarMood) => {
+                currentMoodRef.current = mood;
+                const config = AVATAR_CONFIG[modelName];
+                if (config && config.moods[mood] && model) {
+                    // Reset other mood params for Yuki-like models if necessary
+                    if(modelName === 'Yuki' || modelName === 'DevilYuki') {
+                         // Inclui Buttons e Params de Expressão na limpeza
+                         // Yuki IDs + DevilYuki IDs
+                         const idsToReset = [
+                             'BlackFace', 'Corar', 'Cry', 'HeartEye', 'NoBrightEye', 'ParamEyeExpression1', 'ParamEyeExpression2', // Yuki
+                             'ParamSwitch1', 'ParamSwitch2', 'ParamSwitch3', 'ParamSwitch4', 'ParamSwitch5', 'ParamSwitch6', // DevilYuki
+                             'ParamSwitch7', 'ParamSwitch8', 'ParamSwitch9', 'ParamSwitch10', 'ParamSwitch11', 'ParamSwitch21' // DevilYuki
+                         ];
+
+                         idsToReset.forEach(id => {
+                             if (model.internalModel?.coreModel) {
+                                 model.internalModel.coreModel.setParameterValueById(id, 0);
+                             }
+                         });
+                    }
+                    executeAction(model, config.moods[mood]);
+                }
+            },
+            playGesture: (gesture: AvatarGesture) => {
+                const config = AVATAR_CONFIG[modelName];
+                if (config && config.gestures[gesture] && model) {
+                    executeAction(model, config.gestures[gesture]);
+                }
+            }
+        };
+    }, [model, modelName]);
 
   // 1. Initialize PIXI App (Once)
   useEffect(() => {
@@ -78,10 +187,18 @@ export default function Avatar({ modelName }: AvatarProps) {
             setModel(null);
         }
 
-        // Handle different naming conventions
+        // Find dynamic model file
         let fileName = `${modelName}.model3.json`;
-        if (modelName === 'freeca') {
-            fileName = 'model.model3.json';
+        try {
+            const foundFile = await window.electron.findModelFile(modelName);
+            if (foundFile) {
+                console.log(`Found model file for ${modelName}: ${foundFile}`);
+                fileName = foundFile;
+            } else {
+                console.warn(`No .model3.json found for ${modelName}, trying default.`);
+            }
+        } catch (err) {
+            console.error("Error finding model file:", err);
         }
         
         const modelUrl = `/models/${modelName}/${fileName}`;
@@ -153,7 +270,6 @@ export default function Avatar({ modelName }: AvatarProps) {
   }, [modelName]); // Re-run when modelName changes
 
   // 3. Audio/LipSync (Existing logic) - relies on 'model' state
-  const isSpeakingRef = useRef(false);
   useEffect(() => {
     if (!model) return;
     // ... existing logic ...
@@ -215,6 +331,16 @@ export default function Avatar({ modelName }: AvatarProps) {
                     // Garantindo que nosso valor de boca sobrescreva qualquer animação de idle
                     appRef.current.ticker.add(updateLipSync, undefined, PIXI.UPDATE_PRIORITY.UTILITY);
                 }
+
+                // --- ADDED: Random Gesture on Speech ---
+                // Randomly trigger a gesture while speaking to feel more alive
+                const randomGesture = Math.random() > 0.6;
+                if (randomGesture) {
+                    const gestures: AvatarGesture[] = ['nod', 'shake_head', 'tilt_head_left', 'tilt_head_right', 'look_around'];
+                    const selected = gestures[Math.floor(Math.random() * gestures.length)];
+                    console.log("Triggering random speech gesture:", selected);
+                    if (window.avatar) window.avatar.playGesture(selected);
+                }
             })
             .catch(e => console.error("Error playing audio:", e));
     };
@@ -230,7 +356,7 @@ export default function Avatar({ modelName }: AvatarProps) {
     });
 
     const unsubscribeGlobalMouse = window.electron.onGlobalMouseMove(({ x, y }) => {
-        if (!model || isSpeakingRef.current) return;
+        if (!model || isSpeakingRef.current || isGesturingRef.current) return;
         const windowX = window.screenX;
         const windowY = window.screenY;
         const windowWidth = window.innerWidth;
@@ -248,11 +374,23 @@ export default function Avatar({ modelName }: AvatarProps) {
         }
     });
 
+    const unsubscribeAvatarAction = window.electron.onAvatarAction(({ type, value }) => {
+        console.log(`Received Avatar Action IPC: ${type} -> ${value}`);
+        if (window.avatar) {
+            if (type === 'mood') {
+                window.avatar.setMood(value as AvatarMood);
+            } else if (type === 'gesture') {
+                window.avatar.playGesture(value as AvatarGesture);
+            }
+        }
+    });
+
     return () => {
         unsubscribeAudio();
         unsubscribeTranscription();
         unsubscribeAi();
         unsubscribeGlobalMouse();
+        unsubscribeAvatarAction();
     };
   }, [model]);
 

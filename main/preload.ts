@@ -57,6 +57,12 @@ const handler = {
         ipcRenderer.removeListener('control-recording', subscription);
     };
   },
+  onAvatarAction: (callback: (action: { type: 'mood' | 'gesture', value: string }) => void) => {
+      const subscription = (_: any, action: { type: 'mood' | 'gesture', value: string }) => callback(action);
+      ipcRenderer.on('avatar-action', subscription);
+      return () => ipcRenderer.removeListener('avatar-action', subscription);
+  },
+  findModelFile: (modelName: string) => ipcRenderer.invoke('find-model-file', modelName),
 }
 
 contextBridge.exposeInMainWorld('electron', handler)

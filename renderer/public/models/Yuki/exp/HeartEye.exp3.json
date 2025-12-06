@@ -2,7 +2,7 @@
     "Type": "Live2D Expression",
     "Parameters": [
         {
-            "Id": "Button7",
+            "Id": "HeartEye",
             "Value": 1.0,
             "Blend": "Add"
         }

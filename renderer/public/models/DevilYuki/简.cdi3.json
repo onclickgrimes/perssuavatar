@@ -19,32 +19,32 @@
 		{
 			"Id": "ParamSwitch3",
 			"GroupId": "ParamGroup",
-			"Name": "❤ 血"
+			"Name": "Sangue"
 		},
 		{
 			"Id": "ParamSwitch4",
 			"GroupId": "ParamGroup",
-			"Name": "❤ 生气"
+			"Name": "Angry"
 		},
 		{
 			"Id": "ParamSwitch5",
 			"GroupId": "ParamGroup",
-			"Name": "❤ 星星眼"
+			"Name": "Olhos estrelados"
 		},
 		{
 			"Id": "ParamSwitch6",
 			"GroupId": "ParamGroup",
-			"Name": "❤ 白眼"
+			"Name": "Revirando os olhos"
 		},
 		{
 			"Id": "ParamSwitch7",
 			"GroupId": "ParamGroup",
-			"Name": "❤ 泪花"
+			"Name": "Lágrimas"
 		},
 		{
 			"Id": "ParamSwitch8",
 			"GroupId": "ParamGroup",
-			"Name": "❤ 爱心眼"
+			"Name": "Olhos em formato de coração"
 		},
 		{
 			"Id": "ParamSwitch9",

@@ -1,14 +1,14 @@
 {
 	"Version": 3,
 	"FileReferences": {
-		"Moc": "model.moc3",
+		"Moc": "Yuki.moc3",
 		"Textures": [
-			"textures/texture_00.png",
-			"textures/texture_01.png",
-			"textures/texture_02.png"
+			"Yuki.4096/texture_00.png",
+			"Yuki.4096/texture_01.png",
+			"Yuki.4096/texture_02.png"
 		],
-		"Physics": "model.physics3.json",
-		"DisplayInfo": "model.cdi3.json"
+		"Physics": "Yuki.physics3.json",
+		"DisplayInfo": "Yuki.cdi3.json"
 	},
 	"Groups": [
 		{

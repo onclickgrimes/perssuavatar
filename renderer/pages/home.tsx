@@ -10,10 +10,10 @@ export default function HomePage() {
 
   const [dragEnabled, setDragEnabled] = useState(true);
   const [bgVisible, setBgVisible] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('freeca');
+  const [selectedModel, setSelectedModel] = useState('Yuki');
   
   const models = [
-    'freeca', 'Haru', 'Hiyori', 'Mao', 'Mark', 'Natori', 'Rice', 'Wanko', 'Yuino', '简'
+    'Yuki', 'Haru', 'Hiyori', 'Mao', 'Mark', 'Natori', 'Rice', 'Wanko', 'Yuino', 'DevilYuki'
   ];
 
   const handleSizeChange = (scale: number) => {

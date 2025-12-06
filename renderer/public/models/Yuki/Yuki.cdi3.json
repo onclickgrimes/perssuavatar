@@ -4,292 +4,292 @@
 		{
 			"Id": "ParamEyeROpen",
 			"GroupId": "ParamGroup",
-			"Name": "左眼　开闭"
+			"Name": "Olho Esq Aberto"
 		},
 		{
 			"Id": "ParamEyeLOpen",
 			"GroupId": "ParamGroup",
-			"Name": "右眼"
+			"Name": "Olho Dir Aberto"
 		},
 		{
 			"Id": "ParamEyeBallX",
 			"GroupId": "ParamGroup",
-			"Name": "眼珠 X"
+			"Name": "Globo Ocular X"
 		},
 		{
 			"Id": "ParamEyeBallY",
 			"GroupId": "ParamGroup",
-			"Name": "眼珠 Y"
+			"Name": "Globo Ocular Y"
 		},
 		{
 			"Id": "ParamBrowRY",
 			"GroupId": "ParamGroup",
-			"Name": "左眉上下"
+			"Name": "Sobrancelha Esq Y"
 		},
 		{
 			"Id": "ParamBrowRForm",
 			"GroupId": "ParamGroup",
-			"Name": "左眉　変形"
+			"Name": "Sobrancelha Esq Forma"
 		},
 		{
 			"Id": "ParamBrowLY",
 			"GroupId": "ParamGroup",
-			"Name": "右眉　上下"
+			"Name": "Sobrancelha Dir Y"
 		},
 		{
 			"Id": "ParamBrowLForm",
 			"GroupId": "ParamGroup",
-			"Name": "右眉　変形"
+			"Name": "Sobrancelha Dir Forma"
 		},
 		{
 			"Id": "ParamMouthForm",
 			"GroupId": "ParamGroup",
-			"Name": "嘴　变形"
+			"Name": "Boca Forma"
 		},
 		{
 			"Id": "ParamMouthOpenY",
 			"GroupId": "ParamGroup",
-			"Name": "嘴　张开和闭合"
+			"Name": "Boca Abertura Y"
 		},
 		{
 			"Id": "ParamMouthX",
 			"GroupId": "ParamGroup",
-			"Name": "歪嘴"
+			"Name": "Boca X (Torto)"
 		},
 		{
 			"Id": "ParamEyeBrowX",
 			"GroupId": "ParamGroup",
-			"Name": "歪眉眼"
+			"Name": "Sobrancelha Olho X"
 		},
 		{
 			"Id": "ParamCheekPuff",
 			"GroupId": "ParamGroup",
-			"Name": "鼓嘴"
+			"Name": "Bochecha Inchada"
 		},
 		{
 			"Id": "JawOpen",
 			"GroupId": "ParamGroup",
-			"Name": "下巴开闭"
+			"Name": "Mandíbula Aberta"
 		},
 		{
 			"Id": "MouthShrug",
 			"GroupId": "ParamGroup",
-			"Name": "抿嘴"
+			"Name": "Boca Encolhida"
 		},
 		{
 			"Id": "MouthPucker",
 			"GroupId": "ParamGroup",
-			"Name": "撅嘴"
+			"Name": "Bico"
 		},
 		{
 			"Id": "Param3",
 			"GroupId": "ParamGroup4",
-			"Name": "★★★★眼物理分隔★★★★"
+			"Name": "★★★★Separador Física Olhos★★★★"
 		},
 		{
 			"Id": "ParamEyeRPhysics",
 			"GroupId": "ParamGroup4",
-			"Name": "左眼框物理"
+			"Name": "Física Olho Esq"
 		},
 		{
 			"Id": "ParamEyeBallRPhysicsX",
 			"GroupId": "ParamGroup4",
-			"Name": "左眼玉X物理"
+			"Name": "Física Globo Ocular Esq X"
 		},
 		{
 			"Id": "ParamEyeBallRPhysicsZ",
 			"GroupId": "ParamGroup4",
-			"Name": "左眼玉Z物理"
+			"Name": "Física Globo Ocular Esq Z"
 		},
 		{
 			"Id": "ParamEyeLPhysics",
 			"GroupId": "ParamGroup4",
-			"Name": "右眼框物理"
+			"Name": "Física Olho Dir"
 		},
 		{
 			"Id": "ParamEyeBallLPhysicsX",
 			"GroupId": "ParamGroup4",
-			"Name": "右眼玉X物理"
+			"Name": "Física Globo Ocular Dir X"
 		},
 		{
 			"Id": "ParamEyeBallLPhysicsZ",
 			"GroupId": "ParamGroup4",
-			"Name": "右眼玉Z物理"
+			"Name": "Física Globo Ocular Dir Z"
 		},
 		{
 			"Id": "ParamEyeZ",
 			"GroupId": "ParamGroup4",
-			"Name": "眼部Z变形"
+			"Name": "Deformação Olho Z"
 		},
 		{
 			"Id": "ParamEyeExpression1",
 			"GroupId": "ParamGroup4",
-			"Name": "怒-惊微表情"
+			"Name": "Micro-expressão Raiva-Surpresa"
 		},
 		{
 			"Id": "ParamEyeExpression2",
 			"GroupId": "ParamGroup4",
-			"Name": "悲-喜微表情"
+			"Name": "Micro-expressão Tristeza-Alegria"
 		},
 		{
 			"Id": "ParamEyeBallPhysicsX",
 			"GroupId": "ParamGroup4",
-			"Name": "眼球缓动X"
+			"Name": "Movimento Suave Olho X"
 		},
 		{
 			"Id": "ParamEyeBallPhysicsY",
 			"GroupId": "ParamGroup4",
-			"Name": "眼球缓动Y"
+			"Name": "Movimento Suave Olho Y"
 		},
 		{
 			"Id": "ParamEyeTearsPhysics",
 			"GroupId": "ParamGroup4",
-			"Name": "左眼泪运动"
+			"Name": "Movimento Lágrima Esq"
 		},
 		{
 			"Id": "ParamEyeTearsPhysics2",
 			"GroupId": "ParamGroup4",
-			"Name": "左眼泪透明度"
+			"Name": "Opacidade Lágrima Esq"
 		},
 		{
 			"Id": "ParamEyeTearsPhysics3",
 			"GroupId": "ParamGroup4",
-			"Name": "右眼泪运动"
+			"Name": "Movimento Lágrima Dir"
 		},
 		{
 			"Id": "ParamEyeTearsPhysics4",
 			"GroupId": "ParamGroup4",
-			"Name": "右眼泪透明度"
+			"Name": "Opacidade Lágrima Dir"
 		},
 		{
 			"Id": "ParamEarRPhysicsZ",
 			"GroupId": "ParamGroup6",
-			"Name": "左耳朵Z物理"
+			"Name": "Física Orelha Esq Z"
 		},
 		{
 			"Id": "ParamEarRPhysicsX",
 			"GroupId": "ParamGroup6",
-			"Name": "左耳朵X物理"
+			"Name": "Física Orelha Esq X"
 		},
 		{
 			"Id": "ParamEarRPhysicsY1",
 			"GroupId": "ParamGroup6",
-			"Name": "左耳朵Y物理1"
+			"Name": "Física Orelha Esq Y1"
 		},
 		{
 			"Id": "ParamEarRPhysicsY2",
 			"GroupId": "ParamGroup6",
-			"Name": "左耳朵Y物理2"
+			"Name": "Física Orelha Esq Y2"
 		},
 		{
 			"Id": "ParamEarLPhysicsZ",
 			"GroupId": "ParamGroup6",
-			"Name": "右耳朵Z物理"
+			"Name": "Física Orelha Dir Z"
 		},
 		{
 			"Id": "ParamEarLPhysicsX",
 			"GroupId": "ParamGroup6",
-			"Name": "右耳朵X物理"
+			"Name": "Física Orelha Dir X"
 		},
 		{
 			"Id": "ParamEarLPhysicsY1",
 			"GroupId": "ParamGroup6",
-			"Name": "右耳朵Y物理1"
+			"Name": "Física Orelha Dir Y1"
 		},
 		{
 			"Id": "ParamEarLPhysicsY2",
 			"GroupId": "ParamGroup6",
-			"Name": "右耳朵Y物理2"
+			"Name": "Física Orelha Dir Y2"
 		},
 		{
 			"Id": "Param",
 			"GroupId": "ParamGroup2",
-			"Name": "★★★★头部分隔★★★★"
+			"Name": "★★★★Separador Cabeça★★★★"
 		},
 		{
 			"Id": "ParamAngleX",
 			"GroupId": "ParamGroup2",
-			"Name": "角度 X"
+			"Name": "Ângulo X"
 		},
 		{
 			"Id": "ParamAngleY",
 			"GroupId": "ParamGroup2",
-			"Name": "角度 Y"
+			"Name": "Ângulo Y"
 		},
 		{
 			"Id": "ParamAngleZ",
 			"GroupId": "ParamGroup2",
-			"Name": "角度 Z"
+			"Name": "Ângulo Z"
 		},
 		{
 			"Id": "Param2",
 			"GroupId": "ParamGroup3",
-			"Name": "★★★★身体分隔★★★★"
+			"Name": "★★★★Separador Corpo★★★★"
 		},
 		{
 			"Id": "ParamBodyAngleX",
 			"GroupId": "ParamGroup3",
-			"Name": "身体旋转　X"
+			"Name": "Rotação Corpo X"
 		},
 		{
 			"Id": "ParamBodyAngleY",
 			"GroupId": "ParamGroup3",
-			"Name": "身体旋转　Y"
+			"Name": "Rotação Corpo Y"
 		},
 		{
 			"Id": "ParamBodyAngleY2",
 			"GroupId": "ParamGroup3",
-			"Name": "身体旋转　Y2"
+			"Name": "Rotação Corpo Y2"
 		},
 		{
 			"Id": "ParamBodyAngleZ",
 			"GroupId": "ParamGroup3",
-			"Name": "身体旋转　Z"
+			"Name": "Rotação Corpo Z"
 		},
 		{
 			"Id": "ParamBreath",
 			"GroupId": "ParamGroup3",
-			"Name": "呼吸"
+			"Name": "Respiração"
 		},
 		{
 			"Id": "ParamLHandPhysics1",
 			"GroupId": "ParamGroup3",
-			"Name": "左手段1"
+			"Name": "Braço Esq 1"
 		},
 		{
 			"Id": "ParamLHandPhysics2",
 			"GroupId": "ParamGroup3",
-			"Name": "左手段2"
+			"Name": "Braço Esq 2"
 		},
 		{
 			"Id": "ParamLHandPhysics3",
 			"GroupId": "ParamGroup3",
-			"Name": "左手段3"
+			"Name": "Braço Esq 3"
 		},
 		{
 			"Id": "ParamLHandPhysics4",
 			"GroupId": "ParamGroup3",
-			"Name": "左手段4"
+			"Name": "Braço Esq 4"
 		},
 		{
 			"Id": "ParamRHandPhysics1",
 			"GroupId": "ParamGroup3",
-			"Name": "右手段1"
+			"Name": "Braço Dir 1"
 		},
 		{
 			"Id": "ParamRHandPhysics2",
 			"GroupId": "ParamGroup3",
-			"Name": "右手段2"
+			"Name": "Braço Dir 2"
 		},
 		{
 			"Id": "ParamRHandPhysics3",
 			"GroupId": "ParamGroup3",
-			"Name": "右手段3"
+			"Name": "Braço Dir 3"
 		},
 		{
 			"Id": "ParamRHandPhysics4",
 			"GroupId": "ParamGroup3",
-			"Name": "右手段4"
+			"Name": "Braço Dir 4"
 		},
 		{
 			"Id": "Param4",
@@ -297,179 +297,179 @@
 			"Name": "★★★★按键分隔★★★★"
 		},
 		{
-			"Id": "Button1",
+			"Id": "BlackFace",
 			"GroupId": "ParamGroup5",
-			"Name": "黑脸"
+			"Name": "Cara Preta"
 		},
 		{
-			"Id": "Button2",
+			"Id": "Corar",
 			"GroupId": "ParamGroup5",
-			"Name": "脸红"
+			"Name": "Corar"
 		},
 		{
-			"Id": "Button7",
+			"Id": "HeartEye",
 			"GroupId": "ParamGroup5",
-			"Name": "爱心眼"
+			"Name": "Olhos em formato de coração"
 		},
 		{
-			"Id": "Button3",
+			"Id": "NoBrightEye",
 			"GroupId": "ParamGroup5",
-			"Name": "眼高光消失"
+			"Name": "O brilho nos olhos desaparece"
 		},
 		{
-			"Id": "Button4",
+			"Id": "Cry",
 			"GroupId": "ParamGroup5",
-			"Name": "哭"
+			"Name": "Chorar"
 		},
 		{
 			"Id": "Param5",
 			"GroupId": "ParamGroup7",
-			"Name": "★★★★两轴分隔★★★★"
+			"Name": "★★★★Separador Dois Eixos★★★★"
 		},
 		{
 			"Id": "Param6",
 			"GroupId": "ParamGroup7",
-			"Name": "胸部物理X1"
+			"Name": "Física Seios X1"
 		},
 		{
 			"Id": "Param7",
 			"GroupId": "ParamGroup7",
-			"Name": "胸部物理X2"
+			"Name": "Física Seios X2"
 		},
 		{
 			"Id": "Param8",
 			"GroupId": "ParamGroup7",
-			"Name": "胸部物理Y1"
+			"Name": "Física Seios Y1"
 		},
 		{
 			"Id": "Param9",
 			"GroupId": "ParamGroup7",
-			"Name": "胸部物理Y2"
+			"Name": "Física Seios Y2"
 		},
 		{
 			"Id": "Param10",
 			"GroupId": "ParamGroup7",
-			"Name": "裙子物理X1"
+			"Name": "Física Saia X1"
 		},
 		{
 			"Id": "Param11",
 			"GroupId": "ParamGroup7",
-			"Name": "裙子物理X2"
+			"Name": "Física Saia X2"
 		},
 		{
 			"Id": "Param28",
 			"GroupId": "ParamGroup7",
-			"Name": "裙子物理X3"
+			"Name": "Física Saia X3"
 		},
 		{
 			"Id": "Param12",
 			"GroupId": "ParamGroup7",
-			"Name": "裙子物理Y1"
+			"Name": "Física Saia Y1"
 		},
 		{
 			"Id": "Param13",
 			"GroupId": "ParamGroup7",
-			"Name": "裙子物理Y2"
+			"Name": "Física Saia Y2"
 		},
 		{
 			"Id": "Param14",
 			"GroupId": "ParamGroup7",
-			"Name": "裙子物理Y3"
+			"Name": "Física Saia Y3"
 		},
 		{
 			"Id": "Param30",
 			"GroupId": "ParamGroup7",
-			"Name": "颈饰物理1"
+			"Name": "Física Colar 1"
 		},
 		{
 			"Id": "Param31",
 			"GroupId": "ParamGroup7",
-			"Name": "颈饰物理2"
+			"Name": "Física Colar 2"
 		},
 		{
 			"Id": "Param17",
 			"GroupId": "ParamGroup7",
-			"Name": "左身体物理1"
+			"Name": "Física Corpo Esq 1"
 		},
 		{
 			"Id": "Param18",
 			"GroupId": "ParamGroup7",
-			"Name": "左身体物理2"
+			"Name": "Física Corpo Esq 2"
 		},
 		{
 			"Id": "Param33",
 			"GroupId": "ParamGroup7",
-			"Name": "左身体物理3"
+			"Name": "Física Corpo Esq 3"
 		},
 		{
 			"Id": "Param34",
 			"GroupId": "ParamGroup7",
-			"Name": "右身体物理1"
+			"Name": "Física Corpo Dir 1"
 		},
 		{
 			"Id": "Param35",
 			"GroupId": "ParamGroup7",
-			"Name": "右身体物理2"
+			"Name": "Física Corpo Dir 2"
 		},
 		{
 			"Id": "Param36",
 			"GroupId": "ParamGroup7",
-			"Name": "右身体物理3"
+			"Name": "Física Corpo Dir 3"
 		},
 		{
 			"Id": "Param43",
 			"GroupId": "ParamGroup7",
-			"Name": "★★★★头发物理分隔★★★★"
+			"Name": "★★★★Separador Física Cabelo★★★★"
 		},
 		{
 			"Id": "Param44",
 			"GroupId": "ParamGroup7",
-			"Name": "左发饰物理1"
+			"Name": "Física Acessório Cabelo Esq 1"
 		},
 		{
 			"Id": "Param45",
 			"GroupId": "ParamGroup7",
-			"Name": "左发饰物理2"
+			"Name": "Física Acessório Cabelo Esq 2"
 		},
 		{
 			"Id": "Param47",
 			"GroupId": "ParamGroup7",
-			"Name": "右发饰物理1"
+			"Name": "Física Acessório Cabelo Dir 1"
 		},
 		{
 			"Id": "Param48",
 			"GroupId": "ParamGroup7",
-			"Name": "右发饰物理2"
+			"Name": "Física Acessório Cabelo Dir 2"
 		},
 		{
 			"Id": "Param50",
 			"GroupId": "ParamGroup7",
-			"Name": "前发物理1"
+			"Name": "Física Franja 1"
 		},
 		{
 			"Id": "Param51",
 			"GroupId": "ParamGroup7",
-			"Name": "前发物理2"
+			"Name": "Física Franja 2"
 		},
 		{
 			"Id": "Param52",
 			"GroupId": "ParamGroup7",
-			"Name": "前发物理3"
+			"Name": "Física Franja 3"
 		},
 		{
 			"Id": "Param53",
 			"GroupId": "ParamGroup7",
-			"Name": "前发物理Y1"
+			"Name": "Física Franja Y1"
 		},
 		{
 			"Id": "Param54",
 			"GroupId": "ParamGroup7",
-			"Name": "前发物理Y2"
+			"Name": "Física Franja Y2"
 		},
 		{
 			"Id": "Param42",
 			"GroupId": "ParamGroup7",
-			"Name": "★★★★蒙皮分隔★★★★"
+			"Name": "★★★★Separador Skinning★★★★"
 		},
 		{
 			"Id": "Param_Angle_Rotation11",
@@ -556,47 +556,47 @@
 		{
 			"Id": "ParamGroup",
 			"GroupId": "",
-			"Name": "五官"
+			"Name": "Rosto"
 		},
 		{
 			"Id": "ParamGroup4",
 			"GroupId": "",
-			"Name": "眼部物理"
+			"Name": "Física Olhos"
 		},
 		{
 			"Id": "ParamGroup6",
 			"GroupId": "",
-			"Name": "耳朵物理"
+			"Name": "Física Orelhas"
 		},
 		{
 			"Id": "ParamGroup2",
 			"GroupId": "",
-			"Name": "头部"
+			"Name": "Cabeça"
 		},
 		{
 			"Id": "ParamGroup3",
 			"GroupId": "",
-			"Name": "身体"
+			"Name": "Corpo"
 		},
 		{
 			"Id": "ParamGroup5",
 			"GroupId": "",
-			"Name": "按键"
+			"Name": "Botões"
 		},
 		{
 			"Id": "ParamGroup7",
 			"GroupId": "",
-			"Name": "两轴物理"
+			"Name": "Física Dois Eixos"
 		},
 		{
 			"Id": "ParamGroup8",
 			"GroupId": "",
-			"Name": "左辫子"
+			"Name": "Trança Esq"
 		},
 		{
 			"Id": "ParamGroup9",
 			"GroupId": "",
-			"Name": "右辫子"
+			"Name": "Trança Dir"
 		}
 	],
 	"Parts": [

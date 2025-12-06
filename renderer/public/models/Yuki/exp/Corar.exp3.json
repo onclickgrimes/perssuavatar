@@ -2,7 +2,7 @@
     "Type": "Live2D Expression",
     "Parameters": [
         {
-            "Id": "Button1",
+            "Id": "Corar",
             "Value": 1.0,
             "Blend": "Add"
         }

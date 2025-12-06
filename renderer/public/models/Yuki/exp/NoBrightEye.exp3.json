@@ -2,7 +2,7 @@
     "Type": "Live2D Expression",
     "Parameters": [
         {
-            "Id": "Button2",
+            "Id": "NoBrightEye",
             "Value": 1.0,
             "Blend": "Add"
         }

@@ -1,10 +1,10 @@
 {
     "Version": 1,
-    "Name": "椿",
+    "Name": "Yuki",
     "ModelID": "fe847bce3ec4454aae264fa752e36364",
     "FileReferences": {
         "Icon": "icon.png",
-        "Model": "椿.model3.json",
+        "Model": "Yuki.model3.json",
         "IdleAnimation": "idle.motion3.json",
         "IdleAnimationWhenTrackingLost": ""
     },
