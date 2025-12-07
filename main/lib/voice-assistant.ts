@@ -3,6 +3,7 @@ import { tools } from './tools';
 import { DeepgramService } from './services/deepgram-service';
 import { OpenAIService } from './services/openai-service';
 import { GeminiService } from './services/gemini-service';
+import { GeminiLiveService } from './services/gemini-live-service';
 import { TTSService } from './services/tts-service';
 import { Readable } from 'stream';
 
@@ -23,6 +24,10 @@ export class VoiceAssistant extends EventEmitter {
   private systemPrompt: string = '';
   private ttsProvider: "polly" | "elevenlabs" = "elevenlabs"; 
   private recordingContext: string | null = null;
+  
+  // New Services and State
+  private geminiLiveService: GeminiLiveService;
+  private mode: 'classic' | 'live' = 'classic';
 
   constructor(ttsProvider: "polly" | "elevenlabs" = "elevenlabs") {
     super();
@@ -33,31 +38,79 @@ export class VoiceAssistant extends EventEmitter {
     this.deepgramService = new DeepgramService();
     this.openAIService = new OpenAIService();
     this.geminiService = new GeminiService();
+    this.geminiLiveService = new GeminiLiveService();
     this.ttsService = new TTSService();
     
     // Forward TTS Events
     this.ttsService.on('audio-chunk', (chunk) => {
-        this.emit('audio-chunk', chunk);
+        if (this.mode === 'classic') {
+          this.emit('audio-chunk', chunk);
+        }
     });
     this.ttsService.on('audio-end', () => {
-        this.emit('audio-end');
+        if (this.mode === 'classic') {
+          this.emit('audio-end');
+        }
     });
 
     // Setup Deepgram Events
     this.deepgramService.on('transcription-final', (text: string) => {
-        this.handleTranscription(text);
+        if (this.mode === 'classic') {
+            this.handleTranscription(text);
+        }
     });
     
     this.deepgramService.on('status', (status: string) => {
-        this.emit('status', status);
+        if (this.mode === 'classic') {
+            this.emit('status', status);
+        }
     });
 
     this.deepgramService.on('error', (error: any) => {
         this.emit('error', error);
     });
 
-    // Setup Gemini Events
+    // Setup Gemini Services Events
     this.geminiService.on('status', (status: string) => this.emit('status', status));
+
+    // Setup Gemini Live Events
+    this.geminiLiveService.on('audio-chunk', (chunk) => {
+        if (this.mode === 'live') {
+            this.emit('audio-chunk', chunk);
+        }
+    });
+
+    this.geminiLiveService.on('status', (status) => {
+        if (this.mode === 'live') {
+            this.emit('status', status);
+        }
+    });
+
+    this.geminiLiveService.on('avatar-action', (type, value) => {
+        if (this.mode === 'live') {
+             this.emit('avatar-action', type, value);
+        }
+    });
+
+    this.geminiLiveService.on('audio-full', (buffer) => {
+        if (this.mode === 'live') {
+            // 'audio-ready' expects (filePath, buffer). passing null for filePath.
+            this.emit('audio-ready', null, buffer);
+        }
+    });
+    
+    this.geminiLiveService.on('text', (text) => {
+        if (this.mode === 'live') {
+            this.emit('gemini-response', text); 
+        }
+    });
+
+    // Handle interruption (user barge-in)
+    this.geminiLiveService.on('interrupted', () => {
+        if (this.mode === 'live') {
+            this.emit('interrupted');
+        }
+    });
   }
 
   private handleTranscription(text: string) {
@@ -139,15 +192,39 @@ export class VoiceAssistant extends EventEmitter {
   }
 
   public startDeepgram(audioStream?: Readable) {
-      this.deepgramService.start(audioStream);
+      // In live mode, we might not need to start anything explicitly unless we want to open the connection
+      if (this.mode === 'classic') {
+          this.deepgramService.start(audioStream);
+      }
   }
 
   public processAudioStream(chunk: Buffer) {
-      this.deepgramService.processAudioStream(chunk);
+      if (this.mode === 'live') {
+          this.geminiLiveService.sendAudio(chunk);
+      } else {
+          this.deepgramService.processAudioStream(chunk);
+      }
   }
 
   public stopDeepgram() {
       this.deepgramService.stop();
+  }
+
+  public async setMode(mode: 'classic' | 'live') {
+      console.log(`Switching mode to ${mode}`);
+      if (this.mode === mode) return;
+      
+      this.mode = mode;
+      
+      if (mode === 'live') {
+          this.stopDeepgram();
+          this.emit('status', 'Connecting Live...');
+          await this.geminiLiveService.connect();
+          this.emit('status', 'Live Ready');
+      } else {
+          this.geminiLiveService.disconnect();
+          this.emit('status', 'Classic Mode');
+      }
   }
 
   private async processUserMessage(text: string) {

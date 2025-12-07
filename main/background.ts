@@ -105,9 +105,9 @@ ipcMain.on('open-settings', async () => {
   }
 });
 
-// Recebe áudio do frontend e manda pro Deepgram
+// Recebe áudio do frontend e manda pro Deepgram/Gemini Live
 ipcMain.on('audio-data', (event, buffer) => {
-  // Inicia o Deepgram se ainda não estiver rodando
+  // Inicia o Deepgram se ainda não estiver rodando (só no modo classic)
   assistant.startDeepgram();
 
   // Converta ArrayBuffer para Buffer se necessário e envie para o assistant
@@ -139,6 +139,10 @@ ipcMain.on('analyze-video', (event, buffer) => {
 });
 
 // Eventos do Assistant -> Frontend
+ipcMain.on('set-assistant-mode', (event, mode: 'classic' | 'live') => {
+    assistant.setMode(mode);
+});
+
 assistant.on('transcription', (text) => {
   mainWindow.webContents.send('transcription', text);
 });
@@ -156,6 +160,13 @@ assistant.on('audio-chunk', (chunk) => {
 assistant.on('audio-end', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send('audio-end');
+    }
+});
+
+// Handle user interruption (barge-in) - stop audio playback
+assistant.on('interrupted', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('audio-interrupted');
     }
 });
 

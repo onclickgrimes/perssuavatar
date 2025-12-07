@@ -27,12 +27,17 @@ export default function Avatar({ modelName }: AvatarProps) {
   const currentModelWrapperRef = useRef<PIXI.Container | null>(null);
   const currentMoodRef = useRef<AvatarMood>('neutral');
 
-  // Streaming Audio Refs
+  // Streaming Audio Refs (MP3/MediaSource)
   const mediaSourceRef = useRef<MediaSource | null>(null);
   const sourceBufferRef = useRef<SourceBuffer | null>(null);
   const audioQueueRef = useRef<ArrayBuffer[]>([]);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
+
+  // PCM Streaming Refs (Gemini Live)
+  const pcmContextRef = useRef<AudioContext | null>(null);
+  const pcmNextStartTimeRef = useRef(0);
+  const pcmPendingSourcesRef = useRef<Set<AudioBufferSourceNode>>(new Set());
 
     // Helper to execute model actions
     const executeAction = (model: any, action: any) => {
@@ -418,24 +423,183 @@ export default function Avatar({ modelName }: AvatarProps) {
         setupAudioAnalysis(audio);
     };
 
-    const handleAudioChunk = (chunk: ArrayBuffer) => {
-        if (!mediaSourceRef.current) {
-            initMediaSource();
-        }
-        audioQueueRef.current.push(chunk);
+    const handleAudioChunk = async (chunkData: any) => {
+        // Detect format: PCM from Gemini Live has {data, mimeType} structure
+        // MP3 from classic mode is raw binary data (ArrayBuffer, Uint8Array, or Buffer-like)
         
-        if (sourceBufferRef.current && !sourceBufferRef.current.updating) {
-             processAudioQueue();
+        const isPcmFormat = chunkData && 
+            typeof chunkData === 'object' && 
+            'data' in chunkData && 
+            'mimeType' in chunkData;
+
+        if (!isPcmFormat) {
+            // Classic mode: MP3 streaming - accumulate chunks, play on audio-end
+            
+            // Convert to Uint8Array for accumulation
+            let bytes: Uint8Array;
+            if (chunkData instanceof ArrayBuffer) {
+                bytes = new Uint8Array(chunkData);
+            } else if (chunkData instanceof Uint8Array) {
+                bytes = chunkData;
+            } else if (ArrayBuffer.isView(chunkData)) {
+                bytes = new Uint8Array(chunkData.buffer, chunkData.byteOffset, chunkData.byteLength);
+            } else {
+                try {
+                    bytes = new Uint8Array(chunkData);
+                } catch (e) {
+                    console.error("[Audio] Unknown chunk format:", typeof chunkData);
+                    return;
+                }
+            }
+            
+            // Accumulate in queue (we'll combine them in handleAudioEnd)
+            audioQueueRef.current.push(bytes.buffer as ArrayBuffer);
+            return;
         }
+
+        // Live mode: PCM base64 format from Gemini Live
+        const { data: base64Data, mimeType } = chunkData;
+        if (!base64Data) return;
+
+        // Parse sample rate from mimeType (e.g., "audio/pcm;rate=24000")
+        const rateMatch = /rate=(\d+)/i.exec(mimeType);
+        const sampleRate = rateMatch ? parseInt(rateMatch[1], 10) : 24000;
+
+        // Decode base64 to Int16 PCM
+        const binaryString = atob(base64Data);
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        const pcmData = new Int16Array(bytes.buffer);
+
+        if (pcmData.length === 0) return;
+
+        // Create/resume AudioContext with analyser for continuous lip sync
+        if (!pcmContextRef.current) {
+            pcmContextRef.current = new AudioContext();
+            pcmNextStartTimeRef.current = 0;
+        }
+        const ctx = pcmContextRef.current;
+        if (ctx.state === 'suspended') await ctx.resume();
+
+        // Always set speaking state when receiving audio chunks
+        if (!isSpeakingRef.current) {
+            setIsSpeaking(true);
+            isSpeakingRef.current = true;
+            
+            // Look forward when speaking (reset focus)
+            if (model?.internalModel?.focusController) {
+                model.internalModel.focusController.focus(0, 0);
+            }
+        }
+
+        // Convert Int16 to Float32 for Web Audio
+        const floatData = new Float32Array(pcmData.length);
+        for (let i = 0; i < pcmData.length; i++) {
+            floatData[i] = pcmData[i] / 0x8000;
+        }
+
+        // Create AudioBuffer
+        const buffer = ctx.createBuffer(1, floatData.length, sampleRate);
+        buffer.getChannelData(0).set(floatData);
+
+        // Create analyser for lip sync
+        const analyser = ctx.createAnalyser();
+        analyser.fftSize = 256;
+        
+        // Schedule playback with minimal latency
+        const source = ctx.createBufferSource();
+        source.buffer = buffer;
+        source.connect(analyser);
+        analyser.connect(ctx.destination);
+
+        const now = ctx.currentTime;
+        const leadTime = 0.05; // 50ms lead time for smooth playback
+        if (pcmNextStartTimeRef.current < now + leadTime) {
+            pcmNextStartTimeRef.current = now + leadTime;
+        }
+
+        // Start lip sync animation when this source starts playing
+        const sourceStartTime = pcmNextStartTimeRef.current;
+        const sourceDuration = buffer.duration;
+        const bufferLength = analyser.frequencyBinCount;
+        const dataArray = new Uint8Array(bufferLength);
+
+        const updateLipSync = () => {
+            const currentTime = ctx.currentTime;
+            
+            // Check if this source is currently playing
+            if (currentTime >= sourceStartTime && currentTime < sourceStartTime + sourceDuration) {
+                analyser.getByteFrequencyData(dataArray);
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    sum += dataArray[i];
+                }
+                const average = sum / bufferLength;
+                const mouthOpen = Math.min(1.0, average / 40);
+                
+                if (model?.internalModel?.coreModel) {
+                    model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', mouthOpen);
+                }
+            }
+            
+            // Continue animation while source is pending
+            if (pcmPendingSourcesRef.current.has(source)) {
+                requestAnimationFrame(updateLipSync);
+            }
+        };
+
+        source.onended = () => {
+            pcmPendingSourcesRef.current.delete(source);
+            if (pcmPendingSourcesRef.current.size === 0) {
+                setIsSpeaking(false);
+                isSpeakingRef.current = false;
+                if (model?.internalModel?.coreModel) {
+                    model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
+                }
+            }
+        };
+
+        source.start(pcmNextStartTimeRef.current);
+        pcmPendingSourcesRef.current.add(source);
+        pcmNextStartTimeRef.current += buffer.duration;
+
+        // Start lip sync animation
+        requestAnimationFrame(updateLipSync);
     };
 
     const handleAudioEnd = () => {
+        // Classic mode: combine accumulated MP3 chunks and play
+        if (audioQueueRef.current.length > 0) {
+            console.log("[Audio] Combining", audioQueueRef.current.length, "MP3 chunks to play");
+            
+            // Combine all chunks
+            const totalLength = audioQueueRef.current.reduce((acc, chunk) => acc + chunk.byteLength, 0);
+            const combined = new Uint8Array(totalLength);
+            let offset = 0;
+            for (const chunk of audioQueueRef.current) {
+                combined.set(new Uint8Array(chunk), offset);
+                offset += chunk.byteLength;
+            }
+            audioQueueRef.current = [];
+            
+            // Play as blob
+            const blob = new Blob([combined], { type: 'audio/mpeg' });
+            const url = URL.createObjectURL(blob);
+            const audio = new Audio(url);
+            audioRef.current = audio;
+            
+            audio.play()
+                .then(() => setupAudioAnalysis(audio))
+                .catch(e => console.error("[Audio] Error playing combined MP3:", e));
+        }
+        
+        // MediaSource cleanup (if it was used)
         if (mediaSourceRef.current && mediaSourceRef.current.readyState === 'open') {
-             // We can't end stream if buffer is updating, so we wait or just let it finish.
-             // Usually audio.onended will cleanup.
-             try {
+            try {
                 mediaSourceRef.current.endOfStream();
-             } catch(e) { /* ignore if updating */ }
+            } catch(e) { /* ignore if updating */ }
         }
     };
 
@@ -497,6 +661,35 @@ export default function Avatar({ modelName }: AvatarProps) {
         }
     });
 
+    // Handle audio interruption (user barge-in) - stop all playback immediately
+    const handleAudioInterrupted = () => {
+        console.log("[Audio] Interrupted - stopping playback");
+        
+        // Stop PCM streaming audio
+        pcmPendingSourcesRef.current.forEach(source => {
+            try { source.stop(); } catch {}
+        });
+        pcmPendingSourcesRef.current.clear();
+        pcmNextStartTimeRef.current = 0;
+        
+        // Stop regular audio
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current = null;
+        }
+        
+        // Reset speaking state
+        setIsSpeaking(false);
+        isSpeakingRef.current = false;
+        if (model?.internalModel?.coreModel) {
+            model.internalModel.coreModel.setParameterValueById('ParamMouthOpenY', 0);
+        }
+    };
+    
+    const unsubscribeInterrupted = (window.electron as any).onAudioInterrupted 
+        ? (window.electron as any).onAudioInterrupted(handleAudioInterrupted) 
+        : () => {};
+
     return () => {
         unsubscribeAudio();
         unsubscribeAudioChunk();
@@ -505,7 +698,18 @@ export default function Avatar({ modelName }: AvatarProps) {
         unsubscribeAi();
         unsubscribeGlobalMouse();
         unsubscribeAvatarAction();
+        unsubscribeInterrupted();
         cleanupAudio();
+        
+        // Cleanup PCM streaming
+        if (pcmContextRef.current) {
+            pcmContextRef.current.close();
+            pcmContextRef.current = null;
+        }
+        pcmPendingSourcesRef.current.forEach(source => {
+            try { source.stop(); } catch {}
+        });
+        pcmPendingSourcesRef.current.clear();
     };
   }, [model]);
 

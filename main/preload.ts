@@ -73,6 +73,12 @@ const handler = {
       return () => ipcRenderer.removeListener('avatar-action', subscription);
   },
   findModelFile: (modelName: string) => ipcRenderer.invoke('find-model-file', modelName),
+  setAssistantMode: (mode: 'classic' | 'live') => ipcRenderer.send('set-assistant-mode', mode),
+  onAudioInterrupted: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on('audio-interrupted', subscription);
+    return () => ipcRenderer.removeListener('audio-interrupted', subscription);
+  },
 }
 
 contextBridge.exposeInMainWorld('electron', handler)

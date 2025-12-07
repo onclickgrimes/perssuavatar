@@ -22,6 +22,7 @@ export default function Settings({
   const [size, setSize] = useState(1);
   const [dragEnabled, setDragEnabled] = useState(true);
   const [bgVisible, setBgVisible] = useState(false);
+  const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   
   const { isRecording, startRecording, stopRecording } = useScreenRecorder();
 
@@ -44,6 +45,11 @@ export default function Settings({
     return () => unsubscribe();
   }, [isRecording, startRecording, stopRecording]);
 
+  // Set initial assistant mode on mount
+  useEffect(() => {
+    window.electron.setAssistantMode(assistantMode);
+  }, []);
+
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = parseFloat(e.target.value);
     setSize(newSize);
@@ -60,6 +66,12 @@ export default function Settings({
     const newState = !bgVisible;
     setBgVisible(newState);
     onBackgroundToggle(newState);
+  };
+
+  const handleModeToggle = () => {
+    const newMode = assistantMode === 'classic' ? 'live' : 'classic';
+    setAssistantMode(newMode);
+    window.electron.setAssistantMode(newMode);
   };
 
   return (
@@ -136,6 +148,17 @@ export default function Settings({
                   <option key={model} value={model}>{model}</option>
                 ))}
               </select>
+            </div>
+
+            {/* Assistant Mode Toggle */}
+            <div className="flex items-center justify-between pt-2 border-t border-gray-700">
+              <span className="text-sm">Modo Gemini Live</span>
+              <button 
+                onClick={handleModeToggle}
+                className={`w-12 h-6 rounded-full transition-colors relative ${assistantMode === 'live' ? 'bg-purple-600' : 'bg-gray-600'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${assistantMode === 'live' ? 'left-7' : 'left-1'}`} />
+              </button>
             </div>
 
             <div className="pt-2 border-t border-gray-700 space-y-2">

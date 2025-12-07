@@ -69,6 +69,7 @@ export class DeepgramService extends EventEmitter {
 
         if (audioStream) {
             audioStream.on('data', (chunk) => {
+                console.log("Deepgram: Recebendo chunk de áudio");
                 this.processAudioStream(chunk);
             });
         }

@@ -10,7 +10,10 @@ export function useMicrophone() {
     const init = async () => {
         try {
             stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            audioContext = new AudioContext({ sampleRate: 16000 });
+            // Use native sample rate - the audio-processor.js handles resampling to 16kHz
+            audioContext = new AudioContext();
+
+            console.log(`[Microphone] Context Sample Rate: ${audioContext.sampleRate}Hz (native, will be resampled to 16kHz)`);
             
             // Load the worklet module
             await audioContext.audioWorklet.addModule('/audio-processor.js');
@@ -21,7 +24,7 @@ export function useMicrophone() {
             workletNode.port.onmessage = (event) => {
                 // Receive Int16 buffer from worklet
                 const buffer = event.data;
-                // console.log("🎤 Mic Data sent to Main:", buffer.byteLength); // Uncomment for verbose debugging
+                console.log("🎤 Mic Data Packet:", buffer.byteLength);
                 window.electron.sendAudioData(buffer);
             };
             
