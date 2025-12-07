@@ -143,6 +143,11 @@ ipcMain.on('set-assistant-mode', (event, mode: 'classic' | 'live') => {
     assistant.setMode(mode);
 });
 
+// Screen sharing for Gemini Live
+ipcMain.on('screen-frame', (event, base64Image: string) => {
+    assistant.sendScreenFrame(base64Image);
+});
+
 assistant.on('transcription', (text) => {
   mainWindow.webContents.send('transcription', text);
 });

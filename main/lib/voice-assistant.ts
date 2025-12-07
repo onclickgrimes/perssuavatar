@@ -210,6 +210,12 @@ export class VoiceAssistant extends EventEmitter {
       this.deepgramService.stop();
   }
 
+  public sendScreenFrame(base64Image: string) {
+      if (this.mode === 'live') {
+          this.geminiLiveService.sendScreenFrame(base64Image);
+      }
+  }
+
   public async setMode(mode: 'classic' | 'live') {
       console.log(`Switching mode to ${mode}`);
       if (this.mode === mode) return;

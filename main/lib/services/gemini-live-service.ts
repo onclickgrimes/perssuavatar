@@ -49,10 +49,11 @@ export class GeminiLiveService extends EventEmitter {
                         }
                     }
                 },
+                // Note: proactivity is not supported by native-audio-preview model
                 // Disable thinking mode for faster responses
-                thinkingConfig: {
-                    thinkingBudget: 0,
-                },
+                // thinkingConfig: {
+                //     thinkingBudget: 0,
+                // },
                 contextWindowCompression: {
                     triggerTokens: 25600,
                     slidingWindow: { targetTokens: 12800 },
@@ -101,16 +102,16 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                     onmessage: (message: LiveServerMessage) => {
                         // console.log('Gemini Live Message:', JSON.stringify(message).substring(0, 500));
                         this.responseQueue.push(message);
-                        
+
                         // ✅ TRANSCRIÇÃO DO ÁUDIO DE SAÍDA (texto do modelo)
                         if ((message.serverContent as any)?.outputTranscription) {
                             const transcricaoModelo = (message.serverContent as any).outputTranscription.text;
                             if (transcricaoModelo) {
                                 // console.log('[GeminiLive] Transcrição:', transcricaoModelo);
-                                
+
                                 // Emit text for display/logging
                                 this.emit('text', transcricaoModelo);
-                                
+
                                 // Extract avatar control tags from transcription
                                 const avatarRegex = /\{\{(mood|gesture):(\w+)\}\}/g;
                                 let match;
@@ -120,7 +121,7 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                                 }
                             }
                         }
-                        
+
                         // // ✅ TRANSCRIÇÃO DO ÁUDIO DE ENTRADA (texto do usuário)
                         // if ((message.serverContent as any)?.inputTranscription) {
                         //     const transcricaoUsuario = (message.serverContent as any).inputTranscription.text;
@@ -309,15 +310,31 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
 
     public async sendScreenFrame(base64Image: string) {
         if (!this.session || !this.isConnected) return;
+
         try {
-            await this.session.sendRealtimeInput([
-                {
-                    mimeType: "image/jpeg",
-                    data: base64Image
-                }
-            ] as any);
+            // Use session.conn.send() for consistency with audio sending
+            // The format for video/image input uses 'video' field (like audio uses 'audio')
+            if ((this.session as any).conn && (this.session as any).conn.send) {
+                const message = JSON.stringify({
+                    realtimeInput: {
+                        video: {
+                            data: base64Image,
+                            mimeType: "image/jpeg"
+                        }
+                    }
+                });
+                (this.session as any).conn.send(message);
+            } else {
+                // Fallback to SDK method
+                await this.session.sendRealtimeInput({
+                    video: {
+                        data: base64Image,
+                        mimeType: "image/jpeg"
+                    }
+                } as any);
+            }
         } catch (error) {
-            console.error("Error sending screen frame:", error);
+            console.error("[GeminiLive] Error sending screen frame:", error);
         }
     }
 

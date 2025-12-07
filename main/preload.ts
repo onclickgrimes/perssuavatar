@@ -79,6 +79,7 @@ const handler = {
     ipcRenderer.on('audio-interrupted', subscription);
     return () => ipcRenderer.removeListener('audio-interrupted', subscription);
   },
+  sendScreenFrame: (base64Image: string) => ipcRenderer.send('screen-frame', base64Image),
 }
 
 contextBridge.exposeInMainWorld('electron', handler)

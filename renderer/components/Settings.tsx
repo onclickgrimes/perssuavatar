@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useScreenRecorder } from '../hooks/useScreenRecorder';
+import { useScreenShare } from '../hooks/useScreenShare';
 
 interface SettingsProps {
   onSizeChange: (size: number) => void;
@@ -25,6 +26,7 @@ export default function Settings({
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   
   const { isRecording, startRecording, stopRecording } = useScreenRecorder();
+  const { isSharing, startSharing, stopSharing, error: shareError } = useScreenShare({ fps: 1 });
 
   useEffect(() => {
     // Listen for voice commands to control recording
@@ -160,6 +162,19 @@ export default function Settings({
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${assistantMode === 'live' ? 'left-7' : 'left-1'}`} />
               </button>
             </div>
+
+            {/* Screen Share Toggle - Only visible in Live mode */}
+            {assistantMode === 'live' && (
+              <div className="flex items-center justify-between">
+                <span className="text-sm">Compartilhar Tela 🖥️</span>
+                <button 
+                  onClick={() => isSharing ? stopSharing() : startSharing()}
+                  className={`w-12 h-6 rounded-full transition-colors relative ${isSharing ? 'bg-blue-600' : 'bg-gray-600'}`}
+                >
+                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${isSharing ? 'left-7' : 'left-1'}`} />
+                </button>
+              </div>
+            )}
 
             <div className="pt-2 border-t border-gray-700 space-y-2">
                 <button 
