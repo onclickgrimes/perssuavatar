@@ -22,10 +22,8 @@ export default function HomePage() {
   ];
 
   const handleSizeChange = (scale: number) => {
-    // ...
-    const baseWidth = 500;
-    const baseHeight = 500;
-    window.electron.resizeWindow(Math.round(baseWidth * scale), Math.round(baseHeight * scale));
+    // Size is now handled directly by Avatar component via window.avatar.setScale()
+    // No need to resize the window anymore
   };
 
   // Listen for CTRL+M to toggle ActionBar

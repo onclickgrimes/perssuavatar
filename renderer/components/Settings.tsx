@@ -82,6 +82,13 @@ export default function Settings({
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = parseFloat(e.target.value);
     setSize(newSize);
+    
+    // Apply scale directly to avatar instead of resizing window
+    if (window.avatar && window.avatar.setScale) {
+      window.avatar.setScale(newSize);
+    }
+    
+    // Still notify parent for any other side effects (if needed)
     onSizeChange(newSize);
   };
 

@@ -8,6 +8,7 @@ declare global {
     avatar: {
       setMood: (mood: AvatarMood) => void;
       playGesture: (gesture: AvatarGesture) => void;
+      setScale: (scale: number) => void;
     }
   }
 }
@@ -26,6 +27,7 @@ export default function Avatar({ modelName }: AvatarProps) {
   const appRef = useRef<PIXI.Application | null>(null);
   const currentModelWrapperRef = useRef<PIXI.Container | null>(null);
   const currentMoodRef = useRef<AvatarMood>('neutral');
+  const baseScaleRef = useRef<number>(1);
 
   // Streaming Audio Refs (MP3/MediaSource)
   const mediaSourceRef = useRef<MediaSource | null>(null);
@@ -130,6 +132,14 @@ export default function Avatar({ modelName }: AvatarProps) {
                 const config = AVATAR_CONFIG[modelName];
                 if (config && config.gestures[gesture] && model) {
                     executeAction(model, config.gestures[gesture]);
+                }
+            },
+            setScale: (scale: number) => {
+                if (model && baseScaleRef.current) {
+                    // Use stored base scale and multiply by user preference
+                    const finalScale = baseScaleRef.current * scale;
+                    console.log(`Setting avatar scale: base=${baseScaleRef.current.toFixed(3)}, multiplier=${scale}, final=${finalScale.toFixed(3)}`);
+                    model.scale.set(finalScale);
                 }
             }
         };
@@ -242,8 +252,10 @@ export default function Avatar({ modelName }: AvatarProps) {
             const scaleX = window.innerWidth / loadedModel.width;
             const scaleY = window.innerHeight / loadedModel.height;
             const scale = Math.min(scaleX, scaleY) * 0.8;
-            console.log(`Calculated Scale: ${scale}`);
+            console.log(`Calculated Base Scale: ${scale}`);
             
+            // Store base scale for later use
+            baseScaleRef.current = scale;
             loadedModel.scale.set(scale);
             loadedModel.interactive = false;
             loadedModel.interactiveChildren = false;
