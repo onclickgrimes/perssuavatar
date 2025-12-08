@@ -76,11 +76,11 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
         {/* Divider */}
         <div className="w-[1px] h-6 bg-[#333] mx-1"></div>
 
-        {/* B. Center Section (Input Placeholder) */}
-        <div className="flex-1 flex items-center bg-[#1f1f1f] rounded-lg px-3 py-1.5 mx-2 h-9 border border-[#2a2a2a] min-w-[200px] cursor-text group">
+        {/* B. Center Section (Input Placeholder - Now a Button) */}
+        <button className="flex-1 flex items-center bg-[#1f1f1f] hover:bg-[#252525] rounded-lg px-2 py-1.5 mx-2 h-9 border border-[#2a2a2a] min-w-[120px] cursor-pointer group transition-colors text-left">
           
           {/* Visual Keys */}
-          <div className="flex items-center gap-1.5 mr-3 opacity-60 group-hover:opacity-80 transition-opacity">
+          <div className="flex items-center gap-1.5 mr-2 opacity-60 group-hover:opacity-80 transition-opacity">
             <div className="flex items-center justify-center px-1.5 h-5 bg-[#333] rounded text-[10px] font-bold text-gray-300 border-b border-[#111] shadow-[0_1px_0_rgba(0,0,0,0.5)]">
               Ctrl
             </div>
@@ -92,11 +92,11 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
             </div>
           </div>
 
-          <span className="text-gray-400 text-sm font-medium">Perguntar</span>
-        </div>
+          <span className="text-gray-400 text-sm font-medium truncate">Perguntar</span>
+        </button>
 
         {/* C. Right Section (Primary Action) */}
-        <button className="h-10 ml-1 pl-3 pr-4 rounded-xl bg-[#0066FF] hover:bg-[#005ce6] text-white flex items-center gap-3 shadow-[0_0_15px_rgba(0,102,255,0.3)] transition-all transform hover:scale-[1.02] active:scale-[0.98]">
+        <button className="h-10 ml-1 pl-3 pr-4 rounded-xl bg-[#0066FF] hover:bg-[#005ce6] text-white flex items-center gap-3 shadow-[0_0_15px_rgba(0,102,255,0.3)] transition-all transform hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap flex-shrink-0">
           <div className="flex items-center gap-1">
              <div className="flex items-center justify-center px-1.5 h-5 bg-[#3b87ff] rounded text-[10px] font-bold text-white border-b-2 border-[#004ec2] shadow-sm">
               Ctrl

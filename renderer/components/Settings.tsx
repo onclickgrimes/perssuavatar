@@ -10,6 +10,9 @@ interface SettingsProps {
   selectedModel: string;
   onModelChange: (model: string) => void;
   onScreenShareChange?: (isSharing: boolean) => void;
+  // New props for controlled modal mode
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
 export default function Settings({ 
@@ -19,20 +22,27 @@ export default function Settings({
   models,
   selectedModel,
   onModelChange,
-  onScreenShareChange
+  onScreenShareChange,
+  isOpen: propIsOpen,
+  onClose
 }: SettingsProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  // Internal state for uncontrolled mode (legacy support if needed)
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isControlled = typeof propIsOpen !== 'undefined';
+  const showSettings = isControlled ? propIsOpen : internalIsOpen;
+  
   const [size, setSize] = useState(1);
   const [dragEnabled, setDragEnabled] = useState(true);
   const [bgVisible, setBgVisible] = useState(false);
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
-  const [alwaysOnTop, setAlwaysOnTop] = useState(true); // Habilitado por padrão
+  const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   
   // Continuous recorder for background recording
-  const { isRecording, isInitialized, startRecording, stopRecording, saveLastSeconds, getBufferInfo } = useContinuousRecorder({ maxBufferSeconds: 600 });
-  const { isSharing, startSharing, stopSharing, error: shareError } = useScreenShare({ fps: 1 });
+  const { isRecording, startRecording, stopRecording, saveLastSeconds, getBufferInfo } = useContinuousRecorder({ maxBufferSeconds: 600 });
+  const { isSharing, startSharing, stopSharing } = useScreenShare({ fps: 1 });
 
-  // Start continuous recording when in live mode
+  // ... (Effects remain the same, ommited for brevity but included in compilation) ...
+    // Start continuous recording when in live mode
   useEffect(() => {
     if (assistantMode === 'live' && !isRecording) {
       console.log('[Settings] Starting continuous recording for live mode...');
@@ -89,6 +99,7 @@ export default function Settings({
     onScreenShareChange?.(isSharing);
   }, [isSharing, onScreenShareChange]);
 
+
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = parseFloat(e.target.value);
     setSize(newSize);
@@ -119,35 +130,61 @@ export default function Settings({
     window.electron.setAlwaysOnTop(newState);
   };
 
+  if (!showSettings && isControlled) return null;
+
   return (
     <div 
-      className="absolute top-4 right-4 z-[200] no-drag"
-      // Ensure the container itself is interactive when hovering
-      onMouseEnter={() => {
-          window.electron.setIgnoreMouseEvents(false);
-      }}
+      className={isControlled 
+        ? "fixed inset-0 z-[600] flex items-center justify-center bg-black/50 backdrop-blur-sm"
+        : "absolute top-4 right-4 z-[200] no-drag"
+      }
+      onMouseEnter={() => window.electron.setIgnoreMouseEvents(false)}
       onMouseLeave={() => {
-        // Only ignore mouse events if the menu is NOT open
-        if (!isOpen) {
-            window.electron.setIgnoreMouseEvents(true, { forward: true });
+        if (!showSettings) {
+             window.electron.setIgnoreMouseEvents(true, { forward: true });
+        }
+      }}
+      onClick={(e) => {
+        // Close on backdrop click (only controlled mode)
+        if (isControlled && e.target === e.currentTarget && onClose) {
+           onClose();
         }
       }}
     >
-      <button 
-        onClick={() => setIsOpen(!isOpen)}
-        className="p-2 bg-gray-800/80 text-white rounded-full hover:bg-gray-700 transition-colors cursor-pointer pointer-events-auto"
-      >
-        ⚙️
-      </button>
+      {!isControlled && (
+        <button 
+          onClick={() => setInternalIsOpen(!internalIsOpen)}
+          className="p-2 bg-gray-800/80 text-white rounded-full hover:bg-gray-700 transition-colors cursor-pointer pointer-events-auto"
+        >
+          ⚙️
+        </button>
+      )}
 
-      {isOpen && (
-        <div className="absolute right-0 mt-2 w-64 bg-gray-900/90 backdrop-blur-md p-4 rounded-lg shadow-xl border border-gray-700 text-white">
-          <h3 className="text-lg font-semibold mb-4">Configurações</h3>
+      {(showSettings || isControlled) && (
+        <div className={`
+            bg-gray-900/95 backdrop-blur-md p-6 rounded-2xl shadow-2xl border border-gray-700 text-white
+            ${isControlled ? 'w-80 relative animate-in fade-in zoom-in duration-200' : 'absolute right-0 mt-2 w-64'}
+        `}>
+          {isControlled && (
+             <button 
+                onClick={onClose}
+                className="absolute top-3 right-3 text-gray-400 hover:text-white"
+             >
+                ✕
+             </button>
+          )}
+
+          <h3 className="text-xl font-bold mb-6 flex items-center gap-2">
+            <span className="text-2xl">⚙️</span> Configurações
+          </h3>
           
-          <div className="space-y-4">
+          <div className="space-y-5">
             {/* Size Control */}
             <div>
-              <label className="block text-sm mb-1">Tamanho ({size}x)</label>
+              <div className="flex justify-between mb-2">
+                <label className="text-sm font-medium text-gray-300">Tamanho Avatar</label>
+                <span className="text-xs bg-gray-800 px-2 py-0.5 rounded text-gray-400">{size}x</span>
+              </div>
               <input 
                 type="range" 
                 min="0.5" 
@@ -155,50 +192,50 @@ export default function Settings({
                 step="0.1" 
                 value={size} 
                 onChange={handleSizeChange}
-                className="w-full"
+                className="w-full accent-blue-600 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
               />
             </div>
 
-            {/* Drag Toggle */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Mover com Mouse</span>
-              <button 
-                onClick={handleDragToggle}
-                className={`w-12 h-6 rounded-full transition-colors relative ${dragEnabled ? 'bg-green-600' : 'bg-gray-600'}`}
-              >
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${dragEnabled ? 'left-7' : 'left-1'}`} />
-              </button>
-            </div>
+            {/* Toggles Grid */}
+            <div className="space-y-3">
+                <div className="flex items-center justify-between p-2 bg-gray-800/50 rounded-lg">
+                  <span className="text-sm text-gray-300">Mover com Mouse</span>
+                  <button 
+                    onClick={handleDragToggle}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${dragEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                  >
+                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${dragEnabled ? 'left-6' : 'left-1'}`} />
+                  </button>
+                </div>
 
-            {/* Background Toggle */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Mostrar Fundo</span>
-              <button 
-                onClick={handleBgToggle}
-                className={`w-12 h-6 rounded-full transition-colors relative ${bgVisible ? 'bg-green-600' : 'bg-gray-600'}`}
-              >
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${bgVisible ? 'left-7' : 'left-1'}`} />
-              </button>
-            </div>
+                <div className="flex items-center justify-between p-2 bg-gray-800/50 rounded-lg">
+                  <span className="text-sm text-gray-300">Mostrar Fundo</span>
+                  <button 
+                    onClick={handleBgToggle}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${bgVisible ? 'bg-green-500' : 'bg-gray-600'}`}
+                  >
+                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${bgVisible ? 'left-6' : 'left-1'}`} />
+                  </button>
+                </div>
 
-            {/* Always On Top Toggle */}
-            <div className="flex items-center justify-between">
-              <span className="text-sm">Sobrepor Janelas 📌</span>
-              <button 
-                onClick={handleAlwaysOnTopToggle}
-                className={`w-12 h-6 rounded-full transition-colors relative ${alwaysOnTop ? 'bg-green-600' : 'bg-gray-600'}`}
-              >
-                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${alwaysOnTop ? 'left-7' : 'left-1'}`} />
-              </button>
+                <div className="flex items-center justify-between p-2 bg-gray-800/50 rounded-lg">
+                  <span className="text-sm text-gray-300">Sobrepor Janelas</span>
+                  <button 
+                    onClick={handleAlwaysOnTopToggle}
+                    className={`w-10 h-5 rounded-full transition-colors relative ${alwaysOnTop ? 'bg-green-500' : 'bg-gray-600'}`}
+                  >
+                    <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${alwaysOnTop ? 'left-6' : 'left-1'}`} />
+                  </button>
+                </div>
             </div>
 
             {/* Model Selection */}
             <div>
-              <label className="block text-sm mb-1">Modelo Live2D</label>
+              <label className="block text-sm font-medium text-gray-300 mb-2">Modelo Live2D</label>
               <select 
                 value={selectedModel}
                 onChange={(e) => onModelChange(e.target.value)}
-                className="w-full bg-gray-800 text-white rounded p-1 border border-gray-600 text-sm"
+                className="w-full bg-gray-800 text-white rounded-lg p-2.5 border border-gray-600 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               >
                 {models.map(model => (
                   <option key={model} value={model}>{model}</option>
@@ -206,9 +243,11 @@ export default function Settings({
               </select>
             </div>
 
+            <div className="border-t border-gray-700 my-4"></div>
+
             {/* Assistant Mode Toggle */}
-            <div className="flex items-center justify-between pt-2 border-t border-gray-700">
-              <span className="text-sm">Modo Gemini Live</span>
+            <div className="flex items-center justify-between">
+              <span className="text-sm font-medium">Modo Gemini Live</span>
               <button 
                 onClick={handleModeToggle}
                 className={`w-12 h-6 rounded-full transition-colors relative ${assistantMode === 'live' ? 'bg-purple-600' : 'bg-gray-600'}`}
@@ -219,28 +258,30 @@ export default function Settings({
 
             {/* Screen Share Toggle - Only visible in Live mode */}
             {assistantMode === 'live' && (
-              <div className="flex items-center justify-between">
-                <span className="text-sm">Compartilhar Tela 🖥️</span>
+              <div className="flex items-center justify-between bg-blue-900/20 p-2 rounded-lg border border-blue-900/50">
+                <span className="text-sm text-blue-200 flex items-center gap-2">
+                    🖥️ Compartilhar Tela
+                </span>
                 <button 
                   onClick={() => isSharing ? stopSharing() : startSharing()}
-                  className={`w-12 h-6 rounded-full transition-colors relative ${isSharing ? 'bg-blue-600' : 'bg-gray-600'}`}
+                  className={`w-10 h-5 rounded-full transition-colors relative ${isSharing ? 'bg-blue-500' : 'bg-gray-600'}`}
                 >
-                  <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${isSharing ? 'left-7' : 'left-1'}`} />
+                  <div className={`absolute top-1 w-3 h-3 bg-white rounded-full transition-transform ${isSharing ? 'left-6' : 'left-1'}`} />
                 </button>
               </div>
             )}
 
-            <div className="pt-2 border-t border-gray-700 space-y-2">
+            <div className="pt-2">
                 {/* Recording Status and Manual Save */}
                 {assistantMode === 'live' && (
-                  <div className="text-xs text-gray-400 mb-2">
+                  <div className="text-xs text-gray-400 mb-2 flex justify-center">
                     {isRecording ? (
-                      <span className="flex items-center gap-1">
-                        <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
-                        Gravação contínua ativa (buffer de 10 min)
+                      <span className="flex items-center gap-1.5 px-2 py-1 bg-red-900/30 rounded-full border border-red-900/50">
+                        <span className="w-1.5 h-1.5 bg-red-500 rounded-full animate-pulse"></span>
+                        Gravação contínua ativa
                       </span>
                     ) : (
-                      <span>Gravação contínua inativa</span>
+                      <span>Gravação inativa</span>
                     )}
                   </div>
                 )}
@@ -248,36 +289,24 @@ export default function Settings({
                 <button 
                     onClick={async () => {
                       if (assistantMode === 'live') {
-                        // In live mode, save last 30 seconds
                         const path = await saveLastSeconds(30);
-                        if (path) {
-                          console.log('Saved to:', path);
-                          alert(`Gravação salva em: ${path}`);
-                        }
+                        if (path) alert(`Gravação salva em: ${path}`);
                       } else {
-                        // In classic mode, toggle recording (old behavior can be added if needed)
                         isRecording ? stopRecording() : startRecording();
                       }
                     }}
-                    className={`w-full py-2 rounded text-sm transition-colors ${
+                    className={`w-full py-2.5 rounded-lg text-sm font-medium transition-all transform active:scale-95 ${
                         assistantMode === 'live'
-                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        ? 'bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white shadow-lg shadow-purple-900/30'
                         : isRecording 
-                          ? 'bg-red-600 animate-pulse text-white hover:bg-red-700' 
-                          : 'bg-green-600 hover:bg-green-700 text-white'
+                          ? 'bg-red-600 animate-pulse text-white' 
+                          : 'bg-green-600 hover:bg-green-500 text-white'
                     }`}
                 >
                     {assistantMode === 'live' 
-                      ? '💾 Salvar últimos 30s' 
+                      ? '💾 Salvar Replay (30s)' 
                       : (isRecording ? '⏹ Parar Gravação' : '📷 Analisar Tela')
                     }
-                </button>
-
-                <button 
-                    onClick={() => window.electron.openSettings()}
-                    className="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded text-sm transition-colors"
-                >
-                    Mais Configurações
                 </button>
             </div>
           </div>

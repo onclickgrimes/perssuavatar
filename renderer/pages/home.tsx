@@ -14,6 +14,7 @@ export default function HomePage() {
   const [selectedModel, setSelectedModel] = useState('Yuki');
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [showActionBar, setShowActionBar] = useState(false);
+  const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const isHoveringAvatarRef = useRef(false);
   
   const models = [
@@ -37,18 +38,22 @@ export default function HomePage() {
         setShowActionBar(prev => !prev);
       }
       // ESC to close
-      if (e.key === 'Escape' && showActionBar) {
-        setShowActionBar(false);
+      if (e.key === 'Escape') {
+         if (isSettingsOpen) {
+            setIsSettingsOpen(false);
+         } else if (showActionBar) {
+            setShowActionBar(false);
+         }
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [showActionBar]);
+  }, [showActionBar, isSettingsOpen]);
 
   const handleOpenSettings = () => {
-    window.electron.openSettings();
-    setShowActionBar(false);
+    // Open modal directly, do NOT toggle action bar
+    setIsSettingsOpen(true);
   };
 
   return (
@@ -78,6 +83,8 @@ export default function HomePage() {
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
         onScreenShareChange={setIsScreenSharing}
+        isOpen={isSettingsOpen}
+        onClose={() => setIsSettingsOpen(false)}
       />
 
       {/* Action Bar - Toggle with CTRL+M */}
