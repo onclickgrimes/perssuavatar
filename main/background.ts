@@ -4,6 +4,8 @@ import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import { VoiceAssistant } from './lib/voice-assistant';
 import ffmpeg from 'fluent-ffmpeg';
+import { initializeDatabase } from './lib/database';
+import { registerDatabaseHandlers } from './lib/database-handlers';
 
 const isProd = process.env.NODE_ENV === 'production'
 
@@ -31,6 +33,10 @@ if (isProd) {
 
 ; (async () => {
   await app.whenReady()
+
+  // Inicializa o banco de dados
+  initializeDatabase();
+  registerDatabaseHandlers();
 
   // Permissão de Microfone
   app.on('web-contents-created', (event, contents) => {

@@ -40,6 +40,7 @@ export default function Settings({
 
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
+  const [dbStats, setDbStats] = useState<any>(null);
   
   // Continuous recorder & Screen Share
   const { isRecording, startRecording, stopRecording, saveLastSeconds, getBufferInfo } = useContinuousRecorder({ maxBufferSeconds: 600 });
@@ -57,7 +58,22 @@ export default function Settings({
   useEffect(() => {
     const unsubscribe = window.electron.onSaveRecording(async (durationSeconds) => {
       const savedPath = await saveLastSeconds(durationSeconds);
-      if (savedPath) console.log(`[Settings] Recording saved to: ${savedPath}`);
+      if (savedPath) {
+        console.log(`[Settings] Recording saved to: ${savedPath}`);
+        
+        // Registrar gravação no banco de dados
+        try {
+          const filename = savedPath.split(/[\\/]/).pop() || 'recording.mp4';
+          await window.electron.db.addRecording({
+            filename,
+            path: savedPath,
+            duration: durationSeconds
+          });
+          console.log('💾 Gravação registrada no banco de dados');
+        } catch (error) {
+          console.error('❌ Erro ao registrar gravação:', error);
+        }
+      }
     });
     return () => { unsubscribe(); };
   }, [saveLastSeconds]);
@@ -70,13 +86,57 @@ export default function Settings({
     return () => unsubscribe();
   }, [isSharing, startSharing, stopSharing]);
 
+  // Carregar configurações do banco de dados ao iniciar
   useEffect(() => {
-    window.electron.setAssistantMode(assistantMode);
+    async function loadSettings() {
+      try {
+        const settings = await window.electron.db.getUserSettings();
+        console.log('📖 Configurações carregadas:', settings);
+        
+        if (settings) {
+          // Aplicar configurações carregadas
+          if (settings.assistantMode) {
+            setAssistantMode(settings.assistantMode);
+            window.electron.setAssistantMode(settings.assistantMode);
+          }
+          
+          if (typeof settings.alwaysOnTop !== 'undefined') {
+            setAlwaysOnTop(settings.alwaysOnTop);
+            window.electron.setAlwaysOnTop(settings.alwaysOnTop);
+          }
+          
+          if (settings.selectedModel) {
+            onModelChange(settings.selectedModel);
+          }
+        }
+      } catch (error) {
+        console.error('❌ Erro ao carregar configurações:', error);
+        // Se falhar, usa os defaults
+        window.electron.setAssistantMode(assistantMode);
+      }
+    }
+    
+    loadSettings();
   }, []);
 
   useEffect(() => {
     onScreenShareChange?.(isSharing);
   }, [isSharing, onScreenShareChange]);
+
+  // Salvar modelo selecionado no banco de dados quando mudar
+  useEffect(() => {
+    async function saveModel() {
+      if (selectedModel) {
+        try {
+          await window.electron.db.setUserSettings({ selectedModel });
+          console.log('💾 Modelo salvo:', selectedModel);
+        } catch (error) {
+          console.error('❌ Erro ao salvar modelo:', error);
+        }
+      }
+    }
+    saveModel();
+  }, [selectedModel]);
 
   // Handlers
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -100,16 +160,78 @@ export default function Settings({
 
 
 
-  const handleModeToggle = () => {
+  const handleModeToggle = async () => {
     const newMode = assistantMode === 'classic' ? 'live' : 'classic';
     setAssistantMode(newMode);
     window.electron.setAssistantMode(newMode);
+    
+    // Salvar no banco de dados
+    try {
+      await window.electron.db.setAssistantMode(newMode);
+      console.log('💾 Modo salvo:', newMode);
+    } catch (error) {
+      console.error('❌ Erro ao salvar modo:', error);
+    }
   };
 
-  const handleAlwaysOnTopToggle = () => {
+  const handleAlwaysOnTopToggle = async () => {
     const newState = !alwaysOnTop;
     setAlwaysOnTop(newState);
     window.electron.setAlwaysOnTop(newState);
+    
+    // Salvar no banco de dados
+    try {
+      await window.electron.db.setUserSettings({ alwaysOnTop: newState });
+      console.log('💾 Always on top salvo:', newState);
+    } catch (error) {
+      console.error('❌ Erro ao salvar always on top:', error);
+    }
+  };
+
+  // ================================================
+  // FUNÇÕES DO BANCO DE DADOS
+  // ================================================
+
+  // Carregar estatísticas do banco de dados
+  const loadDatabaseStats = async () => {
+    try {
+      const stats = await window.electron.db.getStats();
+      setDbStats(stats);
+      console.log('📊 Estatísticas carregadas:', stats);
+    } catch (error) {
+      console.error('❌ Erro ao carregar estatísticas:', error);
+    }
+  };
+
+  // Exportar dados do banco
+  const handleExportData = async () => {
+    try {
+      const data = await window.electron.db.export();
+      const json = JSON.stringify(data, null, 2);
+      const blob = new Blob([json], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `avatar-backup-${Date.now()}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      console.log('💾 Dados exportados com sucesso!');
+    } catch (error) {
+      console.error('❌ Erro ao exportar dados:', error);
+    }
+  };
+
+  // Limpar histórico de conversas
+  const handleClearHistory = async () => {
+    if (confirm('Tem certeza que deseja limpar todo o histórico de conversas?')) {
+      try {
+        await window.electron.db.clearConversationHistory();
+        await loadDatabaseStats(); // Atualiza estatísticas
+        console.log('🗑️ Histórico limpo!');
+      } catch (error) {
+        console.error('❌ Erro ao limpar histórico:', error);
+      }
+    }
   };
 
   if (!showSettings && isControlled) return null;
@@ -370,20 +492,98 @@ export default function Settings({
                    </div>
                 )}
 
-                {/* --- Ajuda (MOCKED) --- */}
+                {/* --- Ajuda & Dados --- */}
                 {activeTab === 'help' && (
-                   <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
-                      <div className="text-4xl">❓</div>
-                      <h3 className="text-xl font-medium text-white">Precisando de ajuda?</h3>
-                      <div className="grid grid-cols-2 gap-4 w-full max-w-md mt-4">
-                         <button className="p-4 bg-[#111] hover:bg-[#1a1a1a] border border-[#222] rounded-xl text-left transition-colors">
-                            <h4 className="font-bold text-white mb-1">Documentação</h4>
-                            <p className="text-xs text-gray-500">Guia completos e tutoriais.</p>
-                         </button>
-                         <button className="p-4 bg-[#111] hover:bg-[#1a1a1a] border border-[#222] rounded-xl text-left transition-colors">
-                            <h4 className="font-bold text-white mb-1">Suporte</h4>
-                            <p className="text-xs text-gray-500">Fale com nossa equipe.</p>
-                         </button>
+                   <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      <div>
+                         <h3 className="text-xl font-medium text-white mb-2">💾 Banco de Dados</h3>
+                         <p className="text-sm text-gray-400 mb-6">Gerencie seus dados e configurações salvas</p>
+                         
+                         {/* Estatísticas */}
+                         <div className="bg-gradient-to-br from-blue-900/20 to-purple-900/20 border border-blue-500/20 rounded-xl p-6 mb-6">
+                            <div className="flex items-center justify-between mb-4">
+                               <h4 className="text-lg font-semibold text-white">📊 Estatísticas</h4>
+                               <button 
+                                  onClick={loadDatabaseStats}
+                                  className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 text-blue-400 rounded-lg text-xs font-medium transition-colors"
+                               >
+                                  🔄 Atualizar
+                               </button>
+                            </div>
+                            
+                            {dbStats ? (
+                               <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                  <div className="bg-black/30 rounded-lg p-4 text-center">
+                                     <div className="text-2xl font-bold text-blue-400">{dbStats.conversationCount || 0}</div>
+                                     <div className="text-xs text-gray-400 mt-1">💬 Conversas</div>
+                                  </div>
+                                  <div className="bg-black/30 rounded-lg p-4 text-center">
+                                     <div className="text-2xl font-bold text-purple-400">{dbStats.recordingCount || 0}</div>
+                                     <div className="text-xs text-gray-400 mt-1">🎥 Gravações</div>
+                                  </div>
+                                  <div className="bg-black/30 rounded-lg p-4 text-center">
+                                     <div className="text-2xl font-bold text-green-400">{dbStats.screenshotCount || 0}</div>
+                                     <div className="text-xs text-gray-400 mt-1">📸 Screenshots</div>
+                                  </div>
+                                  <div className="bg-black/30 rounded-lg p-4 text-center">
+                                     <div className="text-2xl font-bold text-amber-400">✓</div>
+                                     <div className="text-xs text-gray-400 mt-1">⚙️ Configurado</div>
+                                  </div>
+                               </div>
+                            ) : (
+                               <div className="text-center py-8 text-gray-500">
+                                  <p className="mb-4">Clique em "Atualizar" para carregar as estatísticas</p>
+                               </div>
+                            )}
+                            
+                            {dbStats && (
+                               <div className="mt-4 pt-4 border-t border-white/10">
+                                  <p className="text-xs text-gray-500">
+                                     📁 Localização: <code className="text-blue-400">{dbStats.path}</code>
+                                  </p>
+                               </div>
+                            )}
+                         </div>
+                         
+                         {/* Ações */}
+                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <button 
+                               onClick={handleExportData}
+                               className="p-4 bg-[#111] hover:bg-[#1a1a1a] border border-[#222] rounded-xl text-left transition-colors group"
+                            >
+                               <div className="flex items-center gap-3 mb-2">
+                                  <span className="text-2xl">📦</span>
+                                  <h4 className="font-bold text-white group-hover:text-blue-400 transition-colors">Exportar Dados</h4>
+                               </div>
+                               <p className="text-xs text-gray-500">Salve um backup completo em JSON</p>
+                            </button>
+                            
+                            <button 
+                               onClick={handleClearHistory}
+                               className="p-4 bg-[#111] hover:bg-red-900/20 border border-[#222] hover:border-red-500/30 rounded-xl text-left transition-colors group"
+                            >
+                               <div className="flex items-center gap-3 mb-2">
+                                  <span className="text-2xl">🗑️</span>
+                                  <h4 className="font-bold text-white group-hover:text-red-400 transition-colors">Limpar Histórico</h4>
+                               </div>
+                               <p className="text-xs text-gray-500">Remove todas as conversas salvas</p>
+                            </button>
+                         </div>
+                      </div>
+                      
+                      {/* Seção de Ajuda */}
+                      <div className="pt-6 border-t border-[#222]">
+                         <h3 className="text-xl font-medium text-white mb-4">❓ Precisa de Ajuda?</h3>
+                         <div className="grid grid-cols-2 gap-4">
+                            <button className="p-4 bg-[#111] hover:bg-[#1a1a1a] border border-[#222] rounded-xl text-left transition-colors">
+                               <h4 className="font-bold text-white mb-1">📚 Documentação</h4>
+                               <p className="text-xs text-gray-500">Guias completos e tutoriais</p>
+                            </button>
+                            <button className="p-4 bg-[#111] hover:bg-[#1a1a1a] border border-[#222] rounded-xl text-left transition-colors">
+                               <h4 className="font-bold text-white mb-1">💬 Suporte</h4>
+                               <p className="text-xs text-gray-500">Fale com nossa equipe</p>
+                            </button>
+                         </div>
                       </div>
                    </div>
                 )}

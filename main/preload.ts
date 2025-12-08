@@ -102,6 +102,54 @@ const handler = {
     ipcRenderer.on('save-recording-command', subscription);
     return () => { ipcRenderer.removeListener('save-recording-command', subscription); };
   },
+  
+  // ========================================
+  // DATABASE FUNCTIONS
+  // ========================================
+  
+  // Método genérico invoke para todas as chamadas IPC
+  invoke: (channel: string, ...args: any[]) => ipcRenderer.invoke(channel, ...args),
+  
+  // User Settings (atalhos convenientes)
+  db: {
+    // User Settings
+    getUserSettings: () => ipcRenderer.invoke('db:get-user-settings'),
+    setUserSettings: (settings: any) => ipcRenderer.invoke('db:set-user-settings', settings),
+    getTTSProvider: () => ipcRenderer.invoke('db:get-tts-provider'),
+    setTTSProvider: (provider: 'elevenlabs' | 'polly' | 'deepgram') => 
+      ipcRenderer.invoke('db:set-tts-provider', provider),
+    getAssistantMode: () => ipcRenderer.invoke('db:get-assistant-mode'),
+    setAssistantMode: (mode: 'classic' | 'live') => 
+      ipcRenderer.invoke('db:set-assistant-mode', mode),
+    
+    // Conversation History
+    getConversationHistory: () => ipcRenderer.invoke('db:get-conversation-history'),
+    addConversation: (conversation: any) => ipcRenderer.invoke('db:add-conversation', conversation),
+    clearConversationHistory: () => ipcRenderer.invoke('db:clear-conversation-history'),
+    getRecentConversations: (limit?: number) => 
+      ipcRenderer.invoke('db:get-recent-conversations', limit),
+    
+    // Window State
+    getWindowState: () => ipcRenderer.invoke('db:get-window-state'),
+    saveWindowState: (state: any) => ipcRenderer.invoke('db:save-window-state', state),
+    
+    // Recordings
+    getRecordings: () => ipcRenderer.invoke('db:get-recordings'),
+    addRecording: (recording: any) => ipcRenderer.invoke('db:add-recording', recording),
+    deleteRecording: (recordingId: string) => ipcRenderer.invoke('db:delete-recording', recordingId),
+    getRecentRecordings: (limit?: number) => ipcRenderer.invoke('db:get-recent-recordings', limit),
+    
+    // Screenshots
+    getScreenshots: () => ipcRenderer.invoke('db:get-screenshots'),
+    addScreenshot: (screenshot: any) => ipcRenderer.invoke('db:add-screenshot', screenshot),
+    deleteScreenshot: (screenshotId: string) => ipcRenderer.invoke('db:delete-screenshot', screenshotId),
+    
+    // Utilities
+    getStats: () => ipcRenderer.invoke('db:get-stats'),
+    export: () => ipcRenderer.invoke('db:export'),
+    getPath: () => ipcRenderer.invoke('db:get-path'),
+    clearAll: () => ipcRenderer.invoke('db:clear-all')
+  }
 }
 
 contextBridge.exposeInMainWorld('electron', handler)
