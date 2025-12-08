@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface ActionBarProps {
   isVisible: boolean;
@@ -6,15 +6,129 @@ interface ActionBarProps {
   onOpenSettings: () => void;
 }
 
+type Assistant = {
+  id: string;
+  name: string;
+  subtitle: string;
+};
+
+const ASSISTANTS: Assistant[] = [
+  { id: 'general', name: 'Assistente Geral', subtitle: 'Integrado' },
+  { id: 'sales', name: 'Assistente de Vendas', subtitle: 'Integrado' },
+  { id: 'leetcode', name: 'Assistente LeetCode', subtitle: 'Integrado' },
+  { id: 'study', name: 'Assistente de Estudo', subtitle: 'Integrado' },
+  { id: 'tech', name: 'Candidato Tech', subtitle: 'Integrado' },
+];
+
 export default function ActionBar({ isVisible, onClose, onOpenSettings }: ActionBarProps) {
+  const [isDropdownOpen, setIsDropdownOpen] = useState(false);
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant>(ASSISTANTS[1]); // Sales Assistant por padrão
+
   if (!isVisible) return null;
+
+  const handleSelectAssistant = (assistant: Assistant) => {
+    setSelectedAssistant(assistant);
+    setIsDropdownOpen(false);
+  };
 
   return (
     <div 
       className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[500] flex flex-col items-center gap-2 no-drag font-sans pointer-events-auto"
     >
+      {/* Dropdown Menu */}
+      {isDropdownOpen && (
+        <div className="mb-2 bg-[#0a0a0a] border border-[#2a2a2a] rounded-2xl shadow-2xl min-w-max overflow-hidden animate-in fade-in slide-in-from-bottom-2 duration-200">
+          {/* Header */}
+          <div className="px-4 py-3 border-b border-[#2a2a2a] flex items-center gap-2 whitespace-nowrap">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" className="text-gray-400">
+              <path d="M12 2C7.58 2 4 5.58 4 10C4 12.91 5.6 15.46 8 16.82V19C8 19.55 8.45 20 9 20H15C15.55 20 16 19.55 16 19V16.82C18.4 15.46 20 12.91 20 10C20 5.58 16.42 2 12 2ZM12 11C11.45 11 11 10.55 11 10C11 9.45 11.45 9 12 9C12.55 9 13 9.45 13 10C13 10.55 12.55 11 12 11Z" opacity="0.8"/>
+            </svg>
+            <h3 className="text-white font-semibold text-sm">Selecionar Assistente</h3>
+          </div>
+
+          {/* Lista de Assistentes (com scroll) */}
+          <div className="max-h-64 overflow-y-auto overflow-x-hidden" style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#1a1a1a #0a0a0a'
+          }}>
+            <style jsx>{`
+              div::-webkit-scrollbar {
+                width: 6px;
+              }
+              div::-webkit-scrollbar-track {
+                background: #0a0a0a;
+              }
+              div::-webkit-scrollbar-thumb {
+                background: #1a1a1a;
+                border-radius: 3px;
+              }
+              div::-webkit-scrollbar-thumb:hover {
+                background: #252525;
+              }
+            `}</style>
+            {ASSISTANTS.map((assistant, index) => {
+              const isSelected = assistant.id === selectedAssistant.id;
+              
+              return (
+                <div key={assistant.id}>
+                  <button
+                    onClick={() => handleSelectAssistant(assistant)}
+                    className={`w-full px-4 py-3 flex items-center gap-3 transition-colors relative ${
+                      isSelected 
+                        ? 'bg-[#1a1a1a]' 
+                        : 'hover:bg-[#151515]'
+                    }`}
+                  >
+                    {/* Barra lateral branca para item selecionado */}
+                    {isSelected && (
+                      <div className="absolute left-0 top-0 bottom-0 w-1 bg-white rounded-r" />
+                    )}
+
+                    {/* Conteúdo do item */}
+                    <div className="flex-1 text-left ml-2">
+                      <div className="text-white text-sm font-medium">{assistant.name}</div>
+                      <div className="text-gray-500 text-xs">{assistant.subtitle}</div>
+                    </div>
+
+                    {/* Checkmark para item selecionado */}
+                    {isSelected && (
+                      <div className="w-5 h-5 rounded-full bg-gray-700 flex items-center justify-center flex-shrink-0">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      </div>
+                    )}
+                  </button>
+                  
+                  {/* Separador */}
+                  {index < ASSISTANTS.length - 1 && (
+                    <div className="mx-4 border-b border-[#1a1a1a]" />
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Footer - Gerenciar Assistentes */}
+          <div className="px-1 py-2 border-t border-[#2a2a2a]">
+            <button className="w-full flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2.5">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+              </svg>
+              <span className="text-white text-sm font-medium">Gerenciar Assistentes</span>
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* 1. Context Selector Button (Pílula Superior) */}
-      <button className="flex items-center gap-2 bg-[#141414] hover:bg-[#1f1f1f] transition-colors rounded-full px-4 py-1.5 shadow-lg border border-[#2a2a2a]">
+      <button 
+        onClick={() => setIsDropdownOpen(!isDropdownOpen)}
+        className={`flex items-center gap-2 bg-[#141414] hover:bg-[#1f1f1f] transition-all rounded-full px-4 py-1.5 shadow-lg border ${
+          isDropdownOpen ? 'border-white' : 'border-[#2a2a2a]'
+        }`}
+      >
         {/* Intelligence Icon */}
         <div className="text-gray-400">
            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
@@ -24,10 +138,18 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
         </div>
         
         {/* Text */}
-        <span className="text-white text-sm font-medium">Sales Assistant</span>
+        <span className="text-white text-sm font-medium">{selectedAssistant.name}</span>
         
-        {/* Chevron Down */}
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-gray-400 ml-1">
+        {/* Chevron (muda direção quando aberto) */}
+        <svg 
+          width="12" 
+          height="12" 
+          viewBox="0 0 24 24" 
+          fill="none" 
+          stroke="currentColor" 
+          strokeWidth="2.5" 
+          className={`text-gray-400 ml-1 transition-transform ${isDropdownOpen ? 'rotate-180' : ''}`}
+        >
           <path d="M6 9L12 15L18 9" />
         </svg>
       </button>
