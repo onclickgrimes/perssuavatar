@@ -29,6 +29,9 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const resizeHandleRef = useRef<HTMLDivElement>(null);
+  const [isResizing, setIsResizing] = useState(false);
+  const [isOverResizeHandle, setIsOverResizeHandle] = useState(false);
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
@@ -44,40 +47,63 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     return () => clearInterval(interval);
   }, []);
 
-  // Click-through for transparent areas
+  // Click-through for transparent areas - usando uma abordagem mais estável
   useEffect(() => {
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!containerRef.current) return;
+    // Estado inicial: permitir eventos do mouse
+    window.electron?.setIgnoreMouseEvents?.(false);
 
-      const rect = containerRef.current.getBoundingClientRect();
-      const isOverContainer = 
-        e.clientX >= rect.left &&
-        e.clientX <= rect.right &&
-        e.clientY >= rect.top &&
-        e.clientY <= rect.bottom;
+    let isMouseOverWindow = false;
 
-      if (isOverContainer) {
-        // Mouse is over the main container - capture events
+    const enableMouseEvents = () => {
+      if (!isMouseOverWindow || isResizing || isOverResizeHandle) {
+        isMouseOverWindow = true;
         window.electron?.setIgnoreMouseEvents?.(false);
-      } else {
-        // Mouse is over transparent area - click through
-        window.electron?.setIgnoreMouseEvents?.(true, { forward: true });
       }
     };
 
-    window.addEventListener('mousemove', handleMouseMove);
-    
+    const disableMouseEvents = (e: MouseEvent) => {
+      // Só desabilita se realmente saiu da janela e não está redimensionando ou sobre o handle
+      if (!isResizing && !isOverResizeHandle && containerRef.current) {
+        const rect = containerRef.current.getBoundingClientRect();
+        const isOutside = 
+          e.clientX < rect.left ||
+          e.clientX > rect.right ||
+          e.clientY < rect.top ||
+          e.clientY > rect.bottom;
+        
+        if (isOutside) {
+          isMouseOverWindow = false;
+          window.electron?.setIgnoreMouseEvents?.(true, { forward: true });
+        }
+      }
+    };
+
+    // Adicionar listeners nos elementos específicos
+    const container = containerRef.current;
+
+    if (container) {
+      container.addEventListener('mouseenter', enableMouseEvents);
+      container.addEventListener('mouseleave', disableMouseEvents as any);
+    }
+
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove);
+      if (container) {
+        container.removeEventListener('mouseenter', enableMouseEvents);
+        container.removeEventListener('mouseleave', disableMouseEvents as any);
+      }
       // Restore mouse events on unmount
       window.electron?.setIgnoreMouseEvents?.(false);
     };
-  }, []);
+  }, [isResizing, isOverResizeHandle]);
 
   // Manual resize implementation
   const handleResizeStart = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
+
+    setIsResizing(true);
+    // Garantir que os eventos do mouse sejam capturados durante o resize
+    window.electron?.setIgnoreMouseEvents?.(false);
 
     const startX = e.clientX;
     const startY = e.clientY;
@@ -95,6 +121,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     };
 
     const handleMouseUp = () => {
+      setIsResizing(false);
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
@@ -122,19 +149,19 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
         
         {/* Header */}
         <div 
-          className="h-14 bg-[#0f0f0f] flex items-center justify-between px-4 flex-shrink-0 border-b border-[#222]"
+          className="h-14 bg-[#0f0f0f] flex items-center justify-center px-2 sm:px-3 gap-2 sm:gap-3 flex-shrink-0 border-b border-[#222]"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           {/* Language Selector */}
-          <div className="flex items-center" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <div className="flex items-center flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <select 
               value={language}
               onChange={(e) => setLanguage(e.target.value)}
-              className="bg-[#1a1a1a] text-gray-300 text-xs px-3 py-1.5 rounded-lg border border-[#2a2a2a] focus:outline-none cursor-pointer appearance-none pr-8"
+              className="bg-[#1a1a1a] text-gray-300 text-xs px-2 sm:px-3 py-1.5 rounded-lg border border-[#2a2a2a] focus:outline-none cursor-pointer appearance-none pr-6 sm:pr-8 min-w-0"
               style={{
                 backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
                 backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 8px center'
+                backgroundPosition: 'right 6px center'
               }}
             >
               <option>🇧🇷 Portuguese (BR)</option>
@@ -143,27 +170,48 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
             </select>
           </div>
 
-          {/* Tab - Transcription */}
-          <div className="flex items-center gap-2 bg-[#1a1a1a] rounded-lg px-3 py-1.5 border border-[#2a2a2a]">
-            <span className="text-white text-xs font-medium">Transcrição</span>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-gray-400">
-              <polygon points="12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26"/>
-            </svg>
+          {/* Tab Toggle - Transcription/Summary */}
+          <div 
+            className="flex items-center bg-[#1a1a1a] rounded-lg p-0.5 border border-[#2a2a2a] flex-1 max-w-[200px] min-w-0 overflow-hidden"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+            <button
+              onClick={() => setActiveTab('transcription')}
+              className={`flex-1 flex items-center justify-center px-1.5 sm:px-2 py-1 rounded text-xs font-medium transition-all min-w-0 ${
+                activeTab === 'transcription'
+                  ? 'bg-[#2a2a2a] text-white'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              <span className="truncate">Transcrição</span>
+
+            </button>
+            <button
+              onClick={() => setActiveTab('summary')}
+              className={`flex-1 flex items-center justify-center px-1.5 sm:px-2 py-1 rounded text-xs font-medium transition-all min-w-0 ${
+                activeTab === 'summary'
+                  ? 'bg-[#2a2a2a] text-white'
+                  : 'text-gray-400 hover:text-gray-300'
+              }`}
+            >
+              <span className="truncate">Resumo</span>
+
+            </button>
           </div>
 
           {/* Controls */}
-          <div className="flex items-center gap-1.5 bg-[#1a1a1a] rounded-lg px-1.5 py-1 border border-[#2a2a2a]" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <div className="flex items-center gap-1 sm:gap-1.5 bg-[#1a1a1a] rounded-lg px-1 sm:px-1.5 py-1 border border-[#2a2a2a] flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <button
               onClick={() => setIsPaused(!isPaused)}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#252525] text-gray-400 hover:text-white transition-colors"
+              className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded hover:bg-[#252525] text-gray-400 hover:text-white transition-colors"
               title={isPaused ? 'Retomar' : 'Pausar'}
             >
               {isPaused ? (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M8 5v14l11-7z"/>
                 </svg>
               ) : (
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor">
+                <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
                   <path d="M6 4h4v16H6zM14 4h4v16h-4z"/>
                 </svg>
               )}
@@ -171,20 +219,20 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
             
             <button
               onClick={handleStop}
-              className="w-6 h-6 flex items-center justify-center rounded bg-red-600/10 hover:bg-red-600/20 text-red-500 hover:text-red-400 transition-colors"
+              className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded hover:bg-[#252525] bg-red-600/10 text-red-500 hover:text-red-400 transition-colors"
               title="Parar"
             >
-              <svg width="9" height="9" viewBox="0 0 24 24" fill="currentColor">
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor">
                 <rect x="5" y="5" width="14" height="14"/>
               </svg>
             </button>
 
             <button
               onClick={handleClose}
-              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#252525] text-gray-400 hover:text-white transition-colors"
+              className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded hover:bg-[#252525] text-gray-400 hover:text-white transition-colors"
               title="Fechar"
             >
-              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <line x1="5" y1="12" x2="19" y2="12"/>
               </svg>
             </button>
@@ -286,11 +334,24 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
 
         {/* Resize Handle */}
         <div 
+          ref={resizeHandleRef}
           onMouseDown={handleResizeStart}
-          className="absolute bottom-0 right-0 w-5 h-5 cursor-nwse-resize group"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          onMouseEnter={() => {
+            setIsOverResizeHandle(true);
+            // Garantir que os eventos sejam capturados quando sobre o resize handle
+            window.electron?.setIgnoreMouseEvents?.(false);
+          }}
+          onMouseLeave={() => {
+            setIsOverResizeHandle(false);
+          }}
+          className="absolute bottom-0 right-0 w-8 h-8 cursor-nwse-resize group z-50"
+          style={{ 
+            WebkitAppRegion: 'no-drag',
+            // Adicionar uma área maior de hit-testing
+            padding: '4px'
+          } as React.CSSProperties}
         >
-          <div className="absolute bottom-0.5 right-0.5 w-4 h-4 flex items-end justify-end">
+          <div className="absolute bottom-0.5 right-0.5 w-4 h-4 flex items-end justify-end pointer-events-none">
             <svg width="12" height="12" viewBox="0 0 16 16" className="text-gray-600 group-hover:text-gray-400 transition-colors">
               <path fill="currentColor" d="M16 0v16H0L16 0zM14 10l-4 4v-4h4zm0-4l-2 2H8l6-6v4z"/>
             </svg>

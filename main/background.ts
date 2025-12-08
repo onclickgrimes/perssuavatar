@@ -154,8 +154,8 @@ app.whenReady().then(() => {
     const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
     
     // Window size
-    const windowWidth = 400;
-    const windowHeight = 400;
+    const windowWidth = 500;
+    const windowHeight = 500;
     
     // Safety margins (pixels from screen edges)
     const margin = 50;
@@ -173,8 +173,8 @@ app.whenReady().then(() => {
       height: windowHeight,
       x,
       y,
-      minWidth: 300,
-      minHeight: 300,
+      minWidth: 400,
+      minHeight: 500,
       maxWidth: screenWidth - (margin * 2),
       maxHeight: screenHeight - (margin * 2),
       frame: false,
