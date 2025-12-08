@@ -58,6 +58,7 @@ const handler = {
   },
   resizeWindow: (width: number, height: number) => ipcRenderer.send('resize-window', width, height),
   openSettings: () => ipcRenderer.send('open-settings'),
+  setAlwaysOnTop: (enabled: boolean) => ipcRenderer.send('set-always-on-top', enabled),
   getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
   analyzeVideo: (buffer: ArrayBuffer) => ipcRenderer.send('analyze-video', buffer),
   onControlRecording: (callback: (action: 'start' | 'stop') => void) => {

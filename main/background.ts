@@ -47,6 +47,7 @@ if (isProd) {
     height: 600,
     transparent: true,
     frame: false,
+    alwaysOnTop: true, // Sobrepor todas as janelas por padrão
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false, // SEGURANÇA MÁXIMA
@@ -92,6 +93,15 @@ ipcMain.on('resize-window', (event, width, height) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win) {
     win.setSize(width, height);
+  }
+});
+
+// Always on top toggle
+ipcMain.on('set-always-on-top', (event, enabled: boolean) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setAlwaysOnTop(enabled);
+    console.log(`🪟 Always on top: ${enabled}`);
   }
 });
 

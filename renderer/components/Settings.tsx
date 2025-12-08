@@ -26,6 +26,7 @@ export default function Settings({
   const [dragEnabled, setDragEnabled] = useState(true);
   const [bgVisible, setBgVisible] = useState(false);
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
+  const [alwaysOnTop, setAlwaysOnTop] = useState(true); // Habilitado por padrão
   
   // Continuous recorder for background recording
   const { isRecording, isInitialized, startRecording, stopRecording, saveLastSeconds, getBufferInfo } = useContinuousRecorder({ maxBufferSeconds: 600 });
@@ -112,6 +113,12 @@ export default function Settings({
     window.electron.setAssistantMode(newMode);
   };
 
+  const handleAlwaysOnTopToggle = () => {
+    const newState = !alwaysOnTop;
+    setAlwaysOnTop(newState);
+    window.electron.setAlwaysOnTop(newState);
+  };
+
   return (
     <div 
       className="absolute top-4 right-4 z-[200] no-drag"
@@ -171,6 +178,17 @@ export default function Settings({
                 className={`w-12 h-6 rounded-full transition-colors relative ${bgVisible ? 'bg-green-600' : 'bg-gray-600'}`}
               >
                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${bgVisible ? 'left-7' : 'left-1'}`} />
+              </button>
+            </div>
+
+            {/* Always On Top Toggle */}
+            <div className="flex items-center justify-between">
+              <span className="text-sm">Sobrepor Janelas 📌</span>
+              <button 
+                onClick={handleAlwaysOnTopToggle}
+                className={`w-12 h-6 rounded-full transition-colors relative ${alwaysOnTop ? 'bg-green-600' : 'bg-gray-600'}`}
+              >
+                <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${alwaysOnTop ? 'left-7' : 'left-1'}`} />
               </button>
             </div>
 
