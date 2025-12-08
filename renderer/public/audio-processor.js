@@ -16,7 +16,7 @@ class AudioProcessor extends AudioWorkletProcessor {
     // Debug Info (Check console)
     // Note: 'sampleRate' is a global in AudioWorkletGlobalScope
     const currentRate = sampleRate;
-    console.log(`[AudioWorklet] Initialized. System SampleRate: ${currentRate}Hz. Target: ${this.targetSampleRate}Hz. Ratio: ${currentRate / this.targetSampleRate}`);
+    // console.log(`[AudioWorklet] Initialized. System SampleRate: ${currentRate}Hz. Target: ${this.targetSampleRate}Hz. Ratio: ${currentRate / this.targetSampleRate}`);
   }
 
   process(inputs, outputs, parameters) {

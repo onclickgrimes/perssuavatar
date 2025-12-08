@@ -24,6 +24,7 @@ export default function Avatar({ modelName, uiOpen }: AvatarProps) {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const isSpeakingRef = useRef(false);
   const isGesturingRef = useRef(false);
+  const uiOpenRef = useRef(uiOpen);
 
   const appRef = useRef<PIXI.Application | null>(null);
   const currentModelWrapperRef = useRef<PIXI.Container | null>(null);
@@ -145,6 +146,12 @@ export default function Avatar({ modelName, uiOpen }: AvatarProps) {
             }
         };
     }, [model, modelName]);
+
+  // Keep uiOpenRef in sync
+  useEffect(() => {
+    uiOpenRef.current = uiOpen;
+    console.log('[Avatar] uiOpen changed:', uiOpen);
+  }, [uiOpen]);
 
   // 1. Initialize PIXI App (Once)
   useEffect(() => {
@@ -643,60 +650,67 @@ export default function Avatar({ modelName, uiOpen }: AvatarProps) {
         console.log("🤖 AI Response:", text);
     });
 
-    // Only subscribe to global mouse tracking if UI is NOT open
-    let unsubscribeGlobalMouse = () => {};
+    // Subscribe to global mouse tracking ALWAYS - but hit test logic will check uiOpenRef
+    console.log('[Avatar] Creating global mouse listener. Current uiOpen:', uiOpenRef.current);
     
-    if (!uiOpen) {
-        console.log('[Avatar] Subscribing to global mouse tracking (UI is closed)');
-        unsubscribeGlobalMouse = window.electron.onGlobalMouseMove(({ x, y }) => {
-            // --- 1. Eye Tracking Logic ---
-            if (!model || isSpeakingRef.current || isGesturingRef.current) return;
-            const windowX = window.screenX;
-            const windowY = window.screenY;
-            const windowWidth = window.innerWidth;
-            const windowHeight = window.innerHeight;
-            const centerX = windowX + windowWidth / 2;
-            const centerY = windowY + windowHeight / 2;
-            const offsetX = x - centerX;
-            const offsetY = y - centerY;
-            const sensitivity = 1000; 
-            const lookX = Math.max(-1, Math.min(1, offsetX / sensitivity));
-            const lookY = Math.max(-1, Math.min(1, -offsetY / sensitivity)); 
-
-            if (model.internalModel && model.internalModel.focusController) {
-                model.internalModel.focusController.focus(lookX, lookY);
-            }
-
-            // --- 2. Hit Test Logic for Click-Through ---
-            if (currentModelWrapperRef.current && appRef.current) {
-                 // Convert global coordinates to canvas-local coordinates
-                 const localX = x - windowX;
-                 const localY = y - windowY;
-
-                 // Hit testing on the container
-                 const bounds = currentModelWrapperRef.current.getBounds();
-                 
-                 // Check if point is inside bounds
-                 const isInside = (
-                     localX >= bounds.x &&
-                     localX <= bounds.x + bounds.width &&
-                     localY >= bounds.y &&
-                     localY <= bounds.y + bounds.height
-                 );
-
-                 // Only change state if it transitions
-                 if (isInside) {
-                      window.electron.setIgnoreMouseEvents(false);
-                      canvasRef.current?.classList.add('drag');
-                 } else {
-                      window.electron.setIgnoreMouseEvents(true, { forward: true });
-                      canvasRef.current?.classList.remove('drag');
-                 }
-            }
-        });
-    } else {
-        console.log('[Avatar] NOT subscribing to global mouse tracking (UI is open)');
+    // If UI is currently open, immediately disable hit testing
+    if (uiOpenRef.current) {
+        console.log('[Avatar] UI is open on listener creation - ensuring mouse events are enabled');
+        window.electron.setIgnoreMouseEvents(false);
     }
+    
+    const unsubscribeGlobalMouse = window.electron.onGlobalMouseMove(({ x, y }) => {
+        // --- 1. Eye Tracking Logic ---
+        if (!model || isSpeakingRef.current || isGesturingRef.current) return;
+        const windowX = window.screenX;
+        const windowY = window.screenY;
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+        const centerX = windowX + windowWidth / 2;
+        const centerY = windowY + windowHeight / 2;
+        const offsetX = x - centerX;
+        const offsetY = y - centerY;
+        const sensitivity = 1000; 
+        const lookX = Math.max(-1, Math.min(1, offsetX / sensitivity));
+        const lookY = Math.max(-1, Math.min(1, -offsetY / sensitivity)); 
+
+        if (model.internalModel && model.internalModel.focusController) {
+            model.internalModel.focusController.focus(lookX, lookY);
+        }
+
+        // --- 2. Hit Test Logic for Click-Through ---
+        // ALWAYS check uiOpenRef before modifying mouse events
+        if (uiOpenRef.current) {
+            // UI is open - don't interfere with mouse events
+            return;
+        }
+        
+        if (currentModelWrapperRef.current && appRef.current) {
+             // Convert global coordinates to canvas-local coordinates
+             const localX = x - windowX;
+             const localY = y - windowY;
+
+             // Hit testing on the container
+             const bounds = currentModelWrapperRef.current.getBounds();
+             
+             // Check if point is inside bounds
+             const isInside = (
+                 localX >= bounds.x &&
+                 localX <= bounds.x + bounds.width &&
+                 localY >= bounds.y &&
+                 localY <= bounds.y + bounds.height
+             );
+
+             // Only change state if it transitions
+             if (isInside) {
+                  window.electron.setIgnoreMouseEvents(false);
+                  canvasRef.current?.classList.add('drag');
+             } else {
+                  window.electron.setIgnoreMouseEvents(true, { forward: true });
+                  canvasRef.current?.classList.remove('drag');
+             }
+        }
+    });
 
     const unsubscribeAvatarAction = window.electron.onAvatarAction(({ type, value }) => {
         console.log(`Received Avatar Action IPC: ${type} -> ${value}`);
@@ -739,6 +753,7 @@ export default function Avatar({ modelName, uiOpen }: AvatarProps) {
         : () => {};
 
     return () => {
+        console.log('[Avatar] Cleaning up listeners and audio contexts');
         unsubscribeAudio();
         unsubscribeAudioChunk();
         unsubscribeAudioEnd();
@@ -759,7 +774,7 @@ export default function Avatar({ modelName, uiOpen }: AvatarProps) {
         });
         pcmPendingSourcesRef.current.clear();
     };
-  }, [model, uiOpen]);
+  }, [model]);
 
   return <canvas ref={canvasRef} className="w-full h-full" />;
 }
