@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useScreenRecorder } from '../hooks/useScreenRecorder';
+import { useContinuousRecorder } from '../hooks/useContinuousRecorder';
 import { useScreenShare } from '../hooks/useScreenShare';
 
 interface SettingsProps {
@@ -27,27 +27,37 @@ export default function Settings({
   const [bgVisible, setBgVisible] = useState(false);
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   
-  const { isRecording, startRecording, stopRecording, setMode: setRecorderMode } = useScreenRecorder({ mode: assistantMode });
+  // Continuous recorder for background recording
+  const { isRecording, isInitialized, startRecording, stopRecording, saveLastSeconds, getBufferInfo } = useContinuousRecorder({ maxBufferSeconds: 600 });
   const { isSharing, startSharing, stopSharing, error: shareError } = useScreenShare({ fps: 1 });
 
+  // Start continuous recording when in live mode
   useEffect(() => {
-    // Listen for voice commands to control recording
-    const unsubscribe = window.electron.onControlRecording((action) => {
-      console.log(`[IPC] Received control-recording action: ${action}`);
-      if (action === 'start') {
-        if (!isRecording) {
-            console.log("Starting recording via Voice Command");
-            startRecording();
-        }
-      } else if (action === 'stop') {
-        if (isRecording) {
-            console.log("Stopping recording via Voice Command");
-            stopRecording();
-        }
+    if (assistantMode === 'live' && !isRecording) {
+      console.log('[Settings] Starting continuous recording for live mode...');
+      startRecording();
+    } else if (assistantMode === 'classic' && isRecording) {
+      console.log('[Settings] Stopping continuous recording for classic mode...');
+      stopRecording();
+    }
+  }, [assistantMode, isRecording, startRecording, stopRecording]);
+
+  // Listen for voice commands to save recording
+  useEffect(() => {
+    const unsubscribe = window.electron.onSaveRecording(async (durationSeconds) => {
+      console.log(`[IPC] Received save-recording command: ${durationSeconds}s`);
+      const bufferInfo = getBufferInfo();
+      console.log(`[Settings] Buffer info: ${bufferInfo.duration.toFixed(1)}s, ${(bufferInfo.size / 1024 / 1024).toFixed(2)} MB`);
+      
+      const savedPath = await saveLastSeconds(durationSeconds);
+      if (savedPath) {
+        console.log(`[Settings] Recording saved to: ${savedPath}`);
+      } else {
+        console.warn('[Settings] Failed to save recording');
       }
     });
-    return () => unsubscribe();
-  }, [isRecording, startRecording, stopRecording]);
+    return () => { unsubscribe(); };
+  }, [saveLastSeconds, getBufferInfo]);
 
   // Listen for voice commands to control screen share
   useEffect(() => {
@@ -99,7 +109,6 @@ export default function Settings({
   const handleModeToggle = () => {
     const newMode = assistantMode === 'classic' ? 'live' : 'classic';
     setAssistantMode(newMode);
-    setRecorderMode(newMode); // Update recorder mode to prevent large IPC in live mode
     window.electron.setAssistantMode(newMode);
   };
 
@@ -204,15 +213,46 @@ export default function Settings({
             )}
 
             <div className="pt-2 border-t border-gray-700 space-y-2">
+                {/* Recording Status and Manual Save */}
+                {assistantMode === 'live' && (
+                  <div className="text-xs text-gray-400 mb-2">
+                    {isRecording ? (
+                      <span className="flex items-center gap-1">
+                        <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></span>
+                        Gravação contínua ativa (buffer de 10 min)
+                      </span>
+                    ) : (
+                      <span>Gravação contínua inativa</span>
+                    )}
+                  </div>
+                )}
+                
                 <button 
-                    onClick={() => isRecording ? stopRecording() : startRecording()}
+                    onClick={async () => {
+                      if (assistantMode === 'live') {
+                        // In live mode, save last 30 seconds
+                        const path = await saveLastSeconds(30);
+                        if (path) {
+                          console.log('Saved to:', path);
+                          alert(`Gravação salva em: ${path}`);
+                        }
+                      } else {
+                        // In classic mode, toggle recording (old behavior can be added if needed)
+                        isRecording ? stopRecording() : startRecording();
+                      }
+                    }}
                     className={`w-full py-2 rounded text-sm transition-colors ${
-                        isRecording 
-                        ? 'bg-red-600 animate-pulse text-white hover:bg-red-700' 
-                        : 'bg-green-600 hover:bg-green-700 text-white'
+                        assistantMode === 'live'
+                        ? 'bg-purple-600 hover:bg-purple-700 text-white'
+                        : isRecording 
+                          ? 'bg-red-600 animate-pulse text-white hover:bg-red-700' 
+                          : 'bg-green-600 hover:bg-green-700 text-white'
                     }`}
                 >
-                    {isRecording ? '⏹ Parar Gravação' : '📷 Analisar Tela (Max 20MB)'}
+                    {assistantMode === 'live' 
+                      ? '💾 Salvar últimos 30s' 
+                      : (isRecording ? '⏹ Parar Gravação' : '📷 Analisar Tela')
+                    }
                 </button>
 
                 <button 

@@ -3,9 +3,25 @@ import { app, ipcMain, BrowserWindow, screen, desktopCapturer } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import { VoiceAssistant } from './lib/voice-assistant';
+import ffmpeg from 'fluent-ffmpeg';
+
+const isProd = process.env.NODE_ENV === 'production'
+
+// Get ffmpeg path - different for dev vs prod
+let ffmpegPath: string;
+if (isProd) {
+    // In production, ffmpeg-static will be in asar.unpacked
+    ffmpegPath = require('ffmpeg-static');
+    ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+} else {
+    // In development, use the path directly from node_modules
+    ffmpegPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg.exe');
+}
+console.log('FFmpeg path:', ffmpegPath);
+ffmpeg.setFfmpegPath(ffmpegPath);
+
 export let mainWindow;
 const assistant = new VoiceAssistant('elevenlabs');
-const isProd = process.env.NODE_ENV === 'production'
 
 if (isProd) {
   serve({ directory: 'app' })
@@ -125,6 +141,150 @@ ipcMain.handle('get-screen-sources', async () => {
     }));
 });
 
+// Store last saved recording path
+let lastRecordingPath: string | null = null;
+
+// Temp directory for recording segments
+const fs = require('fs');
+const recordingTempDir = path.join(app.getPath('userData'), 'recording_buffer');
+console.log('Recording temp dir:', recordingTempDir);
+// Ensure temp directory exists
+if (!fs.existsSync(recordingTempDir)) {
+    fs.mkdirSync(recordingTempDir, { recursive: true });
+}
+
+// Save a recording segment to disk
+ipcMain.handle('save-segment', async (event, buffer: ArrayBuffer, segmentId: string) => {
+    const nodeBuffer = Buffer.from(buffer);
+    const segmentPath = path.join(recordingTempDir, `segment_${segmentId}.webm`);
+    
+    fs.writeFileSync(segmentPath, nodeBuffer);
+    console.log(`📹 Segment saved: ${segmentPath} (${(nodeBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+    
+    return segmentPath;
+});
+
+// Delete old segments
+ipcMain.handle('delete-segments', async (event, segmentPaths: string[]) => {
+    for (const segmentPath of segmentPaths) {
+        try {
+            if (fs.existsSync(segmentPath)) {
+                fs.unlinkSync(segmentPath);
+            }
+        } catch (err) {
+            console.warn(`Failed to delete segment: ${segmentPath}`, err);
+        }
+    }
+    return true;
+});
+
+// Concatenate segments into final MP4 video file using FFmpeg
+ipcMain.handle('concatenate-segments', async (event, segmentPaths: string[], outputFilename: string) => {
+    const videosPath = app.getPath('videos');
+    
+    // Change extension to .mp4
+    const mp4Filename = outputFilename.replace('.webm', '.mp4');
+    const outputPath = path.join(videosPath, mp4Filename);
+    
+    // Filter out non-existent segments
+    const validPaths = segmentPaths.filter(p => fs.existsSync(p));
+    
+    if (validPaths.length === 0) {
+        console.warn('No segments to concatenate');
+        return null;
+    }
+    
+    console.log(`🎥 Converting ${validPaths.length} segments to MP4...`);
+    
+    return new Promise<string | null>((resolve) => {
+        let ffmpegCommand = ffmpeg();
+        
+        if (validPaths.length === 1) {
+            // Single segment - just convert directly
+            ffmpegCommand = ffmpegCommand.input(validPaths[0]);
+        } else {
+            // Multiple segments - use concat demuxer
+            const concatFilePath = path.join(recordingTempDir, 'concat_list.txt');
+            const concatContent = validPaths.map(p => `file '${p.replace(/\\/g, '/')}'`).join('\n');
+            fs.writeFileSync(concatFilePath, concatContent);
+            
+            ffmpegCommand = ffmpegCommand
+                .input(concatFilePath)
+                .inputOptions(['-f', 'concat', '-safe', '0']);
+        }
+        
+        ffmpegCommand
+            .outputOptions([
+                '-c:v', 'copy',           // Copy video stream (fast)
+                '-c:a', 'aac',            // Re-encode audio to AAC (MP4 compatible)
+                '-b:a', '192k',           // Audio bitrate
+                '-movflags', '+faststart', // Enable seeking from start
+                '-y'                       // Overwrite output
+            ])
+            .output(outputPath)
+            .on('start', (cmd) => {
+                console.log(`🎬 FFmpeg started: ${cmd}`);
+            })
+            .on('progress', (progress) => {
+                if (progress.percent) {
+                    console.log(`🎬 Converting: ${progress.percent.toFixed(1)}%`);
+                }
+            })
+            .on('end', () => {
+                console.log(`🎥 Recording saved: ${outputPath}`);
+                
+                // Clean up concat file if it exists
+                const concatFilePath = path.join(recordingTempDir, 'concat_list.txt');
+                try { fs.unlinkSync(concatFilePath); } catch {}
+                
+                // Store for later reference
+                lastRecordingPath = outputPath;
+                assistant.setLastRecordingPath(outputPath);
+                
+                resolve(outputPath);
+            })
+            .on('error', (err, stdout, stderr) => {
+                console.error('FFmpeg error:', err.message);
+                console.error('FFmpeg stderr:', stderr);
+                
+                // Fallback: just concatenate webm files
+                console.log('Falling back to raw concatenation...');
+                const buffers: Buffer[] = [];
+                for (const segmentPath of validPaths) {
+                    const data = fs.readFileSync(segmentPath);
+                    buffers.push(data);
+                }
+                const combined = Buffer.concat(buffers);
+                const webmPath = path.join(videosPath, outputFilename);
+                fs.writeFileSync(webmPath, combined);
+                
+                lastRecordingPath = webmPath;
+                assistant.setLastRecordingPath(webmPath);
+                
+                resolve(webmPath);
+            })
+            .run();
+    });
+});
+
+// Legacy: Save recording buffer to file (for compatibility)
+ipcMain.handle('save-recording', async (event, buffer: ArrayBuffer, filename: string) => {
+    const nodeBuffer = Buffer.from(buffer);
+    
+    // Save to user's Videos folder or app data
+    const videosPath = app.getPath('videos');
+    const savePath = path.join(videosPath, filename);
+    
+    fs.writeFileSync(savePath, nodeBuffer);
+    console.log(`🎥 Recording saved: ${savePath} (${(nodeBuffer.length / 1024 / 1024).toFixed(2)} MB)`);
+    
+    // Store for later reference
+    lastRecordingPath = savePath;
+    assistant.setLastRecordingPath(savePath);
+    
+    return savePath;
+});
+
 ipcMain.on('analyze-video', (event, buffer) => {
     const nodeBuffer = Buffer.from(buffer);
     
@@ -211,6 +371,13 @@ assistant.on('control-screen-share', (action) => {
     if (mainWindow && !mainWindow.isDestroyed()) {
         console.log(`[IPC] Sending control-screen-share: ${action}`);
         mainWindow.webContents.send('control-screen-share', action);
+    }
+});
+
+assistant.on('save-recording', (durationSeconds: number) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        console.log(`[IPC] Sending save-recording-command: ${durationSeconds}s`);
+        mainWindow.webContents.send('save-recording-command', durationSeconds);
     }
 });
 

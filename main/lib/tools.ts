@@ -115,18 +115,17 @@ export const geminiLiveTools = {
       },
     },
     {
-      name: "control_screen_recording",
-      description: "Start or stop SCREEN RECORDING (video) to record what happens on screen over time. Use this when the user explicitly asks to RECORD or GRAVAR the screen.",
+      name: "save_screen_recording",
+      description: "Save a screen recording of the last X seconds or minutes. The screen is being continuously recorded in the background, and this function saves a clip of the specified duration. Use when the user asks to 'save the last 30 seconds', 'record/gravar the last 5 minutes', 'save what just happened', etc.",
       parameters: {
         type: "OBJECT",
         properties: {
-          action: {
-            type: "STRING",
-            enum: ["start", "stop"],
-            description: "The action to perform: 'start' to begin recording, 'stop' to end recording.",
+          duration_seconds: {
+            type: "NUMBER",
+            description: "The number of seconds to save from the recording buffer. For example: 30 for 30 seconds, 60 for 1 minute, 300 for 5 minutes. Maximum is 600 seconds (10 minutes).",
           },
         },
-        required: ["action"],
+        required: ["duration_seconds"],
       },
     },
     {

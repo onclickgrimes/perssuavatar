@@ -85,8 +85,25 @@ const handler = {
     return () => { ipcRenderer.removeListener('control-screen-share', subscription); };
   },
   sendScreenFrame: (base64Image: string) => ipcRenderer.send('screen-frame', base64Image),
+  // Segment-based recording (disk-based for low RAM usage)
+  saveSegment: (buffer: ArrayBuffer, segmentId: string): Promise<string> =>
+    ipcRenderer.invoke('save-segment', buffer, segmentId),
+  deleteSegments: (segmentPaths: string[]): Promise<boolean> =>
+    ipcRenderer.invoke('delete-segments', segmentPaths),
+  concatenateSegments: (segmentPaths: string[], outputFilename: string): Promise<string | null> =>
+    ipcRenderer.invoke('concatenate-segments', segmentPaths, outputFilename),
+  // Legacy: Save recording buffer to file
+  saveRecording: (buffer: ArrayBuffer, filename: string): Promise<string> => 
+    ipcRenderer.invoke('save-recording', buffer, filename),
+  // Listen for save recording command from voice
+  onSaveRecording: (callback: (durationSeconds: number) => void) => {
+    const subscription = (_: any, durationSeconds: number) => callback(durationSeconds);
+    ipcRenderer.on('save-recording-command', subscription);
+    return () => { ipcRenderer.removeListener('save-recording-command', subscription); };
+  },
 }
 
 contextBridge.exposeInMainWorld('electron', handler)
 
 export type IpcHandler = typeof handler
+export type ElectronHandler = typeof handler

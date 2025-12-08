@@ -29,6 +29,7 @@ export class VoiceAssistant extends EventEmitter {
   private geminiLiveService: GeminiLiveService;
   private mode: 'classic' | 'live' = 'classic';
   private aiProvider: 'openai' | 'gemini' = 'gemini';  // AI provider for classic mode
+  private lastRecordingPath: string | null = null;  // Path to the last saved recording
 
   constructor(ttsProvider: "polly" | "elevenlabs" = "elevenlabs") {
     super();
@@ -139,24 +140,17 @@ export class VoiceAssistant extends EventEmitter {
                     };
                 }
                 
-            } else if (toolCall.name === 'control_screen_recording') {
-                const action = toolCall.args?.action;
-                console.log(`[VoiceAssistant] Control screen recording: ${action}`);
+            } else if (toolCall.name === 'save_screen_recording') {
+                const durationSeconds = toolCall.args?.duration_seconds || 30;
+                console.log(`[VoiceAssistant] Save screen recording: last ${durationSeconds} seconds`);
                 
-                // Emit event for the main process to handle
-                this.emit('control-recording', action);
+                // Emit event for the frontend to save the recording
+                this.emit('save-recording', durationSeconds);
                 
-                if (action === 'start') {
-                    result = { 
-                        success: true, 
-                        message: 'Screen recording started. You are now recording the screen. Confirm briefly to the user that recording has begun.' 
-                    };
-                } else {
-                    result = { 
-                        success: true, 
-                        message: 'Screen recording stopped and saved. You were watching the screen in real-time during the recording, so you already know what happened. Respond about what you observed during the recording.' 
-                    };
-                }
+                result = { 
+                    success: true, 
+                    message: `Saving the last ${durationSeconds} seconds of screen recording. The file will be saved and you can reference it later. Confirm to the user that you're saving the recording.`
+                };
                 
             } else if (toolCall.name === 'take_screenshot') {
                 console.log(`[VoiceAssistant] Take screenshot requested`);
@@ -316,6 +310,21 @@ export class VoiceAssistant extends EventEmitter {
    */
   public getMode(): 'classic' | 'live' {
       return this.mode;
+  }
+
+  /**
+   * Set the path of the last saved recording
+   */
+  public setLastRecordingPath(path: string) {
+      this.lastRecordingPath = path;
+      console.log(`[VoiceAssistant] Last recording path set: ${path}`);
+  }
+
+  /**
+   * Get the path of the last saved recording
+   */
+  public getLastRecordingPath(): string | null {
+      return this.lastRecordingPath;
   }
 
   private async processUserMessage(text: string) {
