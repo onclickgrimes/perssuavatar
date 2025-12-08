@@ -10,7 +10,7 @@ export default function HomePage() {
   useMicrophone();
 
   const [dragEnabled, setDragEnabled] = useState(true);
-  const [bgVisible, setBgVisible] = useState(false);
+
   const [selectedModel, setSelectedModel] = useState('Yuki');
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [showActionBar, setShowActionBar] = useState(false);
@@ -57,7 +57,7 @@ export default function HomePage() {
   };
 
   return (
-    <div className={`w-screen h-screen overflow-hidden ${bgVisible ? 'bg-gray-900/80' : 'bg-transparent'}`}>
+    <div className="w-screen h-screen overflow-hidden bg-transparent">
       {/* Drag Handle */}
       {dragEnabled && (
         <div 
@@ -78,7 +78,7 @@ export default function HomePage() {
       <Settings 
         onSizeChange={handleSizeChange}
         onDragToggle={setDragEnabled}
-        onBackgroundToggle={setBgVisible}
+
         models={models}
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
