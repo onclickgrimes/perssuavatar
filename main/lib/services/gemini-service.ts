@@ -1,12 +1,32 @@
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, FunctionDeclaration, Content, FunctionCallingMode } from "@google/generative-ai";
 import * as dotenv from 'dotenv';
 import { EventEmitter } from 'events';
 
 dotenv.config();
 
+export interface GeminiMessage {
+    role: 'user' | 'assistant' | 'system' | 'tool';
+    content: string;
+    tool_call_id?: string;
+}
+
+export interface GeminiToolCall {
+    id: string;
+    function: {
+        name: string;
+        arguments: string;
+    };
+}
+
+export interface GeminiChatResponse {
+    content: string | null;
+    tool_calls?: GeminiToolCall[];
+}
+
 export class GeminiService extends EventEmitter {
     private genAI: GoogleGenerativeAI;
     private model: any;
+    private chatModel: any;
 
     constructor() {
         super();
@@ -16,6 +36,104 @@ export class GeminiService extends EventEmitter {
         }
         this.genAI = new GoogleGenerativeAI(apiKey);
         this.model = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+        this.chatModel = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+    }
+
+    /**
+     * Get chat completion with optional function calling (similar to OpenAI)
+     */
+    public async getChatCompletion(messages: GeminiMessage[], tools?: FunctionDeclaration[]): Promise<GeminiChatResponse> {
+        try {
+            // Convert messages to Gemini format
+            const systemInstruction = messages.find(m => m.role === 'system')?.content || '';
+            const chatMessages = messages.filter(m => m.role !== 'system');
+            
+            // Build contents array for Gemini
+            const contents: Content[] = [];
+            
+            for (const msg of chatMessages) {
+                if (msg.role === 'user') {
+                    contents.push({
+                        role: 'user',
+                        parts: [{ text: msg.content }]
+                    });
+                } else if (msg.role === 'assistant') {
+                    contents.push({
+                        role: 'model',
+                        parts: [{ text: msg.content }]
+                    });
+                } else if (msg.role === 'tool') {
+                    // Tool response - needs to be function response
+                    contents.push({
+                        role: 'function',
+                        parts: [{
+                            functionResponse: {
+                                name: msg.tool_call_id || 'unknown',
+                                response: { result: msg.content }
+                            }
+                        }]
+                    } as any);
+                }
+            }
+
+            // Create model with tools if provided
+            const modelConfig: any = {
+                model: "gemini-2.5-flash-lite",
+                systemInstruction: systemInstruction
+            };
+
+            if (tools && tools.length > 0) {
+                modelConfig.tools = [{ functionDeclarations: tools }];
+                modelConfig.toolConfig = {
+                    functionCallingConfig: {
+                        mode: FunctionCallingMode.AUTO
+                    }
+                };
+            }
+
+            const model = this.genAI.getGenerativeModel(modelConfig);
+            
+            const result = await model.generateContent({
+                contents: contents
+            });
+
+            const response = result.response;
+            const candidate = response.candidates?.[0];
+            
+            if (!candidate) {
+                throw new Error("No response candidate from Gemini");
+            }
+
+            // Check for function calls
+            const functionCalls = candidate.content?.parts?.filter((p: any) => p.functionCall);
+            
+            if (functionCalls && functionCalls.length > 0) {
+                const toolCalls: GeminiToolCall[] = functionCalls.map((fc: any, index: number) => ({
+                    id: fc.functionCall.name + '_' + index,
+                    function: {
+                        name: fc.functionCall.name,
+                        arguments: JSON.stringify(fc.functionCall.args || {})
+                    }
+                }));
+
+                return {
+                    content: null,
+                    tool_calls: toolCalls
+                };
+            }
+
+            // Regular text response
+            const textParts = candidate.content?.parts?.filter((p: any) => p.text);
+            const text = textParts?.map((p: any) => p.text).join('') || '';
+
+            return {
+                content: text
+            };
+
+        } catch (error) {
+            console.error("GeminiService getChatCompletion Error:", error);
+            throw error;
+        }
     }
 
      /**

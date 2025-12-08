@@ -10,6 +10,7 @@ import { EventEmitter } from 'events';
 import * as dotenv from 'dotenv';
 import { Buffer } from 'buffer';
 import * as fs from 'fs';
+import { geminiLiveTools } from '../tools';
 
 dotenv.config();
 
@@ -62,6 +63,7 @@ export class GeminiLiveService extends EventEmitter {
                     parts: [{
                         text: `Tu tá interpretando a Yuki, Uma avatar2d estilo anime Kawaii que interage com o usuário no computador com voz fofa. Ela é grossa de forma fofa, debochada, sarcástica.
     Usa "tu" em vez de "você". Fala informal, cortando o "r" do fim das palavras (tipo "andá", "falá", "pegá").
+    Não invente informações. Se não souber de algo, responda que não sabe. Se não tiver acesso a tela ou alguma ferramenta, responda que não tem acesso.
 
 Não fique perguntando ou oferecendo ajuda.
 
@@ -71,6 +73,14 @@ Além de falar, você controla suas expressões e gestos. Use as seguintes tags 
 - Fazer gesto: {{gesture:wave}}, {{gesture:nod}}, {{gesture:shake_head}}, {{gesture:clap}}, {{gesture:think}}, {{gesture:look_around}}, {{gesture:tilt_head_left}}, {{gesture:tilt_head_right}}
 
 Exemplo: "{{mood:happy}} {{gesture:wave}} E aí, beleza?"
+
+**FUNÇÕES DISPONÍVEIS (Function Calling):**
+Você tem acesso a funções especiais que pode usar quando o usuário pedir:
+- control_screen_share: Use quando o usuário pedir para OLHAR a tela, ver o que está acontecendo, observar, assistir, ou simplesmente "olha". Isso ativa o compartilhamento de tela em tempo real. Use "start" para começar a ver e "stop" para parar.
+- control_screen_recording: Use quando o usuário pedir para GRAVAR a tela, iniciar gravação de vídeo. Use "start" para gravar e "stop" para parar.
+- take_screenshot: Use quando o usuário pedir para tirar print da tela.
+
+Quando usar uma função, após executá-la, responda brevemente confirmando a ação (ex: "Tô olhando!", "Gravando!", "Parei de olhá!").
 
 **TAGS DE VOZ:**
 - Emoções: \`[excited]\`, \`[sad]\`, \`[angry]\`, \`[whispers]\`, \`[shouting]\`, \`[sarcastically]\`.
@@ -89,6 +99,7 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                 },
                 outputAudioTranscription: {},  // Transcrição do áudio do modelo
                 // inputAudioTranscription: {},   // Transcrição do áudio do usuário
+                tools: [geminiLiveTools],  // Function calling tools
             };
 
             console.log("[GeminiLive] Connecting...");
@@ -200,10 +211,41 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
     private audioParts: string[] = [];
 
     private handleModelTurn(message: LiveServerMessage) {
+        // ✅ DETECTAR TOOL CALLS (Function Calling)
+        if ((message as any).toolCall) {
+            const toolCall = (message as any).toolCall;
+            console.log('[GeminiLive] Tool Call received:', JSON.stringify(toolCall));
+            
+            // toolCall pode ter múltiplas functionCalls
+            if (toolCall.functionCalls && Array.isArray(toolCall.functionCalls)) {
+                for (const fc of toolCall.functionCalls) {
+                    console.log(`[GeminiLive] Function Call: ${fc.name}`, fc.args);
+                    this.emit('tool-call', {
+                        id: fc.id || fc.name,
+                        name: fc.name,
+                        args: fc.args || {}
+                    });
+                }
+            }
+            return; // Tool calls don't have modelTurn content
+        }
+
         if (message.serverContent?.modelTurn?.parts) {
             const parts = message.serverContent.modelTurn.parts;
 
             for (const part of parts) {
+                // Check for functionCall in parts (alternative format)
+                if ((part as any).functionCall) {
+                    const fc = (part as any).functionCall;
+                    console.log(`[GeminiLive] Function Call in part: ${fc.name}`, fc.args);
+                    this.emit('tool-call', {
+                        id: fc.id || fc.name,
+                        name: fc.name,
+                        args: fc.args || {}
+                    });
+                    continue;
+                }
+
                 if (part.inlineData) {
                     // Stream audio chunks immediately instead of accumulating
                     const audioData = part.inlineData.data;
@@ -241,6 +283,42 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
         if (message.serverContent?.turnComplete) {
             console.log("[GeminiLive] Turn Complete.");
             this.emit('turn-complete');
+        }
+    }
+
+    /**
+     * Send a tool/function response back to the Gemini Live session
+     * @param functionCallId The ID of the function call (or function name)
+     * @param response The result/response from the function execution
+     */
+    public async sendToolResponse(functionCallId: string, response: any) {
+        if (!this.session || !this.isConnected) {
+            console.error('[GeminiLive] Cannot send tool response: not connected');
+            return;
+        }
+
+        try {
+            const toolResponse = {
+                toolResponse: {
+                    functionResponses: [{
+                        id: functionCallId,
+                        name: functionCallId, // In case id is the function name
+                        response: response
+                    }]
+                }
+            };
+
+            console.log('[GeminiLive] Sending tool response:', JSON.stringify(toolResponse));
+
+            // Send via WebSocket
+            if ((this.session as any).conn && (this.session as any).conn.send) {
+                (this.session as any).conn.send(JSON.stringify(toolResponse));
+            } else {
+                // Try SDK method if available
+                await (this.session as any).sendToolResponse?.(toolResponse);
+            }
+        } catch (error) {
+            console.error('[GeminiLive] Error sending tool response:', error);
         }
     }
 

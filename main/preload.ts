@@ -79,6 +79,11 @@ const handler = {
     ipcRenderer.on('audio-interrupted', subscription);
     return () => ipcRenderer.removeListener('audio-interrupted', subscription);
   },
+  onControlScreenShare: (callback: (action: 'start' | 'stop') => void) => {
+    const subscription = (_: any, action: 'start' | 'stop') => callback(action);
+    ipcRenderer.on('control-screen-share', subscription);
+    return () => { ipcRenderer.removeListener('control-screen-share', subscription); };
+  },
   sendScreenFrame: (base64Image: string) => ipcRenderer.send('screen-frame', base64Image),
 }
 

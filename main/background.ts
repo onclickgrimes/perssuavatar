@@ -133,9 +133,21 @@ ipcMain.on('analyze-video', (event, buffer) => {
     require('fs').writeFileSync(debugPath, nodeBuffer);
     console.log(`🎥 Vídeo salvo para debug em: ${debugPath}`);
 
-    assistant.analyzeVideo(nodeBuffer).catch(err => {
-        console.error("Error analyzing video:", err);
-    });
+    // Check current mode
+    const currentMode = assistant.getMode();
+    console.log(`🎥 Modo atual: ${currentMode}`);
+
+    if (currentMode === 'live') {
+        // In Live mode, the Gemini Live already has real-time screen context
+        // We just notify that recording stopped - Gemini Live will respond with native audio
+        console.log("🎥 Modo Live: Gemini Live já tem contexto da tela em tempo real");
+        // The tool response was already sent, Gemini Live will generate audio response
+    } else {
+        // In Classic mode, use Gemini for video analysis + TTS
+        assistant.analyzeVideo(nodeBuffer).catch(err => {
+            console.error("Error analyzing video:", err);
+        });
+    }
 });
 
 // Eventos do Assistant -> Frontend
@@ -195,6 +207,13 @@ assistant.on('avatar-action', (type, value) => {
     }
 });
 
+assistant.on('control-screen-share', (action) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+        console.log(`[IPC] Sending control-screen-share: ${action}`);
+        mainWindow.webContents.send('control-screen-share', action);
+    }
+});
+
 assistant.on('take-screenshot', async () => {
     try {
         console.log("📸 Tirando screenshot...");
@@ -219,12 +238,22 @@ assistant.on('take-screenshot', async () => {
             require('fs').writeFileSync(debugPath, resizedImage.toPNG());
             console.log(`📸 Screenshot salvo em: ${debugPath}`);
 
-            const base64Image = resizedImage.toPNG().toString('base64');
-            
-            // Send back to assistant for analysis
-            assistant.analyzeScreenshot(base64Image).catch(err => {
-                console.error("Erro ao analisar screenshot:", err);
-            });
+            // Check current mode
+            const currentMode = assistant.getMode();
+            console.log(`📸 Modo atual: ${currentMode}`);
+
+            if (currentMode === 'live') {
+                // In Live mode, send image directly to Gemini Live
+                const base64Image = resizedImage.toJPEG(80).toString('base64'); // JPEG for smaller size
+                console.log("📸 Enviando screenshot para Gemini Live...");
+                assistant.sendScreenFrame(base64Image);
+            } else {
+                // In Classic mode, use OpenAI for analysis
+                const base64Image = resizedImage.toPNG().toString('base64');
+                assistant.analyzeScreenshot(base64Image).catch(err => {
+                    console.error("Erro ao analisar screenshot:", err);
+                });
+            }
         }
     } catch (error) {
         console.error("Erro ao capturar screenshot:", error);

@@ -1,6 +1,11 @@
 import { useState, useRef, useCallback } from 'react';
 
-export const useScreenRecorder = () => {
+interface UseScreenRecorderOptions {
+    mode?: 'classic' | 'live';
+}
+
+export const useScreenRecorder = (options: UseScreenRecorderOptions = {}) => {
+    const { mode = 'classic' } = options;
     const [isRecording, setIsRecording] = useState(false);
     const mediaRecorderRef = useRef<MediaRecorder | null>(null);
     const chunksRef = useRef<Blob[]>([]);
@@ -8,6 +13,7 @@ export const useScreenRecorder = () => {
     const stopTimeoutRef = useRef<NodeJS.Timeout | null>(null);
     const debugIntervalRef = useRef<NodeJS.Timeout | null>(null);
     const startTimeRef = useRef<number>(0);
+    const modeRef = useRef<'classic' | 'live'>(mode);
 
     const stopRecording = useCallback(() => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -143,10 +149,16 @@ export const useScreenRecorder = () => {
             mediaRecorder.onstop = async () => {
                 console.log("Gravação finalizada. Processando...");
                 const blob = new Blob(chunksRef.current, { type: 'video/webm' });
-                const arrayBuffer = await blob.arrayBuffer();
                 
-                console.log(`Enviando vídeo para análise (${(blob.size / 1024 / 1024).toFixed(2)} MB)...`);
-                window.electron.analyzeVideo(arrayBuffer);
+                // In Live mode, don't send the video via IPC (Gemini Live already has real-time screen context)
+                // This prevents the app from freezing due to large IPC payload
+                if (modeRef.current === 'live') {
+                    console.log(`Modo Live: Ignorando envio de vídeo (${(blob.size / 1024 / 1024).toFixed(2)} MB) - Gemini Live já tem contexto em tempo real`);
+                } else {
+                    console.log(`Enviando vídeo para análise (${(blob.size / 1024 / 1024).toFixed(2)} MB)...`);
+                    const arrayBuffer = await blob.arrayBuffer();
+                    window.electron.analyzeVideo(arrayBuffer);
+                }
                 
                 // Cleanup
                 if (stream) stream.getTracks().forEach(track => track.stop());
@@ -179,9 +191,15 @@ export const useScreenRecorder = () => {
         }
     }, [stopRecording]);
 
+    // Function to update mode reference
+    const setMode = useCallback((newMode: 'classic' | 'live') => {
+        modeRef.current = newMode;
+    }, []);
+
     return {
         isRecording,
         startRecording,
-        stopRecording
+        stopRecording,
+        setMode
     };
 };

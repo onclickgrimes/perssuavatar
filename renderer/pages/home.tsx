@@ -11,6 +11,7 @@ export default function HomePage() {
   const [dragEnabled, setDragEnabled] = useState(true);
   const [bgVisible, setBgVisible] = useState(false);
   const [selectedModel, setSelectedModel] = useState('Yuki');
+  const [isScreenSharing, setIsScreenSharing] = useState(false);
   
   const models = [
     'Yuki', 'Haru', 'Hiyori', 'Mao', 'Mark', 'Natori', 'Rice', 'Wanko', 'Yuino', 'DevilYuki'
@@ -43,7 +44,19 @@ export default function HomePage() {
         models={models}
         selectedModel={selectedModel}
         onModelChange={setSelectedModel}
+        onScreenShareChange={setIsScreenSharing}
       />
+
+      {/* Screen Share Indicator - Eye icon at bottom right */}
+      {isScreenSharing && (
+        <div 
+          className="absolute bottom-4 right-4 z-[300] flex items-center gap-2 bg-blue-600/90 backdrop-blur-sm px-3 py-2 rounded-full shadow-lg animate-pulse"
+          title="Yuki está olhando sua tela"
+        >
+          <span className="text-xl">👁️</span>
+          {/* <span className="text-white text-sm font-medium">Olhando</span> */}
+        </div>
+      )}
     </div>
   );
 }

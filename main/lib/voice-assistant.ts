@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { tools } from './tools';
+import { tools, geminiTools } from './tools';
 import { DeepgramService } from './services/deepgram-service';
 import { OpenAIService } from './services/openai-service';
 import { GeminiService } from './services/gemini-service';
@@ -28,6 +28,7 @@ export class VoiceAssistant extends EventEmitter {
   // New Services and State
   private geminiLiveService: GeminiLiveService;
   private mode: 'classic' | 'live' = 'classic';
+  private aiProvider: 'openai' | 'gemini' = 'gemini';  // AI provider for classic mode
 
   constructor(ttsProvider: "polly" | "elevenlabs" = "elevenlabs") {
     super();
@@ -109,6 +110,68 @@ export class VoiceAssistant extends EventEmitter {
     this.geminiLiveService.on('interrupted', () => {
         if (this.mode === 'live') {
             this.emit('interrupted');
+        }
+    });
+
+    // Handle tool calls from Gemini Live (function calling)
+    this.geminiLiveService.on('tool-call', async (toolCall: { id: string, name: string, args: any }) => {
+        if (this.mode === 'live') {
+            console.log(`[VoiceAssistant] Gemini Live tool call: ${toolCall.name}`, toolCall.args);
+            
+            let result: any = { success: true };
+            
+            if (toolCall.name === 'control_screen_share') {
+                const action = toolCall.args?.action;
+                console.log(`[VoiceAssistant] Control screen share: ${action}`);
+                
+                // Emit event for the frontend to handle
+                this.emit('control-screen-share', action);
+                
+                if (action === 'start') {
+                    result = { 
+                        success: true, 
+                        message: 'Screen sharing started. You can now see the user screen in real-time. Confirm briefly that you are now watching.' 
+                    };
+                } else {
+                    result = { 
+                        success: true, 
+                        message: 'Screen sharing stopped. You can no longer see the screen. Confirm that you stopped watching.' 
+                    };
+                }
+                
+            } else if (toolCall.name === 'control_screen_recording') {
+                const action = toolCall.args?.action;
+                console.log(`[VoiceAssistant] Control screen recording: ${action}`);
+                
+                // Emit event for the main process to handle
+                this.emit('control-recording', action);
+                
+                if (action === 'start') {
+                    result = { 
+                        success: true, 
+                        message: 'Screen recording started. You are now recording the screen. Confirm briefly to the user that recording has begun.' 
+                    };
+                } else {
+                    result = { 
+                        success: true, 
+                        message: 'Screen recording stopped and saved. You were watching the screen in real-time during the recording, so you already know what happened. Respond about what you observed during the recording.' 
+                    };
+                }
+                
+            } else if (toolCall.name === 'take_screenshot') {
+                console.log(`[VoiceAssistant] Take screenshot requested`);
+                
+                // Emit event for the main process to handle
+                // The screenshot will be sent as a screen frame right after
+                this.emit('take-screenshot');
+                result = { 
+                    success: true, 
+                    message: 'Screenshot captured and being sent to you now. Please analyze the image that follows and describe what you see on the screen.' 
+                };
+            }
+            
+            // Send the tool response back to Gemini Live
+            await this.geminiLiveService.sendToolResponse(toolCall.id, result);
         }
     });
   }
@@ -233,6 +296,28 @@ export class VoiceAssistant extends EventEmitter {
       }
   }
 
+  /**
+   * Set the AI provider for classic mode ('openai' or 'gemini')
+   */
+  public setAIProvider(provider: 'openai' | 'gemini') {
+      console.log(`[VoiceAssistant] Switching AI provider to: ${provider}`);
+      this.aiProvider = provider;
+  }
+
+  /**
+   * Get the current AI provider
+   */
+  public getAIProvider(): 'openai' | 'gemini' {
+      return this.aiProvider;
+  }
+
+  /**
+   * Get the current mode ('classic' or 'live')
+   */
+  public getMode(): 'classic' | 'live' {
+      return this.mode;
+  }
+
   private async processUserMessage(text: string) {
     if (this.isProcessing) return;
     this.isProcessing = true;
@@ -258,13 +343,20 @@ export class VoiceAssistant extends EventEmitter {
           `;
       }
 
-      // First AI Call
+      // First AI Call - use selected provider
       const messages = [
         { role: "system", content: currentSystemPrompt },
         ...this.conversationHistory
       ];
 
-      let message = await this.openAIService.getChatCompletion(messages, tools);
+      let message: any;
+      if (this.aiProvider === 'gemini') {
+        console.log('[VoiceAssistant] Using Gemini for classic mode');
+        message = await this.geminiService.getChatCompletion(messages, geminiTools);
+      } else {
+        console.log('[VoiceAssistant] Using OpenAI for classic mode');
+        message = await this.openAIService.getChatCompletion(messages, tools);
+      }
       
       let aiContent = message?.content;
       const toolCalls = message?.tool_calls;
@@ -272,7 +364,16 @@ export class VoiceAssistant extends EventEmitter {
       let shortFeedbackPhrase = "";
 
       if (toolCalls) {
-          this.conversationHistory.push(message); 
+          // For Gemini, we need to store the message differently
+          if (this.aiProvider === 'gemini') {
+              // Store as assistant message with function calls info
+              this.conversationHistory.push({ 
+                  role: 'assistant', 
+                  content: `[Function calls: ${toolCalls.map((tc: any) => tc.function.name).join(', ')}]`
+              });
+          } else {
+              this.conversationHistory.push(message); 
+          }
 
           for (const toolCall of toolCalls) {
               const fnName = (toolCall as any).function.name;
@@ -298,7 +399,7 @@ export class VoiceAssistant extends EventEmitter {
 
                   this.conversationHistory.push({
                       role: "tool",
-                      tool_call_id: toolCall.id,
+                      tool_call_id: this.aiProvider === 'gemini' ? fnName : toolCall.id,
                       content: `Screen recording action '${args.action}' executed successfully.`
                   });
               } else if (fnName === 'take_screenshot') {
@@ -310,7 +411,7 @@ export class VoiceAssistant extends EventEmitter {
 
                   this.conversationHistory.push({
                       role: "tool",
-                      tool_call_id: toolCall.id,
+                      tool_call_id: this.aiProvider === 'gemini' ? fnName : toolCall.id,
                       content: `Screenshot captured and sent for analysis.`
                   });
                   
@@ -334,13 +435,19 @@ export class VoiceAssistant extends EventEmitter {
                   { role: "system", content: currentSystemPrompt },
                   ...this.conversationHistory
               ];
-              const secondMessage = await this.openAIService.getChatCompletion(followUpMessages);
+              
+              let secondMessage: any;
+              if (this.aiProvider === 'gemini') {
+                  secondMessage = await this.geminiService.getChatCompletion(followUpMessages);
+              } else {
+                  secondMessage = await this.openAIService.getChatCompletion(followUpMessages);
+              }
               aiContent = secondMessage?.content;
           }
       }
 
       if (!aiContent) {
-           if (!toolCalls) throw new Error("Resposta vazia da OpenAI");
+           if (!toolCalls) throw new Error("Resposta vazia da AI");
            return;
       }
 

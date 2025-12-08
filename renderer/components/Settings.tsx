@@ -9,6 +9,7 @@ interface SettingsProps {
   models: string[];
   selectedModel: string;
   onModelChange: (model: string) => void;
+  onScreenShareChange?: (isSharing: boolean) => void;
 }
 
 export default function Settings({ 
@@ -17,7 +18,8 @@ export default function Settings({
   onBackgroundToggle,
   models,
   selectedModel,
-  onModelChange
+  onModelChange,
+  onScreenShareChange
 }: SettingsProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [size, setSize] = useState(1);
@@ -25,7 +27,7 @@ export default function Settings({
   const [bgVisible, setBgVisible] = useState(false);
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   
-  const { isRecording, startRecording, stopRecording } = useScreenRecorder();
+  const { isRecording, startRecording, stopRecording, setMode: setRecorderMode } = useScreenRecorder({ mode: assistantMode });
   const { isSharing, startSharing, stopSharing, error: shareError } = useScreenShare({ fps: 1 });
 
   useEffect(() => {
@@ -47,10 +49,34 @@ export default function Settings({
     return () => unsubscribe();
   }, [isRecording, startRecording, stopRecording]);
 
+  // Listen for voice commands to control screen share
+  useEffect(() => {
+    const unsubscribe = window.electron.onControlScreenShare((action) => {
+      console.log(`[IPC] Received control-screen-share action: ${action}`);
+      if (action === 'start') {
+        if (!isSharing) {
+            console.log("Starting screen share via Voice Command");
+            startSharing();
+        }
+      } else if (action === 'stop') {
+        if (isSharing) {
+            console.log("Stopping screen share via Voice Command");
+            stopSharing();
+        }
+      }
+    });
+    return () => unsubscribe();
+  }, [isSharing, startSharing, stopSharing]);
+
   // Set initial assistant mode on mount
   useEffect(() => {
     window.electron.setAssistantMode(assistantMode);
   }, []);
+
+  // Notify parent when screen share state changes
+  useEffect(() => {
+    onScreenShareChange?.(isSharing);
+  }, [isSharing, onScreenShareChange]);
 
   const handleSizeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newSize = parseFloat(e.target.value);
@@ -73,6 +99,7 @@ export default function Settings({
   const handleModeToggle = () => {
     const newMode = assistantMode === 'classic' ? 'live' : 'classic';
     setAssistantMode(newMode);
+    setRecorderMode(newMode); // Update recorder mode to prevent large IPC in live mode
     window.electron.setAssistantMode(newMode);
   };
 
