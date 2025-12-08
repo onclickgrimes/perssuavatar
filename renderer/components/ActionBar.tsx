@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import AssistantManager from './AssistantManager';
 
 interface ActionBarProps {
   isVisible: boolean;
@@ -23,6 +24,7 @@ const ASSISTANTS: Assistant[] = [
 export default function ActionBar({ isVisible, onClose, onOpenSettings }: ActionBarProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const [selectedAssistant, setSelectedAssistant] = useState<Assistant>(ASSISTANTS[1]); // Sales Assistant por padrão
+  const [isManagerOpen, setIsManagerOpen] = useState(false);
 
   if (!isVisible) return null;
 
@@ -32,6 +34,7 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
   };
 
   return (
+    <>
     <div 
       className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[500] flex flex-col items-center gap-2 no-drag font-sans pointer-events-auto"
     >
@@ -111,7 +114,13 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
 
           {/* Footer - Gerenciar Assistentes */}
           <div className="px-1 py-2 border-t border-[#2a2a2a]">
-            <button className="w-full flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2.5">
+            <button 
+              onClick={() => {
+                setIsManagerOpen(true);
+                setIsDropdownOpen(false);
+              }}
+              className="w-full flex items-center justify-center gap-2 bg-[#1a1a1a] hover:bg-[#252525] transition-colors rounded-lg px-4 py-2.5"
+            >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white">
                 <circle cx="12" cy="12" r="3"></circle>
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
@@ -233,5 +242,9 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
 
       </div>
     </div>
+
+    {/* Assistant Manager Modal */}
+    <AssistantManager isOpen={isManagerOpen} onClose={() => setIsManagerOpen(false)} />
+    </>
   );
 }

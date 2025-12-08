@@ -314,7 +314,10 @@ export default function Settings({
              </div>
 
              {/* Content Area */}
-             <div className="flex-1 bg-black p-8 overflow-y-auto custom-scrollbar">
+             <div className="flex-1 bg-black p-8 overflow-y-auto" style={{
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#1a1a1a #0a0a0a'
+            }}>
                 
                 {/* --- API e Modelos (MOCKED) --- */}
                 {activeTab === 'api' && (
