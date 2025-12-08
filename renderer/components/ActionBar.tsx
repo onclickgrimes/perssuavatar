@@ -38,14 +38,17 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
         
         {/* A. Left Section (Tools & Navigation) */}
         <div className="flex items-center gap-1 px-2">
-          {/* Drag Handle */}
-          <div className="cursor-grab active:cursor-grabbing text-gray-500 hover:text-gray-300 p-1 mr-1 drag">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
-               <path d="M5 9C6.10457 9 7 9.89543 7 11V13C7 14.1046 6.10457 15 5 15C3.89543 15 3 14.1046 3 13V11C3 9.89543 3.89543 9 5 9Z" />
-               <path d="M12 9C13.1046 9 14 9.89543 14 11V13C14 14.1046 13.1046 15 12 15C10.8954 15 10 14.1046 10 13V11C10 9.89543 10.8954 9 12 9Z" />
-               <path d="M19 9C20.1046 9 21 9.89543 21 11V13C21 14.1046 20.1046 15 19 15C17.8954 15 17 14.1046 17 13V11C17 9.89543 17.8954 9 19 9Z" />
+          {/* Close Button */}
+          <button 
+            onClick={onClose}
+            className="w-8 h-8 flex items-center justify-center rounded-full bg-[#252525] hover:bg-red-600/20 text-gray-400 hover:text-red-400 transition-all shadow-sm group mr-1"
+            title="Fechar (ESC)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"></line>
+              <line x1="6" y1="6" x2="18" y2="18"></line>
             </svg>
-          </div>
+          </button>
 
           {/* Settings Button */}
           <button 
