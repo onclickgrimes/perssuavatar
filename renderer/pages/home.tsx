@@ -54,24 +54,30 @@ export default function HomePage() {
     setIsSettingsOpen(true);
   };
 
+  // When UI is open (ActionBar or Settings), disable click-through to allow interaction
+  useEffect(() => {
+    const uiOpen = showActionBar || isSettingsOpen;
+    
+    console.log('[HomePage] UI Open state changed:', { showActionBar, isSettingsOpen, uiOpen });
+    
+    if (uiOpen) {
+      // UI is open: capture all mouse events
+      // Use timeout to ensure this runs after any pending Avatar hit test
+      const timer = setTimeout(() => {
+        console.log('[HomePage] Forcing setIgnoreMouseEvents(false) - UI is open');
+        window.electron.setIgnoreMouseEvents(false);
+      }, 10);
+      
+      return () => clearTimeout(timer);
+    } else {
+      // UI closed: Avatar.tsx hit test logic will take over
+      console.log('[HomePage] UI closed - Avatar hit test will manage mouse events');
+    }
+  }, [showActionBar, isSettingsOpen]);
+
   return (
     <div className="w-screen h-screen overflow-hidden bg-transparent">
-      {/* Drag Handle */}
-      {dragEnabled && (
-        <div 
-            className="absolute top-0 left-0 w-full h-full z-[50] cursor-move drag" 
-            onMouseEnter={() => {
-              window.electron.setIgnoreMouseEvents(false);
-              isHoveringAvatarRef.current = true;
-            }}
-            onMouseLeave={() => {
-              window.electron.setIgnoreMouseEvents(true, { forward: true });
-              isHoveringAvatarRef.current = false;
-            }}
-        />
-      )}
-      
-      <Avatar modelName={selectedModel} />
+      <Avatar modelName={selectedModel} uiOpen={showActionBar || isSettingsOpen} />
       <CodePopup />
       <Settings 
         onSizeChange={handleSizeChange}

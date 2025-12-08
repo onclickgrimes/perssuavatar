@@ -82,12 +82,12 @@ ipcMain.on('message', async (event, arg) => {
 
 
 // Controle de cliques (Click-through)
-// ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
-//   const win = BrowserWindow.fromWebContents(event.sender);
-//   if (win) {
-//     win.setIgnoreMouseEvents(ignore, options);
-//   }
-// });
+ipcMain.on('set-ignore-mouse-events', (event, ignore, options) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setIgnoreMouseEvents(ignore, options);
+  }
+});
 
 ipcMain.on('resize-window', (event, width, height) => {
   const win = BrowserWindow.fromWebContents(event.sender);

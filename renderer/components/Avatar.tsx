@@ -15,9 +15,10 @@ declare global {
 
 interface AvatarProps {
   modelName: string;
+  uiOpen: boolean;
 }
 
-export default function Avatar({ modelName }: AvatarProps) {
+export default function Avatar({ modelName, uiOpen }: AvatarProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [model, setModel] = useState<any>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
@@ -293,10 +294,9 @@ export default function Avatar({ modelName }: AvatarProps) {
     };
   }, [modelName]); // Re-run when modelName changes
 
-  // 3. Audio/LipSync (Existing logic) - relies on 'model' state
+  // 3. Audio/LipSync - relies on 'model' state
   useEffect(() => {
     if (!model) return;
-    // ... existing logic ...
     // --- Streaming Audio Logic ---
 
     const cleanupAudio = () => {
@@ -643,24 +643,60 @@ export default function Avatar({ modelName }: AvatarProps) {
         console.log("🤖 AI Response:", text);
     });
 
-    const unsubscribeGlobalMouse = window.electron.onGlobalMouseMove(({ x, y }) => {
-        if (!model || isSpeakingRef.current || isGesturingRef.current) return;
-        const windowX = window.screenX;
-        const windowY = window.screenY;
-        const windowWidth = window.innerWidth;
-        const windowHeight = window.innerHeight;
-        const centerX = windowX + windowWidth / 2;
-        const centerY = windowY + windowHeight / 2;
-        const offsetX = x - centerX;
-        const offsetY = y - centerY;
-        const sensitivity = 1000; 
-        const lookX = Math.max(-1, Math.min(1, offsetX / sensitivity));
-        const lookY = Math.max(-1, Math.min(1, -offsetY / sensitivity)); 
+    // Only subscribe to global mouse tracking if UI is NOT open
+    let unsubscribeGlobalMouse = () => {};
+    
+    if (!uiOpen) {
+        console.log('[Avatar] Subscribing to global mouse tracking (UI is closed)');
+        unsubscribeGlobalMouse = window.electron.onGlobalMouseMove(({ x, y }) => {
+            // --- 1. Eye Tracking Logic ---
+            if (!model || isSpeakingRef.current || isGesturingRef.current) return;
+            const windowX = window.screenX;
+            const windowY = window.screenY;
+            const windowWidth = window.innerWidth;
+            const windowHeight = window.innerHeight;
+            const centerX = windowX + windowWidth / 2;
+            const centerY = windowY + windowHeight / 2;
+            const offsetX = x - centerX;
+            const offsetY = y - centerY;
+            const sensitivity = 1000; 
+            const lookX = Math.max(-1, Math.min(1, offsetX / sensitivity));
+            const lookY = Math.max(-1, Math.min(1, -offsetY / sensitivity)); 
 
-        if (model.internalModel && model.internalModel.focusController) {
-            model.internalModel.focusController.focus(lookX, lookY);
-        }
-    });
+            if (model.internalModel && model.internalModel.focusController) {
+                model.internalModel.focusController.focus(lookX, lookY);
+            }
+
+            // --- 2. Hit Test Logic for Click-Through ---
+            if (currentModelWrapperRef.current && appRef.current) {
+                 // Convert global coordinates to canvas-local coordinates
+                 const localX = x - windowX;
+                 const localY = y - windowY;
+
+                 // Hit testing on the container
+                 const bounds = currentModelWrapperRef.current.getBounds();
+                 
+                 // Check if point is inside bounds
+                 const isInside = (
+                     localX >= bounds.x &&
+                     localX <= bounds.x + bounds.width &&
+                     localY >= bounds.y &&
+                     localY <= bounds.y + bounds.height
+                 );
+
+                 // Only change state if it transitions
+                 if (isInside) {
+                      window.electron.setIgnoreMouseEvents(false);
+                      canvasRef.current?.classList.add('drag');
+                 } else {
+                      window.electron.setIgnoreMouseEvents(true, { forward: true });
+                      canvasRef.current?.classList.remove('drag');
+                 }
+            }
+        });
+    } else {
+        console.log('[Avatar] NOT subscribing to global mouse tracking (UI is open)');
+    }
 
     const unsubscribeAvatarAction = window.electron.onAvatarAction(({ type, value }) => {
         console.log(`Received Avatar Action IPC: ${type} -> ${value}`);
@@ -723,7 +759,7 @@ export default function Avatar({ modelName }: AvatarProps) {
         });
         pcmPendingSourcesRef.current.clear();
     };
-  }, [model]);
+  }, [model, uiOpen]);
 
   return <canvas ref={canvasRef} className="w-full h-full" />;
 }

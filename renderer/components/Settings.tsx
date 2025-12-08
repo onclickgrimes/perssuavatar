@@ -135,7 +135,7 @@ export default function Settings({
         ? "fixed inset-0 z-[600] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 no-drag"
         : "absolute top-4 right-4 z-[200] no-drag"
       }
-      onMouseEnter={() => window.electron.setIgnoreMouseEvents(false)}
+            onMouseEnter={() => window.electron.setIgnoreMouseEvents(false)}
       onMouseLeave={() => {
         if (!showSettings) window.electron.setIgnoreMouseEvents(true, { forward: true });
       }}

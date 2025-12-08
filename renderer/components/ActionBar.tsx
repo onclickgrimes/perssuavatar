@@ -11,9 +11,7 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
 
   return (
     <div 
-      className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[500] flex flex-col items-center gap-2 no-drag font-sans"
-      onMouseEnter={() => window.electron.setIgnoreMouseEvents(false)}
-      onMouseLeave={() => window.electron.setIgnoreMouseEvents(true, { forward: true })}
+      className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[500] flex flex-col items-center gap-2 no-drag font-sans pointer-events-auto"
     >
       {/* 1. Context Selector Button (Pílula Superior) */}
       <button className="flex items-center gap-2 bg-[#141414] hover:bg-[#1f1f1f] transition-colors rounded-full px-4 py-1.5 shadow-lg border border-[#2a2a2a]">
