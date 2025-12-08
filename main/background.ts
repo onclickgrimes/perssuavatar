@@ -137,7 +137,89 @@ ipcMain.on('open-settings', async () => {
   }
 });
 
-// Recebe áudio do frontend e manda pro Deepgram/Gemini Live
+let transcriptionWindow: BrowserWindow | null = null;
+
+// Register global shortcut for transcription window
+app.whenReady().then(() => {
+  const { globalShortcut } = require('electron');
+  
+  globalShortcut.register('CommandOrControl+D', async () => {
+    if (transcriptionWindow && !transcriptionWindow.isDestroyed()) {
+      transcriptionWindow.focus();
+      return;
+    }
+
+    // Get primary display bounds
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+    
+    // Window size
+    const windowWidth = 400;
+    const windowHeight = 400;
+    
+    // Safety margins (pixels from screen edges)
+    const margin = 50;
+    
+    // Calculate initial position (center with margin constraints)
+    let x = Math.floor((screenWidth - windowWidth) / 2);
+    let y = Math.floor((screenHeight - windowHeight) / 2);
+    
+    // Ensure margins
+    x = Math.max(margin, Math.min(x, screenWidth - windowWidth - margin));
+    y = Math.max(margin, Math.min(y, screenHeight - windowHeight - margin));
+
+    transcriptionWindow = createWindow('transcription', {
+      width: windowWidth,
+      height: windowHeight,
+      x,
+      y,
+      minWidth: 300,
+      minHeight: 300,
+      maxWidth: screenWidth - (margin * 2),
+      maxHeight: screenHeight - (margin * 2),
+      frame: false,
+      transparent: true,
+      resizable: true,
+      alwaysOnTop: true,
+      skipTaskbar: true, // Don't show in taskbar
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        nodeIntegration: false,
+        contextIsolation: true,
+      },
+    });
+
+    // Constrain window movement to stay within margins
+    transcriptionWindow.on('will-move', (event, newBounds) => {
+      const display = screen.getDisplayNearestPoint({ x: newBounds.x, y: newBounds.y });
+      const { x: screenX, y: screenY, width: screenW, height: screenH } = display.workArea;
+      
+      if (newBounds.x < screenX + margin) newBounds.x = screenX + margin;
+      if (newBounds.y < screenY + margin) newBounds.y = screenY + margin;
+      if (newBounds.x + newBounds.width > screenX + screenW - margin) {
+        newBounds.x = screenX + screenW - newBounds.width - margin;
+      }
+      if (newBounds.y + newBounds.height > screenY + screenH - margin) {
+        newBounds.y = screenY + screenH - newBounds.height - margin;
+      }
+    });
+
+    if (isProd) {
+      await transcriptionWindow.loadURL('app://./transcription');
+    } else {
+      const port = process.argv[2];
+      await transcriptionWindow.loadURL(`http://localhost:${port}/transcription`);
+    }
+
+    console.log('📝 Transcription window opened with Ctrl+D');
+  });
+});
+
+app.on('window-all-closed', () => {
+  const { globalShortcut } = require('electron');
+  globalShortcut.unregisterAll();
+  app.quit()
+})
 ipcMain.on('audio-data', (event, buffer) => {
   // Inicia o Deepgram se ainda não estiver rodando (só no modo classic)
   assistant.startDeepgram();

@@ -26,13 +26,11 @@ export default function HomePage() {
     // No need to resize the window anymore
   };
 
-  // Listen for CTRL+M to toggle ActionBar
+  // Listen for CTRL+M
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.ctrlKey && e.key.toLowerCase() === 'm') {
         e.preventDefault();
-        // Toggle action bar only if mouse is over avatar area
-        // Since the avatar takes full screen, we consider the user is hovering when the app is focused
         setShowActionBar(prev => !prev);
       }
       // ESC to close
