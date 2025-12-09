@@ -98,7 +98,7 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                     }]
                 },
                 outputAudioTranscription: {},  // Transcrição do áudio do modelo
-                // inputAudioTranscription: {},   // Transcrição do áudio do usuário
+                inputAudioTranscription: {},   // Transcrição do áudio do usuário
                 tools: [geminiLiveTools],  // Function calling tools
             };
 
@@ -118,10 +118,13 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                         if ((message.serverContent as any)?.outputTranscription) {
                             const transcricaoModelo = (message.serverContent as any).outputTranscription.text;
                             if (transcricaoModelo) {
-                                // console.log('[GeminiLive] Transcrição:', transcricaoModelo);
+                                console.log('[GeminiLive] Transcrição:', transcricaoModelo);
 
                                 // Emit text for display/logging
                                 this.emit('text', transcricaoModelo);
+                                
+                                // Emit model transcription specifically
+                                this.emit('model-transcription', transcricaoModelo);
 
                                 // Extract avatar control tags from transcription
                                 const avatarRegex = /\{\{(mood|gesture):(\w+)\}\}/g;
@@ -133,11 +136,14 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                             }
                         }
 
-                        // // ✅ TRANSCRIÇÃO DO ÁUDIO DE ENTRADA (texto do usuário)
-                        // if ((message.serverContent as any)?.inputTranscription) {
-                        //     const transcricaoUsuario = (message.serverContent as any).inputTranscription.text;
-                        //     console.log('Usuário disse:', transcricaoUsuario);
-                        // }
+                        // ✅ TRANSCRIÇÃO DO ÁUDIO DE ENTRADA (texto do usuário)
+                        if ((message.serverContent as any)?.inputTranscription) {
+                            const transcricaoUsuario = (message.serverContent as any).inputTranscription.text;
+                            console.log('Usuário disse:', transcricaoUsuario);
+                            
+                            // Emit user transcription
+                            this.emit('user-transcription', transcricaoUsuario);
+                        }
                     },
                     onerror: (e: any) => {
                         console.error('Gemini Live Error:', e);

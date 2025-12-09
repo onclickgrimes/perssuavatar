@@ -103,6 +103,16 @@ const handler = {
     ipcRenderer.on('save-recording-command', subscription);
     return () => { ipcRenderer.removeListener('save-recording-command', subscription); };
   },
+  onUserTranscription: (callback: (text: string) => void) => {
+    const subscription = (_: any, text: string) => callback(text);
+    ipcRenderer.on('user-transcription', subscription);
+    return () => { ipcRenderer.removeListener('user-transcription', subscription); };
+  },
+  onModelTranscription: (callback: (text: string) => void) => {
+    const subscription = (_: any, text: string) => callback(text);
+    ipcRenderer.on('model-transcription', subscription);
+    return () => { ipcRenderer.removeListener('model-transcription', subscription); };
+  },
   
   // ========================================
   // DATABASE FUNCTIONS

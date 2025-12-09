@@ -168,6 +168,19 @@ export class VoiceAssistant extends EventEmitter {
             await this.geminiLiveService.sendToolResponse(toolCall.id, result);
         }
     });
+
+    // Forward transcriptions to frontend
+    this.geminiLiveService.on('user-transcription', (text: string) => {
+        if (this.mode === 'live') {
+            this.emit('user-transcription', text);
+        }
+    });
+
+    this.geminiLiveService.on('model-transcription', (text: string) => {
+        if (this.mode === 'live') {
+            this.emit('model-transcription', text);
+        }
+    });
   }
 
   private handleTranscription(text: string) {

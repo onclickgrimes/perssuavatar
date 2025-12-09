@@ -18,12 +18,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const [language, setLanguage] = useState('Portuguese (BR)');
   const [isPaused, setIsPaused] = useState(false);
   const [showAudioMeters, setShowAudioMeters] = useState(true);
-  const [messages, setMessages] = useState<Message[]>([
-    { id: '1', speaker: 'VOCÊ', text: 'Alô?', timestamp: new Date() },
-    { id: '2', speaker: 'OUTROS', text: 'Alô?', timestamp: new Date() },
-    { id: '3', speaker: 'VOCÊ', text: 'Eu quero saber quem é que transa nessa porra.', timestamp: new Date() },
-    { id: '4', speaker: 'OUTROS', text: 'Como é que é?', timestamp: new Date() },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [userAudioLevel, setUserAudioLevel] = useState(70);
   const [otherAudioLevel, setOtherAudioLevel] = useState(30);
   
@@ -32,6 +27,12 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [isOverResizeHandle, setIsOverResizeHandle] = useState(false);
+
+  // Buffers para acumular fragmentos de transcrição
+  const userTranscriptionBuffer = useRef<string>('');
+  const modelTranscriptionBuffer = useRef<string>('');
+  const userTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const modelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
@@ -95,6 +96,97 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       window.electron?.setIgnoreMouseEvents?.(false);
     };
   }, [isResizing, isOverResizeHandle]);
+
+  // Listen for transcriptions from IPC
+  useEffect(() => {
+    if (!window.electron) return;
+
+    const addMessage = (speaker: 'VOCÊ' | 'OUTROS', text: string) => {
+      // Remove avatar tags from transcription display
+      let cleanText = text.replace(/\{\{(mood|gesture):\w+\}\}/g, '').trim();
+      
+      // Normaliza espaços múltiplos para um único espaço
+      cleanText = cleanText.replace(/\s+/g, ' ');
+      
+      if (!cleanText) return;
+
+      setMessages(prev => [...prev, {
+        id: Date.now().toString() + Math.random(),
+        speaker,
+        text: cleanText,
+        timestamp: new Date()
+      }]);
+    };
+
+    const handleUserTranscription = (text: string) => {
+      console.log('[TranscriptionWindow] User:', text);
+      
+      // Acumula fragmentos - adiciona espaço apenas se o buffer não estiver vazio
+      if (userTranscriptionBuffer.current) {
+        userTranscriptionBuffer.current += ' ' + text.trim();
+      } else {
+        userTranscriptionBuffer.current = text.trim();
+      }
+      
+      // Clear previous timeout
+      if (userTimeoutRef.current) {
+        clearTimeout(userTimeoutRef.current);
+      }
+
+      // Se tem buffer do modelo, finaliza ele primeiro
+      if (modelTranscriptionBuffer.current.trim()) {
+        addMessage('OUTROS', modelTranscriptionBuffer.current.trim());
+        modelTranscriptionBuffer.current = '';
+      }
+
+      // Set new timeout para consolidar (reduzido para 1s)
+      userTimeoutRef.current = setTimeout(() => {
+        if (userTranscriptionBuffer.current.trim()) {
+          addMessage('VOCÊ', userTranscriptionBuffer.current.trim());
+          userTranscriptionBuffer.current = '';
+        }
+      }, 1000);
+    };
+
+    const handleModelTranscription = (text: string) => {
+      console.log('[TranscriptionWindow] Model:', text);
+      
+      // Acumula fragmentos - adiciona espaço apenas se o buffer não estiver vazio
+      if (modelTranscriptionBuffer.current) {
+        modelTranscriptionBuffer.current += ' ' + text.trim();
+      } else {
+        modelTranscriptionBuffer.current = text.trim();
+      }
+      
+      // Clear previous timeout
+      if (modelTimeoutRef.current) {
+        clearTimeout(modelTimeoutRef.current);
+      }
+
+      // Se tem buffer do usuário, finaliza ele primeiro
+      if (userTranscriptionBuffer.current.trim()) {
+        addMessage('VOCÊ', userTranscriptionBuffer.current.trim());
+        userTranscriptionBuffer.current = '';
+      }
+
+      // Set new timeout para consolidar (reduzido para 1s)
+      modelTimeoutRef.current = setTimeout(() => {
+        if (modelTranscriptionBuffer.current.trim()) {
+          addMessage('OUTROS', modelTranscriptionBuffer.current.trim());
+          modelTranscriptionBuffer.current = '';
+        }
+      }, 1000);
+    };
+
+    window.electron.onUserTranscription(handleUserTranscription);
+    window.electron.onModelTranscription(handleModelTranscription);
+
+    return () => {
+      // Cleanup
+      if (userTimeoutRef.current) clearTimeout(userTimeoutRef.current);
+      if (modelTimeoutRef.current) clearTimeout(modelTimeoutRef.current);
+    };
+  }, []);
 
   // Manual resize implementation
   const handleResizeStart = (e: React.MouseEvent) => {

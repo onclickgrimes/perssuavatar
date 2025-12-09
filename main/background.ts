@@ -525,6 +525,19 @@ assistant.on('take-screenshot', async () => {
     }
 });
 
+// Forward transcriptions to transcription window
+assistant.on('user-transcription', (text: string) => {
+    if (transcriptionWindow && !transcriptionWindow.isDestroyed()) {
+        transcriptionWindow.webContents.send('user-transcription', text);
+    }
+});
+
+assistant.on('model-transcription', (text: string) => {
+    if (transcriptionWindow && !transcriptionWindow.isDestroyed()) {
+        transcriptionWindow.webContents.send('model-transcription', text);
+    }
+});
+
 // Helper para localizar o arquivo .model3.json
 ipcMain.handle('find-model-file', async (event, modelName) => {
     try {
