@@ -184,7 +184,7 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
             console.error('[DesktopAudioTranscriber] Erro ao iniciar:', err);
             if (onError) onError(err);
         }
-    }, [isTranscribing, onError]);
+    }, [isTranscribing, onError, sourceId]);
 
     const stopTranscribing = useCallback(async () => {
         console.log('[DesktopAudioTranscriber] Parando...');

@@ -153,7 +153,10 @@ export default function AudioSourceSelector({
         </div>
 
         {/* Category Filter */}
-        <div className="p-4 border-b border-[#222] overflow-x-auto">
+        <div className="p-4 border-b border-[#222] overflow-x-auto" style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#1a1a1a #0a0a0a'
+        }}>
           <div className="flex gap-2">
             {categories.map(cat => (
               <button
@@ -173,7 +176,10 @@ export default function AudioSourceSelector({
         </div>
 
         {/* Sources List */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="flex-1 overflow-y-auto p-4" style={{
+          scrollbarWidth: 'thin',
+          scrollbarColor: '#1a1a1a #0a0a0a'
+        }}>
           {loading ? (
             <div className="flex items-center justify-center h-40">
               <div className="text-gray-400">Carregando fontes...</div>
