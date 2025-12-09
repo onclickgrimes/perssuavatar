@@ -571,3 +571,88 @@ ipcMain.handle('find-model-file', async (event, modelName) => {
         return null;
     }
 });
+
+// ========================================
+// DESKTOP AUDIO TRANSCRIPTION
+// ========================================
+
+import { DeepgramService } from './lib/services/deepgram-service';
+
+// Serviço Deepgram separado apenas para transcrição do desktop
+let desktopDeepgramService: DeepgramService | null = null;
+let desktopTranscriptionWindow: Electron.WebContents | null = null;
+
+// Iniciar transcrição do desktop
+ipcMain.handle('start-desktop-transcription', async (event) => {
+    try {
+        console.log('[DesktopTranscription] Iniciando serviço Deepgram...');
+        
+        // Guardar referência à janela que iniciou a transcrição
+        desktopTranscriptionWindow = event.sender;
+        
+        if (!desktopDeepgramService) {
+            desktopDeepgramService = new DeepgramService();
+            
+            // Listener para transcrições finais
+            desktopDeepgramService.on('transcription-final', (text: string) => {
+                if (desktopTranscriptionWindow && !desktopTranscriptionWindow.isDestroyed()) {
+                    desktopTranscriptionWindow.send('desktop-transcription', {
+                        text,
+                        isFinal: true
+                    });
+                }
+            });
+            
+            // Listener para status
+            desktopDeepgramService.on('status', (status: string) => {
+                if (desktopTranscriptionWindow && !desktopTranscriptionWindow.isDestroyed()) {
+                    desktopTranscriptionWindow.send('desktop-transcription-status', status);
+                }
+            });
+            
+            // Listener para erros
+            desktopDeepgramService.on('error', (error: any) => {
+                console.error('[DesktopTranscription] Erro:', error);
+                if (desktopTranscriptionWindow && !desktopTranscriptionWindow.isDestroyed()) {
+                    desktopTranscriptionWindow.send('desktop-transcription-error', error);
+                }
+            });
+        }
+        
+        desktopDeepgramService.start();
+        console.log('[DesktopTranscription] Serviço Deepgram iniciado');
+        return true;
+    } catch (error) {
+        console.error('[DesktopTranscription] Erro ao iniciar:', error);
+        throw error;
+    }
+});
+
+// Parar transcrição do desktop
+ipcMain.handle('stop-desktop-transcription', async () => {
+    try {
+        console.log('[DesktopTranscription] Parando serviço Deepgram...');
+        
+        if (desktopDeepgramService) {
+            desktopDeepgramService.stop();
+            desktopDeepgramService.removeAllListeners();
+            desktopDeepgramService = null;
+        }
+        
+        desktopTranscriptionWindow = null;
+        
+        console.log('[DesktopTranscription] Serviço Deepgram parado');
+        return true;
+    } catch (error) {
+        console.error('[DesktopTranscription] Erro ao parar:', error);
+        throw error;
+    }
+});
+
+// Receber chunks de áudio do desktop e enviar para Deepgram
+ipcMain.on('desktop-audio-chunk', (event, buffer: ArrayBuffer) => {
+    if (desktopDeepgramService) {
+        const nodeBuffer = Buffer.from(buffer);
+        desktopDeepgramService.processAudioStream(nodeBuffer);
+    }
+});

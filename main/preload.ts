@@ -160,6 +160,38 @@ const handler = {
     export: () => ipcRenderer.invoke('db:export'),
     getPath: () => ipcRenderer.invoke('db:get-path'),
     clearAll: () => ipcRenderer.invoke('db:clear-all')
+  },
+  
+  // ========================================
+  // DESKTOP AUDIO TRANSCRIPTION
+  // ========================================
+  
+  // Enviar chunk de áudio do desktop para transcrição
+  sendDesktopAudioChunk: (buffer: ArrayBuffer) => ipcRenderer.send('desktop-audio-chunk', buffer),
+  
+  // Controlar transcrição do desktop
+  startDesktopTranscription: () => ipcRenderer.invoke('start-desktop-transcription'),
+  stopDesktopTranscription: () => ipcRenderer.invoke('stop-desktop-transcription'),
+  
+  // Listener para transcrições do desktop
+  onDesktopTranscription: (callback: (data: { text: string, isFinal: boolean }) => void) => {
+    const subscription = (_: any, data: { text: string, isFinal: boolean }) => callback(data);
+    ipcRenderer.on('desktop-transcription', subscription);
+    return () => ipcRenderer.removeListener('desktop-transcription', subscription);
+  },
+  
+  // Listener para status da transcrição
+  onDesktopTranscriptionStatus: (callback: (status: string) => void) => {
+    const subscription = (_: any, status: string) => callback(status);
+    ipcRenderer.on('desktop-transcription-status', subscription);
+    return () => ipcRenderer.removeListener('desktop-transcription-status', subscription);
+  },
+  
+  // Listener para erros da transcrição
+  onDesktopTranscriptionError: (callback: (error: any) => void) => {
+    const subscription = (_: any, error: any) => callback(error);
+    ipcRenderer.on('desktop-transcription-error', subscription);
+    return () => ipcRenderer.removeListener('desktop-transcription-error', subscription);
   }
 }
 

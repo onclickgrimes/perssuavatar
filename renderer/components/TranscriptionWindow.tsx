@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useDesktopAudioTranscriber } from '../hooks/useDesktopAudioTranscriber';
 
 interface TranscriptionWindowProps {
   onClose?: () => void;
@@ -19,8 +20,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const [isPaused, setIsPaused] = useState(false);
   const [showAudioMeters, setShowAudioMeters] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
-  const [userAudioLevel, setUserAudioLevel] = useState(70);
-  const [otherAudioLevel, setOtherAudioLevel] = useState(30);
+  const [userAudioLevel, setUserAudioLevel] = useState(0);
+  const [otherAudioLevel, setOtherAudioLevel] = useState(0);
   
   const chatEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -30,23 +31,88 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
 
   // Buffers para acumular fragmentos de transcrição
   const userTranscriptionBuffer = useRef<string>('');
-  const modelTranscriptionBuffer = useRef<string>('');
+  const desktopTranscriptionBuffer = useRef<string>('');
   const userTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const modelTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const desktopTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Hook para transcrição de áudio do desktop (OUTROS)
+  const { startTranscribing, stopTranscribing, isTranscribing, status } = useDesktopAudioTranscriber({
+    onTranscription: (text, isFinal) => {
+      if (isPaused) return;
+
+      console.log('[DesktopAudio] Transcription:', text, 'isFinal:', isFinal);
+      
+      // Simular nível de áudio quando recebe transcrição
+      setOtherAudioLevel(Math.random() * 80 + 20);
+      setTimeout(() => setOtherAudioLevel(0), 200);
+
+      if (isFinal) {
+        // Acumula fragmentos
+        if (desktopTranscriptionBuffer.current) {
+          desktopTranscriptionBuffer.current += ' ' + text.trim();
+        } else {
+          desktopTranscriptionBuffer.current = text.trim();
+        }
+        
+        // Clear previous timeout
+        if (desktopTimeoutRef.current) {
+          clearTimeout(desktopTimeoutRef.current);
+        }
+
+        // Se tem buffer do usuário, finaliza ele primeiro
+        if (userTranscriptionBuffer.current.trim()) {
+          addMessage('VOCÊ', userTranscriptionBuffer.current.trim());
+          userTranscriptionBuffer.current = '';
+        }
+
+        // Set new timeout para consolidar
+        desktopTimeoutRef.current = setTimeout(() => {
+          if (desktopTranscriptionBuffer.current.trim()) {
+            addMessage('OUTROS', desktopTranscriptionBuffer.current.trim());
+            desktopTranscriptionBuffer.current = '';
+          }
+        }, 1000);
+      }
+    },
+    onError: (error) => {
+      console.error('[DesktopAudio] Error:', error);
+    },
+    chunkIntervalMs: 100
+  });
+
+  // Iniciar transcrição do desktop automaticamente quando a janela abrir
+  useEffect(() => {
+    console.log('[TranscriptionWindow] Iniciando transcrição do desktop...');
+    startTranscribing();
+
+    return () => {
+      console.log('[TranscriptionWindow] Parando transcrição do desktop...');
+      stopTranscribing();
+      if (desktopTimeoutRef.current) clearTimeout(desktopTimeoutRef.current);
+    };
+  }, []);
 
   // Auto scroll to bottom when new messages arrive
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Simulate audio levels
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setUserAudioLevel(Math.random() * 100);
-      setOtherAudioLevel(Math.random() * 100);
-    }, 100);
-    return () => clearInterval(interval);
-  }, []);
+  const addMessage = (speaker: 'VOCÊ' | 'OUTROS', text: string) => {
+    // Remove avatar tags from transcription display
+    let cleanText = text.replace(/\{\{(mood|gesture):\w+\}\}/g, '').trim();
+    
+    // Normaliza espaços múltiplos para um único espaço
+    cleanText = cleanText.replace(/\s+/g, ' ');
+    
+    if (!cleanText) return;
+
+    setMessages(prev => [...prev, {
+      id: Date.now().toString() + Math.random(),
+      speaker,
+      text: cleanText,
+      timestamp: new Date()
+    }]);
+  };
 
   // Click-through for transparent areas - usando uma abordagem mais estável
   useEffect(() => {
@@ -97,29 +163,18 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     };
   }, [isResizing, isOverResizeHandle]);
 
-  // Listen for transcriptions from IPC
+  // Listen for transcriptions from IPC (apenas para "VOCÊ" - microfone)
   useEffect(() => {
     if (!window.electron) return;
 
-    const addMessage = (speaker: 'VOCÊ' | 'OUTROS', text: string) => {
-      // Remove avatar tags from transcription display
-      let cleanText = text.replace(/\{\{(mood|gesture):\w+\}\}/g, '').trim();
-      
-      // Normaliza espaços múltiplos para um único espaço
-      cleanText = cleanText.replace(/\s+/g, ' ');
-      
-      if (!cleanText) return;
-
-      setMessages(prev => [...prev, {
-        id: Date.now().toString() + Math.random(),
-        speaker,
-        text: cleanText,
-        timestamp: new Date()
-      }]);
-    };
-
     const handleUserTranscription = (text: string) => {
+      if (isPaused) return;
+
       console.log('[TranscriptionWindow] User:', text);
+      
+      // Simular nível de áudio quando recebe transcrição
+      setUserAudioLevel(Math.random() * 80 + 20);
+      setTimeout(() => setUserAudioLevel(0), 200);
       
       // Acumula fragmentos - adiciona espaço apenas se o buffer não estiver vazio
       if (userTranscriptionBuffer.current) {
@@ -133,10 +188,10 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
         clearTimeout(userTimeoutRef.current);
       }
 
-      // Se tem buffer do modelo, finaliza ele primeiro
-      if (modelTranscriptionBuffer.current.trim()) {
-        addMessage('OUTROS', modelTranscriptionBuffer.current.trim());
-        modelTranscriptionBuffer.current = '';
+      // Se tem buffer do desktop, finaliza ele primeiro
+      if (desktopTranscriptionBuffer.current.trim()) {
+        addMessage('OUTROS', desktopTranscriptionBuffer.current.trim());
+        desktopTranscriptionBuffer.current = '';
       }
 
       // Set new timeout para consolidar (reduzido para 1s)
@@ -148,45 +203,14 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       }, 1000);
     };
 
-    const handleModelTranscription = (text: string) => {
-      console.log('[TranscriptionWindow] Model:', text);
-      
-      // Acumula fragmentos - adiciona espaço apenas se o buffer não estiver vazio
-      if (modelTranscriptionBuffer.current) {
-        modelTranscriptionBuffer.current += ' ' + text.trim();
-      } else {
-        modelTranscriptionBuffer.current = text.trim();
-      }
-      
-      // Clear previous timeout
-      if (modelTimeoutRef.current) {
-        clearTimeout(modelTimeoutRef.current);
-      }
-
-      // Se tem buffer do usuário, finaliza ele primeiro
-      if (userTranscriptionBuffer.current.trim()) {
-        addMessage('VOCÊ', userTranscriptionBuffer.current.trim());
-        userTranscriptionBuffer.current = '';
-      }
-
-      // Set new timeout para consolidar (reduzido para 1s)
-      modelTimeoutRef.current = setTimeout(() => {
-        if (modelTranscriptionBuffer.current.trim()) {
-          addMessage('OUTROS', modelTranscriptionBuffer.current.trim());
-          modelTranscriptionBuffer.current = '';
-        }
-      }, 1000);
-    };
-
-    window.electron.onUserTranscription(handleUserTranscription);
-    window.electron.onModelTranscription(handleModelTranscription);
+    const unsubscribeUser = window.electron.onUserTranscription(handleUserTranscription);
 
     return () => {
       // Cleanup
+      if (unsubscribeUser) unsubscribeUser();
       if (userTimeoutRef.current) clearTimeout(userTimeoutRef.current);
-      if (modelTimeoutRef.current) clearTimeout(modelTimeoutRef.current);
     };
-  }, []);
+  }, [isPaused]);
 
   // Manual resize implementation
   const handleResizeStart = (e: React.MouseEvent) => {
@@ -260,6 +284,12 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               <option>🇺🇸 English (US)</option>
               <option>🇪🇸 Spanish (ES)</option>
             </select>
+          </div>
+
+          {/* Desktop Audio Status Indicator */}
+          <div className="flex items-center gap-1.5 px-2 py-1 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] flex-shrink-0" title={`Desktop Audio: ${status}`}>
+            <div className={`w-1.5 h-1.5 rounded-full ${isTranscribing ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`} />
+            <span className="text-[9px] text-gray-400 uppercase tracking-wide">Desktop</span>
           </div>
 
           {/* Tab Toggle - Transcription/Summary */}
