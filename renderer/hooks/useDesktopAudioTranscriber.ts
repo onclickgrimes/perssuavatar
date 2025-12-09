@@ -4,13 +4,15 @@ interface UseDesktopAudioTranscriberOptions {
     onTranscription?: (text: string, isFinal: boolean) => void;
     onError?: (error: any) => void;
     chunkIntervalMs?: number; // Intervalo para enviar chunks (default: 100ms)
+    sourceId?: string | null; // ID da fonte de áudio (null = sistema inteiro)
 }
 
 export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOptions = {}) => {
     const { 
         onTranscription, 
         onError,
-        chunkIntervalMs = 100 // 100ms = 10 chunks por segundo (ótimo para realtime)
+        chunkIntervalMs = 100, // 100ms = 10 chunks por segundo (ótimo para realtime)
+        sourceId = null // Por padrão, captura do sistema inteiro
     } = options;
     
     const [isTranscribing, setIsTranscribing] = useState(false);
@@ -72,7 +74,16 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
 
             // Pegar a fonte da tela
             const sources = await window.electron.getScreenSources();
-            const source = sources.find((s: any) => s.name === 'Entire Screen' || s.name === 'Screen 1') || sources[0];
+            
+            // Usar o sourceId fornecido ou pegar tela inteira por padrão
+            let source;
+            if (sourceId) {
+                source = sources.find((s: any) => s.id === sourceId);
+                console.log('[DesktopAudioTranscriber] Usando fonte específica:', source?.name);
+            } else {
+                source = sources.find((s: any) => s.name === 'Entire Screen' || s.name === 'Screen 1') || sources[0];
+                console.log('[DesktopAudioTranscriber] Usando sistema inteiro');
+            }
 
             if (!source) {
                 throw new Error('Nenhuma fonte de tela encontrada');
@@ -209,10 +220,139 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
         console.log('[DesktopAudioTranscriber] Transcrição parada');
     }, []);
 
+    const changeAudioSource = useCallback(async (newSourceId: string | null) => {
+        if (!isTranscribing) {
+            console.warn('[DesktopAudioTranscriber] Não está transcrevendo, use startTranscribing');
+            return;
+        }
+
+        try {
+            console.log('[DesktopAudioTranscriber] Trocando fonte de áudio...');
+            
+            // Parar apenas o stream anterior (não o Deepgram)
+            if (processorRef.current) {
+                processorRef.current.disconnect();
+                processorRef.current.onaudioprocess = null;
+                processorRef.current = null;
+            }
+
+            if (sourceRef.current) {
+                sourceRef.current.disconnect();
+                sourceRef.current = null;
+            }
+
+            if (audioContextRef.current) {
+                await audioContextRef.current.close();
+                audioContextRef.current = null;
+            }
+
+            if (streamRef.current) {
+                streamRef.current.getTracks().forEach(track => track.stop());
+                streamRef.current = null;
+            }
+
+            // Pegar a nova fonte
+            const sources = await window.electron.getScreenSources();
+            
+            let source;
+            if (newSourceId) {
+                source = sources.find((s: any) => s.id === newSourceId);
+                console.log('[DesktopAudioTranscriber] Nova fonte:', source?.name);
+            } else {
+                source = sources.find((s: any) => s.name === 'Entire Screen' || s.name === 'Screen 1') || sources[0];
+                console.log('[DesktopAudioTranscriber] Nova fonte: Sistema inteiro');
+            }
+
+            if (!source) {
+                throw new Error('Fonte não encontrada');
+            }
+
+            // Capturar novo stream
+            let stream: MediaStream;
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: source.id
+                        }
+                    } as any,
+                    video: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: source.id,
+                            minWidth: 640,
+                            maxWidth: 640,
+                            minHeight: 480,
+                            maxHeight: 480
+                        }
+                    } as any
+                } as any);
+            } catch (err) {
+                console.warn('[DesktopAudioTranscriber] Falha ao capturar áudio, tentando só vídeo:', err);
+                stream = await navigator.mediaDevices.getUserMedia({
+                    audio: false,
+                    video: {
+                        mandatory: {
+                            chromeMediaSource: 'desktop',
+                            chromeMediaSourceId: source.id,
+                            minWidth: 640,
+                            maxWidth: 640,
+                            minHeight: 480,
+                            maxHeight: 480
+                        }
+                    } as any
+                } as any);
+            }
+
+            streamRef.current = stream;
+
+            // Verificar áudio
+            const audioTracks = stream.getAudioTracks();
+            if (audioTracks.length === 0) {
+                console.warn('[DesktopAudioTranscriber] Nenhuma faixa de áudio na nova fonte!');
+            }
+
+            // Criar novo AudioContext e processador
+            const audioContext = new AudioContext({ sampleRate: 16000 });
+            audioContextRef.current = audioContext;
+
+            const sourceNode = audioContext.createMediaStreamSource(stream);
+            sourceRef.current = sourceNode;
+
+            const bufferSize = 4096;
+            const processor = audioContext.createScriptProcessor(bufferSize, 1, 1);
+            processorRef.current = processor;
+
+            processor.onaudioprocess = (e) => {
+                if (isStoppingRef.current) return;
+
+                const inputData = e.inputBuffer.getChannelData(0);
+                const int16Data = new Int16Array(inputData.length);
+                for (let i = 0; i < inputData.length; i++) {
+                    const s = Math.max(-1, Math.min(1, inputData[i]));
+                    int16Data[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                }
+
+                window.electron.sendDesktopAudioChunk(int16Data.buffer);
+            };
+
+            sourceNode.connect(processor);
+            processor.connect(audioContext.destination);
+
+            console.log('[DesktopAudioTranscriber] Fonte trocada com sucesso! Deepgram continua conectado.');
+
+        } catch (err) {
+            console.error('[DesktopAudioTranscriber] Erro ao trocar fonte:', err);
+            if (onError) onError(err);
+        }
+    }, [isTranscribing, onError]);
+
     return {
         isTranscribing,
         status,
         startTranscribing,
-        stopTranscribing
+        stopTranscribing,
+        changeAudioSource
     };
 };

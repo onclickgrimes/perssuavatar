@@ -211,6 +211,21 @@ app.whenReady().then(() => {
       await transcriptionWindow.loadURL(`http://localhost:${port}/transcription`);
     }
 
+    // Parar Deepgram quando a janela for fechada
+    transcriptionWindow.on('closed', () => {
+      console.log('📝 Transcription window closed, stopping Deepgram...');
+      
+      // Parar o serviço Deepgram do desktop
+      if (desktopDeepgramService) {
+        desktopDeepgramService.stop();
+        desktopDeepgramService.removeAllListeners();
+        desktopDeepgramService = null;
+      }
+      
+      desktopTranscriptionWindow = null;
+      transcriptionWindow = null;
+    });
+
     console.log('📝 Transcription window opened with Ctrl+D');
   });
 });
