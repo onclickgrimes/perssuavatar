@@ -15,11 +15,156 @@ type Message = {
   timestamp: Date;
 };
 
+// Buffer para armazenar transcrições do modelo (avatar)
+type ModelTranscription = {
+  text: string;
+  timestamp: number;
+};
+
+// Função para calcular a distância de Levenshtein (similaridade entre strings)
+function levenshteinDistance(str1: string, str2: string): number {
+  const len1 = str1.length;
+  const len2 = str2.length;
+  const matrix: number[][] = [];
+
+  for (let i = 0; i <= len1; i++) {
+    matrix[i] = [i];
+  }
+
+  for (let j = 0; j <= len2; j++) {
+    matrix[0][j] = j;
+  }
+
+  for (let i = 1; i <= len1; i++) {
+    for (let j = 1; j <= len2; j++) {
+      const cost = str1[i - 1] === str2[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,      // deletion
+        matrix[i][j - 1] + 1,      // insertion
+        matrix[i - 1][j - 1] + cost // substitution
+      );
+    }
+  }
+
+  return matrix[len1][len2];
+}
+
+// Função para calcular similaridade percentual entre dois textos
+function calculateSimilarity(text1: string, text2: string): number {
+  // Normalizar textos: lowercase, remover pontuação e espaços extras
+  const normalize = (text: string) => 
+    text.toLowerCase()
+      .replace(/[^\w\s]/g, '') // Remove pontuação
+      .replace(/\s+/g, ' ')    // Normaliza espaços
+      .trim();
+
+  const normalized1 = normalize(text1);
+  const normalized2 = normalize(text2);
+
+  if (!normalized1 || !normalized2) return 0;
+
+  const distance = levenshteinDistance(normalized1, normalized2);
+  const maxLength = Math.max(normalized1.length, normalized2.length);
+  
+  if (maxLength === 0) return 100;
+  
+  const similarity = ((maxLength - distance) / maxLength) * 100;
+  return similarity;
+}
+
+// Função para normalizar texto (remover pontuação, acentos, espaços e converter para lowercase)
+function normalizeText(text: string): string {
+  return text.toLowerCase()
+    .normalize('NFD')                          // Decompõe caracteres acentuados
+    .replace(/[\u0300-\u036f]/g, '')          // Remove marcas diacríticas (acentos)
+    .replace(/[^\w\s]/g, '')                  // Remove pontuação
+    .replace(/\s+/g, ' ')                     // Normaliza espaços
+    .trim();
+}
+
+// Função para verificar se um texto é similar a algum texto do buffer
+function isSimilarToModelTranscription(
+  text: string, 
+  modelBuffer: ModelTranscription[], 
+  similarityThreshold: number = 60
+): boolean {
+  // Normalizar o texto do desktop
+  const normalizedDesktop = normalizeText(text);
+  
+  if (!normalizedDesktop) return false;
+
+  // Usar TODOS os fragmentos do buffer (já limitado por BUFFER_MAX_AGE)
+  // Não filtrar novamente por TIME_WINDOW para evitar perder fragmentos
+  const consolidatedModelText = modelBuffer
+    .map(t => normalizeText(t.text))
+    .filter(t => t.length > 0)
+    .join(' ');
+
+  console.log(`[TranscriptionFilter] 🔍 Texto desktop normalizado: "${normalizedDesktop}"`);
+  console.log(`[TranscriptionFilter] 🔍 Modelo consolidado: ${consolidatedModelText.length} caracteres`);
+  console.log(`[TranscriptionFilter] 🔍 Modelo consolidado normalizado: "${consolidatedModelText.substring(0, 150)}..."`);
+
+  // 1. Verificar se o texto do desktop está contido no modelo consolidado
+  if (consolidatedModelText.includes(normalizedDesktop)) {
+    console.log(`[TranscriptionFilter] ✅ Descartando (substring encontrada no modelo consolidado):`);
+    console.log(`  Desktop: "${text}"`);
+    console.log(`  Modelo consolidado: "${consolidatedModelText}"`);
+    return true;
+  }
+
+  // 2. Verificar se o modelo consolidado está contido no desktop
+  if (normalizedDesktop.includes(consolidatedModelText) && consolidatedModelText.length > 5) {
+    console.log(`[TranscriptionFilter] ✅ Descartando (modelo consolidado encontrado no desktop):`);
+    console.log(`  Desktop: "${text}"`);
+    console.log(`  Modelo consolidado: "${consolidatedModelText}"`);
+    return true;
+  }
+
+  // 3. Verificar similaridade com o texto consolidado
+  if (consolidatedModelText.length > 0) {
+    const similarity = calculateSimilarity(normalizedDesktop, consolidatedModelText);
+    
+    if (similarity >= similarityThreshold) {
+      console.log(`[TranscriptionFilter] ✅ Descartando (${similarity.toFixed(1)}% similar ao consolidado):`);
+      console.log(`  Desktop: "${text}"`);
+      console.log(`  Modelo consolidado: "${consolidatedModelText}"`);
+      return true;
+    }
+    
+    console.log(`[TranscriptionFilter] 📊 Similaridade: ${similarity.toFixed(1)}% (threshold: ${similarityThreshold}%)`);
+  }
+
+  // 4. Verificar se partes significativas do desktop estão nos fragmentos individuais
+  const words = normalizedDesktop.split(' ').filter(w => w.length > 2);
+  if (words.length >= 3) {
+    let matchingWords = 0;
+    for (const word of words) {
+      if (consolidatedModelText.includes(word)) {
+        matchingWords++;
+      }
+    }
+    
+    const wordMatchPercentage = (matchingWords / words.length) * 100;
+    console.log(`[TranscriptionFilter] 📊 Palavras em comum: ${matchingWords}/${words.length} = ${wordMatchPercentage.toFixed(1)}%`);
+    
+    if (wordMatchPercentage >= 70) {
+      console.log(`[TranscriptionFilter] ✅ Descartando (${wordMatchPercentage.toFixed(1)}% palavras em comum):`);
+      console.log(`  Desktop: "${text}"`);
+      console.log(`  Palavras correspondentes: ${matchingWords}/${words.length}`);
+      return true;
+    }
+  }
+
+  console.log(`[TranscriptionFilter] ❌ Não passou em nenhum filtro, liberando como OUTROS`);
+  return false;
+}
+
 export default function TranscriptionWindow({ onClose }: TranscriptionWindowProps = {}) {
   const [activeTab, setActiveTab] = useState<TabMode>('transcription');
   const [language, setLanguage] = useState('Portuguese (BR)');
   const [isPaused, setIsPaused] = useState(false);
   const [showAudioMeters, setShowAudioMeters] = useState(true);
+  const [filterAvatarTranscriptions, setFilterAvatarTranscriptions] = useState(true);
   const [messages, setMessages] = useState<Message[]>([]);
   const [userAudioLevel, setUserAudioLevel] = useState(0);
   const [otherAudioLevel, setOtherAudioLevel] = useState(0);
@@ -37,6 +182,9 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const desktopTranscriptionBuffer = useRef<string>('');
   const userTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const desktopTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Buffer de transcrições do modelo (avatar) para comparação
+  const modelTranscriptionBuffer = useRef<ModelTranscription[]>([]);
 
   // Hook para transcrição de áudio do desktop (OUTROS)
   const { startTranscribing, stopTranscribing, changeAudioSource, isTranscribing, status } = useDesktopAudioTranscriber({
@@ -72,7 +220,33 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
         // Set new timeout para consolidar
         desktopTimeoutRef.current = setTimeout(() => {
           if (desktopTranscriptionBuffer.current.trim()) {
-            addMessage('OUTROS', desktopTranscriptionBuffer.current.trim());
+            const desktopText = desktopTranscriptionBuffer.current.trim();
+            
+            console.log(`[TranscriptionFilter] 🔍 Verificando transcrição do desktop: "${desktopText}"`);
+            console.log(`[TranscriptionFilter] 🔍 Filtro de avatar: ${filterAvatarTranscriptions ? 'ATIVO' : 'DESATIVADO'}`);
+            console.log(`[TranscriptionFilter] 🔍 Buffer do modelo tem ${modelTranscriptionBuffer.current.length} fragmentos para comparar`);
+            
+            // ✅ FILTRAR TRANSCRIÇÕES DO AVATAR (se habilitado)
+            let shouldAdd = true;
+            
+            if (filterAvatarTranscriptions) {
+              // Verifica se a transcrição do desktop é similar ao que o modelo disse
+              const isFiltered = isSimilarToModelTranscription(desktopText, modelTranscriptionBuffer.current);
+              
+              if (isFiltered) {
+                console.log('[TranscriptionFilter] ❌ Transcrição filtrada (é do avatar)');
+                shouldAdd = false;
+              } else {
+                console.log(`[TranscriptionFilter] ✅ Transcrição aprovada, adicionando como OUTROS`);
+              }
+            } else {
+              console.log(`[TranscriptionFilter] ⚠️ Filtro desativado, adicionando sem verificar`);
+            }
+            
+            if (shouldAdd) {
+              addMessage('OUTROS', desktopText);
+            }
+            
             desktopTranscriptionBuffer.current = '';
           }
         }, 1000);
@@ -221,6 +395,54 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       // Cleanup
       if (unsubscribeUser) unsubscribeUser();
       if (userTimeoutRef.current) clearTimeout(userTimeoutRef.current);
+    };
+  }, [isPaused]);
+
+  // Listen for model transcriptions (avatar) para filtrar do desktop
+  useEffect(() => {
+    if (!window.electron) return;
+
+    const handleModelTranscription = (text: string) => {
+      if (isPaused) return;
+
+      console.log('[TranscriptionWindow] Model (Avatar):', text);
+      
+      // Limpar tags de avatar e audio do texto antes de armazenar
+      let cleanText = text
+        .replace(/\{\{(mood|gesture):\w+\}\}/g, '') // Remove tags de avatar
+        .replace(/\[[\w\s]+\]/g, '')                // Remove tags de áudio [sarcastically], [laughs], etc
+        .trim();
+      
+      if (!cleanText) return;
+
+      // Adicionar ao buffer de transcrições do modelo
+      modelTranscriptionBuffer.current.push({
+        text: cleanText,
+        timestamp: Date.now()
+      });
+
+      // Limpar transcrições antigas do buffer (manter últimos 20 segundos)
+      // Tempo maior para dar chance do Deepgram consolidar antes de expirar
+      const BUFFER_MAX_AGE = 20000;
+      const now = Date.now();
+      modelTranscriptionBuffer.current = modelTranscriptionBuffer.current.filter(
+        t => (now - t.timestamp) < BUFFER_MAX_AGE
+      );
+
+      // Log do buffer atualizado com preview do texto consolidado
+      const previewText = modelTranscriptionBuffer.current
+        .map(t => t.text)
+        .join(' ')
+        .substring(0, 100);
+      
+      console.log(`[TranscriptionFilter] Buffer do modelo: ${modelTranscriptionBuffer.current.length} fragmentos`);
+      console.log(`[TranscriptionFilter] Preview: "${previewText}..."`);
+    };
+
+    const unsubscribeModel = window.electron.onModelTranscription?.(handleModelTranscription);
+
+    return () => {
+      if (unsubscribeModel) unsubscribeModel();
     };
   }, [isPaused]);
 
@@ -404,8 +626,9 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
 
         {/* Audio Meters Section */}
         <div className="border-t border-[#222] bg-[#0f0f0f] px-4 py-3 flex-shrink-0">
-          {/* Header com Toggle */}
-          <div className="flex items-center justify-center mb-3">
+          {/* Header com Toggles */}
+          <div className="flex items-center justify-between mb-3">
+            {/* Toggle de Medidores de Áudio */}
             <button
               onClick={() => setShowAudioMeters(!showAudioMeters)}
               className="flex items-center gap-2 px-4 py-2 bg-[#1a1a1a] hover:bg-[#252525] rounded-full transition-colors"
@@ -417,6 +640,26 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               <span className="text-[10px] text-gray-500 ml-1">
                 {showAudioMeters ? 'Clique para ocultar' : 'Clique para mostrar'}
               </span>
+            </button>
+
+            {/* Toggle Compacto de Filtragem do Avatar */}
+            <button
+              onClick={() => setFilterAvatarTranscriptions(!filterAvatarTranscriptions)}
+              className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] rounded-full transition-colors border border-[#2a2a2a]"
+              title={`Filtro de Avatar ${filterAvatarTranscriptions ? 'ATIVO' : 'DESATIVADO'} - Clique para ${filterAvatarTranscriptions ? 'desativar' : 'ativar'}`}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={filterAvatarTranscriptions ? 'text-green-400' : 'text-gray-500'}>
+                <path d="M22 3L2 3 10 12.46 10 19 14 21 14 12.46 22 3z"/>
+              </svg>
+              <span className="text-[10px] text-gray-400">Filtro</span>
+              {/* iOS-style toggle switch */}
+              <div className={`relative w-8 h-4 rounded-full transition-colors ${
+                filterAvatarTranscriptions ? 'bg-green-600' : 'bg-gray-600'
+              }`}>
+                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${
+                  filterAvatarTranscriptions ? 'translate-x-4' : 'translate-x-0.5'
+                }`} />
+              </div>
             </button>
           </div>
 
