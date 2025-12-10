@@ -84,6 +84,7 @@ test-credentials.ts
 *.bak
 *.backup
 *.sqlite
+*.sqlite3
 # Arquivos do Windows
 ehthumbs.db
 desktop.ini

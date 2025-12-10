@@ -6,8 +6,7 @@ import { VoiceAssistant } from './lib/voice-assistant';
 import ffmpeg from 'fluent-ffmpeg';
 import { initializeDatabase } from './lib/database';
 import { registerDatabaseHandlers } from './lib/database-handlers';
-
-const isProd = process.env.NODE_ENV === 'production'
+import { isProd, getUserDataPath } from './lib/app-config';
 
 // Get ffmpeg path - different for dev vs prod
 let ffmpegPath: string;
@@ -28,7 +27,7 @@ const assistant = new VoiceAssistant('elevenlabs');
 if (isProd) {
   serve({ directory: 'app' })
 } else {
-  app.setPath('userData', `${app.getPath('userData')} (development)`)
+  app.setPath('userData', getUserDataPath())
 }
 
 ; (async () => {
@@ -36,6 +35,7 @@ if (isProd) {
 
   // Inicializa o banco de dados
   initializeDatabase();
+  initializeSqliteDatabase();
   registerDatabaseHandlers();
 
   // Permissão de Microfone
@@ -592,6 +592,7 @@ ipcMain.handle('find-model-file', async (event, modelName) => {
 // ========================================
 
 import { DeepgramService } from './lib/services/deepgram-service';
+import { initializeSqliteDatabase } from './lib/sqlite-database';
 
 // Serviço Deepgram separado apenas para transcrição do desktop
 let desktopDeepgramService: DeepgramService | null = null;
