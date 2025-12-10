@@ -23,6 +23,8 @@ ffmpeg.setFfmpegPath(ffmpegPath);
 
 export let mainWindow;
 const assistant = new VoiceAssistant('elevenlabs');
+let isMicrophonePaused = false; // Estado de pausa do microfone
+let isAvatarReactionDisabled = false; // Desabilita reação do avatar (transcrição continua)
 
 if (isProd) {
   serve({ directory: 'app' })
@@ -228,6 +230,39 @@ app.whenReady().then(() => {
 
     console.log('📝 Transcription window opened with Ctrl+D');
   });
+
+  // Atalho global Ctrl+P para pausar/despausar o microfone
+  globalShortcut.register('CommandOrControl+P', () => {
+    isMicrophonePaused = !isMicrophonePaused;
+    
+    const status = isMicrophonePaused ? 'pausado' : 'ativo';
+    console.log(`🎤 Microfone ${status} (Ctrl+P)`);
+    
+    // Notificar a janela principal sobre a mudança de estado
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('microphone-status-changed', isMicrophonePaused);
+    }
+  });
+
+  // Atalho global Ctrl+O para desabilitar/habilitar reação do avatar
+  globalShortcut.register('CommandOrControl+O', () => {
+    isAvatarReactionDisabled = !isAvatarReactionDisabled;
+    
+    const status = isAvatarReactionDisabled ? 'desabilitada' : 'habilitada';
+    console.log(`🤖 Reação do avatar ${status} (Ctrl+O)`);
+    
+    // Ativar/desativar modo de transcrição apenas no assistant
+    if (isAvatarReactionDisabled) {
+      assistant.enableTranscribeOnlyMode();
+    } else {
+      assistant.disableTranscribeOnlyMode();
+    }
+    
+    // Notificar a janela principal sobre a mudança de estado
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('avatar-reaction-status-changed', isAvatarReactionDisabled);
+    }
+  });
 });
 
 app.on('window-all-closed', () => {
@@ -236,12 +271,26 @@ app.on('window-all-closed', () => {
   app.quit()
 })
 ipcMain.on('audio-data', (event, buffer) => {
+  const nodeBuffer = Buffer.from(buffer);
+
+  // Se o microfone estiver pausado, não envia áudio nem para transcrição nem para o assistant
+  if (isMicrophonePaused) {
+    return;
+  }
+
   // Inicia o Deepgram se ainda não estiver rodando (só no modo classic)
   assistant.startDeepgram();
 
-  // Converta ArrayBuffer para Buffer se necessário e envie para o assistant
-  const nodeBuffer = Buffer.from(buffer);
+  // Comportamento normal: transcreve E processa (avatar reage ou apenas transcreve se modo estiver ativo)
+  // O transcribeOnlyMode é controlado internamente pelo assistant via Ctrl+O
   assistant.processAudioStream(nodeBuffer);
+});
+
+// Handler para mudar o provedor de IA (OpenAI vs Gemini) no modo classic
+ipcMain.handle('set-ai-provider', async (event, provider: 'openai' | 'gemini') => {
+  console.log(`🤖 Mudando provedor de IA para: ${provider}`);
+  assistant.setAIProvider(provider);
+  return { success: true };
 });
 
 // Screen Recording Logic

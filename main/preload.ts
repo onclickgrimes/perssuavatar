@@ -192,6 +192,24 @@ const handler = {
     const subscription = (_: any, error: any) => callback(error);
     ipcRenderer.on('desktop-transcription-error', subscription);
     return () => ipcRenderer.removeListener('desktop-transcription-error', subscription);
+  },
+  
+  // ========================================
+  // MICROPHONE CONTROL
+  // ========================================
+  
+  // Listener para mudanças de estado do microfone (pausado/ativo)
+  onMicrophoneStatusChanged: (callback: (isPaused: boolean) => void) => {
+    const subscription = (_: any, isPaused: boolean) => callback(isPaused);
+    ipcRenderer.on('microphone-status-changed', subscription);
+    return () => ipcRenderer.removeListener('microphone-status-changed', subscription);
+  },
+  
+  // Listener para mudanças de estado da reação do avatar (habilitada/desabilitada)
+  onAvatarReactionStatusChanged: (callback: (isDisabled: boolean) => void) => {
+    const subscription = (_: any, isDisabled: boolean) => callback(isDisabled);
+    ipcRenderer.on('avatar-reaction-status-changed', subscription);
+    return () => ipcRenderer.removeListener('avatar-reaction-status-changed', subscription);
   }
 }
 

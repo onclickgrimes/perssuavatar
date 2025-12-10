@@ -15,6 +15,8 @@ export default function HomePage() {
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [showActionBar, setShowActionBar] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isMicrophonePaused, setIsMicrophonePaused] = useState(false);
+  const [isAvatarReactionDisabled, setIsAvatarReactionDisabled] = useState(false);
   const isHoveringAvatarRef = useRef(false);
   
   const models = [
@@ -73,6 +75,30 @@ export default function HomePage() {
     }
   }, [showActionBar, isSettingsOpen]);
 
+  // Listen for microphone status changes from backend (Ctrl+P)
+  useEffect(() => {
+    const unsubscribe = window.electron.onMicrophoneStatusChanged((isPaused) => {
+      console.log(`🎤 Microphone status changed: ${isPaused ? 'Pausado' : 'Ativo'}`);
+      setIsMicrophonePaused(isPaused);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Listen for avatar reaction status changes from backend (Ctrl+O)
+  useEffect(() => {
+    const unsubscribe = window.electron.onAvatarReactionStatusChanged((isDisabled) => {
+      console.log(`🤖 Avatar reaction status changed: ${isDisabled ? 'Desabilitada' : 'Habilitada'}`);
+      setIsAvatarReactionDisabled(isDisabled);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   return (
     <div className="w-screen h-screen overflow-hidden bg-transparent">
       <Avatar modelName={selectedModel} uiOpen={showActionBar || isSettingsOpen} />
@@ -104,6 +130,28 @@ export default function HomePage() {
         >
           <span className="text-xl">👁️</span>
           {/* <span className="text-white text-sm font-medium">Olhando</span> */}
+        </div>
+      )}
+
+      {/* Microphone Paused Indicator - Bottom left */}
+      {isMicrophonePaused && (
+        <div 
+          className="absolute bottom-4 left-4 z-[300] flex items-center gap-2 bg-red-600/90 backdrop-blur-sm px-3 py-2 rounded-full shadow-lg animate-pulse"
+          title="Microfone pausado (Ctrl+P para reativar)"
+        >
+          <span className="text-xl">🎤</span>
+          <span className="text-white text-sm font-medium">Pausado</span>
+        </div>
+      )}
+
+      {/* Avatar Reaction Disabled Indicator - Top left */}
+      {isAvatarReactionDisabled && (
+        <div 
+          className="absolute top-4 left-4 z-[300] flex items-center gap-2 bg-orange-600/90 backdrop-blur-sm px-3 py-2 rounded-full shadow-lg animate-pulse"
+          title="Reação do avatar desabilitada (Ctrl+O para reativar)"
+        >
+          <span className="text-xl">🤖</span>
+          <span className="text-white text-sm font-medium">Sem Reação</span>
         </div>
       )}
     </div>

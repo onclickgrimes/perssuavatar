@@ -40,6 +40,7 @@ export default function Settings({
 
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
+  const [aiProvider, setAiProvider] = useState<'openai' | 'gemini'>('gemini'); // Provedor de IA para modo classic
   const [dbStats, setDbStats] = useState<any>(null);
   
   // Continuous recorder & Screen Share
@@ -103,6 +104,12 @@ export default function Settings({
           if (typeof settings.alwaysOnTop !== 'undefined') {
             setAlwaysOnTop(settings.alwaysOnTop);
             window.electron.setAlwaysOnTop(settings.alwaysOnTop);
+          }
+          
+          if (settings.aiProvider) {
+            setAiProvider(settings.aiProvider);
+            // Notificar o backend sobre o provedor
+            window.electron.invoke('set-ai-provider', settings.aiProvider);
           }
           
           if (settings.selectedModel) {
@@ -185,6 +192,22 @@ export default function Settings({
       console.log('💾 Always on top salvo:', newState);
     } catch (error) {
       console.error('❌ Erro ao salvar always on top:', error);
+    }
+  };
+
+  const handleAiProviderChange = async (newProvider: 'openai' | 'gemini') => {
+    setAiProvider(newProvider);
+    
+    // Notificar o backend
+    try {
+      await window.electron.invoke('set-ai-provider', newProvider);
+      console.log('🤖 Provedor de IA alterado:', newProvider);
+      
+      // Salvar no banco de dados
+      await window.electron.db.setUserSettings({ aiProvider: newProvider });
+      console.log('💾 Provedor salvo:', newProvider);
+    } catch (error) {
+      console.error('❌ Erro ao mudar provedor de IA:', error);
     }
   };
 
@@ -320,37 +343,61 @@ export default function Settings({
               scrollbarColor: '#1a1a1a #0a0a0a'
             }}>
                 
-                {/* --- API e Modelos (MOCKED) --- */}
+                {/* --- API e Modelos --- */}
                 {activeTab === 'api' && (
                   <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                      <div>
                         <h3 className="text-xl font-medium text-white mb-1">Provedores de IA</h3>
-                        <p className="text-sm text-gray-500 mb-6">Gerencie suas conexões com diferentes modelos de linguagem.</p>
+                        <p className="text-sm text-gray-500 mb-6">Selecione o provedor de IA para o modo clássico.</p>
                         
                         <div className="flex gap-4 mb-8">
-                           <button className="flex-1 py-4 border-2 border-blue-600 bg-blue-900/10 rounded-xl flex flex-col items-center justify-center gap-2 text-white">
+                           <button 
+                             onClick={() => handleAiProviderChange('openai')}
+                             className={`flex-1 py-4 border-2 rounded-xl flex flex-col items-center justify-center gap-2 transition-all ${
+                               aiProvider === 'openai' 
+                                 ? 'border-blue-600 bg-blue-900/10 text-white' 
+                                 : 'border-[#333] bg-[#111] hover:bg-[#1a1a1a] text-gray-400 hover:text-white opacity-60'
+                             }`}
+                           >
                               <span className="text-2xl">🤖</span>
                               <span className="font-semibold">OpenAI</span>
-                              <span className="text-xs bg-blue-600 px-2 py-0.5 rounded-full">Ativo</span>
+                              {aiProvider === 'openai' && <span className="text-xs bg-blue-600 px-2 py-0.5 rounded-full">Ativo</span>}
                            </button>
-                           <button className="flex-1 py-4 border border-[#333] bg-[#111] hover:bg-[#1a1a1a] rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-white transition-all opacity-60">
+                           <button 
+                             onClick={() => handleAiProviderChange('gemini')}
+                             className={`flex-1 py-4 border-2 rounded-xl flex flex-col items-center justify-center gap-2 transition-all ${
+                               aiProvider === 'gemini' 
+                                 ? 'border-purple-600 bg-purple-900/10 text-white' 
+                                 : 'border-[#333] bg-[#111] hover:bg-[#1a1a1a] text-gray-400 hover:text-white opacity-60'
+                             }`}
+                           >
                               <span className="text-2xl">⚡</span>
-                              <span className="font-semibold">Google</span>
+                              <span className="font-semibold">Google Gemini</span>
+                              {aiProvider === 'gemini' && <span className="text-xs bg-purple-600 px-2 py-0.5 rounded-full">Ativo</span>}
                            </button>
-                           <button className="flex-1 py-4 border border-[#333] bg-[#111] hover:bg-[#1a1a1a] rounded-xl flex flex-col items-center justify-center gap-2 text-gray-400 hover:text-white transition-all opacity-60">
-                              <span className="text-2xl">🌐</span>
-                              <span className="font-semibold">OpenRouter</span>
-                           </button>
+                        </div>
+
+                        <div className="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 mb-6">
+                           <div className="flex items-start gap-3">
+                              <span className="text-xl">ℹ️</span>
+                              <div>
+                                 <h4 className="text-sm font-semibold text-blue-300 mb-1">Modo Clássico</h4>
+                                 <p className="text-xs text-blue-200/70">
+                                    Esta configuração afeta apenas o <strong>modo clássico</strong>. 
+                                    O <strong>modo Live</strong> sempre usa Gemini Live nativo com áudio.
+                                 </p>
+                              </div>
+                           </div>
                         </div>
                      </div>
 
-                     <div>
+                     <div className="opacity-50 pointer-events-none">
                         <h3 className="text-lg font-medium text-white mb-4">Chave de API</h3>
                         <div className="bg-[#111] border border-[#222] rounded-lg p-3 flex items-center justify-between">
-                           <code className="text-gray-400 tracking-widest text-sm">sk-proj-****************************</code>
-                           <button className="text-gray-500 hover:text-white px-2">Editar</button>
+                           <code className="text-gray-400 tracking-widest text-sm">Gerenciado via .env</code>
+                           <button className="text-gray-500 hover:text-white px-2">Configurado</button>
                         </div>
-                        <p className="text-xs text-gray-600 mt-2">Sua chave é armazenada localmente e de forma segura.</p>
+                        <p className="text-xs text-gray-600 mt-2">As chaves de API são configuradas no arquivo .env do projeto.</p>
                      </div>
                   </div>
                 )}

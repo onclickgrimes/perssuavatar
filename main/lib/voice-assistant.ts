@@ -30,6 +30,7 @@ export class VoiceAssistant extends EventEmitter {
   private mode: 'classic' | 'live' = 'classic';
   private aiProvider: 'openai' | 'gemini' = 'gemini';  // AI provider for classic mode
   private lastRecordingPath: string | null = null;  // Path to the last saved recording
+  private transcribeOnlyMode: boolean = false;  // If true, only transcribe without processing AI response
 
   constructor(ttsProvider: "polly" | "elevenlabs" = "elevenlabs") {
     super();
@@ -186,6 +187,15 @@ export class VoiceAssistant extends EventEmitter {
   private handleTranscription(text: string) {
       this.emit('transcription', text);
       
+      // Always emit user-transcription for the transcription window
+      this.emit('user-transcription', text);
+      
+      // If we're in transcribe-only mode, don't process the message
+      if (this.transcribeOnlyMode) {
+          console.log('[VoiceAssistant] Transcribe-only mode: skipping AI processing');
+          return;
+      }
+      
       if (!this.isProcessing) {
           this.processUserMessage(text);
       } else {
@@ -276,6 +286,39 @@ export class VoiceAssistant extends EventEmitter {
       }
   }
 
+  /**
+   * Enable transcribe-only mode (user-transcription works, but avatar doesn't respond)
+   */
+  public enableTranscribeOnlyMode() {
+      this.transcribeOnlyMode = true;
+      console.log('[VoiceAssistant] Transcribe-only mode enabled');
+      
+      // Also enable in Gemini Live Service if in live mode
+      if (this.mode === 'live') {
+          this.geminiLiveService.enableTranscribeOnlyMode();
+      }
+  }
+
+  /**
+   * Disable transcribe-only mode (normal behavior restored)
+   */
+  public disableTranscribeOnlyMode() {
+      this.transcribeOnlyMode = false;
+      console.log('[VoiceAssistant] Transcribe-only mode disabled');
+      
+      // Also disable in Gemini Live Service if in live mode
+      if (this.mode === 'live') {
+          this.geminiLiveService.disableTranscribeOnlyMode();
+      }
+  }
+
+  /**
+   * Get current transcribe-only mode state
+   */
+  public isTranscribeOnlyMode(): boolean {
+      return this.transcribeOnlyMode;
+  }
+
   public stopDeepgram() {
       this.deepgramService.stop();
   }
@@ -296,6 +339,14 @@ export class VoiceAssistant extends EventEmitter {
           this.stopDeepgram();
           this.emit('status', 'Connecting Live...');
           await this.geminiLiveService.connect();
+          
+          // Sync transcribeOnlyMode state with Gemini Live Service
+          if (this.transcribeOnlyMode) {
+              this.geminiLiveService.enableTranscribeOnlyMode();
+          } else {
+              this.geminiLiveService.disableTranscribeOnlyMode();
+          }
+          
           this.emit('status', 'Live Ready');
       } else {
           this.geminiLiveService.disconnect();

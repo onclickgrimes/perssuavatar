@@ -22,6 +22,7 @@ export class GeminiLiveService extends EventEmitter {
     private stopProcessing: boolean = false;
     private audioBuffer: Buffer[] = []; // Buffer for chunks while connecting
     private hasLoggedSessionProps: boolean = false; // Debug flag
+    private transcribeOnlyMode: boolean = false; // If true, only transcribe without emitting audio/actions
 
     constructor() {
         super();
@@ -115,23 +116,28 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                         this.responseQueue.push(message);
 
                         // ✅ TRANSCRIÇÃO DO ÁUDIO DE SAÍDA (texto do modelo)
-                        if ((message.serverContent as any)?.outputTranscription) {
+                        if ((message.serverContent as any)?.outputTranscription && !this.transcribeOnlyMode) {
                             const transcricaoModelo = (message.serverContent as any).outputTranscription.text;
                             if (transcricaoModelo) {
                                 console.log('[GeminiLive] Transcrição:', transcricaoModelo);
 
                                 // Emit text for display/logging
                                 this.emit('text', transcricaoModelo);
-                                
+
                                 // Emit model transcription specifically
                                 this.emit('model-transcription', transcricaoModelo);
 
-                                // Extract avatar control tags from transcription
-                                const avatarRegex = /\{\{(mood|gesture):(\w+)\}\}/g;
-                                let match;
-                                while ((match = avatarRegex.exec(transcricaoModelo)) !== null) {
-                                    console.log(`[GeminiLive] Avatar action from transcription: ${match[1]} -> ${match[2]}`);
-                                    this.emit('avatar-action', match[1], match[2]);
+                                // ❌ SKIP avatar action extraction if in transcribe-only mode
+                                if (!this.transcribeOnlyMode) {
+                                    // Extract avatar control tags from transcription
+                                    const avatarRegex = /\{\{(mood|gesture):(\w+)\}\}/g;
+                                    let match;
+                                    while ((match = avatarRegex.exec(transcricaoModelo)) !== null) {
+                                        console.log(`[GeminiLive] Avatar action from transcription: ${match[1]} -> ${match[2]}`);
+                                        this.emit('avatar-action', match[1], match[2]);
+                                    }
+                                } else {
+                                    console.log('[GeminiLive] Transcribe-only mode: skipping avatar action extraction from outputTranscription');
                                 }
                             }
                         }
@@ -140,7 +146,7 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                         if ((message.serverContent as any)?.inputTranscription) {
                             const transcricaoUsuario = (message.serverContent as any).inputTranscription.text;
                             console.log('Usuário disse:', transcricaoUsuario);
-                            
+
                             // Emit user transcription
                             this.emit('user-transcription', transcricaoUsuario);
                         }
@@ -221,7 +227,7 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
         if ((message as any).toolCall) {
             const toolCall = (message as any).toolCall;
             console.log('[GeminiLive] Tool Call received:', JSON.stringify(toolCall));
-            
+
             // toolCall pode ter múltiplas functionCalls
             if (toolCall.functionCalls && Array.isArray(toolCall.functionCalls)) {
                 for (const fc of toolCall.functionCalls) {
@@ -252,7 +258,13 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                     continue;
                 }
 
+                // ❌ SKIP AUDIO if in transcribe-only mode
                 if (part.inlineData) {
+                    if (this.transcribeOnlyMode) {
+                        console.log('[GeminiLive] Transcribe-only mode: skipping audio emission');
+                        return; // Skip audio chunks
+                    }
+
                     // Stream audio chunks immediately instead of accumulating
                     const audioData = part.inlineData.data;
                     const mimeType = part.inlineData.mimeType || "audio/pcm;rate=24000";
@@ -266,9 +278,15 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                     }
                 }
 
+                // ❌ SKIP AVATAR ACTIONS if in transcribe-only mode
                 if (part.text) {
                     // console.log("[GeminiLive] Text received:", part.text);
                     this.emit('text', part.text);
+
+                    if (this.transcribeOnlyMode) {
+                        console.log('[GeminiLive] Transcribe-only mode: skipping avatar actions');
+                        continue; // Skip avatar action extraction
+                    }
 
                     const avatarRegex = /\{\{(mood|gesture):(\w+)\}\}/g;
                     let match;
@@ -429,6 +447,29 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
             this.session = undefined;
         }
         this.isConnected = false;
+    }
+
+    /**
+     * Enable transcribe-only mode (transcription works, but no audio/actions emitted)
+     */
+    public enableTranscribeOnlyMode() {
+        this.transcribeOnlyMode = true;
+        console.log('[GeminiLive] Transcribe-only mode enabled');
+    }
+
+    /**
+     * Disable transcribe-only mode (normal behavior restored)
+     */
+    public disableTranscribeOnlyMode() {
+        this.transcribeOnlyMode = false;
+        console.log('[GeminiLive] Transcribe-only mode disabled');
+    }
+
+    /**
+     * Get current transcribe-only mode state
+     */
+    public isTranscribeOnlyMode(): boolean {
+        return this.transcribeOnlyMode;
     }
 }
 

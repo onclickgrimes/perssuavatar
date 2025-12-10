@@ -27,7 +27,7 @@ export class TTSService extends EventEmitter {
 
         // ElevenLabs Config
         this.elevenlabs = new ElevenLabsClient({
-            apiKey: process.env.ELEVENLABS_API_KEY_1 
+            apiKey: process.env.ELEVENLABS_API_KEY_4 
         });
     }
 
