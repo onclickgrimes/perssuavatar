@@ -363,12 +363,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       setTimeout(() => setUserAudioLevel(0), 200);
       
       // Acumula fragmentos - adiciona espaço apenas se o buffer não estiver vazio
-      if (userTranscriptionBuffer.current) {
-        userTranscriptionBuffer.current += ' ' + text.trim();
-      } else {
-        userTranscriptionBuffer.current = text.trim();
-      }
-      
+      userTranscriptionBuffer.current += text;
+
       // Clear previous timeout
       if (userTimeoutRef.current) {
         clearTimeout(userTimeoutRef.current);
@@ -518,12 +514,6 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               <option>🇺🇸 English (US)</option>
               <option>🇪🇸 Spanish (ES)</option>
             </select>
-          </div>
-
-          {/* Desktop Audio Status Indicator */}
-          <div className="flex items-center gap-1.5 px-2 py-1 bg-[#1a1a1a] rounded-lg border border-[#2a2a2a] flex-shrink-0" title={`Desktop Audio: ${status}`}>
-            <div className={`w-1.5 h-1.5 rounded-full ${isTranscribing ? 'bg-green-500 animate-pulse' : 'bg-gray-600'}`} />
-            <span className="text-[9px] text-gray-400 uppercase tracking-wide">Desktop</span>
           </div>
 
           {/* Tab Toggle - Transcription/Summary */}
