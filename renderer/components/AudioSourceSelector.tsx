@@ -134,7 +134,7 @@ export default function AudioSourceSelector({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+    <div className="fixed inset-0 z-50 flex items-center justify-center backdrop-blur-sm">
       <div className="bg-[#0a0a0a] rounded-xl border border-[#222] w-full max-w-3xl max-h-[80vh] flex flex-col shadow-2xl">
         {/* Header */}
         <div className="p-4 border-b border-[#222] flex items-center justify-between">

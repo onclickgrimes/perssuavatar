@@ -41,6 +41,7 @@ export default function Settings({
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [aiProvider, setAiProvider] = useState<'openai' | 'gemini'>('gemini'); // Provedor de IA para modo classic
+  const [continuousRecordingEnabled, setContinuousRecordingEnabled] = useState(true); // Gravação contínua ativada
   const [dbStats, setDbStats] = useState<any>(null);
   
   // Continuous recorder & Screen Share
@@ -49,12 +50,15 @@ export default function Settings({
 
   // Effects (Logics)
   useEffect(() => {
-    if (assistantMode === 'live' && !isRecording) {
+    // Só gravar se: modo Live E gravação contínua ativada
+    if (assistantMode === 'live' && continuousRecordingEnabled && !isRecording) {
       startRecording();
-    } else if (assistantMode === 'classic' && isRecording) {
+    } 
+    // Parar se: modo Classic OU gravação desativada
+    else if ((assistantMode === 'classic' || !continuousRecordingEnabled) && isRecording) {
       stopRecording();
     }
-  }, [assistantMode, isRecording, startRecording, stopRecording]);
+  }, [assistantMode, continuousRecordingEnabled, isRecording, startRecording, stopRecording]);
 
   useEffect(() => {
     const unsubscribe = window.electron.onSaveRecording(async (durationSeconds) => {
@@ -110,6 +114,10 @@ export default function Settings({
             setAiProvider(settings.aiProvider);
             // Notificar o backend sobre o provedor
             window.electron.invoke('set-ai-provider', settings.aiProvider);
+          }
+          
+          if (typeof settings.continuousRecordingEnabled !== 'undefined') {
+            setContinuousRecordingEnabled(settings.continuousRecordingEnabled);
           }
           
           if (settings.selectedModel) {
@@ -211,6 +219,22 @@ export default function Settings({
     }
   };
 
+  const handleContinuousRecordingToggle = async () => {
+    const newState = !continuousRecordingEnabled;
+    setContinuousRecordingEnabled(newState);
+    
+    // O useEffect vai cuidar de iniciar/parar a gravação automaticamente
+    console.log(newState ? '📹 Gravação contínua ativada' : '⏹️ Gravação contínua desativada');
+    
+    // Salvar no banco de dados
+    try {
+      await window.electron.db.setUserSettings({ continuousRecordingEnabled: newState });
+      console.log('💾 Gravação contínua salva:', newState);
+    } catch (error) {
+      console.error('❌ Erro ao salvar gravação contínua:', error);
+    }
+  };
+
   // ================================================
   // FUNÇÕES DO BANCO DE DADOS
   // ================================================
@@ -277,7 +301,7 @@ export default function Settings({
   return (
     <div 
       className={isControlled 
-        ? "fixed inset-0 z-[600] flex items-center justify-center bg-black/60 backdrop-blur-sm animate-in fade-in duration-200 no-drag"
+        ? "fixed inset-0 z-[600] flex items-center justify-center backdrop-blur-sm animate-in fade-in duration-200 no-drag"
         : "absolute top-4 right-4 z-[200] no-drag"
       }
             onMouseEnter={() => window.electron.setIgnoreMouseEvents(false)}
@@ -402,12 +426,85 @@ export default function Settings({
                   </div>
                 )}
 
-                {/* --- Áudio e Tela (MOCKED) --- */}
+                {/* --- Áudio e Tela --- */}
                 {activeTab === 'audio' && (
-                   <div className="flex flex-col items-center justify-center h-full text-center space-y-4 opacity-50">
-                      <div className="text-4xl">🎤 🖥️</div>
-                      <h3 className="text-xl font-medium text-white">Configurações de Áudio e Tela</h3>
-                      <p className="text-gray-500 max-w-md">Em breve você poderá configurar dispositivos de entrada/saída, cancelamento de ruído e preferências avançadas de captura de tela.</p>
+                   <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      
+                      {/* Gravação Contínua */}
+                      <div className="space-y-4">
+                         <h3 className="text-sm uppercase tracking-wider text-gray-500 font-semibold border-b border-[#222] pb-2">Gravação de Tela</h3>
+                         
+                         <div className="bg-gradient-to-r from-red-900/20 to-orange-900/20 p-4 rounded-xl border border-red-500/20">
+                            <div className="flex items-center justify-between mb-4">
+                               <div>
+                                  <h4 className="font-semibold text-white">Gravação Contínua (Buffer)</h4>
+                                  <p className="text-xs text-gray-400 mt-1">
+                                     Mantém os últimos 10 minutos em memória para replay instantâneo
+                                  </p>
+                               </div>
+                               <button 
+                                 onClick={handleContinuousRecordingToggle}
+                                 className={`w-12 h-6 rounded-full transition-colors relative ${
+                                   continuousRecordingEnabled 
+                                     ? 'bg-red-600 shadow-[0_0_10px_rgba(220,38,38,0.5)]' 
+                                     : 'bg-gray-600'
+                                 }`}
+                               >
+                                 <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                                   continuousRecordingEnabled ? 'left-7' : 'left-1'
+                                 }`} />
+                               </button>
+                            </div>
+
+                            {continuousRecordingEnabled && (
+                               <div className="space-y-3 pt-3 border-t border-white/10">
+                                  {/* Status Info */}
+                                  <div className="flex items-center justify-between text-sm">
+                                     <span className="text-red-200 flex items-center gap-2">
+                                        {isRecording ? (
+                                          <>
+                                            <span className="relative flex h-2 w-2">
+                                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
+                                              <span className="relative inline-flex rounded-full h-2 w-2 bg-red-500"></span>
+                                            </span>
+                                            Gravando
+                                          </>
+                                        ) : (
+                                          <>⏸️ Pausado</>
+                                        )}
+                                     </span>
+                                     {getBufferInfo && (
+                                        <span className="text-xs text-orange-300">
+                                           📦 Buffer: {Math.floor(getBufferInfo().duration)}s / 600s
+                                        </span>
+                                     )}
+                                  </div>
+                                  
+                                  {/* Info */}
+                                  <div className="bg-black/30 rounded-lg p-3">
+                                     <p className="text-xs text-amber-200">
+                                        ℹ️ A gravação contínua salva automaticamente quando você pede para "salvar os últimos X segundos". 
+                                        Nenhum arquivo é criado até você solicitar o replay.
+                                     </p>
+                                  </div>
+                               </div>
+                            )}
+
+                            {!continuousRecordingEnabled && (
+                               <div className="pt-3 border-t border-white/10">
+                                  <p className="text-xs text-gray-500">
+                                     ⚠️ Com a gravação desativada, você não poderá usar a função de replay dos últimos segundos.
+                                  </p>
+                               </div>
+                            )}
+                         </div>
+                      </div>
+
+                      {/* Placeholder para futuras configurações */}
+                      <div className="opacity-30">
+                         <h3 className="text-sm uppercase tracking-wider text-gray-500 font-semibold border-b border-[#222] pb-2 mb-4">Dispositivos de Áudio</h3>
+                         <p className="text-xs text-gray-500">Em breve: Seleção de microfone e alto-falantes</p>
+                      </div>
                    </div>
                 )}
 
