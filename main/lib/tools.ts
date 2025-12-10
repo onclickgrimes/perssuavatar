@@ -1,67 +1,50 @@
 import { ChatCompletionTool } from "openai/resources/chat/completions";
 import { FunctionDeclaration, SchemaType } from "@google/generative-ai";
 
-// OpenAI format tools
-export const tools: ChatCompletionTool[] = [
-  {
-      type: "function",
-      function: {
-        name: "get_horoscope",
-        description: "Get today's horoscope for an astrological sign.",
-        parameters: {
-            type: "object",
-            properties: {
-                sign: {
-                    type: "string",
-                    description: "An astrological sign like Taurus or Aquarius",
-                },
-            },
-            required: ["sign"],
-        },
-      }
-  },
-  {
-      type: "function",
-      function: {
-        name: "control_screen_recording",
-        description: "Start or stop the SCREEN RECORDING (video) based on user request. Use this when the user asks to record a video of the screen, stop recording, or analyze a VIDEO of the screen action over time.",
-        parameters: {
-            type: "object",
-            properties: {
-                action: {
-                    type: "string",
-                    enum: ["start", "stop"],
-                    description: "The action to perform: 'start' to begin recording/analyzing, 'stop' to end recording.",
-                },
-            },
-            required: ["action"],
-        },
-      }
-  },
-  {
-      type: "function",
-      function: {
-        name: "take_screenshot",
-        description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', or simply 'look'.",
-        parameters: {
-            type: "object",
-            properties: {},
-            required: [],
-        },
-      }
-  },
-];
+/**
+ * ========================================
+ * FORMATO UNIFICADO DE TOOLS
+ * ========================================
+ * Define todas as tools em um único lugar.
+ * Os conversores abaixo transformam automaticamente
+ * para o formato específico de cada provedor.
+ */
 
-// Gemini format tools (FunctionDeclaration)
-export const geminiTools: FunctionDeclaration[] = [
+// Tipos do formato unificado
+export type UnifiedPropertyType = 'string' | 'number' | 'boolean' | 'object' | 'array';
+
+export interface UnifiedProperty {
+  type: UnifiedPropertyType;
+  description?: string;
+  enum?: string[];
+  items?: UnifiedProperty; // Para arrays
+  properties?: Record<string, UnifiedProperty>; // Para objetos aninhados
+  required?: string[]; // Para objetos aninhados
+}
+
+export interface UnifiedTool {
+  name: string;
+  description: string;
+  parameters: {
+    properties: Record<string, UnifiedProperty>;
+    required?: string[];
+  };
+}
+
+/**
+ * ========================================
+ * DEFINIÇÃO ÚNICA DE TODAS AS TOOLS
+ * ========================================
+ * Adicione ou modifique tools APENAS aqui!
+ */
+export const UNIFIED_TOOLS: UnifiedTool[] = [
   {
     name: "get_horoscope",
     description: "Get today's horoscope for an astrological sign.",
     parameters: {
-      type: SchemaType.OBJECT,
       properties: {
         sign: {
-          type: SchemaType.STRING,
+          type: "string",
           description: "An astrological sign like Taurus or Aquarius",
         },
       },
@@ -72,11 +55,9 @@ export const geminiTools: FunctionDeclaration[] = [
     name: "control_screen_recording",
     description: "Start or stop the SCREEN RECORDING (video) based on user request. Use this when the user asks to record a video of the screen, stop recording, or analyze a VIDEO of the screen action over time.",
     parameters: {
-      type: SchemaType.OBJECT,
       properties: {
         action: {
-          type: SchemaType.STRING,
-          format: 'enum',
+          type: "string",
           enum: ["start", "stop"],
           description: "The action to perform: 'start' to begin recording/analyzing, 'stop' to end recording.",
         },
@@ -88,54 +69,253 @@ export const geminiTools: FunctionDeclaration[] = [
     name: "take_screenshot",
     description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', or simply 'look'.",
     parameters: {
-      type: SchemaType.OBJECT,
       properties: {},
       required: [],
     },
   },
 ];
 
-// Gemini Live API format tools (for WebSocket session configuration)
-// This format is slightly different from the standard SDK format
+/**
+ * Tools específicas do Gemini Live
+ * (mantidas separadas pois têm funcionalidades únicas do modo Live)
+ */
+export const UNIFIED_LIVE_TOOLS: UnifiedTool[] = [
+  {
+    name: "control_screen_share",
+    description: "Start or stop REAL-TIME SCREEN SHARING so you can see the user's screen continuously. Use 'start' when the user asks you to 'look at the screen', 'watch', 'observe', 'see what I'm doing', or wants you to have continuous visual access. Use 'stop' when they want you to stop watching.",
+    parameters: {
+      properties: {
+        action: {
+          type: "string",
+          enum: ["start", "stop"],
+          description: "The action to perform: 'start' to begin watching the screen in real-time, 'stop' to stop watching.",
+        },
+      },
+      required: ["action"],
+    },
+  },
+  {
+    name: "save_screen_recording",
+    description: "Save a screen recording of the last X seconds or minutes. The screen is being continuously recorded in the background, and this function saves a clip of the specified duration. Use when the user asks to 'save the last 30 seconds', 'record/gravar the last 5 minutes', 'save what just happened', etc.",
+    parameters: {
+      properties: {
+        duration_seconds: {
+          type: "number",
+          description: "The number of seconds to save from the recording buffer. For example: 30 for 30 seconds, 60 for 1 minute, 300 for 5 minutes. Maximum is 600 seconds (10 minutes).",
+        },
+      },
+      required: ["duration_seconds"],
+    },
+  },
+  {
+    name: "take_screenshot",
+    description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', or simply 'look'.",
+    parameters: {
+      properties: {},
+      required: [],
+    },
+  },
+];
+
+/**
+ * ========================================
+ * CONVERSORES AUTOMÁTICOS
+ * ========================================
+ */
+
+/**
+ * Converte uma propriedade unificada para o formato OpenAI
+ */
+function convertPropertyToOpenAI(prop: UnifiedProperty): any {
+  const result: any = {
+    type: prop.type,
+  };
+
+  if (prop.description) {
+    result.description = prop.description;
+  }
+
+  if (prop.enum) {
+    result.enum = prop.enum;
+  }
+
+  if (prop.items) {
+    result.items = convertPropertyToOpenAI(prop.items);
+  }
+
+  if (prop.properties) {
+    result.properties = {};
+    for (const [key, value] of Object.entries(prop.properties)) {
+      result.properties[key] = convertPropertyToOpenAI(value);
+    }
+  }
+
+  if (prop.required) {
+    result.required = prop.required;
+  }
+
+  return result;
+}
+
+/**
+ * Converte uma tool unificada para o formato OpenAI
+ */
+function convertToOpenAI(tool: UnifiedTool): ChatCompletionTool {
+  return {
+    type: "function",
+    function: {
+      name: tool.name,
+      description: tool.description,
+      parameters: {
+        type: "object",
+        properties: Object.fromEntries(
+          Object.entries(tool.parameters.properties).map(([key, prop]) => [
+            key,
+            convertPropertyToOpenAI(prop),
+          ])
+        ),
+        required: tool.parameters.required || [],
+      },
+    },
+  };
+}
+
+/**
+ * Converte um tipo unificado para SchemaType do Gemini
+ */
+function convertTypeToGemini(type: UnifiedPropertyType): SchemaType {
+  const typeMap: Record<UnifiedPropertyType, SchemaType> = {
+    string: SchemaType.STRING,
+    number: SchemaType.NUMBER,
+    boolean: SchemaType.BOOLEAN,
+    object: SchemaType.OBJECT,
+    array: SchemaType.ARRAY,
+  };
+  return typeMap[type];
+}
+
+/**
+ * Converte uma propriedade unificada para o formato Gemini SDK
+ */
+function convertPropertyToGemini(prop: UnifiedProperty): any {
+  const result: any = {
+    type: convertTypeToGemini(prop.type),
+  };
+
+  if (prop.description) {
+    result.description = prop.description;
+  }
+
+  if (prop.enum) {
+    result.format = 'enum';
+    result.enum = prop.enum;
+  }
+
+  if (prop.items) {
+    result.items = convertPropertyToGemini(prop.items);
+  }
+
+  if (prop.properties) {
+    result.properties = {};
+    for (const [key, value] of Object.entries(prop.properties)) {
+      result.properties[key] = convertPropertyToGemini(value);
+    }
+  }
+
+  if (prop.required) {
+    result.required = prop.required;
+  }
+
+  return result;
+}
+
+/**
+ * Converte uma tool unificada para o formato Gemini SDK
+ */
+function convertToGemini(tool: UnifiedTool): FunctionDeclaration {
+  return {
+    name: tool.name,
+    description: tool.description,
+    parameters: {
+      type: SchemaType.OBJECT,
+      properties: Object.fromEntries(
+        Object.entries(tool.parameters.properties).map(([key, prop]) => [
+          key,
+          convertPropertyToGemini(prop),
+        ])
+      ),
+      required: tool.parameters.required || [],
+    },
+  };
+}
+
+/**
+ * Converte uma propriedade unificada para o formato Gemini Live API
+ */
+function convertPropertyToGeminiLive(prop: UnifiedProperty): any {
+  const result: any = {
+    type: prop.type.toUpperCase(),
+  };
+
+  if (prop.description) {
+    result.description = prop.description;
+  }
+
+  if (prop.enum) {
+    result.enum = prop.enum;
+  }
+
+  if (prop.items) {
+    result.items = convertPropertyToGeminiLive(prop.items);
+  }
+
+  if (prop.properties) {
+    result.properties = {};
+    for (const [key, value] of Object.entries(prop.properties)) {
+      result.properties[key] = convertPropertyToGeminiLive(value);
+    }
+  }
+
+  if (prop.required) {
+    result.required = prop.required;
+  }
+
+  return result;
+}
+
+/**
+ * Converte uma tool unificada para o formato Gemini Live API
+ */
+function convertToGeminiLive(tool: UnifiedTool): any {
+  return {
+    name: tool.name,
+    description: tool.description,
+    parameters: {
+      type: "OBJECT",
+      properties: Object.fromEntries(
+        Object.entries(tool.parameters.properties).map(([key, prop]) => [
+          key,
+          convertPropertyToGeminiLive(prop),
+        ])
+      ),
+      required: tool.parameters.required || [],
+    },
+  };
+}
+
+/**
+ * ========================================
+ * EXPORTS PARA CADA PROVEDOR
+ * ========================================
+ */
+
+// OpenAI format
+export const tools: ChatCompletionTool[] = UNIFIED_TOOLS.map(convertToOpenAI);
+
+// Gemini SDK format
+export const geminiTools: FunctionDeclaration[] = UNIFIED_TOOLS.map(convertToGemini);
+
+// Gemini Live API format
 export const geminiLiveTools = {
-  functionDeclarations: [
-    {
-      name: "control_screen_share",
-      description: "Start or stop REAL-TIME SCREEN SHARING so you can see the user's screen continuously. Use 'start' when the user asks you to 'look at the screen', 'watch', 'observe', 'see what I'm doing', or wants you to have continuous visual access. Use 'stop' when they want you to stop watching.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          action: {
-            type: "STRING",
-            enum: ["start", "stop"],
-            description: "The action to perform: 'start' to begin watching the screen in real-time, 'stop' to stop watching.",
-          },
-        },
-        required: ["action"],
-      },
-    },
-    {
-      name: "save_screen_recording",
-      description: "Save a screen recording of the last X seconds or minutes. The screen is being continuously recorded in the background, and this function saves a clip of the specified duration. Use when the user asks to 'save the last 30 seconds', 'record/gravar the last 5 minutes', 'save what just happened', etc.",
-      parameters: {
-        type: "OBJECT",
-        properties: {
-          duration_seconds: {
-            type: "NUMBER",
-            description: "The number of seconds to save from the recording buffer. For example: 30 for 30 seconds, 60 for 1 minute, 300 for 5 minutes. Maximum is 600 seconds (10 minutes).",
-          },
-        },
-        required: ["duration_seconds"],
-      },
-    },
-    {
-      name: "take_screenshot",
-      description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', or simply 'look'.",
-      parameters: {
-        type: "OBJECT",
-        properties: {},
-        required: [],
-      },
-    },
-  ],
+  functionDeclarations: UNIFIED_LIVE_TOOLS.map(convertToGeminiLive),
 };
