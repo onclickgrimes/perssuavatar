@@ -14,7 +14,7 @@ interface SettingsProps {
   onClose?: () => void;
 }
 
-type TabId = 'api' | 'audio' | 'features' | 'shortcuts' | 'help';
+type TabId = 'api' | 'audio' | 'avatar' | 'features' | 'shortcuts' | 'help';
 
 export default function Settings({ 
   onSizeChange, 
@@ -298,6 +298,7 @@ export default function Settings({
                 <nav className="flex-1 space-y-1">
                    {renderSidebarItem('api', 'API e Modelos', '❖')}
                    {renderSidebarItem('audio', 'Áudio e Tela', '🎤')}
+                   {renderSidebarItem('avatar', 'Avatar', '👤')}
                    {renderSidebarItem('features', 'Recursos', '⚡')}
                    {renderSidebarItem('shortcuts', 'Atalhos', '⌨')}
                    {renderSidebarItem('help', 'Ajuda', '❓')}
@@ -363,11 +364,11 @@ export default function Settings({
                    </div>
                 )}
 
-                {/* --- Recursos (REAL SETTINGS) --- */}
-                {activeTab === 'features' && (
+                {/* --- Avatar --- */}
+                {activeTab === 'avatar' && (
                    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
                       
-                      {/* Section: Avatar */}
+                      {/* Section: Aparência do Avatar */}
                       <div className="space-y-4">
                          <h3 className="text-sm uppercase tracking-wider text-gray-500 font-semibold border-b border-[#222] pb-2">Aparência do Avatar</h3>
                          
@@ -402,6 +403,12 @@ export default function Settings({
                             </div>
                          </div>
                       </div>
+                   </div>
+                )}
+
+                {/* --- Recursos (REAL SETTINGS) --- */}
+                {activeTab === 'features' && (
+                   <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
 
                       {/* Section: Janela e Comportamento */}
                       <div className="space-y-4">
