@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useDesktopAudioTranscriber } from '../hooks/useDesktopAudioTranscriber';
+import { useMicrophoneAudioLevel } from '../hooks/useMicrophoneAudioLevel';
 import AudioSourceSelector from './AudioSourceSelector';
 
 interface TranscriptionWindowProps {
@@ -189,14 +190,14 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   // Hook para transcrição de áudio do desktop (OUTROS)
   const { startTranscribing, stopTranscribing, changeAudioSource, isTranscribing, status } = useDesktopAudioTranscriber({
     sourceId: selectedAudioSourceId, // Passa a fonte selecionada
+    onAudioLevel: (level) => {
+      // Atualizar nível de áudio em tempo real (antes da transcrição)
+      setOtherAudioLevel(level);
+    },
     onTranscription: (text, isFinal) => {
       if (isPaused) return;
 
       console.log('[DesktopAudio] Transcription:', text, 'isFinal:', isFinal);
-      
-      // Simular nível de áudio quando recebe transcrição
-      setOtherAudioLevel(Math.random() * 80 + 20);
-      setTimeout(() => setOtherAudioLevel(0), 200);
 
       if (isFinal) {
         // Acumula fragmentos
@@ -258,14 +259,24 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     chunkIntervalMs: 100
   });
 
-  // Iniciar transcrição do desktop automaticamente quando a janela abrir
+  // Hook para monitorar nível de áudio do microfone (usuário)
+  const { startMonitoring, stopMonitoring } = useMicrophoneAudioLevel({
+    onAudioLevel: (level) => {
+      // Atualizar nível de áudio do usuário em tempo real
+      setUserAudioLevel(level);
+    }
+  });
+
+  // Iniciar transcrição do desktop e monitoramento do microfone automaticamente quando a janela abrir
   useEffect(() => {
-    console.log('[TranscriptionWindow] Iniciando transcrição do desktop...');
+    console.log('[TranscriptionWindow] Iniciando transcrição do desktop e monitoramento do microfone...');
     startTranscribing();
+    startMonitoring();
 
     return () => {
-      console.log('[TranscriptionWindow] Parando transcrição do desktop...');
+      console.log('[TranscriptionWindow] Parando transcrição do desktop e monitoramento do microfone...');
       stopTranscribing();
+      stopMonitoring();
       if (desktopTimeoutRef.current) clearTimeout(desktopTimeoutRef.current);
     };
   }, []);
@@ -357,10 +368,6 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       if (isPaused) return;
 
       console.log('[TranscriptionWindow] User:', text);
-      
-      // Simular nível de áudio quando recebe transcrição
-      setUserAudioLevel(Math.random() * 80 + 20);
-      setTimeout(() => setUserAudioLevel(0), 200);
       
       // Acumula fragmentos - adiciona espaço apenas se o buffer não estiver vazio
       userTranscriptionBuffer.current += text;

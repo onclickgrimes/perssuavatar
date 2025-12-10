@@ -3,6 +3,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 interface UseDesktopAudioTranscriberOptions {
     onTranscription?: (text: string, isFinal: boolean) => void;
     onError?: (error: any) => void;
+    onAudioLevel?: (level: number) => void; // Callback para nível de áudio (0-100)
     chunkIntervalMs?: number; // Intervalo para enviar chunks (default: 100ms)
     sourceId?: string | null; // ID da fonte de áudio (null = sistema inteiro)
 }
@@ -11,6 +12,7 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
     const { 
         onTranscription, 
         onError,
+        onAudioLevel, // Callback para nível de áudio
         chunkIntervalMs = 100, // 100ms = 10 chunks por segundo (ótimo para realtime)
         sourceId = null // Por padrão, captura do sistema inteiro
     } = options;
@@ -21,7 +23,9 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
     const audioContextRef = useRef<AudioContext | null>(null);
     const processorRef = useRef<ScriptProcessorNode | null>(null);
     const sourceRef = useRef<MediaStreamAudioSourceNode | null>(null);
+    const analyserRef = useRef<AnalyserNode | null>(null); // Para análise de nível de áudio
     const isStoppingRef = useRef<boolean>(false);
+    const audioLevelIntervalRef = useRef<NodeJS.Timeout | null>(null); // Intervalo para atualizar nível de áudio
 
     // Listener para transcrições do Deepgram
     useEffect(() => {
@@ -170,9 +174,41 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
                 window.electron.sendDesktopAudioChunk(int16Data.buffer);
             };
 
+            // Criar AnalyserNode para análise de nível de áudio em tempo real
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256; // Tamanho do FFT (menor = mais rápido)
+            analyser.smoothingTimeConstant = 0.8; // Suavização
+            analyserRef.current = analyser;
+
             // Conectar os nós
             sourceNode.connect(processor);
+            sourceNode.connect(analyser); // Conectar também ao analyser
             processor.connect(audioContext.destination);
+
+            // Função para calcular e enviar nível de áudio
+            const updateAudioLevel = () => {
+                if (!analyserRef.current || isStoppingRef.current) return;
+
+                const bufferLength = analyserRef.current.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                analyserRef.current.getByteTimeDomainData(dataArray);
+
+                // Calcular RMS (Root Mean Square) para nível de áudio
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const normalized = (dataArray[i] - 128) / 128; // Normalizar para -1 a 1
+                    sum += normalized * normalized;
+                }
+                const rms = Math.sqrt(sum / bufferLength);
+                const level = Math.min(100, rms * 380); // Converter para 0-100 com boost (+40% ganho visual)
+
+                if (onAudioLevel) {
+                    onAudioLevel(level);
+                }
+            };
+
+            // Atualizar nível de áudio a cada 16ms (~60fps para animação suave)
+            audioLevelIntervalRef.current = setInterval(updateAudioLevel, 16);
 
             // Iniciar o Deepgram no backend
             await window.electron.startDesktopTranscription();
@@ -190,7 +226,18 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
         console.log('[DesktopAudioTranscriber] Parando...');
         isStoppingRef.current = true;
 
+        // Limpar intervalo de atualização de nível de áudio
+        if (audioLevelIntervalRef.current) {
+            clearInterval(audioLevelIntervalRef.current);
+            audioLevelIntervalRef.current = null;
+        }
+
         // Desconectar e limpar os nós de áudio
+        if (analyserRef.current) {
+            analyserRef.current.disconnect();
+            analyserRef.current = null;
+        }
+
         if (processorRef.current) {
             processorRef.current.disconnect();
             processorRef.current.onaudioprocess = null;
@@ -229,7 +276,18 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
         try {
             console.log('[DesktopAudioTranscriber] Trocando fonte de áudio...');
             
+            // Limpar intervalo de atualização de nível de áudio
+            if (audioLevelIntervalRef.current) {
+                clearInterval(audioLevelIntervalRef.current);
+                audioLevelIntervalRef.current = null;
+            }
+
             // Parar apenas o stream anterior (não o Deepgram)
+            if (analyserRef.current) {
+                analyserRef.current.disconnect();
+                analyserRef.current = null;
+            }
+
             if (processorRef.current) {
                 processorRef.current.disconnect();
                 processorRef.current.onaudioprocess = null;
@@ -337,8 +395,40 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
                 window.electron.sendDesktopAudioChunk(int16Data.buffer);
             };
 
+            // Criar AnalyserNode para análise de nível de áudio em tempo real
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 256;
+            analyser.smoothingTimeConstant = 0.8;
+            analyserRef.current = analyser;
+
             sourceNode.connect(processor);
+            sourceNode.connect(analyser); // Conectar também ao analyser
             processor.connect(audioContext.destination);
+
+            // Função para calcular e enviar nível de áudio
+            const updateAudioLevel = () => {
+                if (!analyserRef.current || isStoppingRef.current) return;
+
+                const bufferLength = analyserRef.current.frequencyBinCount;
+                const dataArray = new Uint8Array(bufferLength);
+                analyserRef.current.getByteTimeDomainData(dataArray);
+
+                // Calcular RMS (Root Mean Square) para nível de áudio
+                let sum = 0;
+                for (let i = 0; i < bufferLength; i++) {
+                    const normalized = (dataArray[i] - 128) / 128;
+                    sum += normalized * normalized;
+                }
+                const rms = Math.sqrt(sum / bufferLength);
+                const level = Math.min(100, rms * 280); // +40% ganho visual
+
+                if (onAudioLevel) {
+                    onAudioLevel(level);
+                }
+            };
+
+            // Atualizar nível de áudio a cada 16ms (~60fps)
+            audioLevelIntervalRef.current = setInterval(updateAudioLevel, 16);
 
             console.log('[DesktopAudioTranscriber] Fonte trocada com sucesso! Deepgram continua conectado.');
 
