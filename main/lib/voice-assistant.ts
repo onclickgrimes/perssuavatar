@@ -594,6 +594,12 @@ export class VoiceAssistant extends EventEmitter {
 
         this.conversationHistory.push({ role: 'assistant', content: responseText });
         this.emit('ai-response', responseText);
+        
+        // CLASSIC MODE: Emit model-transcription for the transcription window filter
+        // (in live mode, this is emitted by GeminiLiveService)
+        if (this.mode === 'classic') {
+            this.emit('model-transcription', responseText);
+        }
 
         const codeBlockRegex = /```[\s\S]*?```/g;
         const codeBlocks = responseText.match(codeBlockRegex);
