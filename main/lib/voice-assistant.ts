@@ -15,56 +15,80 @@ interface AIResponse {
 }
 
 export class VoiceAssistant extends EventEmitter {
-    private deepgramService: DeepgramService;
+    // ========================================
+    // SHARED SERVICES & STATE
+    // ========================================
     private openAIService: OpenAIService;
     private geminiService: GeminiService;
     private deepSeekService: DeepSeekService;
-    private ttsService: TTSService;
+    private systemPrompt: string = '';
+    private recordingContext: string | null = null;
+    private lastRecordingPath: string | null = null;
+    private transcribeOnlyMode: boolean = false;
+    private mode: 'classic' | 'live' = 'classic';
 
+    // ========================================
+    // CLASSIC MODE - Services & State
+    // ========================================
+    private deepgramService: DeepgramService;        // Speech-to-text (Classic)
+    private ttsService: TTSService;                  // Text-to-speech (Classic)
+    private ttsProvider: "polly" | "elevenlabs" = "elevenlabs";
+    private aiProvider: 'openai' | 'gemini' | 'deepseek' = 'gemini';
     private isProcessing: boolean = false;
     private conversationHistory: any[] = [];
-    private systemPrompt: string = '';
-    private ttsProvider: "polly" | "elevenlabs" = "elevenlabs";
-    private recordingContext: string | null = null;
 
-    // New Services and State
-    private geminiLiveService: GeminiLiveService;
-    private mode: 'classic' | 'live' = 'classic';
-    private aiProvider: 'openai' | 'gemini' | 'deepseek' = 'gemini';  // AI provider for classic mode
-    private lastRecordingPath: string | null = null;  // Path to the last saved recording
-    private transcribeOnlyMode: boolean = false;  // If true, only transcribe without processing AI response
+    // ========================================
+    // LIVE MODE - Services & State
+    // ========================================
+    private geminiLiveService: GeminiLiveService;    // Gemini Live for real-time audio
 
-
+    // ========================================
+    // CONSTRUCTOR & INITIALIZATION
+    // ========================================
     constructor(ttsProvider: "polly" | "elevenlabs" = "elevenlabs") {
         super();
         this.ttsProvider = ttsProvider;
         this.updateContext();
 
-        // Initialize Services
-        this.deepgramService = new DeepgramService();
+        // Initialize Shared Services
         this.openAIService = new OpenAIService();
         this.geminiService = new GeminiService();
         this.deepSeekService = new DeepSeekService();
-        this.geminiLiveService = new GeminiLiveService();
+
+        // Initialize Classic Mode Services
+        this.deepgramService = new DeepgramService();
         this.ttsService = new TTSService();
 
+        // Initialize Live Mode Services
+        this.geminiLiveService = new GeminiLiveService();
 
-        // Forward TTS Events
+        // Setup Event Listeners
+        this.setupClassicModeEvents();
+        this.setupLiveModeEvents();
+        this.setupSharedEvents();
+    }
+
+    // ========================================
+    // CLASSIC MODE - EVENT LISTENERS
+    // ========================================
+    private setupClassicModeEvents() {
+        // TTS Events (Classic Mode)
         this.ttsService.on('audio-chunk', (chunk) => {
             if (this.mode === 'classic') {
                 this.emit('audio-chunk', chunk);
             }
         });
+        
         this.ttsService.on('audio-end', () => {
             if (this.mode === 'classic') {
                 this.emit('audio-end');
             }
         });
 
-        // Setup Deepgram Events
+        // Deepgram Events (Classic Mode)
         this.deepgramService.on('transcription-final', (text: string) => {
             if (this.mode === 'classic') {
-                this.handleTranscription(text);
+                this.handleClassicTranscription(text);
             }
         });
 
@@ -77,105 +101,61 @@ export class VoiceAssistant extends EventEmitter {
         this.deepgramService.on('error', (error: any) => {
             this.emit('error', error);
         });
+    }
 
-        // Setup Gemini Services Events
-        this.geminiService.on('status', (status: string) => this.emit('status', status));
-
-        // Setup Gemini Live Events
+    // ========================================
+    // LIVE MODE - EVENT LISTENERS
+    // ========================================
+    private setupLiveModeEvents() {
+        // Audio Events (Live Mode)
         this.geminiLiveService.on('audio-chunk', (chunk) => {
             if (this.mode === 'live') {
                 this.emit('audio-chunk', chunk);
             }
         });
 
+        this.geminiLiveService.on('audio-full', (buffer) => {
+            if (this.mode === 'live') {
+                this.emit('audio-ready', null, buffer);
+            }
+        });
+
+        // Status Events (Live Mode)
         this.geminiLiveService.on('status', (status) => {
             if (this.mode === 'live') {
                 this.emit('status', status);
             }
         });
 
+        // Avatar Actions (Live Mode)
         this.geminiLiveService.on('avatar-action', (type, value) => {
             if (this.mode === 'live') {
                 this.emit('avatar-action', type, value);
             }
         });
 
-        this.geminiLiveService.on('audio-full', (buffer) => {
-            if (this.mode === 'live') {
-                // 'audio-ready' expects (filePath, buffer). passing null for filePath.
-                this.emit('audio-ready', null, buffer);
-            }
-        });
-
+        // Text Response (Live Mode)
         this.geminiLiveService.on('text', (text) => {
             if (this.mode === 'live') {
                 this.emit('gemini-response', text);
             }
         });
 
-        // Handle interruption (user barge-in)
+        // Interruption (Live Mode)
         this.geminiLiveService.on('interrupted', () => {
             if (this.mode === 'live') {
                 this.emit('interrupted');
             }
         });
 
-        // Handle tool calls from Gemini Live (function calling)
+        // Tool Calls (Live Mode)
         this.geminiLiveService.on('tool-call', async (toolCall: { id: string, name: string, args: any }) => {
             if (this.mode === 'live') {
-                console.log(`[VoiceAssistant] Gemini Live tool call: ${toolCall.name}`, toolCall.args);
-
-                let result: any = { success: true };
-
-                if (toolCall.name === 'control_screen_share') {
-                    const action = toolCall.args?.action;
-                    console.log(`[VoiceAssistant] Control screen share: ${action}`);
-
-                    // Emit event for the frontend to handle
-                    this.emit('control-screen-share', action);
-
-                    if (action === 'start') {
-                        result = {
-                            success: true,
-                            message: 'Screen sharing started. You can now see the user screen in real-time. Confirm briefly that you are now watching.'
-                        };
-                    } else {
-                        result = {
-                            success: true,
-                            message: 'Screen sharing stopped. You can no longer see the screen. Confirm that you stopped watching.'
-                        };
-                    }
-
-                } else if (toolCall.name === 'save_screen_recording') {
-                    const durationSeconds = toolCall.args?.duration_seconds || 30;
-                    console.log(`[VoiceAssistant] Save screen recording: last ${durationSeconds} seconds`);
-
-                    // Emit event for the frontend to save the recording
-                    this.emit('save-recording', durationSeconds);
-
-                    result = {
-                        success: true,
-                        message: `Saving the last ${durationSeconds} seconds of screen recording. The file will be saved and you can reference it later. Confirm to the user that you're saving the recording.`
-                    };
-
-                } else if (toolCall.name === 'take_screenshot') {
-                    console.log(`[VoiceAssistant] Take screenshot requested`);
-
-                    // Emit event for the main process to handle
-                    // The screenshot will be sent as a screen frame right after
-                    this.emit('take-screenshot');
-                    result = {
-                        success: true,
-                        message: 'Screenshot captured and being sent to you now. Please analyze the image that follows and describe what you see on the screen.'
-                    };
-                }
-
-                // Send the tool response back to Gemini Live
-                await this.geminiLiveService.sendToolResponse(toolCall.id, result);
+                await this.handleLiveToolCall(toolCall);
             }
         });
 
-        // Forward transcriptions to frontend
+        // Transcriptions (Live Mode)
         this.geminiLiveService.on('user-transcription', (text: string) => {
             if (this.mode === 'live') {
                 this.emit('user-transcription', text);
@@ -189,25 +169,85 @@ export class VoiceAssistant extends EventEmitter {
         });
     }
 
-    private handleTranscription(text: string) {
-        this.emit('transcription', text);
+    // ========================================
+    // SHARED EVENT LISTENERS
+    // ========================================
+    private setupSharedEvents() {
+        this.geminiService.on('status', (status: string) => this.emit('status', status));
+    }
 
-        // Always emit user-transcription for the transcription window
+    // ========================================
+    // CLASSIC MODE - TRANSCRIPTION HANDLING
+    // ========================================
+    private handleClassicTranscription(text: string) {
+        this.emit('transcription', text);
         this.emit('user-transcription', text);
 
-        // If we're in transcribe-only mode, don't process the message
         if (this.transcribeOnlyMode) {
-            console.log('[VoiceAssistant] Transcribe-only mode: skipping AI processing');
+            console.log('[VoiceAssistant][Classic] Transcribe-only mode: skipping AI processing');
             return;
         }
 
         if (!this.isProcessing) {
             this.processUserMessage(text);
         } else {
-            console.log("⚠️ Ignorando entrada pois já estou processando uma resposta.");
+            console.log("⚠️ [Classic] Ignorando entrada pois já estou processando uma resposta.");
         }
     }
 
+    // ========================================
+    // LIVE MODE - TOOL CALL HANDLING
+    // ========================================
+    private async handleLiveToolCall(toolCall: { id: string, name: string, args: any }) {
+        console.log(`[VoiceAssistant][Live] Tool call: ${toolCall.name}`, toolCall.args);
+
+        let result: any = { success: true };
+
+        if (toolCall.name === 'control_screen_share') {
+            const action = toolCall.args?.action;
+            console.log(`[VoiceAssistant][Live] Control screen share: ${action}`);
+
+            this.emit('control-screen-share', action);
+
+            if (action === 'start') {
+                result = {
+                    success: true,
+                    message: 'Screen sharing started. You can now see the user screen in real-time. Confirm briefly that you are now watching.'
+                };
+            } else {
+                result = {
+                    success: true,
+                    message: 'Screen sharing stopped. You can no longer see the screen. Confirm that you stopped watching.'
+                };
+            }
+
+        } else if (toolCall.name === 'save_screen_recording') {
+            const durationSeconds = toolCall.args?.duration_seconds || 30;
+            console.log(`[VoiceAssistant][Live] Save screen recording: last ${durationSeconds} seconds`);
+
+            this.emit('save-recording', durationSeconds);
+
+            result = {
+                success: true,
+                message: `Saving the last ${durationSeconds} seconds of screen recording. The file will be saved and you can reference it later. Confirm to the user that you're saving the recording.`
+            };
+
+        } else if (toolCall.name === 'take_screenshot') {
+            console.log(`[VoiceAssistant][Live] Take screenshot requested`);
+
+            this.emit('take-screenshot');
+            result = {
+                success: true,
+                message: 'Screenshot captured and being sent to you now. Please analyze the image that follows and describe what you see on the screen.'
+            };
+        }
+
+        await this.geminiLiveService.sendToolResponse(toolCall.id, result);
+    }
+
+    // ========================================
+    // SHARED METHODS - VIDEO & IMAGE ANALYSIS
+    // ========================================
     public async analyzeVideo(videoBuffer: Buffer, mimeType: string = 'video/webm') {
         try {
             const context = this.recordingContext || undefined;
@@ -278,6 +318,9 @@ export class VoiceAssistant extends EventEmitter {
         }
     }
 
+    // ========================================
+    // SHARED METHODS - CONFIGURATION
+    // ========================================
     public updateContext() {
         this.systemPrompt = `
     Tu tá interpretando a Yuki, Uma avatar2d que interage com o usuário no computador. Ela é grossa, debochada, sarcástica e sem paciência nenhuma.
@@ -293,76 +336,22 @@ export class VoiceAssistant extends EventEmitter {
     `;
     }
 
-    public startDeepgram(audioStream?: Readable) {
-        // In live mode, we might not need to start anything explicitly unless we want to open the connection
-        if (this.mode === 'classic') {
-            this.deepgramService.start(audioStream);
-        }
-    }
-
-    public processAudioStream(chunk: Buffer) {
-        if (this.mode === 'live') {
-            this.geminiLiveService.sendAudio(chunk);
-        } else {
-            this.deepgramService.processAudioStream(chunk);
-        }
-    }
-
-    /**
-     * Enable transcribe-only mode (user-transcription works, but avatar doesn't respond)
-     */
-    public enableTranscribeOnlyMode() {
-        this.transcribeOnlyMode = true;
-        console.log('[VoiceAssistant] Transcribe-only mode enabled');
-
-        // Also enable in Gemini Live Service if in live mode
-        if (this.mode === 'live') {
-            this.geminiLiveService.enableTranscribeOnlyMode();
-        }
-    }
-
-    /**
-     * Disable transcribe-only mode (normal behavior restored)
-     */
-    public disableTranscribeOnlyMode() {
-        this.transcribeOnlyMode = false;
-        console.log('[VoiceAssistant] Transcribe-only mode disabled');
-
-        // Also disable in Gemini Live Service if in live mode
-        if (this.mode === 'live') {
-            this.geminiLiveService.disableTranscribeOnlyMode();
-        }
-    }
-
-    /**
-     * Get current transcribe-only mode state
-     */
-    public isTranscribeOnlyMode(): boolean {
-        return this.transcribeOnlyMode;
-    }
-
-    public stopDeepgram() {
-        this.deepgramService.stop();
-    }
-
-    public sendScreenFrame(base64Image: string) {
-        if (this.mode === 'live') {
-            this.geminiLiveService.sendScreenFrame(base64Image);
-        }
-    }
-
+    // ========================================
+    // MODE CONTROL & SWITCHING
+    // ========================================
     public async setMode(mode: 'classic' | 'live') {
-        console.log(`Switching mode to ${mode}`);
+        console.log(`[VoiceAssistant] Switching mode to ${mode}`);
         if (this.mode === mode) return;
 
         this.mode = mode;
 
         if (mode === 'live') {
+            // Switching to Live Mode
             this.stopDeepgram();
             this.emit('status', 'Connecting Live...');
             await this.geminiLiveService.connect();
 
-            // Sync transcribeOnlyMode state with Gemini Live Service
+            // Sync transcribeOnlyMode state
             if (this.transcribeOnlyMode) {
                 this.geminiLiveService.enableTranscribeOnlyMode();
             } else {
@@ -371,63 +360,107 @@ export class VoiceAssistant extends EventEmitter {
 
             this.emit('status', 'Live Ready');
         } else {
+            // Switching to Classic Mode
             this.geminiLiveService.disconnect();
             this.emit('status', 'Classic Mode');
         }
     }
 
-    /**
-     * Set the AI provider for classic mode ('openai', 'gemini', or 'deepseek')
-     */
-    public setAIProvider(provider: 'openai' | 'gemini' | 'deepseek') {
-        console.log(`[VoiceAssistant] Switching AI provider to: ${provider}`);
-        this.aiProvider = provider;
-    }
-
-    /**
-     * Get the current AI provider
-     */
-    public getAIProvider(): 'openai' | 'gemini' | 'deepseek' {
-        return this.aiProvider;
-    }
-
-    /**
-     * Get the current mode ('classic' or 'live')
-     */
     public getMode(): 'classic' | 'live' {
         return this.mode;
     }
 
-    /**
-     * Set the TTS provider for classic mode ('polly' or 'elevenlabs')
-     */
+    // ========================================
+    // CLASSIC MODE - PUBLIC METHODS
+    // ========================================
+    public startDeepgram(audioStream?: Readable) {
+        if (this.mode === 'classic') {
+            this.deepgramService.start(audioStream);
+        }
+    }
+
+    public stopDeepgram() {
+        this.deepgramService.stop();
+    }
+
+    public setAIProvider(provider: 'openai' | 'gemini' | 'deepseek') {
+        console.log(`[VoiceAssistant][Classic] Switching AI provider to: ${provider}`);
+        this.aiProvider = provider;
+    }
+
+    public getAIProvider(): 'openai' | 'gemini' | 'deepseek' {
+        return this.aiProvider;
+    }
+
     public setTTSProvider(provider: 'polly' | 'elevenlabs') {
-        console.log(`[VoiceAssistant] Switching TTS provider to: ${provider}`);
+        console.log(`[VoiceAssistant][Classic] Switching TTS provider to: ${provider}`);
         this.ttsProvider = provider;
     }
 
-    /**
-     * Get the current TTS provider
-     */
     public getTTSProvider(): 'polly' | 'elevenlabs' {
         return this.ttsProvider;
     }
 
-    /**
-     * Set the path of the last saved recording
-     */
+    // ========================================
+    // LIVE MODE - PUBLIC METHODS
+    // ========================================
+    public sendScreenFrame(base64Image: string) {
+        if (this.mode === 'live') {
+            this.geminiLiveService.sendScreenFrame(base64Image);
+        }
+    }
+
+    // ========================================
+    // SHARED PUBLIC METHODS - AUDIO PROCESSING
+    // ========================================
+    public processAudioStream(chunk: Buffer) {
+        if (this.mode === 'live') {
+            this.geminiLiveService.sendAudio(chunk);
+        } else {
+            this.deepgramService.processAudioStream(chunk);
+        }
+    }
+
+    // ========================================
+    // SHARED PUBLIC METHODS - TRANSCRIBE-ONLY MODE
+    // ========================================
+    public enableTranscribeOnlyMode() {
+        this.transcribeOnlyMode = true;
+        console.log('[VoiceAssistant] Transcribe-only mode enabled');
+
+        if (this.mode === 'live') {
+            this.geminiLiveService.enableTranscribeOnlyMode();
+        }
+    }
+
+    public disableTranscribeOnlyMode() {
+        this.transcribeOnlyMode = false;
+        console.log('[VoiceAssistant] Transcribe-only mode disabled');
+
+        if (this.mode === 'live') {
+            this.geminiLiveService.disableTranscribeOnlyMode();
+        }
+    }
+
+    public isTranscribeOnlyMode(): boolean {
+        return this.transcribeOnlyMode;
+    }
+
+    // ========================================
+    // SHARED PUBLIC METHODS - RECORDING PATH
+    // ========================================
     public setLastRecordingPath(path: string) {
         this.lastRecordingPath = path;
         console.log(`[VoiceAssistant] Last recording path set: ${path}`);
     }
 
-    /**
-     * Get the path of the last saved recording
-     */
     public getLastRecordingPath(): string | null {
         return this.lastRecordingPath;
     }
 
+    // ========================================
+    // CLASSIC MODE - AI PROCESSING
+    // ========================================
     private async processUserMessage(text: string) {
         if (this.isProcessing) return;
         this.isProcessing = true;
@@ -582,6 +615,9 @@ export class VoiceAssistant extends EventEmitter {
         }
     }
 
+    // ========================================
+    // CLASSIC MODE - RESPONSE HANDLING
+    // ========================================
     private async handleAIResponseText(aiContent: string) {
         let responseText = aiContent;
         try {
@@ -632,6 +668,9 @@ export class VoiceAssistant extends EventEmitter {
         }
     }
 
+    // ========================================
+    // CLASSIC MODE - AUDIO GENERATION (TTS)
+    // ========================================
     private async generateAndPlayAudio(text: string) {
         if (this.ttsProvider === 'elevenlabs') {
             try {
