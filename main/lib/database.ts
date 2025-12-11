@@ -56,6 +56,9 @@ interface DatabaseSchema {
     answerOnlyWhenCertain: boolean;
     followUpPrompt: string;
     emailSummaryPrompt: string;
+    avatarBehaviorPrompt?: string;  // Instruções de comportamento (live & classic)
+    avatarSpeechStyle?: string;     // Estilo de fala (live & classic)
+    enableEmotions?: boolean;       // Habilitar emoções na fala
     createdAt: number;
     updatedAt: number;
   }>;

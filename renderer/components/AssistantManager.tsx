@@ -13,11 +13,14 @@ type Assistant = {
   answerOnlyWhenCertain: boolean;
   followUpPrompt: string;
   emailSummaryPrompt: string;
+  avatarBehaviorPrompt: string;  // Instruções de comportamento do avatar (live & classic)
+  avatarSpeechStyle: string;     // Estilo de fala do avatar (live & classic)
+  enableEmotions: boolean;       // Habilitar emoções na fala
   createdAt: number;
   updatedAt: number;
 };
 
-type Tab = 'sistema' | 'acompanhamento' | 'email' | 'conhecimento';
+type Tab = 'sistema' | 'acompanhamento' | 'email' | 'avatar' | 'conhecimento';
 
 const DEFAULT_FOLLOW_UP_PROMPT = 'Generate 3 relevant follow-up questions based on the previous response. Each question should be concise (max 8 words) and explore different aspects. IMPORTANT: Generate the questions in the SAME LANGUAGE as the previous response.';
 
@@ -36,6 +39,9 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
   const [answerOnlyWhenCertain, setAnswerOnlyWhenCertain] = useState(false);
   const [followUpPrompt, setFollowUpPrompt] = useState(DEFAULT_FOLLOW_UP_PROMPT);
   const [emailSummaryPrompt, setEmailSummaryPrompt] = useState(DEFAULT_EMAIL_SUMMARY_PROMPT);
+  const [avatarBehaviorPrompt, setAvatarBehaviorPrompt] = useState('');
+  const [avatarSpeechStyle, setAvatarSpeechStyle] = useState('');
+  const [enableEmotions, setEnableEmotions] = useState(false);
   
   // Rastrear se há mudanças não salvas
   const [isDirty, setIsDirty] = useState(false);
@@ -61,6 +67,9 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
       setAnswerOnlyWhenCertain(selectedAssistant.answerOnlyWhenCertain);
       setFollowUpPrompt(selectedAssistant.followUpPrompt);
       setEmailSummaryPrompt(selectedAssistant.emailSummaryPrompt);
+      setAvatarBehaviorPrompt(selectedAssistant.avatarBehaviorPrompt || '');
+      setAvatarSpeechStyle(selectedAssistant.avatarSpeechStyle || '');
+      setEnableEmotions(selectedAssistant.enableEmotions || false);
       setIsDirty(false); // Reset ao trocar de assistente
     }
   }, [selectedAssistant]);
@@ -73,11 +82,14 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
         systemPrompt !== selectedAssistant.systemPrompt ||
         answerOnlyWhenCertain !== selectedAssistant.answerOnlyWhenCertain ||
         followUpPrompt !== selectedAssistant.followUpPrompt ||
-        emailSummaryPrompt !== selectedAssistant.emailSummaryPrompt;
+        emailSummaryPrompt !== selectedAssistant.emailSummaryPrompt ||
+        avatarBehaviorPrompt !== (selectedAssistant.avatarBehaviorPrompt || '') ||
+        avatarSpeechStyle !== (selectedAssistant.avatarSpeechStyle || '') ||
+        enableEmotions !== (selectedAssistant.enableEmotions || false);
       
       setIsDirty(hasChanges);
     }
-  }, [assistantName, systemPrompt, answerOnlyWhenCertain, followUpPrompt, emailSummaryPrompt, selectedAssistant]);
+  }, [assistantName, systemPrompt, answerOnlyWhenCertain, followUpPrompt, emailSummaryPrompt, avatarBehaviorPrompt, avatarSpeechStyle, enableEmotions, selectedAssistant]);
 
   const loadAssistants = async () => {
     try {
@@ -100,7 +112,10 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
         systemPrompt,
         answerOnlyWhenCertain,
         followUpPrompt,
-        emailSummaryPrompt
+        emailSummaryPrompt,
+        avatarBehaviorPrompt,
+        avatarSpeechStyle,
+        enableEmotions
       });
       
       console.log('✅ Assistente atualizado com sucesso!');
@@ -167,6 +182,9 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
     setAnswerOnlyWhenCertain(selectedAssistant.answerOnlyWhenCertain);
     setFollowUpPrompt(selectedAssistant.followUpPrompt);
     setEmailSummaryPrompt(selectedAssistant.emailSummaryPrompt);
+    setAvatarBehaviorPrompt(selectedAssistant.avatarBehaviorPrompt || '');
+    setAvatarSpeechStyle(selectedAssistant.avatarSpeechStyle || '');
+    setEnableEmotions(selectedAssistant.enableEmotions || false);
     setIsDirty(false);
   };
 
@@ -413,17 +431,22 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
             
             {/* Tabs */}
             <div className="border-b border-[#222] bg-[#0f0f0f]">
-              <div className="flex gap-0 px-6 h-12">
+              <div className="flex gap-0 h-12">
                 {[
                   { id: 'sistema' as Tab, label: 'Sistema', icon: '⚙️' },
                   { id: 'acompanhamento' as Tab, label: 'Acompanhamento', icon: '📊' },
-                  { id: 'email' as Tab, label: 'E-mail', icon: '📧' },
+                  { id: 'email' as Tab, label: 'Email', icon: '📧' },
+                  { id: 'avatar' as Tab, label: 'Avatar', icon: '🎭' },
                   { id: 'conhecimento' as Tab, label: 'Conhecimento', icon: '📚' },
-                ].map((tab) => (
+                ].map((tab, index, array) => (
                   <button
                     key={tab.id}
                     onClick={() => setActiveTab(tab.id)}
                     className={`px-4 flex items-center gap-2 text-sm font-medium transition-all border-b-2 ${
+                      index === 0 ? 'pl-6' : ''
+                    } ${
+                      index === array.length - 1 ? 'pr-6' : ''
+                    } ${
                       activeTab === tab.id
                         ? 'text-white border-blue-500'
                         : 'text-gray-400 hover:text-gray-300 border-transparent'
@@ -647,6 +670,111 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
 
                   {/* Footer Buttons */}
                   {isDirty && (
+                    <div className="flex justify-end gap-3 pt-3 border-t border-[#222]">
+                      <button 
+                        onClick={handleCancel}
+                        className="px-4 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-gray-300 hover:text-white rounded-lg font-medium transition-colors text-sm"
+                      >
+                        Desfazer
+                      </button>
+                      <button 
+                        onClick={handleSave}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors text-sm shadow-lg shadow-blue-600/20"
+                      >
+                        Salvar Alterações
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ABA AVATAR */}
+              {activeTab === 'avatar' && (
+                <div className="flex flex-col h-full gap-4">
+                  {/* Aviso para Integrados */}
+                  {selectedAssistant?.subtitle === 'Integrado' && (
+                    <div className="flex gap-2 p-3 bg-yellow-600/10 border border-yellow-600/30 rounded-lg">
+                      <svg className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      </svg>
+                      <p className="text-xs text-yellow-300 leading-relaxed">
+                        Assistentes integrados não podem ser editados. Duplique este assistente para criar uma versão personalizada.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Comportamento do Avatar */}
+                  <div className="space-y-2">
+                    <h3 className="text-base font-semibold text-white">Comportamento do Avatar</h3>
+                    <p className="text-sm text-gray-400">
+                      Instruções e comportamento do avatar.
+                    </p>
+                  </div>
+
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <textarea
+                      value={avatarBehaviorPrompt}
+                      onChange={(e) => setAvatarBehaviorPrompt(e.target.value)}
+                      readOnly={selectedAssistant?.subtitle === 'Integrado'}
+                      className={`flex-1 w-full bg-[#1f1f1f] rounded-lg p-4 font-mono text-sm text-gray-300 border border-[#1a1a1a] focus:border-blue-500 focus:outline-none resize-none transition-colors ${
+                        selectedAssistant?.subtitle === 'Integrado' ? 'cursor-not-allowed opacity-60' : ''
+                      }`}
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: '#2a2a2a #000'
+                      }}
+                      placeholder={'Ex: Você deve atuar como minha assistente para gravação de vídeos para o YouTube.\n</instruções>\n...'}
+                    />
+                  </div>
+
+                  {/* Estilo de Fala */}
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-1">
+                      <h3 className="text-base font-semibold text-white">Estilo de Fala</h3>
+                      <p className="text-sm text-gray-400">
+                        Como o avatar deve falar (ritmo, sotaque, expressões).
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-400">Emoções na fala?</span>
+                      <button
+                        onClick={() => setEnableEmotions(!enableEmotions)}
+                        disabled={selectedAssistant?.subtitle === 'Integrado'}
+                        className={`relative w-11 h-6 rounded-full transition-colors ${
+                          enableEmotions ? 'bg-blue-600' : 'bg-gray-600'
+                        } ${
+                          selectedAssistant?.subtitle === 'Integrado' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                        }`}
+                      >
+                        <div
+                          className={`absolute top-1 left-1 w-4 h-4 bg-white rounded-full transition-transform ${
+                            enableEmotions ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <textarea
+                      value={avatarSpeechStyle}
+                      onChange={(e) => setAvatarSpeechStyle(e.target.value)}
+                      readOnly={selectedAssistant?.subtitle === 'Integrado'}
+                      className={`flex-1 w-full bg-[#1f1f1f] rounded-lg p-4 font-mono text-sm text-gray-300 border border-[#1a1a1a] focus:border-blue-500 focus:outline-none resize-none transition-colors ${
+                        selectedAssistant?.subtitle === 'Integrado' ? 'cursor-not-allowed opacity-60' : ''
+                      }`}
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: '#2a2a2a #000'
+                      }}
+                      placeholder={"Voice: High-pitched, bright, and sweet, reminiscent of an anime character or a J-Pop idol.\nTone: Extremely enthusiastic and polite, overflowing with positivity and eagerness to please..."}
+                    />
+                  </div>
+
+                  {/* Footer Buttons */}
+                  {isDirty && selectedAssistant?.subtitle !== 'Integrado' && (
                     <div className="flex justify-end gap-3 pt-3 border-t border-[#222]">
                       <button 
                         onClick={handleCancel}
