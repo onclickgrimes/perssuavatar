@@ -4,6 +4,7 @@ import { DeepgramService } from './services/deepgram-service';
 import { OpenAIService } from './services/openai-service';
 import { GeminiService } from './services/gemini-service';
 import { GeminiLiveService } from './services/gemini-live-service';
+import { DeepSeekService } from './services/deepseek-service';
 import { TTSService } from './services/tts-service';
 import { Readable } from 'stream';
 
@@ -17,6 +18,7 @@ export class VoiceAssistant extends EventEmitter {
   private deepgramService: DeepgramService;
   private openAIService: OpenAIService;
   private geminiService: GeminiService;
+  private deepSeekService: DeepSeekService;
   private ttsService: TTSService;
 
   private isProcessing: boolean = false;
@@ -28,9 +30,10 @@ export class VoiceAssistant extends EventEmitter {
   // New Services and State
   private geminiLiveService: GeminiLiveService;
   private mode: 'classic' | 'live' = 'classic';
-  private aiProvider: 'openai' | 'gemini' = 'gemini';  // AI provider for classic mode
+  private aiProvider: 'openai' | 'gemini' | 'deepseek' = 'gemini';  // AI provider for classic mode
   private lastRecordingPath: string | null = null;  // Path to the last saved recording
   private transcribeOnlyMode: boolean = false;  // If true, only transcribe without processing AI response
+
 
   constructor(ttsProvider: "polly" | "elevenlabs" = "elevenlabs") {
     super();
@@ -41,8 +44,10 @@ export class VoiceAssistant extends EventEmitter {
     this.deepgramService = new DeepgramService();
     this.openAIService = new OpenAIService();
     this.geminiService = new GeminiService();
+    this.deepSeekService = new DeepSeekService();
     this.geminiLiveService = new GeminiLiveService();
     this.ttsService = new TTSService();
+
     
     // Forward TTS Events
     this.ttsService.on('audio-chunk', (chunk) => {
@@ -234,15 +239,32 @@ export class VoiceAssistant extends EventEmitter {
           const context = this.recordingContext || undefined;
           console.log(`Analisando screenshot com contexto: ${context || 'Nenhum'}`);
 
-          const analysis = await this.openAIService.analyzeImage(base64Image, context);
-          console.log("🤖 OpenAI Vision Analysis:", analysis);
+          let analysis: string;
+          let providerName: string;
+
+          // DeepSeek doesn't have image analysis API, always use OpenAI
+          if (this.aiProvider === 'deepseek') {
+              console.log('DeepSeek selected but using OpenAI for image analysis (DeepSeek has no vision API)');
+              analysis = await this.openAIService.analyzeImage(base64Image, context);
+              providerName = 'OpenAI (DeepSeek não tem API de visão)';
+          } else if (this.aiProvider === 'gemini') {
+              // Gemini doesn't have a dedicated image analysis method yet
+              // For now, fall back to OpenAI
+              analysis = await this.openAIService.analyzeImage(base64Image, context);
+              providerName = 'OpenAI (Gemini fallback)';
+          } else {
+              analysis = await this.openAIService.analyzeImage(base64Image, context);
+              providerName = 'OpenAI';
+          }
+          
+          console.log(`🤖 ${providerName} Vision Analysis:`, analysis);
           
           this.recordingContext = null;
 
           // Adiciona a análise ao histórico
           this.conversationHistory.push({ 
               role: 'user', 
-              content: `[SYSTEM: O usuário enviou um screenshot da tela. Análise da OpenAI: ${analysis}]` 
+              content: `[SYSTEM: O usuário enviou um screenshot da tela. Análise do ${providerName}: ${analysis}]` 
           });
 
           // Gera resposta da Yuki
@@ -355,9 +377,9 @@ export class VoiceAssistant extends EventEmitter {
   }
 
   /**
-   * Set the AI provider for classic mode ('openai' or 'gemini')
+   * Set the AI provider for classic mode ('openai', 'gemini', or 'deepseek')
    */
-  public setAIProvider(provider: 'openai' | 'gemini') {
+  public setAIProvider(provider: 'openai' | 'gemini' | 'deepseek') {
       console.log(`[VoiceAssistant] Switching AI provider to: ${provider}`);
       this.aiProvider = provider;
   }
@@ -365,7 +387,7 @@ export class VoiceAssistant extends EventEmitter {
   /**
    * Get the current AI provider
    */
-  public getAIProvider(): 'openai' | 'gemini' {
+  public getAIProvider(): 'openai' | 'gemini' | 'deepseek' {
       return this.aiProvider;
   }
 
@@ -426,6 +448,9 @@ export class VoiceAssistant extends EventEmitter {
       if (this.aiProvider === 'gemini') {
         console.log('[VoiceAssistant] Using Gemini for classic mode');
         message = await this.geminiService.getChatCompletion(messages, geminiTools);
+      } else if (this.aiProvider === 'deepseek') {
+        console.log('[VoiceAssistant] Using DeepSeek for classic mode');
+        message = await this.deepSeekService.getChatCompletion(messages, tools);
       } else {
         console.log('[VoiceAssistant] Using OpenAI for classic mode');
         message = await this.openAIService.getChatCompletion(messages, tools);
@@ -445,7 +470,12 @@ export class VoiceAssistant extends EventEmitter {
                   content: `[Function calls: ${toolCalls.map((tc: any) => tc.function.name).join(', ')}]`
               });
           } else {
-              this.conversationHistory.push(message); 
+              // OpenAI and DeepSeek use the same format - must include role and tool_calls
+              this.conversationHistory.push({
+                  role: 'assistant',
+                  content: message?.content || null,
+                  tool_calls: toolCalls
+              });
           }
 
           for (const toolCall of toolCalls) {
@@ -472,7 +502,7 @@ export class VoiceAssistant extends EventEmitter {
 
                   this.conversationHistory.push({
                       role: "tool",
-                      tool_call_id: this.aiProvider === 'gemini' ? fnName : toolCall.id,
+                      tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
                       content: `Screen recording action '${args.action}' executed successfully.`
                   });
               } else if (fnName === 'take_screenshot') {
@@ -484,7 +514,7 @@ export class VoiceAssistant extends EventEmitter {
 
                   this.conversationHistory.push({
                       role: "tool",
-                      tool_call_id: this.aiProvider === 'gemini' ? fnName : toolCall.id,
+                      tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
                       content: `Screenshot captured and sent for analysis.`
                   });
                   
@@ -512,6 +542,8 @@ export class VoiceAssistant extends EventEmitter {
               let secondMessage: any;
               if (this.aiProvider === 'gemini') {
                   secondMessage = await this.geminiService.getChatCompletion(followUpMessages);
+              } else if (this.aiProvider === 'deepseek') {
+                  secondMessage = await this.deepSeekService.getChatCompletion(followUpMessages);
               } else {
                   secondMessage = await this.openAIService.getChatCompletion(followUpMessages);
               }

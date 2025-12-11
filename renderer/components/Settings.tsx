@@ -40,7 +40,7 @@ export default function Settings({
 
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
-  const [aiProvider, setAiProvider] = useState<'openai' | 'gemini'>('gemini'); // Provedor de IA para modo classic
+  const [aiProvider, setAiProvider] = useState<'openai' | 'gemini' | 'deepseek'>('gemini'); // Provedor de IA para modo classic
   const [continuousRecordingEnabled, setContinuousRecordingEnabled] = useState(true); // Gravação contínua ativada
   const [dbStats, setDbStats] = useState<any>(null);
   
@@ -203,7 +203,7 @@ export default function Settings({
     }
   };
 
-  const handleAiProviderChange = async (newProvider: 'openai' | 'gemini') => {
+  const handleAiProviderChange = async (newProvider: 'openai' | 'gemini' | 'deepseek') => {
     setAiProvider(newProvider);
     
     // Notificar o backend
@@ -398,6 +398,18 @@ export default function Settings({
                               <span className="text-2xl">⚡</span>
                               <span className="font-semibold">Google Gemini</span>
                               {aiProvider === 'gemini' && <span className="text-xs bg-purple-600 px-2 py-0.5 rounded-full">Ativo</span>}
+                           </button>
+                           <button 
+                             onClick={() => handleAiProviderChange('deepseek')}
+                             className={`flex-1 py-4 border-2 rounded-xl flex flex-col items-center justify-center gap-2 transition-all ${
+                               aiProvider === 'deepseek' 
+                                 ? 'border-cyan-600 bg-cyan-900/10 text-white' 
+                                 : 'border-[#333] bg-[#111] hover:bg-[#1a1a1a] text-gray-400 hover:text-white opacity-60'
+                             }`}
+                           >
+                              <span className="text-2xl">🧠</span>
+                              <span className="font-semibold">DeepSeek</span>
+                              {aiProvider === 'deepseek' && <span className="text-xs bg-cyan-600 px-2 py-0.5 rounded-full">Ativo</span>}
                            </button>
                         </div>
 
