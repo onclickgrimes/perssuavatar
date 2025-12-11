@@ -620,7 +620,7 @@ export default function Settings({
                                   </div>
                                   
                                   {/* Manual Save Button */}
-                                  <button 
+                                  {/* <button 
                                     onClick={async () => {
                                        const path = await saveLastSeconds(30);
                                        if (path) alert(`Gravação salva em: ${path}`);
@@ -628,7 +628,7 @@ export default function Settings({
                                     className="w-full mt-2 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-xs text-white font-medium transition-colors flex items-center justify-center gap-2"
                                   >
                                      <span>💾</span> Salvar Replay (Últimos 30s)
-                                  </button>
+                                  </button> */}
                                </div>
                             )}
                          </div>

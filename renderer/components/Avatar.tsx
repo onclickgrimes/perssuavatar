@@ -776,5 +776,6 @@ export default function Avatar({ modelName, uiOpen }: AvatarProps) {
     };
   }, [model]);
 
-  return <canvas ref={canvasRef} className="w-full h-full" />;
+  return <canvas ref={canvasRef} className="w-full h-full pointer-events-none" />;
 }
+
