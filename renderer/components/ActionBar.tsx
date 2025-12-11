@@ -39,6 +39,25 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
     }
   }, [isManagerOpen]);
 
+  // Fechar dropdown quando assistente mudar
+  useEffect(() => {
+    if (selectedAssistant) {
+      setIsDropdownOpen(false);
+    }
+  }, [selectedAssistant]);
+
+  // Fechar dropdown ao pressionar Escape
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isDropdownOpen) {
+        setIsDropdownOpen(false);
+      }
+    };
+
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [isDropdownOpen]);
+
   const loadAssistants = async () => {
     try {
       const loadedAssistants = await window.electron.db.getAssistants();
@@ -75,6 +94,14 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
 
   return (
     <>
+    {/* Backdrop invisível para fechar dropdown ao clicar fora */}
+    {isDropdownOpen && (
+      <div 
+        className="fixed inset-0 z-[499]"
+        onClick={() => setIsDropdownOpen(false)}
+      />
+    )}
+    
     <div 
       className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[500] flex flex-col items-center gap-2 no-drag font-sans pointer-events-auto"
     >

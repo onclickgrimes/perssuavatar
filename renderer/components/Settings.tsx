@@ -351,14 +351,14 @@ export default function Settings({
                    {renderSidebarItem('help', 'Ajuda', '❓')}
                 </nav>
                 
-                <div className="pt-4 border-t border-[#222]">
+                {/* <div className="pt-4 border-t border-[#222]">
                    <button className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-400 hover:text-white hover:bg-[#1f1f1f]/50 rounded-lg transition-colors">
                       <span>👤</span> Conta
                    </button>
                    <button className="w-full flex items-center gap-3 px-4 py-3 text-sm font-medium text-amber-500 hover:bg-amber-500/10 rounded-lg transition-colors mt-1">
                       <span>🌟</span> Premium
                    </button>
-                </div>
+                </div> */}
              </div>
 
              {/* Content Area */}
