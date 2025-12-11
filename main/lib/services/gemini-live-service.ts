@@ -53,9 +53,10 @@ export class GeminiLiveService extends EventEmitter {
                 },
                 // Note: proactivity is not supported by native-audio-preview model
                 // Disable thinking mode for faster responses
-                // thinkingConfig: {
-                //     thinkingBudget: 0,
-                // },
+                thinkingConfig: {
+                    // thinkingBudget: 0,
+                    includeThoughts: false,
+                },
                 contextWindowCompression: {
                     triggerTokens: 25600,
                     slidingWindow: { targetTokens: 12800 },
