@@ -9,6 +9,9 @@ interface DatabaseSchema {
     alwaysOnTop: boolean;
     volume: number;
     selectedModel: string;
+    aiProvider?: 'openai' | 'gemini' | 'deepseek';
+    voiceModel?: 'polly' | 'elevenlabs';
+    continuousRecordingEnabled?: boolean;
   };
 
   // Histórico de conversas

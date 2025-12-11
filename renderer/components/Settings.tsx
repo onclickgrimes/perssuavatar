@@ -41,6 +41,7 @@ export default function Settings({
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [aiProvider, setAiProvider] = useState<'openai' | 'gemini' | 'deepseek'>('gemini'); // Provedor de IA para modo classic
+  const [voiceModel, setVoiceModel] = useState<'polly' | 'elevenlabs'>('polly'); // Modelo de voz para modo classic
   const [continuousRecordingEnabled, setContinuousRecordingEnabled] = useState(true); // Gravação contínua ativada
   const [dbStats, setDbStats] = useState<any>(null);
   
@@ -114,6 +115,12 @@ export default function Settings({
             setAiProvider(settings.aiProvider);
             // Notificar o backend sobre o provedor
             window.electron.invoke('set-ai-provider', settings.aiProvider);
+          }
+          
+          if (settings.voiceModel) {
+            setVoiceModel(settings.voiceModel);
+            // Notificar o backend sobre o modelo de voz
+            window.electron.invoke('set-voice-model', settings.voiceModel);
           }
           
           if (typeof settings.continuousRecordingEnabled !== 'undefined') {
@@ -216,6 +223,22 @@ export default function Settings({
       console.log('💾 Provedor salvo:', newProvider);
     } catch (error) {
       console.error('❌ Erro ao mudar provedor de IA:', error);
+    }
+  };
+
+  const handleVoiceModelChange = async (newVoiceModel: 'polly' | 'elevenlabs') => {
+    setVoiceModel(newVoiceModel);
+    
+    // Notificar o backend
+    try {
+      await window.electron.invoke('set-voice-model', newVoiceModel);
+      console.log('🔊 Modelo de voz alterado:', newVoiceModel);
+      
+      // Salvar no banco de dados
+      await window.electron.db.setUserSettings({ voiceModel: newVoiceModel });
+      console.log('💾 Modelo de voz salvo:', newVoiceModel);
+    } catch (error) {
+      console.error('❌ Erro ao mudar modelo de voz:', error);
     }
   };
 
@@ -421,6 +444,51 @@ export default function Settings({
                                  <p className="text-xs text-blue-200/70">
                                     Esta configuração afeta apenas o <strong>modo clássico</strong>. 
                                     O <strong>modo Live</strong> sempre usa Gemini Live nativo com áudio.
+                                 </p>
+                              </div>
+                           </div>
+                        </div>
+                     </div>
+
+                     <div>
+                        <h3 className="text-xl font-medium text-white mb-1">Modelo de Voz (TTS)</h3>
+                        <p className="text-sm text-gray-500 mb-6">Escolha o serviço de síntese de voz para o modo clássico.</p>
+                        
+                        <div className="flex gap-4 mb-6">
+                           <button 
+                             onClick={() => handleVoiceModelChange('polly')}
+                             className={`flex-1 py-4 border-2 rounded-xl flex flex-col items-center justify-center gap-2 transition-all ${
+                               voiceModel === 'polly' 
+                                 ? 'border-orange-600 bg-orange-900/10 text-white' 
+                                 : 'border-[#333] bg-[#111] hover:bg-[#1a1a1a] text-gray-400 hover:text-white opacity-60'
+                             }`}
+                           >
+                              <span className="text-2xl">🗣️</span>
+                              <span className="font-semibold">Amazon Polly</span>
+                              {voiceModel === 'polly' && <span className="text-xs bg-orange-600 px-2 py-0.5 rounded-full">Ativo</span>}
+                           </button>
+                           <button 
+                             onClick={() => handleVoiceModelChange('elevenlabs')}
+                             className={`flex-1 py-4 border-2 rounded-xl flex flex-col items-center justify-center gap-2 transition-all ${
+                               voiceModel === 'elevenlabs' 
+                                 ? 'border-green-600 bg-green-900/10 text-white' 
+                                 : 'border-[#333] bg-[#111] hover:bg-[#1a1a1a] text-gray-400 hover:text-white opacity-60'
+                             }`}
+                           >
+                              <span className="text-2xl">🎙️</span>
+                              <span className="font-semibold">ElevenLabs</span>
+                              {voiceModel === 'elevenlabs' && <span className="text-xs bg-green-600 px-2 py-0.5 rounded-full">Ativo</span>}
+                           </button>
+                        </div>
+
+                        <div className="bg-orange-900/10 border border-orange-500/20 rounded-xl p-4 mb-6">
+                           <div className="flex items-start gap-3">
+                              <span className="text-xl">ℹ️</span>
+                              <div>
+                                 <h4 className="text-sm font-semibold text-orange-300 mb-1">Síntese de Voz</h4>
+                                 <p className="text-xs text-orange-200/70">
+                                    Esta configuração define qual serviço será usado para converter texto em voz no <strong>modo clássico</strong>. 
+                                    O <strong>modo Live</strong> usa voz nativa do Gemini.
                                  </p>
                               </div>
                            </div>

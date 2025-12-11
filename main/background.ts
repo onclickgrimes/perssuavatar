@@ -293,6 +293,13 @@ ipcMain.handle('set-ai-provider', async (event, provider: 'openai' | 'gemini') =
   return { success: true };
 });
 
+// Handler para mudar o modelo de voz (TTS) no modo classic
+ipcMain.handle('set-voice-model', async (event, voiceModel: 'polly' | 'elevenlabs') => {
+  console.log(`🔊 Mudando modelo de voz para: ${voiceModel}`);
+  assistant.setTTSProvider(voiceModel);
+  return { success: true };
+});
+
 // Screen Recording Logic
 ipcMain.handle('get-screen-sources', async () => {
     const sources = await desktopCapturer.getSources({ types: ['window', 'screen'] });
