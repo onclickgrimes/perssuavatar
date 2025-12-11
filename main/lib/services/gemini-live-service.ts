@@ -100,7 +100,7 @@ Tempo: Energetic and quick, often speeding up when excited, giving the speech a 
                 },
                 outputAudioTranscription: {},  // Transcrição do áudio do modelo
                 inputAudioTranscription: {},   // Transcrição do áudio do usuário
-                tools: [geminiLiveTools],  // Function calling tools
+                tools: [geminiLiveTools, { googleSearch: {} },],  // Function calling tools
             };
 
             console.log("[GeminiLive] Connecting...");
