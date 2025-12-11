@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 interface AssistantManagerProps {
   isOpen: boolean;
@@ -9,75 +9,371 @@ type Assistant = {
   id: string;
   name: string;
   subtitle: string;
+  systemPrompt: string;
+  answerOnlyWhenCertain: boolean;
+  followUpPrompt: string;
+  emailSummaryPrompt: string;
+  createdAt: number;
+  updatedAt: number;
 };
 
 type Tab = 'sistema' | 'acompanhamento' | 'email' | 'conhecimento';
 
-const ASSISTANTS: Assistant[] = [
-  { id: 'general', name: 'Assistente Geral', subtitle: 'Integrado' },
-  { id: 'sales', name: 'Assistente de Vendas', subtitle: 'Integrado' },
-  { id: 'leetcode', name: 'Assistente LeetCode', subtitle: 'Integrado' },
-  { id: 'study', name: 'Assistente de Estudo', subtitle: 'Integrado' },
-  { id: 'tech', name: 'Candidato Tech', subtitle: 'Integrado' },
-  { id: 'annotator', name: 'Anotador', subtitle: 'Integrado' },
-];
+const DEFAULT_FOLLOW_UP_PROMPT = 'Generate 3 relevant follow-up questions based on the previous response. Each question should be concise (max 8 words) and explore different aspects. IMPORTANT: Generate the questions in the SAME LANGUAGE as the previous response.';
+
+const DEFAULT_EMAIL_SUMMARY_PROMPT = 'Create a TLDR (Too Long; Didn\'t Read) summary that captures the essence of the conversation. Include: 1) Main topics discussed, 2) Key questions asked by the user, 3) Important solutions or insights provided, 4) Any action items or next steps mentioned. Keep it concise but comprehensive.';
+
+
 
 export default function AssistantManager({ isOpen, onClose }: AssistantManagerProps) {
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant>(ASSISTANTS[1]); // Sales por padrão
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>('sistema');
-  const [certaintyCheck, setCertaintyCheck] = useState(false);
-  const [systemPrompt, setSystemPrompt] = useState(`<instruções>
+  
+  // Estados para o formulário
+  const [assistantName, setAssistantName] = useState('');
+  const [systemPrompt, setSystemPrompt] = useState('');
+  const [answerOnlyWhenCertain, setAnswerOnlyWhenCertain] = useState(false);
+  const [followUpPrompt, setFollowUpPrompt] = useState(DEFAULT_FOLLOW_UP_PROMPT);
+  const [emailSummaryPrompt, setEmailSummaryPrompt] = useState(DEFAULT_EMAIL_SUMMARY_PROMPT);
+  
+  // Rastrear se há mudanças não salvas
+  const [isDirty, setIsDirty] = useState(false);
+  
+  // Modal de confirmação
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [confirmModalTitle, setConfirmModalTitle] = useState('');
+  const [pendingAction, setPendingAction] = useState<(() => void) | null>(null);
+
+  // Carregar assistentes do database
+  useEffect(() => {
+    if (isOpen) {
+      loadAssistants();
+      setIsDirty(false); // Reset ao abrir
+    }
+  }, [isOpen]);
+
+  // Atualizar formulário quando mudar o assistente selecionado
+  useEffect(() => {
+    if (selectedAssistant) {
+      setAssistantName(selectedAssistant.name);
+      setSystemPrompt(selectedAssistant.systemPrompt);
+      setAnswerOnlyWhenCertain(selectedAssistant.answerOnlyWhenCertain);
+      setFollowUpPrompt(selectedAssistant.followUpPrompt);
+      setEmailSummaryPrompt(selectedAssistant.emailSummaryPrompt);
+      setIsDirty(false); // Reset ao trocar de assistente
+    }
+  }, [selectedAssistant]);
+
+  // Detectar mudanças no formulário
+  useEffect(() => {
+    if (selectedAssistant) {
+      const hasChanges = 
+        assistantName !== selectedAssistant.name ||
+        systemPrompt !== selectedAssistant.systemPrompt ||
+        answerOnlyWhenCertain !== selectedAssistant.answerOnlyWhenCertain ||
+        followUpPrompt !== selectedAssistant.followUpPrompt ||
+        emailSummaryPrompt !== selectedAssistant.emailSummaryPrompt;
+      
+      setIsDirty(hasChanges);
+    }
+  }, [assistantName, systemPrompt, answerOnlyWhenCertain, followUpPrompt, emailSummaryPrompt, selectedAssistant]);
+
+  const loadAssistants = async () => {
+    try {
+      const assistantsList = await window.electron.db.getAssistants();
+      setAssistants(assistantsList);
+      if (assistantsList.length > 0 && !selectedAssistant) {
+        setSelectedAssistant(assistantsList[0]); // Primeiro por padrão
+      }
+    } catch (error) {
+      console.error('Erro ao carregar assistentes:', error);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!selectedAssistant) return;
+
+    try {
+      await window.electron.db.updateAssistant(selectedAssistant.id, {
+        name: assistantName,
+        systemPrompt,
+        answerOnlyWhenCertain,
+        followUpPrompt,
+        emailSummaryPrompt
+      });
+      
+      console.log('✅ Assistente atualizado com sucesso!');
+      await loadAssistants(); // Recarregar lista
+      setIsDirty(false);
+    } catch (error) {
+      console.error('❌ Erro ao salvar assistente:', error);
+    }
+  };
+
+  const requestConfirmation = (title: string, action: () => void) => {
+    setConfirmModalTitle(title);
+    setPendingAction(() => action);
+    setShowConfirmModal(true);
+  };
+
+  const handleConfirmYes = () => {
+    if (pendingAction) {
+      pendingAction();
+    }
+    setShowConfirmModal(false);
+    setPendingAction(null);
+  };
+
+  const handleConfirmNo = () => {
+    setShowConfirmModal(false);
+    setPendingAction(null);
+  };
+
+  const handleSelectAssistant = (assistant: Assistant) => {
+    if (isDirty) {
+      requestConfirmation(
+        `Sair sem salvar "${selectedAssistant?.name}"?`,
+        () => {
+          setIsDirty(false); // Limpar estado dirty antes de trocar
+          setSelectedAssistant(assistant);
+        }
+      );
+    } else {
+      setSelectedAssistant(assistant);
+    }
+  };
+
+  const handleClose = () => {
+    if (isDirty) {
+      requestConfirmation(
+        `Sair sem salvar "${selectedAssistant?.name}"?`,
+        () => {
+          setIsDirty(false); // Limpar estado dirty antes de fechar
+          onClose();
+        }
+      );
+    } else {
+      onClose();
+    }
+  };
+
+  const handleCancel = () => {
+    if (!selectedAssistant) return;
+    
+    // Reverter para os valores originais
+    setAssistantName(selectedAssistant.name);
+    setSystemPrompt(selectedAssistant.systemPrompt);
+    setAnswerOnlyWhenCertain(selectedAssistant.answerOnlyWhenCertain);
+    setFollowUpPrompt(selectedAssistant.followUpPrompt);
+    setEmailSummaryPrompt(selectedAssistant.emailSummaryPrompt);
+    setIsDirty(false);
+  };
+
+  const handleDuplicate = async (assistant: Assistant, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevenir seleção do assistente ao clicar em duplicar
+    
+    try {
+      const newAssistant = await window.electron.db.createAssistant({
+        name: `${assistant.name} - cópia`,
+        subtitle: 'Personalizado',
+        systemPrompt: assistant.systemPrompt,
+        answerOnlyWhenCertain: assistant.answerOnlyWhenCertain,
+        followUpPrompt: assistant.followUpPrompt,
+        emailSummaryPrompt: assistant.emailSummaryPrompt
+      });
+      
+      console.log('✅ Assistente duplicado com sucesso!');
+      await loadAssistants(); // Recarregar lista
+      setSelectedAssistant(newAssistant); // Selecionar o novo assistente
+    } catch (error) {
+      console.error('❌ Erro ao duplicar assistente:', error);
+    }
+  };
+
+  const handleCreateNew = async () => {
+    try {
+      const newAssistant = await window.electron.db.createAssistant({
+        name: 'Novo Assistente',
+        subtitle: 'Personalizado',
+        systemPrompt: `<instruções>
   <função>
-    Você é um assistente especializado em vendas.
-    Seu objetivo é ajudar os usuários com estratégias de vendas,
-    técnicas de negociação e análise de mercado.
+    Você é um assistente personalizado.
+    Descreva aqui qual é o seu objetivo e função principal.
   </função>
 
   <estilo>
-    Profissional, consultivo e orientado a resultados.
+    Descreva o estilo de comunicação deste assistente.
   </estilo>
 
   <conhecimento>
-    - Técnicas de vendas B2B e B2C
-    - Negociação e fechamento
-    - Análise de pipeline
+    - Liste os principais tópicos de conhecimento
+    - Áreas de especialização
+    - Competências específicas
   </conhecimento>
-</instruções>`);
+</instruções>`,
+        answerOnlyWhenCertain: false,
+        followUpPrompt: DEFAULT_FOLLOW_UP_PROMPT,
+        emailSummaryPrompt: DEFAULT_EMAIL_SUMMARY_PROMPT
+      });
+      
+      console.log('✅ Novo assistente criado com sucesso!');
+      await loadAssistants(); // Recarregar lista
+      setSelectedAssistant(newAssistant); // Selecionar o novo assistente
+    } catch (error) {
+      console.error('❌ Erro ao criar assistente:', error);
+    }
+  };
+
+  const handleDelete = async (assistant: Assistant, e: React.MouseEvent) => {
+    e.stopPropagation(); // Prevenir seleção do assistente ao clicar em deletar
+    
+    // Usar modal customizado de confirmação
+    requestConfirmation(
+      `Excluir "${assistant.name}"?`,
+      async () => {
+        try {
+          await window.electron.db.deleteAssistant(assistant.id);
+          
+          console.log('✅ Assistente deletado com sucesso!');
+          await loadAssistants(); // Recarregar lista
+          
+          // Se o assistente deletado estava selecionado, selecionar outro
+          if (selectedAssistant?.id === assistant.id) {
+            const remainingAssistants = assistants.filter(a => a.id !== assistant.id);
+            if (remainingAssistants.length > 0) {
+              setSelectedAssistant(remainingAssistants[0]);
+            } else {
+              setSelectedAssistant(null);
+            }
+          }
+        } catch (error) {
+          console.error('❌ Erro ao deletar assistente:', error);
+        }
+      }
+    );
+  };
 
   if (!isOpen) return null;
 
   const renderSidebarItem = (assistant: Assistant) => {
-    const isActive = assistant.id === selectedAssistant.id;
+    const isActive = assistant.id === selectedAssistant?.id;
+    const isPersonalizado = assistant.subtitle === 'Personalizado';
+    
     return (
-      <button
+      <div
         key={assistant.id}
-        onClick={() => setSelectedAssistant(assistant)}
-        className={`w-full flex flex-col items-start gap-1 px-4 py-3 text-sm font-medium transition-colors rounded-lg mb-1 ${
-          isActive 
-            ? 'bg-[#1f1f1f] text-white border-l-2 border-blue-500' 
-            : 'text-gray-400 hover:text-white hover:bg-[#1f1f1f]/50'
-        }`}
+        className="relative group mb-1"
       >
-        <span className="text-white text-sm font-medium">{assistant.name}</span>
-        <span className="text-gray-500 text-xs">{assistant.subtitle}</span>
-      </button>
+        {/* Botões no canto direito - apenas para personalizados */}
+        {isPersonalizado && (
+          <div className="absolute top-1 right-1 z-10 flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            {/* Botão Deletar */}
+            <button
+              onClick={(e) => handleDelete(assistant, e)}
+              className="p-1 rounded hover:bg-red-500/20 text-gray-500 hover:text-red-500"
+              title="Excluir assistente"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="3 6 5 6 21 6"></polyline>
+                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                <line x1="10" y1="11" x2="10" y2="17"></line>
+                <line x1="14" y1="11" x2="14" y2="17"></line>
+              </svg>
+            </button>
+            
+            {/* Botão Duplicar */}
+            <button
+              onClick={(e) => handleDuplicate(assistant, e)}
+              className="p-1 rounded hover:bg-blue-500/20 text-gray-500 hover:text-blue-400"
+              title="Duplicar assistente"
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          </div>
+        )}
+        
+        <button
+          onClick={() => handleSelectAssistant(assistant)}
+          className={`w-full flex items-start gap-2 px-4 py-3 text-sm font-medium transition-colors rounded-lg ${
+            isActive 
+              ? 'bg-[#1f1f1f] text-white border-l-2 border-blue-500' 
+              : 'text-gray-400 hover:text-white hover:bg-[#1f1f1f]/50'
+          }`}
+        >
+          <div className="flex flex-col gap-1 min-w-0 flex-1">
+            <span className="text-white text-sm font-medium truncate w-full text-left">{assistant.name}</span>
+            <span className="text-gray-500 text-xs text-left">{assistant.subtitle}</span>
+          </div>
+          
+          {/* Botão Duplicar inline - apenas para integrados */}
+          {!isPersonalizado && (
+            <button
+              onClick={(e) => handleDuplicate(assistant, e)}
+              className="opacity-0 group-hover:opacity-100 transition-opacity p-1.5 rounded hover:bg-blue-500/20 text-gray-400 hover:text-blue-400 flex-shrink-0"
+              title="Duplicar assistente"
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+              </svg>
+            </button>
+          )}
+        </button>
+      </div>
     );
   };
 
   return (
+    <>
     <div 
       className="fixed inset-0 z-[600] flex items-center justify-center backdrop-blur-sm animate-in fade-in duration-200 no-drag"
       onClick={(e) => {
-        if (e.target === e.currentTarget) onClose();
+        if (e.target === e.currentTarget) handleClose();
       }}
     >
       <div className="bg-[#0a0a0a] rounded-xl shadow-2xl border border-[#222] overflow-hidden flex flex-col no-drag w-[900px] h-[600px]">
         
         {/* Header */}
         <div className="h-14 border-b border-[#222] flex items-center justify-between px-6 bg-[#0f0f0f] drag">
-          <h2 className="text-lg font-bold text-white tracking-wide">{selectedAssistant.name}</h2>
+          {selectedAssistant ? (
+            <div className="flex items-center gap-2 flex-1 min-w-0 mr-4">
+              <div className="relative flex items-center max-w-full">
+                <input
+                  type="text"
+                  value={assistantName}
+                  onChange={(e) => setAssistantName(e.target.value)}
+                  readOnly={selectedAssistant?.subtitle === 'Integrado'}
+                  className={`text-lg font-bold text-white tracking-wide bg-transparent border-none outline-none bg-[#0f0f0f] hover:bg-[#1a1a1a] px-2 py-1 pl-8 rounded transition-colors no-drag ${
+                    selectedAssistant?.subtitle === 'Integrado' ? 'cursor-not-allowed opacity-60' : ''
+                  }`}
+                  placeholder="Nome do Assistente"
+                  style={{
+                    width: `${Math.min(Math.max(assistantName.length * 10 + 50, 150), 500)}px`
+                  }}
+                />
+                <svg 
+                  className="absolute left-2 w-4 h-4 text-gray-400 pointer-events-none" 
+                  viewBox="0 0 24 24" 
+                  fill="none" 
+                  stroke="currentColor" 
+                  strokeWidth="2" 
+                  strokeLinecap="round" 
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                  <path d="M18.375 2.625a2.121 2.121 0 1 1 3 3L12 15l-4 1 1-4Z"></path>
+                </svg>
+              </div>
+            </div>
+          ) : (
+            <h2 className="text-lg font-bold text-white tracking-wide">Assistentes</h2>
+          )}
           <button 
-            onClick={onClose} 
+            onClick={handleClose} 
             className="p-1.5 rounded-full bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-colors no-drag"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -96,11 +392,14 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
               scrollbarWidth: 'thin',
               scrollbarColor: '#1a1a1a #0f0f0f'
             }}>
-              {ASSISTANTS.map(assistant => renderSidebarItem(assistant))}
+              {assistants.map(assistant => renderSidebarItem(assistant))}
             </div>
 
             {/* Botão Criar Novo */}
-            <button className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 rounded-lg transition-colors font-medium text-sm border border-blue-600/20">
+            <button 
+              onClick={handleCreateNew}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600/10 hover:bg-blue-600/20 text-blue-400 rounded-lg transition-colors font-medium text-sm border border-blue-600/20"
+            >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
                 <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -140,15 +439,33 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
             {/* Content Area */}
             <div className="flex-1 flex flex-col p-6 overflow-hidden">
               
+              {/* ABA SISTEMA */}
               {activeTab === 'sistema' && (
                 <div className="flex flex-col h-full gap-4">
+                  {/* Aviso para Integrados */}
+                  {selectedAssistant?.subtitle === 'Integrado' && (
+                    <div className="flex gap-2 p-3 bg-yellow-600/10 border border-yellow-600/30 rounded-lg">
+                      <svg className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      </svg>
+                      <p className="text-xs text-yellow-300 leading-relaxed">
+                        Assistentes integrados não podem ser editados. Duplique este assistente para criar uma versão personalizada.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Textarea Editor */}
                   <div className="flex-1 flex flex-col min-h-0">
                     <label className="block text-sm font-semibold text-white mb-2">Prompt do Sistema</label>
                     <textarea
                       value={systemPrompt}
                       onChange={(e) => setSystemPrompt(e.target.value)}
-                      className="flex-1 w-full bg-[#1f1f1f] rounded-lg p-4 font-mono text-sm text-gray-300 border border-[#1a1a1a] focus:border-blue-500 focus:outline-none resize-none transition-colors"
+                      readOnly={selectedAssistant?.subtitle === 'Integrado'}
+                      className={`flex-1 w-full bg-[#1f1f1f] rounded-lg p-4 font-mono text-sm text-gray-300 border border-[#1a1a1a] focus:border-blue-500 focus:outline-none resize-none transition-colors ${
+                        selectedAssistant?.subtitle === 'Integrado' ? 'cursor-not-allowed opacity-60' : ''
+                      }`}
                       style={{
                         scrollbarWidth: 'thin',
                         scrollbarColor: '#2a2a2a #000'
@@ -161,59 +478,195 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
                   <div className="space-y-3">
                     <h3 className="text-sm font-semibold text-white">Comportamento</h3>
                     
-                    <label className="flex items-start gap-3 cursor-pointer group p-2 rounded-lg hover:bg-[#111] transition-colors">
-                      <div className="relative flex items-center justify-center mt-0.5">
-                        <input
-                          type="checkbox"
-                          checked={certaintyCheck}
-                          onChange={(e) => setCertaintyCheck(e.target.checked)}
-                          className="w-5 h-5 rounded border-2 border-gray-600 bg-[#1a1a1a] checked:bg-blue-600 checked:border-blue-600 transition-colors cursor-pointer"
-                        />
-                        {certaintyCheck && (
-                          <svg className="absolute w-3 h-3 text-white pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                        )}
-                      </div>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-white group-hover:text-gray-100">
-                          Responder apenas quando tiver certeza
+                    <div className="flex gap-3">
+                      {/* Checkbox */}
+                      <label className={`flex items-start gap-3 group p-2 rounded-lg hover:bg-[#111] transition-colors flex-shrink-0 ${
+                        selectedAssistant?.subtitle === 'Integrado' ? 'cursor-not-allowed opacity-60' : 'cursor-pointer'
+                      }`}>
+                        <div className="relative flex items-center justify-center mt-0.5">
+                          <input
+                            type="checkbox"
+                            checked={answerOnlyWhenCertain}
+                            onChange={(e) => setAnswerOnlyWhenCertain(e.target.checked)}
+                            disabled={selectedAssistant?.subtitle === 'Integrado'}
+                            className={`w-5 h-5 rounded border-2 border-gray-600 bg-[#1a1a1a] checked:bg-blue-600 checked:border-blue-600 transition-colors ${
+                              selectedAssistant?.subtitle === 'Integrado' ? 'cursor-not-allowed' : 'cursor-pointer'
+                            }`}
+                          />
+                          {answerOnlyWhenCertain && (
+                            <svg className="absolute w-3 h-3 text-white pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
                         </div>
-                        <div className="text-xs text-gray-500 mt-0.5">
-                          O assistente evitará respostas especulativas
+                        <div className="flex-1">
+                          <div className="text-sm font-medium text-white group-hover:text-gray-100">
+                            Responder apenas quando tiver certeza
+                          </div>
+                          <div className="text-xs text-gray-500 mt-0.5">
+                            O assistente evitará respostas especulativas
+                          </div>
                         </div>
-                      </div>
-                    </label>
+                      </label>
 
-                    {/* Info Alert */}
-                    <div className="flex gap-2 p-3 bg-blue-600/5 border border-blue-600/20 rounded-lg">
-                      <svg className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                        <circle cx="12" cy="12" r="10" />
-                        <line x1="12" y1="16" x2="12" y2="12" />
-                        <line x1="12" y1="8" x2="12.01" y2="8" />
-                      </svg>
-                      <p className="text-xs text-blue-300 leading-relaxed">
-                        Ao ativar esta opção, o assistente será mais conservador em suas respostas, admitindo incerteza quando necessário.
-                      </p>
+                      {/* Info Alert */}
+                      <div className="flex gap-2 p-3 bg-blue-600/5 border border-blue-600/20 rounded-lg flex-1">
+                        <svg className="w-4 h-4 text-blue-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="12" y1="16" x2="12" y2="12" />
+                          <line x1="12" y1="8" x2="12.01" y2="8" />
+                        </svg>
+                        <p className="text-xs text-blue-300 leading-relaxed">
+                          Ao ativar esta opção, o assistente será mais conservador em suas respostas, admitindo incerteza quando necessário.
+                        </p>
+                      </div>
                     </div>
                   </div>
 
                   {/* Footer Buttons */}
-                  <div className="flex justify-end gap-3 pt-3 border-t border-[#222]">
-                    <button 
-                      onClick={onClose}
-                      className="px-4 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-gray-300 hover:text-white rounded-lg font-medium transition-colors text-sm"
-                    >
-                      Cancelar
-                    </button>
-                    <button className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors text-sm shadow-lg shadow-blue-600/20">
-                      Salvar Alterações
-                    </button>
-                  </div>
+                  {isDirty && (
+                    <div className="flex justify-end gap-3 pt-3 border-t border-[#222]">
+                      <button 
+                        onClick={handleCancel}
+                        className="px-4 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-gray-300 hover:text-white rounded-lg font-medium transition-colors text-sm"
+                      >
+                        Desfazer
+                      </button>
+                      <button 
+                        onClick={handleSave}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors text-sm shadow-lg shadow-blue-600/20"
+                      >
+                        Salvar Alterações
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
-              {activeTab !== 'sistema' && (
+              {/* ABA ACOMPANHAMENTO */}
+              {activeTab === 'acompanhamento' && (
+                <div className="flex flex-col h-full gap-4">
+                  {/* Aviso para Integrados */}
+                  {selectedAssistant?.subtitle === 'Integrado' && (
+                    <div className="flex gap-2 p-3 bg-yellow-600/10 border border-yellow-600/30 rounded-lg">
+                      <svg className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      </svg>
+                      <p className="text-xs text-yellow-300 leading-relaxed">
+                        Assistentes integrados não podem ser editados. Duplique este assistente para criar uma versão personalizada.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <h3 className="text-base font-semibold text-white">Substituição de Perguntas de Acompanhamento</h3>
+                    <p className="text-sm text-gray-400">
+                      Substitua o prompt padrão de perguntas de acompanhamento para este assistente específico.
+                    </p>
+                  </div>
+
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <label className="block text-sm font-semibold text-white mb-2">Prompt de Acompanhamento</label>
+                    <textarea
+                      value={followUpPrompt}
+                      onChange={(e) => setFollowUpPrompt(e.target.value)}
+                      readOnly={selectedAssistant?.subtitle === 'Integrado'}
+                      className={`flex-1 w-full bg-[#1f1f1f] rounded-lg p-4 font-mono text-sm text-gray-300 border border-[#1a1a1a] focus:border-blue-500 focus:outline-none resize-none transition-colors ${
+                        selectedAssistant?.subtitle === 'Integrado' ? 'cursor-not-allowed opacity-60' : ''
+                      }`}
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: '#2a2a2a #000'
+                      }}
+                      placeholder={DEFAULT_FOLLOW_UP_PROMPT}
+                    />
+                  </div>
+
+                  {/* Footer Buttons */}
+                  {isDirty && (
+                    <div className="flex justify-end gap-3 pt-3 border-t border-[#222]">
+                      <button 
+                        onClick={handleCancel}
+                        className="px-4 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-gray-300 hover:text-white rounded-lg font-medium transition-colors text-sm"
+                      >
+                        Desfazer
+                      </button>
+                      <button 
+                        onClick={handleSave}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors text-sm shadow-lg shadow-blue-600/20"
+                      >
+                        Salvar Alterações
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ABA EMAIL */}
+              {activeTab === 'email' && (
+                <div className="flex flex-col h-full gap-4">
+                  {/* Aviso para Integrados */}
+                  {selectedAssistant?.subtitle === 'Integrado' && (
+                    <div className="flex gap-2 p-3 bg-yellow-600/10 border border-yellow-600/30 rounded-lg">
+                      <svg className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                        <line x1="12" y1="9" x2="12" y2="13"></line>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                      </svg>
+                      <p className="text-xs text-yellow-300 leading-relaxed">
+                        Assistentes integrados não podem ser editados. Duplique este assistente para criar uma versão personalizada.
+                      </p>
+                    </div>
+                  )}
+
+                  <div className="space-y-2">
+                    <h3 className="text-base font-semibold text-white">Substituição de Resumo por E-mail</h3>
+                    <p className="text-sm text-gray-400">
+                      Substitua o prompt padrão de resumo por e-mail para este assistente específico.
+                    </p>
+                  </div>
+
+                  <div className="flex-1 flex flex-col min-h-0">
+                    <label className="block text-sm font-semibold text-white mb-2">Prompt de Resumo por E-mail</label>
+                    <textarea
+                      value={emailSummaryPrompt}
+                      onChange={(e) => setEmailSummaryPrompt(e.target.value)}
+                      readOnly={selectedAssistant?.subtitle === 'Integrado'}
+                      className={`flex-1 w-full bg-[#1f1f1f] rounded-lg p-4 font-mono text-sm text-gray-300 border border-[#1a1a1a] focus:border-blue-500 focus:outline-none resize-none transition-colors ${
+                        selectedAssistant?.subtitle === 'Integrado' ? 'cursor-not-allowed opacity-60' : ''
+                      }`}
+                      style={{
+                        scrollbarWidth: 'thin',
+                        scrollbarColor: '#2a2a2a #000'
+                      }}
+                      placeholder={DEFAULT_EMAIL_SUMMARY_PROMPT}
+                    />
+                  </div>
+
+                  {/* Footer Buttons */}
+                  {isDirty && (
+                    <div className="flex justify-end gap-3 pt-3 border-t border-[#222]">
+                      <button 
+                        onClick={handleCancel}
+                        className="px-4 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] text-gray-300 hover:text-white rounded-lg font-medium transition-colors text-sm"
+                      >
+                        Desfazer
+                      </button>
+                      <button 
+                        onClick={handleSave}
+                        className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors text-sm shadow-lg shadow-blue-600/20"
+                      >
+                        Salvar Alterações
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ABA CONHECIMENTO */}
+              {activeTab === 'conhecimento' && (
                 <div className="flex flex-col items-center justify-center h-full text-center">
                   <div className="text-6xl mb-4">🚧</div>
                   <h3 className="text-xl font-semibold text-white mb-2">Em Desenvolvimento</h3>
@@ -238,5 +691,43 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
         </div>
       </div>
     </div>
-  );
+
+    {/* Modal de Confirmação */}
+    {showConfirmModal && (
+      <div className="fixed inset-0 z-[700] flex items-center justify-center backdrop-blur-sm animate-in fade-in duration-200 no-drag">
+        <div className="bg-[#0a0a0a] rounded-xl shadow-2xl border border-[#222] overflow-hidden w-[400px] no-drag">
+          {/* Header */}
+          <div className="px-6 py-4 border-b border-[#222] bg-[#0f0f0f]">
+            <h3 className="text-lg font-semibold text-white">{confirmModalTitle}</h3>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 py-4">
+            <p className="text-gray-300 text-sm">
+              {confirmModalTitle.startsWith('Excluir') 
+                ? 'Esta ação não pode ser desfeita. O assistente será permanentemente removido.'
+                : 'Todas as alterações não salvas serão perdidas.'}
+            </p>
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 py-4 border-t border-[#222] bg-[#0f0f0f] flex justify-end gap-3">
+            <button
+              onClick={handleConfirmNo}
+              className="px-4 py-2 bg-[#1a1a1a] hover:bg-[#252525] text-white rounded-lg font-medium transition-colors text-sm"
+            >
+              Cancelar
+            </button>
+            <button
+              onClick={handleConfirmYes}
+              className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg font-medium transition-colors text-sm shadow-lg shadow-red-600/20"
+            >
+              {confirmModalTitle.startsWith('Excluir') ? 'Excluir' : 'Sair'}
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
+  )
 }

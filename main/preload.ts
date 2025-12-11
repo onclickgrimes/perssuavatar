@@ -155,6 +155,14 @@ const handler = {
     addScreenshot: (screenshot: any) => ipcRenderer.invoke('db:add-screenshot', screenshot),
     deleteScreenshot: (screenshotId: string) => ipcRenderer.invoke('db:delete-screenshot', screenshotId),
     
+    // Assistants
+    getAssistants: () => ipcRenderer.invoke('db:get-assistants'),
+    getAssistantById: (assistantId: string) => ipcRenderer.invoke('db:get-assistant-by-id', assistantId),
+    createAssistant: (assistant: any) => ipcRenderer.invoke('db:create-assistant', assistant),
+    updateAssistant: (assistantId: string, updates: any) => 
+      ipcRenderer.invoke('db:update-assistant', assistantId, updates),
+    deleteAssistant: (assistantId: string) => ipcRenderer.invoke('db:delete-assistant', assistantId),
+    
     // Utilities
     getStats: () => ipcRenderer.invoke('db:get-stats'),
     export: () => ipcRenderer.invoke('db:export'),

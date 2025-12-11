@@ -112,6 +112,31 @@ export function registerDatabaseHandlers() {
   });
   
   // ===============================================
+  // ASSISTANTS
+  // ===============================================
+  
+  ipcMain.handle('db:get-assistants', () => {
+    return db.getAssistants();
+  });
+  
+  ipcMain.handle('db:get-assistant-by-id', (event, assistantId) => {
+    return db.getAssistantById(assistantId);
+  });
+  
+  ipcMain.handle('db:create-assistant', (event, assistant) => {
+    return db.createAssistant(assistant);
+  });
+  
+  ipcMain.handle('db:update-assistant', (event, assistantId, updates) => {
+    return db.updateAssistant(assistantId, updates);
+  });
+  
+  ipcMain.handle('db:delete-assistant', (event, assistantId) => {
+    db.deleteAssistant(assistantId);
+    return true;
+  });
+  
+  // ===============================================
   // UTILITIES
   // ===============================================
   
@@ -169,6 +194,13 @@ export function unregisterDatabaseHandlers() {
     'db:get-screenshots',
     'db:add-screenshot',
     'db:delete-screenshot',
+    
+    // Assistants
+    'db:get-assistants',
+    'db:get-assistant-by-id',
+    'db:create-assistant',
+    'db:update-assistant',
+    'db:delete-assistant',
     
     // Utilities
     'db:get-stats',

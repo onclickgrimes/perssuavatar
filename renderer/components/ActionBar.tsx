@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import AssistantManager from './AssistantManager';
 
 interface ActionBarProps {
@@ -11,25 +11,65 @@ type Assistant = {
   id: string;
   name: string;
   subtitle: string;
+  systemPrompt: string;
+  answerOnlyWhenCertain: boolean;
+  followUpPrompt: string;
+  emailSummaryPrompt: string;
+  createdAt: number;
+  updatedAt: number;
 };
 
-const ASSISTANTS: Assistant[] = [
-  { id: 'general', name: 'Assistente Geral', subtitle: 'Integrado' },
-  { id: 'sales', name: 'Assistente de Vendas', subtitle: 'Integrado' },
-  { id: 'leetcode', name: 'Assistente LeetCode', subtitle: 'Integrado' },
-  { id: 'study', name: 'Assistente de Estudo', subtitle: 'Integrado' },
-  { id: 'tech', name: 'Candidato Tech', subtitle: 'Integrado' },
-];
+const STORAGE_KEY = 'selectedAssistantId';
 
 export default function ActionBar({ isVisible, onClose, onOpenSettings }: ActionBarProps) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
-  const [selectedAssistant, setSelectedAssistant] = useState<Assistant>(ASSISTANTS[1]); // Sales Assistant por padrão
+  const [assistants, setAssistants] = useState<Assistant[]>([]);
+  const [selectedAssistant, setSelectedAssistant] = useState<Assistant | null>(null);
   const [isManagerOpen, setIsManagerOpen] = useState(false);
+
+  // Carregar assistentes do banco de dados
+  useEffect(() => {
+    loadAssistants();
+  }, []);
+
+  // Sincronizar com localStorage quando o modal de gerenciamento fecha
+  useEffect(() => {
+    if (!isManagerOpen) {
+      loadAssistants();
+    }
+  }, [isManagerOpen]);
+
+  const loadAssistants = async () => {
+    try {
+      const loadedAssistants = await window.electron.db.getAssistants();
+      setAssistants(loadedAssistants);
+
+      // Carregar o assistente selecionado do localStorage
+      const savedId = localStorage.getItem(STORAGE_KEY);
+      
+      if (savedId) {
+        const savedAssistant = loadedAssistants.find(a => a.id === savedId);
+        if (savedAssistant) {
+          setSelectedAssistant(savedAssistant);
+          return;
+        }
+      }
+
+      // Se não há seleção salva ou não foi encontrado, selecionar o primeiro
+      if (loadedAssistants.length > 0) {
+        setSelectedAssistant(loadedAssistants[0]);
+        localStorage.setItem(STORAGE_KEY, loadedAssistants[0].id);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar assistentes:', error);
+    }
+  };
 
   if (!isVisible) return null;
 
   const handleSelectAssistant = (assistant: Assistant) => {
     setSelectedAssistant(assistant);
+    localStorage.setItem(STORAGE_KEY, assistant.id);
     setIsDropdownOpen(false);
   };
 
@@ -69,8 +109,8 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
                 background: #252525;
               }
             `}</style>
-            {ASSISTANTS.map((assistant, index) => {
-              const isSelected = assistant.id === selectedAssistant.id;
+            {assistants.map((assistant, index) => {
+              const isSelected = selectedAssistant && assistant.id === selectedAssistant.id;
               
               return (
                 <div key={assistant.id}>
@@ -104,7 +144,7 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
                   </button>
                   
                   {/* Separador */}
-                  {index < ASSISTANTS.length - 1 && (
+                  {index < assistants.length - 1 && (
                     <div className="mx-4 border-b border-[#1a1a1a]" />
                   )}
                 </div>
@@ -147,7 +187,7 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
         </div>
         
         {/* Text */}
-        <span className="text-white text-sm font-medium">{selectedAssistant.name}</span>
+        <span className="text-white text-sm font-medium">{selectedAssistant?.name || 'Nenhum assistente'}</span>
         
         {/* Chevron (muda direção quando aberto) */}
         <svg 
