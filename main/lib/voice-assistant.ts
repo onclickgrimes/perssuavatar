@@ -294,6 +294,11 @@ export class VoiceAssistant extends EventEmitter {
                 });
 
                 result = shareResult;
+                
+                // Se a galeria foi limpa, notificar o frontend
+                if (shareResult.cleared) {
+                    this.emit('clear-gallery');
+                }
             }
         }
 
@@ -875,6 +880,11 @@ export class VoiceAssistant extends EventEmitter {
                                 tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
                                 content: `Share result (${shareResult.mediaCount} items): ${shareResult.message}`
                             });
+
+                            // Se a galeria foi limpa, notificar o frontend
+                            if (shareResult.cleared) {
+                                this.emit('clear-gallery');
+                            }
 
                             if (shareResult.success) {
                                 shouldSuppressAudio = false; // Let AI confirm the action

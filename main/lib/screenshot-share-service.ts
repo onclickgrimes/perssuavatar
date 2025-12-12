@@ -49,6 +49,7 @@ export interface ShareAllMediaResult {
   message: string;
   mediaCount: number;
   results: ShareResult[];
+  cleared: boolean;  // Se a galeria foi limpa após o compartilhamento
 }
 
 export class ScreenshotShareService {
@@ -216,12 +217,14 @@ export class ScreenshotShareService {
         message: 'Nenhuma mídia na galeria para compartilhar. Tire um screenshot ou salve uma gravação primeiro.',
         mediaCount: 0,
         results: [],
+        cleared: false,
       };
     }
 
     const allResults: ShareResult[] = [];
     let successCount = 0;
     let failCount = 0;
+    const totalItems = this.galleryMedia.length;
 
     // Compartilha cada mídia
     for (const media of this.galleryMedia) {
@@ -258,20 +261,28 @@ export class ScreenshotShareService {
 
     // Mensagem consolidada
     let message = '';
-    const total = this.galleryMedia.length;
-    if (successCount === total) {
-      message = `Todas as ${total} mídias foram compartilhadas com sucesso para: ${options.platforms.join(', ')}.`;
+    if (successCount === totalItems) {
+      message = `Todas as ${totalItems} mídias foram compartilhadas com sucesso para: ${options.platforms.join(', ')}.`;
     } else if (successCount > 0) {
-      message = `${successCount} de ${total} mídias compartilhadas. ${failCount} falharam.`;
+      message = `${successCount} de ${totalItems} mídias compartilhadas. ${failCount} falharam.`;
     } else {
-      message = `Falha ao compartilhar todas as ${total} mídias.`;
+      message = `Falha ao compartilhar todas as ${totalItems} mídias.`;
+    }
+
+    // Se pelo menos uma mídia foi compartilhada com sucesso, limpar a galeria
+    const shouldClear = successCount > 0;
+    if (shouldClear) {
+      console.log('🗑️ Limpando galeria após compartilhamento bem-sucedido');
+      this.clearGallery();
+      message += ' A galeria foi limpa.';
     }
 
     return {
       success: successCount > 0,
       message,
-      mediaCount: this.galleryMedia.length,
+      mediaCount: totalItems,
       results: allResults,
+      cleared: shouldClear,
     };
   }
 

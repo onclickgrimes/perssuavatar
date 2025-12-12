@@ -234,6 +234,13 @@ const handler = {
     return () => ipcRenderer.removeListener('recording-saved', subscription);
   },
 
+  // Listener para limpar galeria após compartilhamento
+  onClearGallery: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on('clear-gallery', subscription);
+    return () => ipcRenderer.removeListener('clear-gallery', subscription);
+  },
+
   // Notificar backend que lista de screenshots está vazia
   notifyScreenshotsEmpty: () => ipcRenderer.send('screenshots-empty'),
   

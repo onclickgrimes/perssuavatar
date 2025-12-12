@@ -1116,6 +1116,17 @@ assistant.on('model-transcription', (text: string) => {
     }
 });
 
+// Limpar galeria do frontend após compartilhamento bem-sucedido
+assistant.on('clear-gallery', () => {
+    console.log('🗑️ Limpando galeria do frontend após compartilhamento');
+    if (screenshotGalleryWindow && !screenshotGalleryWindow.isDestroyed()) {
+        screenshotGalleryWindow.webContents.send('clear-gallery');
+    }
+    // Também limpar variáveis locais de screenshots
+    currentSessionScreenshots = [];
+    pendingScreenshots = [];
+});
+
 // Helper para localizar o arquivo .model3.json
 ipcMain.handle('find-model-file', async (event, modelName) => {
     try {

@@ -65,6 +65,18 @@ export default function ScreenshotGalleryPage() {
     };
   }, []);
 
+  // Listen for clear gallery command (after successful share)
+  useEffect(() => {
+    const unsubscribe = window.electron.onClearGallery(() => {
+      console.log('🗑️ Comando para limpar galeria recebido');
+      setMediaItems([]);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
   // Remove item (screenshot ou video)
   const handleRemoveItem = (id: string) => {
     const item = mediaItems.find(m => m.id === id);
