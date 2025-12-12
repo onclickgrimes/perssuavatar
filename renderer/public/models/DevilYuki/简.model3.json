@@ -6,7 +6,49 @@
 			"简.8192/texture_00.png"
 		],
 		"Physics": "简.physics3.json",
-		"DisplayInfo": "简.cdi3.json"
+		"DisplayInfo": "简.cdi3.json",
+		"Expressions": [
+			{
+				"Name": "LeftHand",
+				"File": "LeftHand.exp3.json"
+			},
+			{
+				"Name": "RightHand",
+				"File": "RightHand.exp3.json"
+			},
+			{
+				"Name": "BlackFace",
+				"File": "BlackFace.exp3.json"
+			},
+			{
+				"Name": "Blush",
+				"File": "Blush.exp3.json"
+			},
+			{
+				"Name": "Blood",
+				"File": "Blood.exp3.json"
+			},
+			{
+				"Name": "Angry",
+				"File": "Angry.exp3.json"
+			},
+			{
+				"Name": "StarEyes",
+				"File": "StarEyes.exp3.json"
+			},
+			{
+				"Name": "WhiteEyes",
+				"File": "WhiteEyes.exp3.json"
+			},
+			{
+				"Name": "Tears",
+				"File": "Tears.exp3.json"
+			},
+			{
+				"Name": "HeartEyes",
+				"File": "HeartEyes.exp3.json"
+			}
+		]
 	},
 	"Groups": [
 		{

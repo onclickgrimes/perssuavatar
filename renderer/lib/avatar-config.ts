@@ -1,6 +1,6 @@
 
 export type AvatarMood = 'neutral' | 'happy' | 'sad' | 'angry' | 'surprised' | 'embarrassed' | 'cry' | 'excited';
-export type AvatarGesture = 'idle' | 'wave' | 'nod' | 'shake_head' | 'clap' | 'think' | 'look_around' | 'tilt_head_left' | 'tilt_head_right';
+export type AvatarGesture = 'idle' | 'wave' | 'nod' | 'shake_head' | 'clap' | 'think' | 'look_around' | 'tilt_head_left' | 'tilt_head_right' | 'ears_twitch' | 'tongue_out' | 'cheek_puff' | 'ahoge_bounce';
 
 interface Live2DModelConfig {
   moods: Record<AvatarMood, ModelAction>;
@@ -34,6 +34,10 @@ export const AVATAR_CONFIG: Record<string, Live2DModelConfig> = {
       look_around: { type: 'motion', group: 'TapBody', index: 0 },
       tilt_head_left: { type: 'motion', group: 'TapBody', index: 0 },
       tilt_head_right: { type: 'motion', group: 'TapBody', index: 0 },
+      ears_twitch: { type: 'expression', name: 'F01' }, // Placeholder
+      tongue_out: { type: 'expression', name: 'F01' }, // Placeholder 
+      cheek_puff: { type: 'expression', name: 'F01' }, // Placeholder
+      ahoge_bounce: { type: 'expression', name: 'F01' }, // Placeholder
     }
   },
   'Yuki': {
@@ -57,29 +61,38 @@ export const AVATAR_CONFIG: Record<string, Live2DModelConfig> = {
       look_around: { type: 'parameter', id: 'ParamAngleX', value: [0, 15, -15, 0], duration: 2000 },
       tilt_head_left: { type: 'parameter', id: 'ParamAngleZ', value: [0, -15, 0], duration: 1000 },
       tilt_head_right: { type: 'parameter', id: 'ParamAngleZ', value: [0, 15, 0], duration: 1000 },
+      ears_twitch: { type: 'parameter', id: 'ParamAngleZ', value: 0 }, // No-op
+      tongue_out: { type: 'parameter', id: 'ParamAngleZ', value: 0 }, // No-op
+      cheek_puff: { type: 'parameter', id: 'ParamCheekPuff', value: 1 }, 
+      ahoge_bounce: { type: 'parameter', id: 'ParamAngleY', value: [0, 10, 0], duration: 500 }, // Head bounce instead
     }
   },
   'DevilYuki': {
     moods: {
-      neutral: { type: 'parameter', id: 'ParamSwitch4', value: 0 }, // Reset Angry as default reset
-      happy: { type: 'parameter', id: 'ParamSwitch8', value: 1 }, // Heart Eyes
-      sad: { type: 'parameter', id: 'ParamSwitch7', value: 1 }, // Tears
-      angry: { type: 'parameter', id: 'ParamSwitch4', value: 1 }, // Angry
-      surprised: { type: 'parameter', id: 'ParamSwitch5', value: 1 }, // Star Eyes
-      embarrassed: { type: 'parameter', id: 'ParamSwitch2', value: 1 }, // Blush
-      cry: { type: 'parameter', id: 'ParamSwitch7', value: 1 }, // Tears
-      excited: { type: 'parameter', id: 'ParamSwitch5', value: 1 }, // Star Eyes
+      neutral: { type: 'parameter', id: 'ParamSwitch4', value: 0 }, // Resets by default due to Avatar.tsx logic
+      happy: { type: 'expression', name: 'HeartEyes' },
+      sad: { type: 'expression', name: 'Tears' },
+      angry: { type: 'expression', name: 'Angry' },
+      surprised: { type: 'expression', name: 'WhiteEyes' },
+      embarrassed: { type: 'expression', name: 'Blush' },
+      cry: { type: 'expression', name: 'Tears' },
+      excited: { type: 'expression', name: 'StarEyes' },
     },
     gestures: {
       idle: { type: 'parameter', id: 'ParamCheekPuff', value: 0 },
       wave: { type: 'parameter', id: 'ParamBodyAngleZ0', value: [0, 10, -10, 10, 0], duration: 1500 },
       nod: { type: 'parameter', id: 'ParamAngleY', value: [0, 20, 0, 20, 0], duration: 1000 },
       shake_head: { type: 'parameter', id: 'ParamAngleX', value: [0, 20, -20, 20, -20, 0], duration: 1000 },
-      clap: { type: 'parameter', id: 'ParamSwitch10', value: [0, 1, 0, 1], duration: 500 }, // Right Hand twitch?
-      think: { type: 'parameter', id: 'ParamCheekPuff', value: [0, 1, 1, 1, 0], duration: 2000 },
-      look_around: { type: 'parameter', id: 'ParamAngleX', value: [0, 15, -15, 0], duration: 2000 },
-      tilt_head_left: { type: 'parameter', id: 'ParamAngleZ', value: [0, -15, 0], duration: 1000 },
-      tilt_head_right: { type: 'parameter', id: 'ParamAngleZ', value: [0, 15, 0], duration: 1000 },
+      clap: { type: 'parameter', id: 'ParamSwitch10', value: [0, 1, 0, 1], duration: 500 },
+      think: { type: 'parameter', id: 'ParamMouthX2', value: [0, 1, 1, 1, 0], duration: 2000 }, // Smirk/Tongue
+      look_around: { type: 'parameter', id: 'ParamAngleX', value: [0, 30, -30, 0], duration: 2000 },
+      tilt_head_left: { type: 'parameter', id: 'ParamAngleZ', value: [0, -20, 0], duration: 1000 },
+      tilt_head_right: { type: 'parameter', id: 'ParamAngleZ', value: [0, 20, 0], duration: 1000 },
+      // New Interactions
+      ears_twitch: { type: 'parameter', id: 'Ear_SR1', value: [0, 1, -1, 1, 0], duration: 800 },
+      tongue_out: { type: 'parameter', id: 'ParamTongueOut', value: [0, 1, 1, 0], duration: 2000 },
+      cheek_puff: { type: 'parameter', id: 'ParamCheekPuff', value: [0, 1, 1, 0], duration: 2000 },
+      ahoge_bounce: { type: 'parameter', id: 'SillyHair_SY1', value: [0, 1, -1, 0], duration: 600 }
     }
   }
 };
