@@ -1,5 +1,5 @@
 import path from 'path'
-import { app, ipcMain, BrowserWindow, screen, desktopCapturer } from 'electron'
+import { app, ipcMain, BrowserWindow, screen, desktopCapturer, clipboard } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import { VoiceAssistant } from './lib/voice-assistant';
@@ -22,6 +22,7 @@ console.log('FFmpeg path:', ffmpegPath);
 ffmpeg.setFfmpegPath(ffmpegPath);
 
 export let mainWindow;
+let screenshotGalleryWindow: BrowserWindow | null = null;
 const assistant = new VoiceAssistant('elevenlabs');
 let isMicrophonePaused = false; // Estado de pausa do microfone
 let isAvatarReactionDisabled = false; // Desabilita reação do avatar (transcrição continua)
@@ -78,7 +79,203 @@ if (isProd) {
     await mainWindow.loadURL(`http://localhost:${port}/home`)
     // mainWindow.webContents.openDevTools()
   }
+
+  // Screenshot Gallery Window será criada sob demanda quando houver screenshots
+  console.log('� Screenshot Gallery Window será criada quando necessário');
+
+
+  // ========================================
+  // CLIPBOARD MONITOR - Detecta Win+Shift+S e PrintScreen
+  // ========================================
+  
+  let lastClipboardImageSize: { width: number, height: number } | null = null;
+  let isProcessingClipboard = false; // Flag para evitar processamento simultâneo
+
+  // Monitor de clipboard - verifica a cada 1000ms (reduzido para evitar lag)
+  const clipboardMonitorInterval = setInterval(async () => {
+    // Se já está processando, pula esta iteração
+    if (isProcessingClipboard) {
+      return;
+    }
+
+    try {
+      const image = clipboard.readImage();
+      
+      // Verifica se há uma imagem na clipboard
+      if (!image.isEmpty()) {
+        const size = image.getSize();
+        
+        // Verifica se é uma imagem diferente (compara dimensões)
+        const isDifferentImage = !lastClipboardImageSize || 
+          lastClipboardImageSize.width !== size.width || 
+          lastClipboardImageSize.height !== size.height;
+        
+        if (isDifferentImage) {
+          isProcessingClipboard = true;
+          lastClipboardImageSize = size;
+          
+          console.log(`📋 Nova imagem detectada na clipboard (${size.width}x${size.height})`);
+          
+          // Processa de forma assíncrona para não bloquear o thread principal
+          setImmediate(() => {
+            try {
+              // Redimensiona se for muito grande (PrintScreen de tela cheia)
+              let processedImage = image;
+              const maxDimension = 1920; // Máximo de 1920px na maior dimensão
+              
+              if (size.width > maxDimension || size.height > maxDimension) {
+                const scale = maxDimension / Math.max(size.width, size.height);
+                const newWidth = Math.round(size.width * scale);
+                const newHeight = Math.round(size.height * scale);
+                
+                console.log(`📐 Redimensionando de ${size.width}x${size.height} para ${newWidth}x${newHeight}`);
+                processedImage = image.resize({ width: newWidth, height: newHeight });
+              }
+              
+              // Converte para base64 (JPEG para maior compressão)
+              const jpegBuffer = processedImage.toJPEG(85); // 85% qualidade
+              const base64Data = jpegBuffer.toString('base64');
+              
+              console.log(`📋 Imagem processada (${(base64Data.length / 1024).toFixed(0)} KB)`);
+              
+              // Cria janela sob demanda e envia screenshot
+              createScreenshotGalleryWindow().then(() => {
+                sendScreenshotToGallery(base64Data);
+              });
+            } catch (error) {
+              console.error('Erro ao processar imagem da clipboard:', error);
+            } finally {
+              isProcessingClipboard = false;
+            }
+          });
+        }
+      } else {
+        // Clipboard vazio - resetar
+        lastClipboardImageSize = null;
+      }
+    } catch (error) {
+      // Silenciosamente ignora erros menores
+      isProcessingClipboard = false;
+    }
+  }, 1000); // Aumentado para 1000ms para reduzir carga
+
+  // Limpar intervalo quando app fechar
+  app.on('before-quit', () => {
+    clearInterval(clipboardMonitorInterval);
+  });
+
+  console.log('📋 Clipboard monitor iniciado - Win+Shift+S e PrintScreen capturas serão detectadas');
 })()
+
+// Função para criar Screenshot Gallery Window sob demanda (escopo global)
+let pendingScreenshots: string[] = []; // Fila de screenshots aguardando janela estar pronta
+let isWindowReady = false;
+
+async function createScreenshotGalleryWindow() {
+  if (screenshotGalleryWindow && !screenshotGalleryWindow.isDestroyed()) {
+    return; // Janela já existe
+  }
+
+  isWindowReady = false;
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  
+  const galleryWidth = 300;
+  const galleryHeight = screenHeight;
+  const galleryX = screenWidth - galleryWidth;
+  const galleryY = 20;
+
+  screenshotGalleryWindow = createWindow('screenshot-gallery', {
+    width: galleryWidth,
+    height: galleryHeight,
+    x: galleryX,
+    y: galleryY,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    focusable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  screenshotGalleryWindow.setIgnoreMouseEvents(true, { forward: true });
+
+  // IMPORTANTE: Registrar listener ANTES de loadURL
+  const loadPromise = new Promise<void>((resolve) => {
+    let resolved = false;
+    
+    const onLoad = () => {
+      if (!resolved) {
+        resolved = true;
+        console.log('📸 did-finish-load disparado');
+        // Dar 200ms para React registrar listeners
+        setTimeout(() => {
+          console.log('📸 Screenshot Gallery Window pronta');
+          isWindowReady = true;
+          
+          // Processar screenshots pendentes
+          if (pendingScreenshots.length > 0) {
+            console.log(`📸 Processando ${pendingScreenshots.length} screenshots pendentes`);
+            pendingScreenshots.forEach(base64Data => {
+              if (screenshotGalleryWindow && !screenshotGalleryWindow.isDestroyed()) {
+                screenshotGalleryWindow.webContents.send('screenshot-captured', base64Data);
+              }
+            });
+            pendingScreenshots = [];
+          }
+          
+          resolve();
+        }, 200);
+      }
+    };
+
+    if (screenshotGalleryWindow) {
+      screenshotGalleryWindow.webContents.once('did-finish-load', onLoad);
+      
+      // Timeout de segurança - se não carregar em 3 segundos, assume pronto
+      setTimeout(() => {
+        if (!resolved) {
+          console.warn('⚠️ Timeout esperando did-finish-load - assumindo janela pronta');
+          onLoad();
+        }
+      }, 3000);
+    } else {
+      resolve();
+    }
+  });
+
+  // Agora sim, carregar URL
+  console.log('📸 Iniciando carregamento da janela...');
+  if (isProd) {
+    await screenshotGalleryWindow.loadURL('app://./screenshot-gallery');
+  } else {
+    const port = process.argv[2];
+    await screenshotGalleryWindow.loadURL(`http://localhost:${port}/screenshot-gallery`);
+  }
+  console.log('📸 loadURL completado, aguardando did-finish-load...');
+
+  // Aguardar o carregamento real
+  await loadPromise;
+}
+
+// Função helper para enviar screenshot (com fila se necessário)
+function sendScreenshotToGallery(base64Data: string) {
+  if (screenshotGalleryWindow && !screenshotGalleryWindow.isDestroyed() && isWindowReady) {
+    // Janela existe e está pronta - enviar imediatamente
+    screenshotGalleryWindow.webContents.send('screenshot-captured', base64Data);
+  } else {
+    // Janela não está pronta - adicionar à fila
+    console.log('📸 Screenshot adicionado à fila (janela ainda não pronta)');
+    pendingScreenshots.push(base64Data);
+  }
+}
 
 app.on('window-all-closed', () => {
   app.quit()
@@ -138,6 +335,16 @@ ipcMain.on('open-settings', async () => {
     await settingsWindow.loadURL(`http://localhost:${port}/settings`);
   }
 });
+
+// Handler para fechar janela de screenshots quando lista está vazia
+ipcMain.on('screenshots-empty', () => {
+  console.log('📸 Lista de screenshots vazia - fechando janela para economizar recursos');
+  if (screenshotGalleryWindow && !screenshotGalleryWindow.isDestroyed()) {
+    screenshotGalleryWindow.close();
+    screenshotGalleryWindow = null;
+  }
+});
+
 
 let transcriptionWindow: BrowserWindow | null = null;
 
@@ -591,11 +798,21 @@ assistant.on('take-screenshot', async () => {
                 const base64Image = resizedImage.toJPEG(80).toString('base64'); // JPEG for smaller size
                 console.log("📸 Enviando screenshot para Gemini Live...");
                 assistant.sendScreenFrame(base64Image);
+                
+                // Criar janela e enviar screenshot
+                createScreenshotGalleryWindow().then(() => {
+                    sendScreenshotToGallery(base64Image);
+                });
             } else {
                 // In Classic mode, use OpenAI for analysis
                 const base64Image = resizedImage.toPNG().toString('base64');
                 assistant.analyzeScreenshot(base64Image).catch(err => {
                     console.error("Erro ao analisar screenshot:", err);
+                });
+                
+                // Criar janela e enviar screenshot
+                createScreenshotGalleryWindow().then(() => {
+                    sendScreenshotToGallery(base64Image);
                 });
             }
         }

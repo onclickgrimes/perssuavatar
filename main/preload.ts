@@ -218,7 +218,17 @@ const handler = {
     const subscription = (_: any, isDisabled: boolean) => callback(isDisabled);
     ipcRenderer.on('avatar-reaction-status-changed', subscription);
     return () => ipcRenderer.removeListener('avatar-reaction-status-changed', subscription);
-  }
+  },
+
+  // Listener para screenshots capturados
+  onScreenshotCaptured: (callback: (base64Image: string) => void) => {
+    const subscription = (_: any, base64Image: string) => callback(base64Image);
+    ipcRenderer.on('screenshot-captured', subscription);
+    return () => ipcRenderer.removeListener('screenshot-captured', subscription);
+  },
+
+  // Notificar backend que lista de screenshots está vazia
+  notifyScreenshotsEmpty: () => ipcRenderer.send('screenshots-empty')
 }
 
 contextBridge.exposeInMainWorld('electron', handler)

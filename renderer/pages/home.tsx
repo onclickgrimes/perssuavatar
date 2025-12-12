@@ -10,7 +10,6 @@ export default function HomePage() {
   useMicrophone();
 
   const [dragEnabled, setDragEnabled] = useState(true);
-
   const [selectedModel, setSelectedModel] = useState('Yuki');
   const [isScreenSharing, setIsScreenSharing] = useState(false);
   const [showActionBar, setShowActionBar] = useState(false);
@@ -98,6 +97,8 @@ export default function HomePage() {
       unsubscribe();
     };
   }, []);
+
+
 
   return (
     <div className="w-screen h-screen overflow-hidden bg-transparent">
