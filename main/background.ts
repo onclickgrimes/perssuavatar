@@ -1,3 +1,111 @@
+// ========================================
+// CONFIGURAÇÃO UTF-8 PARA WINDOWS
+// ========================================
+import iconv from 'iconv-lite';
+
+// Mapeamento de emojis para símbolos ASCII (console Windows não suporta emojis)
+const emojiMap: { [key: string]: string } = {
+    '✅': '[OK]',
+    '❌': '[X]',
+    '⚠️': '[!]',
+    '⚠': '[!]',
+    '📋': '[CLIP]',
+    '📸': '[IMG]',
+    '📏': '[RULE]',
+    '📐': '[SCALE]',
+    '🎥': '[VID]',
+    '🎬': '[REC]',
+    '🎤': '[MIC]',
+    '🔊': '[VOL]',
+    '🤖': '[BOT]',
+    '🪟': '[WIN]',
+    '🔍': '[FIND]',
+    '🔧': '[TOOL]',
+    '🔄': '[SYNC]',
+    '💾': '[SAVE]',
+    '🎯': '[TGT]',
+    '✓': '[v]',
+    '🚀': '[>>]',
+    '⏱️': '[TIME]',
+    '⏱': '[TIME]',
+    '📝': '[NOTE]',
+    '🎨': '[ART]',
+    '⚙️': '[CFG]',
+    '⚙': '[CFG]',
+    '📦': '[PKG]',
+    '🌐': '[WEB]',
+    '💡': '[IDEA]',
+    '🔥': '[FIRE]',
+    '⭐': '[STAR]',
+    '🎵': '[MUSIC]',
+    '📱': '[PHONE]',
+    '💻': '[PC]',
+    '🖥️': '[SCREEN]',
+    '🖥': '[SCREEN]',
+};
+
+// Função para substituir emojis por símbolos ASCII
+function replaceEmojis(text: string): string {
+    let result = text;
+    for (const [emoji, replacement] of Object.entries(emojiMap)) {
+        result = result.replaceAll(emoji, replacement);
+    }
+    return result;
+}
+
+// No Windows, usa iconv-lite para converter UTF-8 para o code page correto
+if (process.platform === 'win32') {
+    // Detecta o code page atual do console
+    let codePage = 'cp850'; // Default para Windows Brasil
+    try {
+        const { execSync } = require('child_process');
+        const output = execSync('chcp', { encoding: 'utf8' });
+        const match = output.match(/\d+/);
+        if (match) {
+            const cpNumber = match[0];
+            // Mapeia code pages comuns
+            const cpMap: { [key: string]: string } = {
+                '850': 'cp850',   // DOS Latin-1 (Brasil/Portugal)
+                '1252': 'win1252', // Windows Latin-1
+                '65001': 'utf8',   // UTF-8
+                '437': 'cp437',    // US
+            };
+            codePage = cpMap[cpNumber] || 'cp850';
+            const tempLog = console.log;
+            tempLog(`[FIND] Code Page detectado: ${cpNumber} (${codePage})`);
+        }
+    } catch (e) {
+        const tempLog = console.log;
+        tempLog('[!] Nao foi possivel detectar code page, usando CP850 (padrao BR)');
+    }
+
+    const originalLog = console.log;
+    const originalError = console.error;
+    const originalWarn = console.warn;
+    const originalInfo = console.info;
+
+    // Função para escrever com conversão de encoding
+    const writeWithEncoding = (stream: NodeJS.WriteStream, ...args: any[]) => {
+        let message = args.map(arg => 
+            typeof arg === 'string' ? arg : JSON.stringify(arg)
+        ).join(' ');
+        
+        // Substitui emojis por símbolos ASCII
+        message = replaceEmojis(message);
+        
+        // Converte UTF-8 para o code page detectado
+        const encoded = iconv.encode(message + '\n', codePage);
+        stream.write(encoded);
+    };
+
+    console.log = (...args: any[]) => writeWithEncoding(process.stdout, ...args);
+    console.error = (...args: any[]) => writeWithEncoding(process.stderr, ...args);
+    console.warn = (...args: any[]) => writeWithEncoding(process.stderr, ...args);
+    console.info = (...args: any[]) => writeWithEncoding(process.stdout, ...args);
+    
+    console.log('[v] Console configurado com sucesso!');
+}
+
 import path from 'path'
 import { app, ipcMain, BrowserWindow, screen, desktopCapturer, clipboard } from 'electron'
 import serve from 'electron-serve'
@@ -48,6 +156,13 @@ if (isProd) {
         return callback(true);
       }
       callback(false);
+    });
+
+    // Suprimir logs do console do renderer process no terminal do backend
+    contents.on('console-message', (event, level, message, line, sourceId) => {
+      // Prevenir que logs do frontend apareçam no terminal do backend
+      // Os logs ainda aparecem no DevTools do navegador quando aberto
+      event.preventDefault();
     });
   });
 
