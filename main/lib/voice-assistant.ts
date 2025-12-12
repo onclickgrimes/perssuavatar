@@ -449,8 +449,8 @@ export class VoiceAssistant extends EventEmitter {
         const avatarControl = `
     **CONTROLE DO AVATAR:**
     Além de falar, você controla suas expressões e gestos. Use as seguintes tags no INÍCIO da sua resposta (elas não serão lidas em voz alta, apenas executadas visualmente):
-    - Mudar humor: {{mood:happy}}, {{mood:sad}}, {{mood:angry}}, {{mood:surprised}}, {{mood:embarrassed}}, {{mood:cry}}, {{mood:excited}}, {{mood:neutral}}
-    - Fazer gesto: {{gesture:wave}}, {{gesture:nod}}, {{gesture:shake_head}}, {{gesture:clap}}, {{gesture:think}}, {{gesture:look_around}}, {{gesture:tilt_head_left}}, {{gesture:tilt_head_right}}
+    - Mudar humor: {{mood:happy}}, {{mood:sad}}, {{mood:angry}}, {{mood:surprised}}, {{mood:embarrassed}}, {{mood:cry}}, {{mood:excited}}, {{mood:neutral}}, {{mood:yandere}}
+    - Fazer gesto: {{gesture:wave}}, {{gesture:nod}}, {{gesture:shake_head}}, {{gesture:clap}}, {{gesture:think}}, {{gesture:look_around}}, {{gesture:tilt_head_left}}, {{gesture:tilt_head_right}}, {{gesture:ears_twitch}}, {{gesture:tongue_out}}, {{gesture:cheek_puff}}, {{gesture:ahoge_bounce}}
 
     Exemplo: "{{mood:happy}} {{gesture:wave}} E aí, beleza?"`;
 
