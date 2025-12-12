@@ -16,6 +16,19 @@ export interface ShareResult {
   platform: string;
 }
 
+export interface ShareMultipleOptions {
+  platforms: ('whatsapp' | 'email' | 'drive')[];
+  recipient?: string;
+  message?: string;
+  screenshotPath: string;
+}
+
+export interface ShareMultipleResult {
+  success: boolean;
+  message: string;
+  results: ShareResult[];
+}
+
 export class ScreenshotShareService {
   /**
    * Compartilha um screenshot para a plataforma especificada
@@ -58,6 +71,74 @@ export class ScreenshotShareService {
         platform: options.platform,
       };
     }
+  }
+
+  /**
+   * Compartilha um screenshot para múltiplas plataformas simultaneamente
+   */
+  public async shareToMultiplePlatforms(options: ShareMultipleOptions): Promise<ShareMultipleResult> {
+    console.log(`📤 Compartilhando screenshot para ${options.platforms.length} plataforma(s): ${options.platforms.join(', ')}...`);
+
+    // Verifica se o arquivo existe
+    if (!fs.existsSync(options.screenshotPath)) {
+      return {
+        success: false,
+        message: 'Screenshot não encontrado. Por favor, tire um screenshot primeiro.',
+        results: [],
+      };
+    }
+
+    const results: ShareResult[] = [];
+    const successPlatforms: string[] = [];
+    const failedPlatforms: string[] = [];
+
+    // Processa cada plataforma em sequência
+    for (const platform of options.platforms) {
+      try {
+        // Pequeno delay entre plataformas para não sobrecarregar
+        if (results.length > 0) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+
+        const result = await this.shareScreenshot({
+          platform,
+          recipient: options.recipient,
+          message: options.message,
+          screenshotPath: options.screenshotPath,
+        });
+
+        results.push(result);
+
+        if (result.success) {
+          successPlatforms.push(platform);
+        } else {
+          failedPlatforms.push(platform);
+        }
+      } catch (error) {
+        results.push({
+          success: false,
+          message: `Erro ao compartilhar para ${platform}: ${error.message}`,
+          platform,
+        });
+        failedPlatforms.push(platform);
+      }
+    }
+
+    // Gera mensagem consolidada
+    let message = '';
+    if (successPlatforms.length === options.platforms.length) {
+      message = `Screenshot compartilhado com sucesso para: ${successPlatforms.join(', ')}.`;
+    } else if (successPlatforms.length > 0) {
+      message = `Screenshot compartilhado para: ${successPlatforms.join(', ')}. Falhou para: ${failedPlatforms.join(', ')}.`;
+    } else {
+      message = `Falha ao compartilhar screenshot para todas as plataformas: ${failedPlatforms.join(', ')}.`;
+    }
+
+    return {
+      success: successPlatforms.length > 0,
+      message,
+      results,
+    };
   }
 
   /**

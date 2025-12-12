@@ -75,13 +75,16 @@ export const UNIFIED_TOOLS: UnifiedTool[] = [
   },
   {
     name: "share_screenshot",
-    description: "Share or send the most recent screenshot to WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', or similar sharing requests. WAIT for the function response before confirming the share was successful.",
+    description: "Share or send the most recent screenshot to one or more platforms: WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', 'send to WhatsApp and Drive', or similar sharing requests. You CAN send to MULTIPLE platforms at once by providing an array with multiple values. WAIT for the function response before confirming the share was successful.",
     parameters: {
       properties: {
-        platform: {
-          type: "string",
-          enum: ["whatsapp", "email", "drive"],
-          description: "The platform to share the screenshot to: 'whatsapp' for WhatsApp Web, 'email' for default email client, 'drive' for Google Drive.",
+        platforms: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["whatsapp", "email", "drive"],
+          },
+          description: "Array of platforms to share the screenshot to. Can include one or multiple: 'whatsapp' for WhatsApp Web, 'email' for default email client, 'drive' for Google Drive. Example: ['drive', 'whatsapp'] to send to both.",
         },
         recipient: {
           type: "string",
@@ -92,7 +95,7 @@ export const UNIFIED_TOOLS: UnifiedTool[] = [
           description: "Optional. A message to include with the screenshot.",
         },
       },
-      required: ["platform"],
+      required: ["platforms"],
     },
   },
 ];
@@ -139,13 +142,16 @@ export const UNIFIED_LIVE_TOOLS: UnifiedTool[] = [
   },
   {
     name: "share_screenshot",
-    description: "Share or send the most recent screenshot to WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', or similar sharing requests. WAIT for the function response before confirming the share was successful.",
+    description: "Share or send the most recent screenshot to one or more platforms: WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', 'send to WhatsApp and Drive', or similar sharing requests. You CAN send to MULTIPLE platforms at once by providing an array with multiple values. WAIT for the function response before confirming the share was successful.",
     parameters: {
       properties: {
-        platform: {
-          type: "string",
-          enum: ["whatsapp", "email", "drive"],
-          description: "The platform to share the screenshot to: 'whatsapp' for WhatsApp Web, 'email' for default email client, 'drive' for Google Drive.",
+        platforms: {
+          type: "array",
+          items: {
+            type: "string",
+            enum: ["whatsapp", "email", "drive"],
+          },
+          description: "Array of platforms to share the screenshot to. Can include one or multiple: 'whatsapp' for WhatsApp Web, 'email' for default email client, 'drive' for Google Drive. Example: ['drive', 'whatsapp'] to send to both.",
         },
         recipient: {
           type: "string",
@@ -156,7 +162,7 @@ export const UNIFIED_LIVE_TOOLS: UnifiedTool[] = [
           description: "Optional. A message to include with the screenshot.",
         },
       },
-      required: ["platform"],
+      required: ["platforms"],
     },
   },
 ];

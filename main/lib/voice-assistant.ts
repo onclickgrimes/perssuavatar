@@ -261,7 +261,14 @@ export class VoiceAssistant extends EventEmitter {
         } else if (toolCall.name === 'share_screenshot') {
             console.log(`[VoiceAssistant][Live] Share screenshot requested`, toolCall.args);
 
-            const platform = toolCall.args?.platform;
+            // Suporte a 'platforms' (array) ou 'platform' (string única para retrocompatibilidade)
+            let platforms: ('whatsapp' | 'email' | 'drive')[] = toolCall.args?.platforms || [];
+            
+            // Retrocompatibilidade: se recebeu 'platform' (singular), converte para array
+            if (platforms.length === 0 && toolCall.args?.platform) {
+                platforms = [toolCall.args.platform];
+            }
+            
             const recipient = toolCall.args?.recipient;
             const message = toolCall.args?.message;
 
@@ -273,9 +280,14 @@ export class VoiceAssistant extends EventEmitter {
                     success: false,
                     message: 'Nenhum screenshot encontrado para compartilhar. Por favor, tire um screenshot primeiro usando take_screenshot.'
                 };
+            } else if (platforms.length === 0) {
+                result = {
+                    success: false,
+                    message: 'Nenhuma plataforma especificada. Por favor, informe para onde deseja enviar (whatsapp, email ou drive).'
+                };
             } else {
-                const shareResult = await this.screenshotShareService.shareScreenshot({
-                    platform,
+                const shareResult = await this.screenshotShareService.shareToMultiplePlatforms({
+                    platforms,
                     recipient,
                     message,
                     screenshotPath,
@@ -793,7 +805,16 @@ export class VoiceAssistant extends EventEmitter {
                         shortFeedbackPhrase = responses[Math.floor(Math.random() * responses.length)];
                     } else if (fnName === 'share_screenshot') {
                         const args = JSON.parse((toolCall as any).function.arguments);
-                        console.log(`Tool Call: share_screenshot PLATFORM=${args.platform}`);
+                        
+                        // Suporte a 'platforms' (array) ou 'platform' (string única para retrocompatibilidade)
+                        let platforms: ('whatsapp' | 'email' | 'drive')[] = args.platforms || [];
+                        
+                        // Retrocompatibilidade: se recebeu 'platform' (singular), converte para array
+                        if (platforms.length === 0 && args.platform) {
+                            platforms = [args.platform];
+                        }
+                        
+                        console.log(`Tool Call: share_screenshot PLATFORMS=${platforms.join(', ')}`);
 
                         // Obter caminho do último screenshot
                         const screenshotPath = await this.screenshotShareService.getLatestScreenshotPath();
@@ -806,9 +827,17 @@ export class VoiceAssistant extends EventEmitter {
                             });
 
                             shouldSuppressAudio = false; // Let AI explain the issue
+                        } else if (platforms.length === 0) {
+                            this.conversationHistory.push({
+                                role: "tool",
+                                tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
+                                content: `Screenshot share failed: No platform specified. Please specify where to send (whatsapp, email or drive).`
+                            });
+
+                            shouldSuppressAudio = false; // Let AI explain the issue
                         } else {
-                            const shareResult = await this.screenshotShareService.shareScreenshot({
-                                platform: args.platform,
+                            const shareResult = await this.screenshotShareService.shareToMultiplePlatforms({
+                                platforms,
                                 recipient: args.recipient,
                                 message: args.message,
                                 screenshotPath,
