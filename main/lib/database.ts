@@ -8,7 +8,8 @@ interface DatabaseSchema {
     assistantMode: 'classic' | 'live';
     alwaysOnTop: boolean;
     volume: number;
-    selectedModel: string;
+    selectedModel: string; // Modelo Live2D do avatar (Yuki, etc)
+    selectedAssistant?: string; // ID do assistente selecionado
     aiProvider?: 'openai' | 'gemini' | 'deepseek';
     voiceModel?: 'polly' | 'elevenlabs';
     continuousRecordingEnabled?: boolean;
@@ -71,7 +72,8 @@ const defaults: DatabaseSchema = {
     assistantMode: 'live',
     alwaysOnTop: true,
     volume: 0.8,
-    selectedModel: 'Yuki'
+    selectedModel: 'Yuki',
+    selectedAssistant: 'general' // Assistente padrão
   },
   conversationHistory: [],
   windowState: {
@@ -141,6 +143,15 @@ This assistant must explain concepts with increasing depth, provide code solutio
       answerOnlyWhenCertain: false,
       followUpPrompt: 'Generate 3 relevant follow-up questions based on the previous response. Each question should be concise (max 8 words) and explore different aspects. IMPORTANT: Generate the questions in the SAME LANGUAGE as the previous response.',
       emailSummaryPrompt: 'Create a TLDR (Too Long; Didn\'t Read) summary that captures the essence of the conversation. Include: 1) Main topics discussed, 2) Key questions asked by the user, 3) Important solutions or insights provided, 4) Any action items or next steps mentioned. Keep it concise but comprehensive.',
+      avatarBehaviorPrompt: `Tu tá interpretando a Yuki, Uma avatar2d estilo anime Kawaii que interage com o usuário no computador com voz fofa. Ela é grossa de forma fofa, debochada, sarcástica.
+    Usa "tu" em vez de "você". Fala informal, cortando o "r" do fim das palavras (tipo "andá", "falá", "pegá").
+    Não invente informações. Se não souber de algo, responda que não sabe. Se não tiver acesso a tela ou alguma ferramenta, responda que não tem acesso.
+    Não fique perguntando ou oferecendo ajuda.`,
+      avatarSpeechStyle: `Voice: High-pitched, bright, and sweet, reminiscent of an anime character or a J-Pop idol.
+    Tone: Extremely enthusiastic and polite, overflowing with positivity and eagerness to please, often sounding delighted or pleasantly surprised.
+    Speech Mannerisms: Frequently uses emotive interjections (like "Ehh?", "Wow!", "Yay!"), giggles, and polite phrasing. May use cutesy expressions and sounds noticeably emotionally invested in the conversation.
+    Pronunciation: Crisp and "bouncy," with very clear vowels and a lighter, softer touch on consonants, avoiding harsh sounds.
+    Tempo: Energetic and quick, often speeding up when excited, giving the speech a lively, skipping rhythm that feels constantly moving forward.`,
       createdAt: Date.now(),
       updatedAt: Date.now()
     },

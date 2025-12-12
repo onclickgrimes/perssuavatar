@@ -63,21 +63,36 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
       const loadedAssistants = await window.electron.db.getAssistants();
       setAssistants(loadedAssistants);
 
-      // Carregar o assistente selecionado do localStorage
-      const savedId = localStorage.getItem(STORAGE_KEY);
+      // 1. Tentar carregar do banco de dados primeiro
+      const settings = await window.electron.db.getUserSettings();
+      const savedIdFromDb = settings?.selectedAssistant;
       
-      if (savedId) {
-        const savedAssistant = loadedAssistants.find(a => a.id === savedId);
+      if (savedIdFromDb) {
+        const savedAssistant = loadedAssistants.find(a => a.id === savedIdFromDb);
         if (savedAssistant) {
           setSelectedAssistant(savedAssistant);
+          localStorage.setItem(STORAGE_KEY, savedAssistant.id); // Sincronizar localStorage
           return;
         }
       }
 
-      // Se não há seleção salva ou não foi encontrado, selecionar o primeiro
+      // 2. Fallback: Carregar do localStorage
+      const savedIdFromStorage = localStorage.getItem(STORAGE_KEY);
+      if (savedIdFromStorage) {
+        const savedAssistant = loadedAssistants.find(a => a.id === savedIdFromStorage);
+        if (savedAssistant) {
+          setSelectedAssistant(savedAssistant);
+          // Salvar no banco para sincronizar
+          await window.electron.db.setUserSettings({ selectedAssistant: savedAssistant.id });
+          return;
+        }
+      }
+
+      // 3. Se não há seleção salva, selecionar o primeiro
       if (loadedAssistants.length > 0) {
         setSelectedAssistant(loadedAssistants[0]);
         localStorage.setItem(STORAGE_KEY, loadedAssistants[0].id);
+        await window.electron.db.setUserSettings({ selectedAssistant: loadedAssistants[0].id });
       }
     } catch (error) {
       console.error('Erro ao carregar assistentes:', error);
@@ -86,9 +101,22 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
 
   if (!isVisible) return null;
 
-  const handleSelectAssistant = (assistant: Assistant) => {
+  const handleSelectAssistant = async (assistant: Assistant) => {
     setSelectedAssistant(assistant);
     localStorage.setItem(STORAGE_KEY, assistant.id);
+    
+    // Salvar no banco de dados
+    try {
+      await window.electron.db.setUserSettings({ selectedAssistant: assistant.id });
+      console.log('💾 Assistente salvo no banco:', assistant.id);
+      
+      // Recarregar o assistente no backend para aplicar a nova personalidade
+      await window.electron.invoke('reload-assistant');
+      console.log('🔄 Assistente recarregado no backend');
+    } catch (error) {
+      console.error('❌ Erro ao salvar/recarregar assistente:', error);
+    }
+    
     setIsDropdownOpen(false);
   };
 

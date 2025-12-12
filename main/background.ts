@@ -300,6 +300,14 @@ ipcMain.handle('set-voice-model', async (event, voiceModel: 'polly' | 'elevenlab
   return { success: true };
 });
 
+// Handler para recarregar o assistente (quando o usuário seleciona outro assistente)
+ipcMain.handle('reload-assistant', async () => {
+  console.log('🔄 Recarregando assistente...');
+  await assistant.reloadAssistant();
+  return { success: true };
+});
+
+
 // Screen Recording Logic
 ipcMain.handle('get-screen-sources', async () => {
     const sources = await desktopCapturer.getSources({ types: ['window', 'screen'] });

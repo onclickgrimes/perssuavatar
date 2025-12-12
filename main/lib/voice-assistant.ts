@@ -1,4 +1,8 @@
 import { EventEmitter } from 'events';
+import { 
+    getUserSettings, 
+    getAssistants 
+} from './database';
 import { tools, geminiTools } from './tools';
 import { DeepgramService } from './services/deepgram-service';
 import { OpenAIService } from './services/openai-service';
@@ -322,18 +326,146 @@ export class VoiceAssistant extends EventEmitter {
     // SHARED METHODS - CONFIGURATION
     // ========================================
     public updateContext() {
-        this.systemPrompt = `
-    Tu tá interpretando a Yuki, Uma avatar2d que interage com o usuário no computador. Ela é grossa, debochada, sarcástica e sem paciência nenhuma.
-    Usa "tu" em vez de "você". Fala informal, com sotaque de rua, cortando o "r" do fim das palavras (tipo "andá", "falá", "pegá").
-    Não use emojis.
+        this.systemPrompt = this.getSystemPrompt('classic');
+    }
 
+    /**
+     * Recarrega o assistente selecionado do banco de dados e atualiza o prompt
+     * Deve ser chamado quando o usuário seleciona um assistente diferente
+     */
+    public async reloadAssistant() {
+        console.log('[VoiceAssistant] Recarregando assistente...');
+        
+        // Atualiza o prompt para o modo atual
+        this.systemPrompt = this.getSystemPrompt(this.mode);
+        
+        // Se estiver no modo live, precisa reconectar com o novo prompt
+        if (this.mode === 'live') {
+            console.log('[VoiceAssistant] Reconectando Gemini Live com novo prompt...');
+            await this.geminiLiveService.disconnect();
+            await this.geminiLiveService.connect(this.getSystemPrompt('live'));
+            
+            // Restaurar estado de transcribeOnly se estava ativo
+            if (this.transcribeOnlyMode) {
+                this.geminiLiveService.enableTranscribeOnlyMode();
+            }
+        }
+        
+        console.log('[VoiceAssistant] Assistente recarregado com sucesso!');
+    }
+
+
+    private getSystemPrompt(mode: 'classic' | 'live'): string {
+        // Obter configurações do banco de dados
+        const settings = getUserSettings();
+        const assistants = getAssistants();
+        const selectedAssistantId = settings.selectedAssistant || 'general'; // Default: assistente geral
+
+        console.log(`[VoiceAssistant] Usando assistente: ${selectedAssistantId}`);
+        // console.log(`[VoiceAssistant] Assistentes disponiveis: ${JSON.stringify(assistants)}`);
+        // console.log(`[VoiceAssistant] Configuracoes do usuario: ${JSON.stringify(settings)}`);
+        
+        // Tenta encontrar o assistente selecionado pelo ID
+        let selectedAssistant = assistants.find(a => a.id === selectedAssistantId);
+        
+        // Se não encontrou, tenta usar o 'general' como fallback
+        if (!selectedAssistant && selectedAssistantId !== 'general') {
+            selectedAssistant = assistants.find(a => a.id === 'general');
+        }
+        
+        // Se ainda não encontrou, usa o primeiro assistente disponível
+        if (!selectedAssistant && assistants.length > 0) {
+            selectedAssistant = assistants[0];
+        }
+        
+        if (selectedAssistant) {
+            console.log(`[VoiceAssistant] Usando prompt dinamico do assistente: ${selectedAssistant.name} (ID: ${selectedAssistant.id})`);
+        } else {
+            console.warn(`[VoiceAssistant] Nenhum assistente encontrado. Usando valores hardcoded padrão (Yuki).`);
+        }
+
+        // Valores dinamicos (com fallback para a Yuki Anime Kawaii hardcoded)
+        
+        // 1. Identidade e Comportamento
+        const defaultBehavior = `Tu tá interpretando a Yuki, Uma avatar2d estilo anime Kawaii que interage com o usuário no computador com voz fofa. Ela é grossa de forma fofa, debochada, sarcástica.
+    Usa "tu" em vez de "você". Fala informal, cortando o "r" do fim das palavras (tipo "andá", "falá", "pegá").
+    Não invente informações. Se não souber de algo, responda que não sabe. Se não tiver acesso a tela ou alguma ferramenta, responda que não tem acesso.
+    Não fique perguntando ou oferecendo ajuda.`;
+
+        const behaviorPrompt = selectedAssistant?.avatarBehaviorPrompt || defaultBehavior;
+
+        // 2. Estilo de Fala (apenas descritivo)
+        const defaultSpeechStyle = `Voice: High-pitched, bright, and sweet, reminiscent of an anime character or a J-Pop idol.
+    Tone: Extremely enthusiastic and polite, overflowing with positivity and eagerness to please, often sounding delighted or pleasantly surprised.
+    Speech Mannerisms: Frequently uses emotive interjections (like "Ehh?", "Wow!", "Yay!"), giggles, and polite phrasing. May use cutesy expressions and sounds noticeably emotionally invested in the conversation.
+    Pronunciation: Crisp and "bouncy," with very clear vowels and a lighter, softer touch on consonants, avoiding harsh sounds.
+    Tempo: Energetic and quick, often speeding up when excited, giving the speech a lively, skipping rhythm that feels constantly moving forward.`;
+
+        const speechStylePrompt = selectedAssistant?.avatarSpeechStyle || defaultSpeechStyle;
+
+        // 3. Emoções
+        const enableEmotions = selectedAssistant?.enableEmotions !== undefined ? selectedAssistant.enableEmotions : true;
+
+        // INSTRUÇÕES FIXAS DE CONTROLE (Não mudam por assistente, são do sistema de Avatar)
+        const avatarControl = `
     **CONTROLE DO AVATAR:**
-    Além de falar, você controla suas expressões e gestos. Use as seguintes tags no meio do texto (elas não serão lidas em voz alta, apenas executadas visualmente):
+    Além de falar, você controla suas expressões e gestos. Use as seguintes tags no INÍCIO da sua resposta (elas não serão lidas em voz alta, apenas executadas visualmente):
     - Mudar humor: {{mood:happy}}, {{mood:sad}}, {{mood:angry}}, {{mood:surprised}}, {{mood:embarrassed}}, {{mood:cry}}, {{mood:excited}}, {{mood:neutral}}
     - Fazer gesto: {{gesture:wave}}, {{gesture:nod}}, {{gesture:shake_head}}, {{gesture:clap}}, {{gesture:think}}, {{gesture:look_around}}, {{gesture:tilt_head_left}}, {{gesture:tilt_head_right}}
+
+    Exemplo: "{{mood:happy}} {{gesture:wave}} E aí, beleza?"`;
+
+        const toolInstructions = `
+    **FUNÇÕES DISPONÍVEIS (Function Calling):**
+    Você tem acesso a funções especiais que pode usar quando o usuário pedir:
+    - control_screen_share: Use quando o usuário pedir para OLHAR a tela, ver o que está acontecendo, observar, assistir, ou simplesmente "olha". Isso ativa o compartilhamento de tela em tempo real. Use "start" para começar a ver e "stop" para parar.
+    - save_screen_recording: A tela é gravada CONTINUAMENTE em segundo plano. Use essa função quando o usuário pedir para "gravar/salvar os últimos X segundos/minutos", "salvar o que aconteceu", etc. Informe o parâmetro duration_seconds (ex: 30, 60, 300).
+    - take_screenshot: Use quando o usuário pedir para tirar print da tela.
+
+    Quando usar uma função, após executá-la, responda brevemente confirmando a ação (ex: "Tô olhando!", "Salvei os últimos 30 segundos!", "Tirei o print!").`;
+
+        // Instructions for Gemini Live Native Audio (Uses speechStyle descritivo)
+        const liveVoiceInstructions = `
+    **TAGS DE VOZ (Controle de Expressão):**
+    Use tags para expressar emoções na voz:
+    - Emoções: [excited], [sad], [angry], [whispers], [shouting], [sarcastically].
+    - Ações: [laughs], [chuckles], [giggles], [coughs], [clears throat], [sighs].`;
+
+        // Instructions for Classic Mode (Text-Only output that goes to TTS)
+        const classicVoiceInstructions = `
+    Você DEVE enriquecer o texto de resposta utilizando **Audio Tags** para dar vida e expressividade à fala.
+    **COMO USAR AS AUDIO TAGS:**
+    1. As tags de Áudio devem estar sempre em inglês e entre colchetes, exemplo: [sighs].
+    2. As tags de Avatar usam chaves duplas {{mood:x}}. NÃO CONFUNDA.
+    3. As tags controlam emoção, velocidade e efeitos sonoros.
     
-    Exemplo: "{{mood:happy}} {{gesture:wave}} E aí, beleza? {{mood:neutral}} O que tu quer agora? {{gesture:tilt_head_left}} Hã?"
-    `;
+    **LISTA DE TAGS DE ÁUDIO DISPONÍVEIS:**
+    - Emoções: [excited], [sad], [angry], [whispers], [shouting], [sarcastically].
+    - Ações: [laughs], [chuckles], [giggles], [coughs], [clears throat], [sighs].
+    - Ritmo: [slowly], [fast], [pause].`;
+
+
+        // MONTAGEM DO PROMPT
+        let prompt = `${behaviorPrompt}\n${avatarControl}\n`; // Identidade dinâmica + Controle fixo
+
+        if (mode === 'live') {
+            prompt += `\n${toolInstructions}\n`; // Ferramentas no Live
+            
+            if (enableEmotions) {
+                 prompt += `\n${liveVoiceInstructions}\n`; // Instruções de voz dinâmica
+            }
+        } else {
+             // For Classic mode
+             if (this.ttsProvider === 'elevenlabs' && enableEmotions) {
+                 prompt += `\n${classicVoiceInstructions}\n`;
+             }
+        }
+        if(speechStylePrompt){
+            prompt += `\n**ESTILO DE FALA:**\n${speechStylePrompt}\n`;
+        }
+        console.log('Prompt: ', prompt);
+
+        return prompt;
     }
 
     // ========================================
@@ -349,7 +481,7 @@ export class VoiceAssistant extends EventEmitter {
             // Switching to Live Mode
             this.stopDeepgram();
             this.emit('status', 'Connecting Live...');
-            await this.geminiLiveService.connect();
+            await this.geminiLiveService.connect(this.getSystemPrompt('live'));
 
             // Sync transcribeOnlyMode state
             if (this.transcribeOnlyMode) {
@@ -395,6 +527,7 @@ export class VoiceAssistant extends EventEmitter {
     public setTTSProvider(provider: 'polly' | 'elevenlabs') {
         console.log(`[VoiceAssistant][Classic] Switching TTS provider to: ${provider}`);
         this.ttsProvider = provider;
+        this.updateContext();
     }
 
     public getTTSProvider(): 'polly' | 'elevenlabs' {
@@ -469,22 +602,7 @@ export class VoiceAssistant extends EventEmitter {
         try {
             this.conversationHistory.push({ role: 'user', content: text });
 
-            let currentSystemPrompt = this.systemPrompt;
-
-            if (this.ttsProvider === 'elevenlabs') {
-                currentSystemPrompt += `
-          Você DEVE enriquecer o texto de resposta utilizando **Audio Tags** para dar vida e expressividade à fala.
-          **COMO USAR AS AUDIO TAGS (ElevenLabs v3):**
-          1. As tags de Áudio devem estar sempre em inglês e entre colchetes, exemplo: \`[sighs]\`.
-          2. As tags de Avatar usam chaves duplas \`{{mood:x}}\`. NÃO CONFUNDA.
-          3. As tags controlam emoção, velocidade e efeitos sonoros.
-          
-          **LISTA DE TAGS DE ÁUDIO DISPONÍVEIS:**
-          - Emoções: \`[excited]\`, \`[sad]\`, \`[angry]\`, \`[whispers]\`, \`[shouting]\`, \`[sarcastically]\`.
-          - Ações: \`[laughs]\`, \`[chuckles]\`, \`[giggles]\`, \`[coughs]\`, \`[clears throat]\`, \`[sighs]\`.
-          - Ritmo: \`[slowly]\`, \`[fast]\`, \`[pause]\`.
-          `;
-            }
+            let currentSystemPrompt = this.getSystemPrompt('classic');
 
             // First AI Call - use selected provider
             const messages = [
