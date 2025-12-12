@@ -264,7 +264,7 @@ if (isProd) {
           console.log(`📋 Nova imagem detectada na clipboard (${size.width}x${size.height})`);
           
           // Processa de forma assíncrona para não bloquear o thread principal
-          setImmediate(() => {
+          setImmediate(async () => {
             try {
               // Redimensiona se for muito grande (PrintScreen de tela cheia)
               let processedImage = image;
@@ -285,10 +285,34 @@ if (isProd) {
               
               console.log(`📋 Imagem processada (${(base64Data.length / 1024).toFixed(0)} KB)`);
               
+              // Salvar imagem em disco para poder compartilhar
+              const userDataPath = app.getPath('userData');
+              const screenshotsFolder = path.join(userDataPath, 'clipboard_screenshots');
+              if (!fs.existsSync(screenshotsFolder)) {
+                fs.mkdirSync(screenshotsFolder, { recursive: true });
+              }
+              
+              const screenshotId = `clipboard-${Date.now()}`;
+              const filename = `${screenshotId}.jpg`;
+              const filePath = path.join(screenshotsFolder, filename);
+              
+              // Salvar arquivo
+              fs.writeFileSync(filePath, jpegBuffer);
+              console.log(`📋 Screenshot salvo em: ${filePath}`);
+              
+              // Adicionar ao backend para compartilhamento
+              if (assistant) {
+                assistant.addMediaToGallery({
+                  id: screenshotId,
+                  type: 'screenshot',
+                  path: filePath,
+                  timestamp: Date.now()
+                });
+              }
+              
               // Cria janela sob demanda e envia screenshot
-              createScreenshotGalleryWindow().then(() => {
-                sendScreenshotToGallery(base64Data);
-              });
+              await createScreenshotGalleryWindow();
+              sendScreenshotToGallery(base64Data);
             } catch (error) {
               console.error('Erro ao processar imagem da clipboard:', error);
             } finally {
