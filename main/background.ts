@@ -206,6 +206,18 @@ if (isProd) {
   let lastClipboardImageSize: { width: number, height: number } | null = null;
   let isProcessingClipboard = false; // Flag para evitar processamento simultâneo
 
+  // Inicializar com a imagem atual da clipboard para não capturá-la ao iniciar
+  try {
+    const initialImage = clipboard.readImage();
+    if (!initialImage.isEmpty()) {
+      const size = initialImage.getSize();
+      lastClipboardImageSize = size;
+      console.log(`📋 Clipboard inicial ignorada: ${size.width}x${size.height} (não será capturada)`);
+    }
+  } catch (error) {
+    console.log('📋 Nenhuma imagem na clipboard ao iniciar');
+  }
+
   // Monitor de clipboard - verifica a cada 1000ms (reduzido para evitar lag)
   const clipboardMonitorInterval = setInterval(async () => {
     // Se já está processando, pula esta iteração
@@ -284,6 +296,7 @@ if (isProd) {
 
 // Função para criar Screenshot Gallery Window sob demanda (escopo global)
 let pendingScreenshots: string[] = []; // Fila de screenshots aguardando janela estar pronta
+let currentSessionScreenshots: string[] = []; // Lista de screenshots da sessão atual (apenas com o app aberto)
 let isWindowReady = false;
 
 async function createScreenshotGalleryWindow() {
@@ -335,7 +348,17 @@ async function createScreenshotGalleryWindow() {
           console.log('📸 Screenshot Gallery Window pronta');
           isWindowReady = true;
           
-          // Processar screenshots pendentes
+          // PRIMEIRO: Enviar todos os screenshots da sessão atual
+          if (currentSessionScreenshots.length > 0) {
+            console.log(`📸 Recarregando ${currentSessionScreenshots.length} screenshots da sessão atual`);
+            currentSessionScreenshots.forEach(base64Data => {
+              if (screenshotGalleryWindow && !screenshotGalleryWindow.isDestroyed()) {
+                screenshotGalleryWindow.webContents.send('screenshot-captured', base64Data);
+              }
+            });
+          }
+          
+          // DEPOIS: Processar screenshots pendentes (novos)
           if (pendingScreenshots.length > 0) {
             console.log(`📸 Processando ${pendingScreenshots.length} screenshots pendentes`);
             pendingScreenshots.forEach(base64Data => {
@@ -382,6 +405,9 @@ async function createScreenshotGalleryWindow() {
 
 // Função helper para enviar screenshot (com fila se necessário)
 function sendScreenshotToGallery(base64Data: string) {
+  // Adicionar à lista de screenshots da sessão atual
+  currentSessionScreenshots.push(base64Data);
+  
   if (screenshotGalleryWindow && !screenshotGalleryWindow.isDestroyed() && isWindowReady) {
     // Janela existe e está pronta - enviar imediatamente
     screenshotGalleryWindow.webContents.send('screenshot-captured', base64Data);
@@ -458,6 +484,12 @@ ipcMain.on('screenshots-empty', () => {
     screenshotGalleryWindow.close();
     screenshotGalleryWindow = null;
   }
+  
+  // Limpar lista de screenshots da sessão atual
+  console.log('📸 Limpando lista de screenshots da sessão atual');
+  currentSessionScreenshots = [];
+  pendingScreenshots = [];
+  isWindowReady = false;
 });
 
 
