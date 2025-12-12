@@ -29,7 +29,70 @@ export interface ShareMultipleResult {
   results: ShareResult[];
 }
 
+// Interface para itens de mídia da galeria
+export interface GalleryMediaItem {
+  id: string;
+  type: 'screenshot' | 'video';
+  path: string;
+  timestamp: number;
+}
+
+// Interface para compartilhar todas as mídias da galeria
+export interface ShareAllMediaOptions {
+  platforms: ('whatsapp' | 'email' | 'drive')[];
+  recipient?: string;
+  message?: string;
+}
+
+export interface ShareAllMediaResult {
+  success: boolean;
+  message: string;
+  mediaCount: number;
+  results: ShareResult[];
+}
+
 export class ScreenshotShareService {
+  // Lista de mídias da galeria (sincronizada com o frontend)
+  private galleryMedia: GalleryMediaItem[] = [];
+
+  /**
+   * Adiciona uma mídia à lista da galeria
+   */
+  public addMediaToGallery(item: GalleryMediaItem): void {
+    console.log(`📸 Adicionando mídia à galeria: ${item.id} (${item.type})`);
+    this.galleryMedia.push(item);
+  }
+
+  /**
+   * Remove uma mídia da lista da galeria
+   */
+  public removeMediaFromGallery(id: string): void {
+    console.log(`🗑️ Removendo mídia da galeria: ${id}`);
+    this.galleryMedia = this.galleryMedia.filter(m => m.id !== id);
+  }
+
+  /**
+   * Limpa todas as mídias da galeria
+   */
+  public clearGallery(): void {
+    console.log('🗑️ Limpando galeria');
+    this.galleryMedia = [];
+  }
+
+  /**
+   * Obtém todas as mídias da galeria
+   */
+  public getAllGalleryMedia(): GalleryMediaItem[] {
+    return [...this.galleryMedia];
+  }
+
+  /**
+   * Obtém a contagem de mídias na galeria
+   */
+  public getGalleryMediaCount(): number {
+    return this.galleryMedia.length;
+  }
+
   /**
    * Compartilha um screenshot para a plataforma especificada
    */
@@ -142,11 +205,87 @@ export class ScreenshotShareService {
   }
 
   /**
+   * Compartilha TODAS as mídias da galeria para as plataformas especificadas
+   */
+  public async shareAllGalleryMedia(options: ShareAllMediaOptions): Promise<ShareAllMediaResult> {
+    console.log(`📤 Compartilhando TODAS as mídias da galeria (${this.galleryMedia.length} itens) para: ${options.platforms.join(', ')}...`);
+
+    if (this.galleryMedia.length === 0) {
+      return {
+        success: false,
+        message: 'Nenhuma mídia na galeria para compartilhar. Tire um screenshot ou salve uma gravação primeiro.',
+        mediaCount: 0,
+        results: [],
+      };
+    }
+
+    const allResults: ShareResult[] = [];
+    let successCount = 0;
+    let failCount = 0;
+
+    // Compartilha cada mídia
+    for (const media of this.galleryMedia) {
+      // Verificar se o arquivo existe
+      if (!fs.existsSync(media.path)) {
+        console.warn(`⚠️ Mídia não encontrada: ${media.path}`);
+        failCount++;
+        continue;
+      }
+
+      try {
+        const result = await this.shareToMultiplePlatforms({
+          platforms: options.platforms,
+          recipient: options.recipient,
+          message: options.message,
+          screenshotPath: media.path,
+        });
+
+        allResults.push(...result.results);
+
+        if (result.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+
+        // Pequeno delay entre mídias
+        await new Promise(resolve => setTimeout(resolve, 300));
+      } catch (error) {
+        console.error(`Erro ao compartilhar mídia ${media.id}:`, error);
+        failCount++;
+      }
+    }
+
+    // Mensagem consolidada
+    let message = '';
+    const total = this.galleryMedia.length;
+    if (successCount === total) {
+      message = `Todas as ${total} mídias foram compartilhadas com sucesso para: ${options.platforms.join(', ')}.`;
+    } else if (successCount > 0) {
+      message = `${successCount} de ${total} mídias compartilhadas. ${failCount} falharam.`;
+    } else {
+      message = `Falha ao compartilhar todas as ${total} mídias.`;
+    }
+
+    return {
+      success: successCount > 0,
+      message,
+      mediaCount: this.galleryMedia.length,
+      results: allResults,
+    };
+  }
+
+  /**
    * Compartilha via WhatsApp Web
    * Abre o WhatsApp Web com a mensagem pré-preenchida e o arquivo na área de transferência
    */
   private async shareToWhatsApp(options: ShareOptions): Promise<ShareResult> {
     try {
+      // Detectar tipo de arquivo
+      const originalExt = path.extname(options.screenshotPath).toLowerCase();
+      const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(originalExt);
+      const isVideo = ['.mp4', '.webm', '.avi', '.mov', '.mkv'].includes(originalExt);
+      
       // Constrói a URL do WhatsApp Web
       let whatsappUrl = 'https://web.whatsapp.com/send';
       
@@ -164,28 +303,41 @@ export class ScreenshotShareService {
       // Abre o WhatsApp Web
       await shell.openExternal(whatsappUrl);
 
-      // Pausar o monitor de clipboard para não detectar esta cópia como novo screenshot
-      if ((global as any).pauseClipboardMonitor) {
-        (global as any).pauseClipboardMonitor(true);
-      }
-
-      // Copia o screenshot para a área de transferência
-      const { clipboard, nativeImage } = require('electron');
-      const image = nativeImage.createFromPath(options.screenshotPath);
-      clipboard.writeImage(image);
-
-      // Retomar o monitor após um delay, atualizando o lastSize para ignorar esta imagem
-      setTimeout(() => {
+      // Para imagens, copiar para clipboard
+      if (isImage) {
+        // Pausar o monitor de clipboard para não detectar esta cópia como novo screenshot
         if ((global as any).pauseClipboardMonitor) {
-          (global as any).pauseClipboardMonitor(false, true);
+          (global as any).pauseClipboardMonitor(true);
         }
-      }, 500);
 
-      return {
-        success: true,
-        message: 'WhatsApp Web aberto. O screenshot foi copiado para a área de transferência. Cole-o na conversa com Ctrl+V.',
-        platform: 'whatsapp',
-      };
+        // Copia o screenshot para a área de transferência
+        const { clipboard, nativeImage } = require('electron');
+        const image = nativeImage.createFromPath(options.screenshotPath);
+        clipboard.writeImage(image);
+
+        // Retomar o monitor após um delay, atualizando o lastSize para ignorar esta imagem
+        setTimeout(() => {
+          if ((global as any).pauseClipboardMonitor) {
+            (global as any).pauseClipboardMonitor(false, true);
+          }
+        }, 500);
+
+        return {
+          success: true,
+          message: 'WhatsApp Web aberto. O screenshot foi copiado para a área de transferência. Cole-o na conversa com Ctrl+V.',
+          platform: 'whatsapp',
+        };
+      } else {
+        // Para vídeos, mostrar no explorador de arquivos
+        const { shell: electronShell } = require('electron');
+        electronShell.showItemInFolder(options.screenshotPath);
+        
+        return {
+          success: true,
+          message: `WhatsApp Web aberto. O vídeo foi exibido no explorador de arquivos. Arraste-o para a conversa do WhatsApp.`,
+          platform: 'whatsapp',
+        };
+      }
     } catch (error) {
       // Garantir que o monitor seja retomado em caso de erro
       if ((global as any).pauseClipboardMonitor) {
@@ -201,6 +353,11 @@ export class ScreenshotShareService {
    */
   private async shareToEmail(options: ShareOptions): Promise<ShareResult> {
     try {
+      // Detectar tipo de arquivo
+      const originalExt = path.extname(options.screenshotPath).toLowerCase();
+      const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(originalExt);
+      const isVideo = ['.mp4', '.webm', '.avi', '.mov', '.mkv'].includes(originalExt);
+      
       // Construct mailto URL
       let mailtoUrl = 'mailto:';
       
@@ -208,37 +365,51 @@ export class ScreenshotShareService {
         mailtoUrl += options.recipient;
       }
       
-      const subject = 'Screenshot';
-      const body = options.message || 'Segue screenshot em anexo.';
+      const mediaType = isVideo ? 'Vídeo' : 'Screenshot';
+      const subject = isVideo ? 'Gravação de tela' : 'Screenshot';
+      const body = options.message || `Segue ${mediaType.toLowerCase()} em anexo.`;
       
       mailtoUrl += `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-
-      // Pausar o monitor de clipboard
-      if ((global as any).pauseClipboardMonitor) {
-        (global as any).pauseClipboardMonitor(true);
-      }
-
-      // Note: mailto: doesn't support attachments directly
-      // We'll copy the image to clipboard instead
-      const { clipboard, nativeImage } = require('electron');
-      const image = nativeImage.createFromPath(options.screenshotPath);
-      clipboard.writeImage(image);
-
-      // Retomar o monitor após um delay
-      setTimeout(() => {
-        if ((global as any).pauseClipboardMonitor) {
-          (global as any).pauseClipboardMonitor(false, true);
-        }
-      }, 500);
 
       // Open email client
       await shell.openExternal(mailtoUrl);
 
-      return {
-        success: true,
-        message: 'Cliente de email aberto. O screenshot foi copiado para a área de transferência. Cole-o no email com Ctrl+V.',
-        platform: 'email',
-      };
+      // Para imagens, copiar para clipboard
+      if (isImage) {
+        // Pausar o monitor de clipboard
+        if ((global as any).pauseClipboardMonitor) {
+          (global as any).pauseClipboardMonitor(true);
+        }
+
+        // Note: mailto: doesn't support attachments directly
+        // We'll copy the image to clipboard instead
+        const { clipboard, nativeImage } = require('electron');
+        const image = nativeImage.createFromPath(options.screenshotPath);
+        clipboard.writeImage(image);
+
+        // Retomar o monitor após um delay
+        setTimeout(() => {
+          if ((global as any).pauseClipboardMonitor) {
+            (global as any).pauseClipboardMonitor(false, true);
+          }
+        }, 500);
+
+        return {
+          success: true,
+          message: 'Cliente de email aberto. O screenshot foi copiado para a área de transferência. Cole-o no email com Ctrl+V.',
+          platform: 'email',
+        };
+      } else {
+        // Para vídeos, mostrar no explorador de arquivos
+        const { shell: electronShell } = require('electron');
+        electronShell.showItemInFolder(options.screenshotPath);
+        
+        return {
+          success: true,
+          message: `Cliente de email aberto. O vídeo foi exibido no explorador de arquivos. Anexe-o manualmente ao email.`,
+          platform: 'email',
+        };
+      }
     } catch (error) {
       // Garantir que o monitor seja retomado em caso de erro
       if ((global as any).pauseClipboardMonitor) {
@@ -254,18 +425,25 @@ export class ScreenshotShareService {
    */
   private async shareToDrive(options: ShareOptions): Promise<ShareResult> {
     try {
-      // Copy screenshot to a more accessible location
+      // Copy file to a more accessible location
       const documentsPath = app.getPath('documents');
-      const driveFolder = path.join(documentsPath, 'Screenshots para Drive');
+      const driveFolder = path.join(documentsPath, 'Media para Drive');
       
       // Create folder if it doesn't exist
       if (!fs.existsSync(driveFolder)) {
         fs.mkdirSync(driveFolder, { recursive: true });
       }
 
-      // Copy file with timestamp
+      // Detectar extensão original do arquivo
+      const originalExt = path.extname(options.screenshotPath).toLowerCase();
+      const isVideo = ['.mp4', '.webm', '.avi', '.mov', '.mkv'].includes(originalExt);
+      const isImage = ['.png', '.jpg', '.jpeg', '.gif', '.bmp', '.webp'].includes(originalExt);
+      
+      // Determinar nome do arquivo baseado no tipo
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-      const filename = `screenshot_${timestamp}.png`;
+      const prefix = isVideo ? 'video' : 'screenshot';
+      const extension = originalExt || '.png'; // Fallback para .png se não tiver extensão
+      const filename = `${prefix}_${timestamp}${extension}`;
       const destPath = path.join(driveFolder, filename);
       
       fs.copyFileSync(options.screenshotPath, destPath);
@@ -273,29 +451,34 @@ export class ScreenshotShareService {
       // Open Google Drive upload page
       await shell.openExternal('https://drive.google.com/drive/my-drive');
 
-      // Pausar o monitor de clipboard
-      if ((global as any).pauseClipboardMonitor) {
-        (global as any).pauseClipboardMonitor(true);
-      }
-
-      // Also copy image to clipboard
-      const { clipboard, nativeImage } = require('electron');
-      const image = nativeImage.createFromPath(options.screenshotPath);
-      clipboard.writeImage(image);
-
-      // Retomar o monitor após um delay
-      setTimeout(() => {
+      // Para imagens, também copiar para clipboard
+      if (isImage) {
+        // Pausar o monitor de clipboard
         if ((global as any).pauseClipboardMonitor) {
-          (global as any).pauseClipboardMonitor(false, true);
+          (global as any).pauseClipboardMonitor(true);
         }
-      }, 500);
+
+        const { clipboard, nativeImage } = require('electron');
+        const image = nativeImage.createFromPath(options.screenshotPath);
+        clipboard.writeImage(image);
+
+        // Retomar o monitor após um delay
+        setTimeout(() => {
+          if ((global as any).pauseClipboardMonitor) {
+            (global as any).pauseClipboardMonitor(false, true);
+          }
+        }, 500);
+      }
 
       // Show file in folder
       shell.showItemInFolder(destPath);
 
+      const mediaType = isVideo ? 'Vídeo' : 'Screenshot';
+      const clipboardMsg = isImage ? ' O arquivo também está na área de transferência.' : '';
+
       return {
         success: true,
-        message: `Screenshot salvo em "${destPath}" e Google Drive foi aberto. O screenshot também está na área de transferência.`,
+        message: `${mediaType} salvo em "${destPath}" e Google Drive foi aberto.${clipboardMsg}`,
         platform: 'drive',
       };
     } catch (error) {

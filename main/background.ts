@@ -510,11 +510,28 @@ ipcMain.on('screenshots-empty', () => {
   currentSessionScreenshots = [];
   pendingScreenshots = [];
   isWindowReady = false;
+  
+  // Limpar galeria do ScreenshotShareService
+  if (assistant) {
+    assistant.clearGallery();
+  }
 });
 
 // Handler para receber gravações salvas do renderer e enviar para a galeria
 ipcMain.on('recording-saved-from-renderer', async (_, data: { path: string, duration: number }) => {
   console.log(`🎥 Gravação recebida para galeria: ${data.path} (${data.duration}s)`);
+  
+  const mediaId = `video-${Date.now()}`;
+  
+  // Adicionar ao VoiceAssistant (que gerencia o ScreenshotShareService internamente)
+  if (assistant) {
+    assistant.addMediaToGallery({
+      id: mediaId,
+      type: 'video',
+      path: data.path,
+      timestamp: Date.now()
+    });
+  }
   
   // Criar janela da galeria se necessário
   await createScreenshotGalleryWindow();
@@ -525,6 +542,35 @@ ipcMain.on('recording-saved-from-renderer', async (_, data: { path: string, dura
       path: data.path,
       duration: data.duration
     });
+  }
+});
+
+// Handler para adicionar screenshot à galeria do ScreenshotShareService
+ipcMain.on('gallery-add-screenshot', (_, data: { id: string, path: string }) => {
+  console.log(`📸 Screenshot adicionado à galeria backend: ${data.id}`);
+  if (assistant) {
+    assistant.addMediaToGallery({
+      id: data.id,
+      type: 'screenshot',
+      path: data.path,
+      timestamp: Date.now()
+    });
+  }
+});
+
+// Handler para remover mídia da galeria do ScreenshotShareService
+ipcMain.on('gallery-remove-media', (_, id: string) => {
+  console.log(`🗑️ Mídia removida da galeria backend: ${id}`);
+  if (assistant) {
+    assistant.removeMediaFromGallery(id);
+  }
+});
+
+// Handler para limpar toda a galeria do ScreenshotShareService
+ipcMain.on('gallery-clear', () => {
+  console.log('🗑️ Galeria backend limpa');
+  if (assistant) {
+    assistant.clearGallery();
   }
 });
 
@@ -1018,6 +1064,15 @@ assistant.on('take-screenshot', async () => {
                 console.log("📸 Enviando screenshot para Gemini Live...");
                 assistant.sendScreenFrame(base64Image);
                 
+                // Adicionar screenshot à galeria do backend
+                const screenshotId = `screenshot-${Date.now()}`;
+                assistant.addMediaToGallery({
+                    id: screenshotId,
+                    type: 'screenshot',
+                    path: debugPath,
+                    timestamp: Date.now()
+                });
+                
                 createScreenshotGalleryWindow().then(() => {
                     sendScreenshotToGallery(base64Image);
                 });
@@ -1027,6 +1082,15 @@ assistant.on('take-screenshot', async () => {
                 
                 assistant.analyzeScreenshot(base64Image).catch(err => {
                     console.error("Erro ao analisar screenshot:", err);
+                });
+                
+                // Adicionar screenshot à galeria do backend
+                const screenshotId = `screenshot-${Date.now()}`;
+                assistant.addMediaToGallery({
+                    id: screenshotId,
+                    type: 'screenshot',
+                    path: debugPath,
+                    timestamp: Date.now()
                 });
                 
                 createScreenshotGalleryWindow().then(() => {

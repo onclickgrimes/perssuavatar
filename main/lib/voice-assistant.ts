@@ -272,13 +272,13 @@ export class VoiceAssistant extends EventEmitter {
             const recipient = toolCall.args?.recipient;
             const message = toolCall.args?.message;
 
-            // Obter caminho do último screenshot
-            const screenshotPath = await this.screenshotShareService.getLatestScreenshotPath();
+            // Verificar se há mídias na galeria
+            const mediaCount = this.screenshotShareService.getGalleryMediaCount();
 
-            if (!screenshotPath) {
+            if (mediaCount === 0) {
                 result = {
                     success: false,
-                    message: 'Nenhum screenshot encontrado para compartilhar. Por favor, tire um screenshot primeiro usando take_screenshot.'
+                    message: 'Nenhuma mídia na galeria para compartilhar. Por favor, tire um screenshot ou salve uma gravação primeiro.'
                 };
             } else if (platforms.length === 0) {
                 result = {
@@ -286,11 +286,11 @@ export class VoiceAssistant extends EventEmitter {
                     message: 'Nenhuma plataforma especificada. Por favor, informe para onde deseja enviar (whatsapp, email ou drive).'
                 };
             } else {
-                const shareResult = await this.screenshotShareService.shareToMultiplePlatforms({
+                // Compartilhar TODAS as mídias da galeria
+                const shareResult = await this.screenshotShareService.shareAllGalleryMedia({
                     platforms,
                     recipient,
                     message,
-                    screenshotPath,
                 });
 
                 result = shareResult;
@@ -651,6 +651,25 @@ export class VoiceAssistant extends EventEmitter {
     }
 
     // ========================================
+    // GALLERY MEDIA MANAGEMENT
+    // ========================================
+    public addMediaToGallery(item: { id: string, type: 'screenshot' | 'video', path: string, timestamp: number }) {
+        this.screenshotShareService.addMediaToGallery(item);
+    }
+
+    public removeMediaFromGallery(id: string) {
+        this.screenshotShareService.removeMediaFromGallery(id);
+    }
+
+    public clearGallery() {
+        this.screenshotShareService.clearGallery();
+    }
+
+    public getGalleryMediaCount(): number {
+        return this.screenshotShareService.getGalleryMediaCount();
+    }
+
+    // ========================================
     // SHARED PUBLIC METHODS - AUDIO PROCESSING
     // ========================================
     public processAudioStream(chunk: Buffer) {
@@ -824,14 +843,14 @@ export class VoiceAssistant extends EventEmitter {
                         
                         console.log(`Tool Call: share_screenshot PLATFORMS=${platforms.join(', ')}`);
 
-                        // Obter caminho do último screenshot
-                        const screenshotPath = await this.screenshotShareService.getLatestScreenshotPath();
+                        // Verificar se há mídias na galeria
+                        const mediaCount = this.screenshotShareService.getGalleryMediaCount();
 
-                        if (!screenshotPath) {
+                        if (mediaCount === 0) {
                             this.conversationHistory.push({
                                 role: "tool",
                                 tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
-                                content: `Screenshot share failed: No screenshot found. Please take a screenshot first.`
+                                content: `Share failed: No media in gallery. Please take a screenshot or save a recording first.`
                             });
 
                             shouldSuppressAudio = false; // Let AI explain the issue
@@ -839,22 +858,22 @@ export class VoiceAssistant extends EventEmitter {
                             this.conversationHistory.push({
                                 role: "tool",
                                 tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
-                                content: `Screenshot share failed: No platform specified. Please specify where to send (whatsapp, email or drive).`
+                                content: `Share failed: No platform specified. Please specify where to send (whatsapp, email or drive).`
                             });
 
                             shouldSuppressAudio = false; // Let AI explain the issue
                         } else {
-                            const shareResult = await this.screenshotShareService.shareToMultiplePlatforms({
+                            // Compartilhar TODAS as mídias da galeria
+                            const shareResult = await this.screenshotShareService.shareAllGalleryMedia({
                                 platforms,
                                 recipient: args.recipient,
                                 message: args.message,
-                                screenshotPath,
                             });
 
                             this.conversationHistory.push({
                                 role: "tool",
                                 tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
-                                content: `Screenshot share result: ${shareResult.message}`
+                                content: `Share result (${shareResult.mediaCount} items): ${shareResult.message}`
                             });
 
                             if (shareResult.success) {

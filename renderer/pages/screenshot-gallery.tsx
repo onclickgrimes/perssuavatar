@@ -70,6 +70,9 @@ export default function ScreenshotGalleryPage() {
     const item = mediaItems.find(m => m.id === id);
     setMediaItems(prev => prev.filter(s => s.id !== id));
     
+    // Notificar backend para remover da galeria do ScreenshotShareService
+    window.electron.send('gallery-remove-media', id);
+    
     // Deletar do banco baseado no tipo
     if (item?.type === 'screenshot') {
       window.electron.db.deleteScreenshot(id).catch(err => {
