@@ -10,6 +10,7 @@ import { GeminiService } from './services/gemini-service';
 import { GeminiLiveService } from './services/gemini-live-service';
 import { DeepSeekService } from './services/deepseek-service';
 import { TTSService } from './services/tts-service';
+import { ScreenshotShareService } from './screenshot-share-service';
 import { Readable } from 'stream';
 
 interface AIResponse {
@@ -45,6 +46,7 @@ export class VoiceAssistant extends EventEmitter {
     // LIVE MODE - Services & State
     // ========================================
     private geminiLiveService: GeminiLiveService;    // Gemini Live for real-time audio
+    private screenshotShareService: ScreenshotShareService; // Screenshot sharing service
 
     // ========================================
     // CONSTRUCTOR & INITIALIZATION
@@ -65,6 +67,7 @@ export class VoiceAssistant extends EventEmitter {
 
         // Initialize Live Mode Services
         this.geminiLiveService = new GeminiLiveService();
+        this.screenshotShareService = new ScreenshotShareService();
 
         // Setup Event Listeners
         this.setupClassicModeEvents();
@@ -244,6 +247,31 @@ export class VoiceAssistant extends EventEmitter {
                 success: true,
                 message: 'Screenshot captured and being sent to you now. Please analyze the image that follows and describe what you see on the screen.'
             };
+        } else if (toolCall.name === 'share_screenshot') {
+            console.log(`[VoiceAssistant][Live] Share screenshot requested`, toolCall.args);
+
+            const platform = toolCall.args?.platform;
+            const recipient = toolCall.args?.recipient;
+            const message = toolCall.args?.message;
+
+            // Obter caminho do último screenshot
+            const screenshotPath = await this.screenshotShareService.getLatestScreenshotPath();
+
+            if (!screenshotPath) {
+                result = {
+                    success: false,
+                    message: 'Nenhum screenshot encontrado para compartilhar. Por favor, tire um screenshot primeiro usando take_screenshot.'
+                };
+            } else {
+                const shareResult = await this.screenshotShareService.shareScreenshot({
+                    platform,
+                    recipient,
+                    message,
+                    screenshotPath,
+                });
+
+                result = shareResult;
+            }
         }
 
         await this.geminiLiveService.sendToolResponse(toolCall.id, result);
@@ -463,7 +491,9 @@ export class VoiceAssistant extends EventEmitter {
         if(speechStylePrompt){
             prompt += `\n**ESTILO DE FALA:**\n${speechStylePrompt}\n`;
         }
+        console.log("#########################################################################################");
         console.log('Prompt: ', prompt);
+        console.log("#########################################################################################");
 
         return prompt;
     }
@@ -687,6 +717,41 @@ export class VoiceAssistant extends EventEmitter {
                         shouldSuppressAudio = true;
                         const responses = ["Ok!", "Vou ver.", "Analisando...", "Só um instante.", "Deixa comigo.", "Tirando print..."];
                         shortFeedbackPhrase = responses[Math.floor(Math.random() * responses.length)];
+                    } else if (fnName === 'share_screenshot') {
+                        const args = JSON.parse((toolCall as any).function.arguments);
+                        console.log(`Tool Call: share_screenshot PLATFORM=${args.platform}`);
+
+                        // Obter caminho do último screenshot
+                        const screenshotPath = await this.screenshotShareService.getLatestScreenshotPath();
+
+                        if (!screenshotPath) {
+                            this.conversationHistory.push({
+                                role: "tool",
+                                tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
+                                content: `Screenshot share failed: No screenshot found. Please take a screenshot first.`
+                            });
+
+                            shouldSuppressAudio = false; // Let AI explain the issue
+                        } else {
+                            const shareResult = await this.screenshotShareService.shareScreenshot({
+                                platform: args.platform,
+                                recipient: args.recipient,
+                                message: args.message,
+                                screenshotPath,
+                            });
+
+                            this.conversationHistory.push({
+                                role: "tool",
+                                tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
+                                content: `Screenshot share result: ${shareResult.message}`
+                            });
+
+                            if (shareResult.success) {
+                                shouldSuppressAudio = false; // Let AI confirm the action
+                            } else {
+                                shouldSuppressAudio = false; // Let AI explain the error
+                            }
+                        }
                     }
                 }
 

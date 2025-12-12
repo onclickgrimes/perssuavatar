@@ -767,50 +767,60 @@ assistant.on('save-recording', (durationSeconds: number) => {
 
 assistant.on('take-screenshot', async () => {
     try {
-        console.log("📸 Tirando screenshot...");
-        const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
-        const primarySource = sources[0]; // Usually the first one or filter by name
+        console.log("📸 Iniciando captura de tela...");
+
+        // 1. Obter informações do display PRIMÁRIO
+        const display = screen.getPrimaryDisplay();
+        
+        // 2. Calcular a resolução física real (Lidar com DPI/Escala e Telas 4K)
+        // display.size retorna o tamanho lógico. Multiplicamos pelo scaleFactor para obter os pixels reais.
+        const width = display.size.width * display.scaleFactor;
+        const height = display.size.height * display.scaleFactor;
+
+        console.log(`📏 Resolução detectada (física): ${width}x${height} (Escala: ${display.scaleFactor}x)`);
+
+        // 3. Solicitar a fonte JÁ no tamanho correto
+        // Isso evita capturar pequeno e tentar esticar depois.
+        const sources = await desktopCapturer.getSources({ 
+            types: ['screen'], 
+            thumbnailSize: { width: width, height: height } 
+        });
+
+        const primarySource = sources[0]; 
 
         if (primarySource) {
-            const display = screen.getPrimaryDisplay();
-            const { width, height } = display.size;
+            // A imagem já está no tamanho total, não precisa usar .resize() a menos que queira diminuir
+            const originalImage = primarySource.thumbnail;
             
-            // Half resolution
-            const halfWidth = Math.round(width / 2);
-            const halfHeight = Math.round(height / 2);
-
-            console.log(`Redimensionando screenshot para: ${halfWidth}x${halfHeight}`);
-            
-            // Resize using NativeImage
-            const resizedImage = primarySource.thumbnail.resize({ width: halfWidth, height: halfHeight });
-            
-            // Salvar imagem localmente para debug
+            // --- DEBUG LOCAL (Salvar PNG Lossless) ---
             const debugPath = path.join(app.getPath('userData'), 'last_screenshot.png');
-            require('fs').writeFileSync(debugPath, resizedImage.toPNG());
-            console.log(`📸 Screenshot salvo em: ${debugPath}`);
+            // toPNG() garante qualidade sem perdas
+            fs.writeFileSync(debugPath, originalImage.toPNG());
+            console.log(`📸 Screenshot Full HD+ salvo em: ${debugPath}`);
 
-            // Check current mode
+            // --- LÓGICA DO ASSISTENTE ---
             const currentMode = assistant.getMode();
             console.log(`📸 Modo atual: ${currentMode}`);
 
             if (currentMode === 'live') {
-                // In Live mode, send image directly to Gemini Live
-                const base64Image = resizedImage.toJPEG(80).toString('base64'); // JPEG for smaller size
+                // Para streaming (Gemini Live), PNG pode ser pesado demais.
+                // JPEG com qualidade 90+ é o melhor equilíbrio entre velocidade e qualidade visual.
+                const base64Image = originalImage.toJPEG(90).toString('base64');
+                
                 console.log("📸 Enviando screenshot para Gemini Live...");
                 assistant.sendScreenFrame(base64Image);
                 
-                // Criar janela e enviar screenshot
                 createScreenshotGalleryWindow().then(() => {
                     sendScreenshotToGallery(base64Image);
                 });
             } else {
-                // In Classic mode, use OpenAI for analysis
-                const base64Image = resizedImage.toPNG().toString('base64');
+                // Modo Clássico (OpenAI Vision geralmente aceita PNG ou JPEG)
+                const base64Image = originalImage.toPNG().toString('base64');
+                
                 assistant.analyzeScreenshot(base64Image).catch(err => {
                     console.error("Erro ao analisar screenshot:", err);
                 });
                 
-                // Criar janela e enviar screenshot
                 createScreenshotGalleryWindow().then(() => {
                     sendScreenshotToGallery(base64Image);
                 });
@@ -865,6 +875,47 @@ ipcMain.handle('find-model-file', async (event, modelName) => {
     } catch (error) {
         console.error("Error finding model file:", error);
         return null;
+    }
+});
+
+// ========================================
+// SCREENSHOT SHARING
+// ========================================
+import { ScreenshotShareService } from './lib/screenshot-share-service';
+const screenshotShareService = new ScreenshotShareService();
+
+ipcMain.handle('share-screenshot', async (event, options: { platform: 'whatsapp' | 'email' | 'drive', recipient?: string, message?: string }) => {
+    try {
+        console.log(`📤 [IPC] Share screenshot request:`, options);
+        
+        // Obter caminho do último screenshot
+        const screenshotPath = await screenshotShareService.getLatestScreenshotPath();
+        
+        if (!screenshotPath) {
+            return {
+                success: false,
+                message: 'Nenhum screenshot encontrado. Por favor, tire um screenshot primeiro.',
+                platform: options.platform,
+            };
+        }
+
+        // Compartilhar screenshot
+        const result = await screenshotShareService.shareScreenshot({
+            platform: options.platform,
+            recipient: options.recipient,
+            message: options.message,
+            screenshotPath,
+        });
+
+        console.log(`📤 [IPC] Share result:`, result);
+        return result;
+    } catch (error) {
+        console.error('❌ [IPC] Error sharing screenshot:', error);
+        return {
+            success: false,
+            message: `Erro ao compartilhar: ${error.message}`,
+            platform: options.platform,
+        };
     }
 });
 

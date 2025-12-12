@@ -67,10 +67,32 @@ export const UNIFIED_TOOLS: UnifiedTool[] = [
   },
   {
     name: "take_screenshot",
-    description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', or simply 'look'.",
+    description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', 'tira print da tela', 'take a print', 'take a print of the screen', 'take a screenshot' or simply 'look'.",
     parameters: {
       properties: {},
       required: [],
+    },
+  },
+  {
+    name: "share_screenshot",
+    description: "Share or send the most recent screenshot to WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', or similar sharing requests.",
+    parameters: {
+      properties: {
+        platform: {
+          type: "string",
+          enum: ["whatsapp", "email", "drive"],
+          description: "The platform to share the screenshot to: 'whatsapp' for WhatsApp Web, 'email' for default email client, 'drive' for Google Drive.",
+        },
+        recipient: {
+          type: "string",
+          description: "Optional. The recipient's contact (phone number for WhatsApp, email address for email). Not needed for Drive.",
+        },
+        message: {
+          type: "string",
+          description: "Optional. A message to include with the screenshot.",
+        },
+      },
+      required: ["platform"],
     },
   },
 ];
@@ -109,10 +131,32 @@ export const UNIFIED_LIVE_TOOLS: UnifiedTool[] = [
   },
   {
     name: "take_screenshot",
-    description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', or simply 'look'.",
+    description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'analyze this image', 'take a print', 'tira um print da tela', 'take a print of the screen', 'take a screenshot' or simply 'look'.",
     parameters: {
       properties: {},
       required: [],
+    },
+  },
+  {
+    name: "share_screenshot",
+    description: "Share or send the most recent screenshot to WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', or similar sharing requests.",
+    parameters: {
+      properties: {
+        platform: {
+          type: "string",
+          enum: ["whatsapp", "email", "drive"],
+          description: "The platform to share the screenshot to: 'whatsapp' for WhatsApp Web, 'email' for default email client, 'drive' for Google Drive.",
+        },
+        recipient: {
+          type: "string",
+          description: "Optional. The recipient's contact (phone number for WhatsApp, email address for email). Not needed for Drive.",
+        },
+        message: {
+          type: "string",
+          description: "Optional. A message to include with the screenshot.",
+        },
+      },
+      required: ["platform"],
     },
   },
 ];
