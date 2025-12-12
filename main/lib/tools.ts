@@ -67,7 +67,7 @@ export const UNIFIED_TOOLS: UnifiedTool[] = [
   },
   {
     name: "take_screenshot",
-    description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', 'tira print da tela', 'take a print', 'take a print of the screen', 'take a screenshot' or simply 'look'.",
+    description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'look at the screen', 'what is on the screen', 'analyze this image', 'tira print da tela', 'take a print', 'take a print of the screen', 'take a screenshot' or simply 'look'. IMPORTANT: You MUST call this function first and WAIT for the function response with the screenshot analysis before confirming or describing anything to the user. Do NOT say you took the screenshot until you receive the analysis result.",
     parameters: {
       properties: {},
       required: [],
@@ -75,7 +75,7 @@ export const UNIFIED_TOOLS: UnifiedTool[] = [
   },
   {
     name: "share_screenshot",
-    description: "Share or send the most recent screenshot to WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', or similar sharing requests.",
+    description: "Share or send the most recent screenshot to WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', or similar sharing requests. WAIT for the function response before confirming the share was successful.",
     parameters: {
       properties: {
         platform: {
@@ -104,7 +104,7 @@ export const UNIFIED_TOOLS: UnifiedTool[] = [
 export const UNIFIED_LIVE_TOOLS: UnifiedTool[] = [
   {
     name: "control_screen_share",
-    description: "Start or stop REAL-TIME SCREEN SHARING so you can see the user's screen continuously. Use 'start' when the user asks you to 'look at the screen', 'watch', 'observe', 'see what I'm doing', or wants you to have continuous visual access. Use 'stop' when they want you to stop watching.",
+    description: "Start or stop REAL-TIME SCREEN SHARING so you can see the user's screen continuously. Use 'start' when the user asks you to 'look at the screen', 'watch', 'observe', 'see what I'm doing', or wants you to have continuous visual access. Use 'stop' when they want you to stop watching. WAIT for the function response before confirming the action to the user.",
     parameters: {
       properties: {
         action: {
@@ -118,7 +118,7 @@ export const UNIFIED_LIVE_TOOLS: UnifiedTool[] = [
   },
   {
     name: "save_screen_recording",
-    description: "Save a screen recording of the last X seconds or minutes. The screen is being continuously recorded in the background, and this function saves a clip of the specified duration. Use when the user asks to 'save the last 30 seconds', 'record/gravar the last 5 minutes', 'save what just happened', etc.",
+    description: "Save a screen recording of the last X seconds or minutes. The screen is being continuously recorded in the background, and this function saves a clip of the specified duration. Use when the user asks to 'save the last 30 seconds', 'record/gravar the last 5 minutes', 'save what just happened', etc. WAIT for the function response before confirming to the user that you saved it.",
     parameters: {
       properties: {
         duration_seconds: {
@@ -131,7 +131,7 @@ export const UNIFIED_LIVE_TOOLS: UnifiedTool[] = [
   },
   {
     name: "take_screenshot",
-    description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'analyze this image', 'take a print', 'tira um print da tela', 'take a print of the screen', 'take a screenshot' or simply 'look'.",
+    description: "Take a static SCREENSHOT (image) of the current screen. Use this when the user asks to 'analyze this image', 'take a print', 'tira um print da tela', 'take a print of the screen', 'take a screenshot' or simply 'look'. IMPORTANT: You MUST call this function first and WAIT for the function response with the screenshot data before confirming or describing anything to the user. Do NOT say you took the screenshot until you receive the function response with success status.",
     parameters: {
       properties: {},
       required: [],
@@ -139,7 +139,7 @@ export const UNIFIED_LIVE_TOOLS: UnifiedTool[] = [
   },
   {
     name: "share_screenshot",
-    description: "Share or send the most recent screenshot to WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', or similar sharing requests.",
+    description: "Share or send the most recent screenshot to WhatsApp, Email, or Google Drive. Use this when the user asks to 'send this to WhatsApp', 'email this screenshot', 'save to Drive', or similar sharing requests. WAIT for the function response before confirming the share was successful.",
     parameters: {
       properties: {
         platform: {

@@ -514,6 +514,13 @@ ipcMain.handle('reload-assistant', async () => {
   return { success: true };
 });
 
+// Handler para atualizar o estado de gravação contínua no VoiceAssistant
+ipcMain.handle('set-continuous-recording', async (event, enabled: boolean) => {
+  console.log(`🎥 Continuous Recording: ${enabled ? 'Ativado' : 'Desativado'}`);
+  assistant.setContinuousRecordingEnabled(enabled);
+  return { success: true };
+});
+
 
 // Screen Recording Logic
 ipcMain.handle('get-screen-sources', async () => {

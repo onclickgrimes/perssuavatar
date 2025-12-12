@@ -47,6 +47,7 @@ export class VoiceAssistant extends EventEmitter {
     // ========================================
     private geminiLiveService: GeminiLiveService;    // Gemini Live for real-time audio
     private screenshotShareService: ScreenshotShareService; // Screenshot sharing service
+    private continuousRecordingEnabled: boolean = false; // Track if continuous recording is enabled
 
     // ========================================
     // CONSTRUCTOR & INITIALIZATION
@@ -232,12 +233,22 @@ export class VoiceAssistant extends EventEmitter {
             const durationSeconds = toolCall.args?.duration_seconds || 30;
             console.log(`[VoiceAssistant][Live] Save screen recording: last ${durationSeconds} seconds`);
 
-            this.emit('save-recording', durationSeconds);
+            // ✅ VALIDAÇÃO CRÍTICA: Verificar se a gravação contínua está ativa
+            if (!this.continuousRecordingEnabled) {
+                console.warn(`[VoiceAssistant][Live] ⚠️ Tentativa de salvar gravação, mas Continuous Recording está DESATIVADO!`);
+                result = {
+                    success: false,
+                    message: 'Não é possível salvar a gravação porque a funcionalidade de Gravação Contínua (Continuous Recording) está desativada. Por favor, peça ao usuário para ativar nas configurações primeiro.'
+                };
+            } else {
+                // Gravação contínua está ativa - prosseguir normalmente
+                this.emit('save-recording', durationSeconds);
 
-            result = {
-                success: true,
-                message: `Saving the last ${durationSeconds} seconds of screen recording. The file will be saved and you can reference it later. Confirm to the user that you're saving the recording.`
-            };
+                result = {
+                    success: true,
+                    message: `Saving the last ${durationSeconds} seconds of screen recording. The file will be saved and you can reference it later. Confirm to the user that you're saving the recording.`
+                };
+            }
 
         } else if (toolCall.name === 'take_screenshot') {
             console.log(`[VoiceAssistant][Live] Take screenshot requested`);
@@ -450,14 +461,36 @@ export class VoiceAssistant extends EventEmitter {
     - save_screen_recording: A tela é gravada CONTINUAMENTE em segundo plano. Use essa função quando o usuário pedir para "gravar/salvar os últimos X segundos/minutos", "salvar o que aconteceu", etc. Informe o parâmetro duration_seconds (ex: 30, 60, 300).
     - take_screenshot: Use quando o usuário pedir para tirar print da tela.
 
-    Quando usar uma função, após executá-la, responda brevemente confirmando a ação (ex: "Tô olhando!", "Salvei os últimos 30 segundos!", "Tirei o print!").`;
+    **REGRA CRÍTICA DE FUNCTION CALLING:**
+    NUNCA confirme que executou uma ação ANTES de receber a resposta da função.
+    - CORRETO: Chamar a função → Aguardar resposta → Confirmar baseado no resultado
+    - ERRADO: Chamar a função → Dizer "Screenshot tirado!" → Aguardar resposta
+    
+    Quando chamar uma função, PARE e AGUARDE a resposta do sistema antes de falar qualquer coisa ao usuário. 
+    Só depois de receber a confirmação da função você pode responder (ex: "Tô olhando!", "Salvei!", "Tirei o print!").`;
+
+        // Instructions for Classic Mode - Tool calling
+        const toolInstructionsClassic = `
+    **FUNÇÕES DISPONÍVEIS (Function Calling):**
+    Você tem acesso a funções especiais que pode usar quando o usuário pedir:
+    - control_screen_recording: Use para INICIAR ou PARAR gravação de vídeo da tela. action=\"start\" inicia a gravação, action=\"stop\" para e analisa o vídeo.
+    - take_screenshot: Use quando o usuário pedir para tirar print da tela ou olhar algo específico na tela.
+    - share_screenshot: Use para compartilhar o screenshot mais recente para WhatsApp, Email ou Google Drive.
+
+    **REGRA CRÍTICA DE FUNCTION CALLING:**
+    NUNCA confirme que executou uma ação ANTES de receber a resposta da função.
+    - CORRETO: Chamar a função → Aguardar resposta → Confirmar baseado no resultado  
+    - ERRADO: Chamar a função → Dizer "Screenshot tirado!" → Aguardar resposta
+    
+    Quando chamar uma função, PARE e AGUARDE a resposta do sistema antes de falar qualquer coisa ao usuário. 
+    Só depois de receber a confirmação da função você pode responder (ex: "Gravando!", "Tirei o print!").`;
 
         // Instructions for Gemini Live Native Audio (Uses speechStyle descritivo)
         const liveVoiceInstructions = `
     **TAGS DE VOZ (Controle de Expressão):**
     Use tags para expressar emoções na voz:
     - Emoções: [excited], [sad], [angry], [whispers], [shouting], [sarcastically].
-    - Ações: [laughs], [chuckles], [giggles], [coughs], [clears throat], [sighs].`;
+    - Ações: [laughs], [chuckles], [giggles], [coughs], [clears throat].`;
 
         // Instructions for Classic Mode (Text-Only output that goes to TTS)
         const classicVoiceInstructions = `
@@ -484,6 +517,8 @@ export class VoiceAssistant extends EventEmitter {
             }
         } else {
              // For Classic mode
+             prompt += `\n${toolInstructionsClassic}\n`; // Ferramentas no Classic
+             
              if (this.ttsProvider === 'elevenlabs' && enableEmotions) {
                  prompt += `\n${classicVoiceInstructions}\n`;
              }
@@ -571,6 +606,15 @@ export class VoiceAssistant extends EventEmitter {
         if (this.mode === 'live') {
             this.geminiLiveService.sendScreenFrame(base64Image);
         }
+    }
+
+    public setContinuousRecordingEnabled(enabled: boolean) {
+        console.log(`[VoiceAssistant] Continuous recording: ${enabled ? 'enabled' : 'disabled'}`);
+        this.continuousRecordingEnabled = enabled;
+    }
+
+    public isContinuousRecordingEnabled(): boolean {
+        return this.continuousRecordingEnabled;
     }
 
     // ========================================

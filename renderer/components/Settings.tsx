@@ -125,6 +125,8 @@ export default function Settings({
           
           if (typeof settings.continuousRecordingEnabled !== 'undefined') {
             setContinuousRecordingEnabled(settings.continuousRecordingEnabled);
+            // Sincronizar com VoiceAssistant
+            window.electron.invoke('set-continuous-recording', settings.continuousRecordingEnabled);
           }
           
           if (settings.selectedModel) {
@@ -248,6 +250,14 @@ export default function Settings({
     
     // O useEffect vai cuidar de iniciar/parar a gravação automaticamente
     console.log(newState ? '📹 Gravação contínua ativada' : '⏹️ Gravação contínua desativada');
+    
+    // Notificar o VoiceAssistant sobre a mudança
+    try {
+      await window.electron.invoke('set-continuous-recording', newState);
+      console.log('✅ Estado de gravação contínua sincronizado com VoiceAssistant');
+    } catch (error) {
+      console.error('❌ Erro ao sincronizar estado de gravação contínua:', error);
+    }
     
     // Salvar no banco de dados
     try {
