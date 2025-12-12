@@ -130,7 +130,8 @@ export class DeepSeekService {
                 }
             }
 
-            console.log(`DeepSeek: Sending ${sanitizedMessages.length} messages to API`);
+            // console.log(`DeepSeek: Sending ${sanitizedMessages.length} messages to API`);
+            // console.log('DeepSeek Messages:', sanitizedMessages);
 
             const requestConfig: any = {
                 model: this.model,

@@ -519,15 +519,20 @@ export class VoiceAssistant extends EventEmitter {
              // For Classic mode
              prompt += `\n${toolInstructionsClassic}\n`; // Ferramentas no Classic
              
+             console.log(`[VoiceAssistant] 🔊 Gerando prompt Classic - TTS Provider: "${this.ttsProvider}", enableEmotions: ${enableEmotions}`);
+             
              if (this.ttsProvider === 'elevenlabs' && enableEmotions) {
+                 console.log(`[VoiceAssistant] ✅ Adicionando classicVoiceInstructions (ElevenLabs + Emotions habilitado)`);
                  prompt += `\n${classicVoiceInstructions}\n`;
+             } else {
+                 console.log(`[VoiceAssistant] ⏭️ Ignorando classicVoiceInstructions (TTS=${this.ttsProvider}, Emotions=${enableEmotions})`);
              }
         }
         if(speechStylePrompt){
             prompt += `\n**ESTILO DE FALA:**\n${speechStylePrompt}\n`;
         }
         console.log("#########################################################################################");
-        console.log('Prompt: ', prompt);
+        // console.log('Prompt: ', prompt);
         console.log("#########################################################################################");
 
         return prompt;
@@ -597,6 +602,21 @@ export class VoiceAssistant extends EventEmitter {
 
     public getTTSProvider(): 'polly' | 'elevenlabs' {
         return this.ttsProvider;
+    }
+
+    /**
+     * Remove audio tags [xxx] do histórico de conversa
+     * Usado quando TTS não suporta audio tags (ex: Polly)
+     */
+    private stripAudioTagsFromHistory(history: any[]): any[] {
+        return history.map(msg => {
+            if (msg.content && typeof msg.content === 'string') {
+                // Remove audio tags [xxx] mas mantém avatar tags {{xxx}}
+                const cleanedContent = msg.content.replace(/\[[\w\s]+\]/g, '').replace(/\s+/g, ' ').trim();
+                return { ...msg, content: cleanedContent };
+            }
+            return msg;
+        });
     }
 
     // ========================================
@@ -678,10 +698,19 @@ export class VoiceAssistant extends EventEmitter {
 
             let currentSystemPrompt = this.getSystemPrompt('classic');
 
+            // Preparar histórico - se TTS não for ElevenLabs, remover audio tags das mensagens anteriores
+            let historyToSend = this.ttsProvider !== 'elevenlabs' 
+                ? this.stripAudioTagsFromHistory(this.conversationHistory)
+                : this.conversationHistory;
+            
+            if (this.ttsProvider !== 'elevenlabs') {
+                console.log('[VoiceAssistant] 🧹 Audio tags removidas do histórico (TTS não é ElevenLabs)');
+            }
+
             // First AI Call - use selected provider
             const messages = [
                 { role: "system", content: currentSystemPrompt },
-                ...this.conversationHistory
+                ...historyToSend
             ];
 
             let message: any;
@@ -697,6 +726,7 @@ export class VoiceAssistant extends EventEmitter {
             }
 
             let aiContent = message?.content;
+            console.log('[VoiceAssistant] AI Content:', aiContent);
             const toolCalls = message?.tool_calls;
             let shouldSuppressAudio = false;
             let shortFeedbackPhrase = "";
@@ -809,9 +839,14 @@ export class VoiceAssistant extends EventEmitter {
 
                 // Follow-up after tool execution
                 if (!aiContent) {
+                    // Reaplicar filtragem de audio tags para o follow-up (histórico pode ter sido atualizado)
+                    const followUpHistory = this.ttsProvider !== 'elevenlabs'
+                        ? this.stripAudioTagsFromHistory(this.conversationHistory)
+                        : this.conversationHistory;
+                    
                     const followUpMessages = [
                         { role: "system", content: currentSystemPrompt },
-                        ...this.conversationHistory
+                        ...followUpHistory
                     ];
 
                     let secondMessage: any;
