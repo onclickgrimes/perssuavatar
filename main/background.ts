@@ -512,6 +512,33 @@ ipcMain.on('screenshots-empty', () => {
   isWindowReady = false;
 });
 
+// Handler para receber gravações salvas do renderer e enviar para a galeria
+ipcMain.on('recording-saved-from-renderer', async (_, data: { path: string, duration: number }) => {
+  console.log(`🎥 Gravação recebida para galeria: ${data.path} (${data.duration}s)`);
+  
+  // Criar janela da galeria se necessário
+  await createScreenshotGalleryWindow();
+  
+  // Enviar para a galeria
+  if (screenshotGalleryWindow && !screenshotGalleryWindow.isDestroyed()) {
+    screenshotGalleryWindow.webContents.send('recording-saved', {
+      path: data.path,
+      duration: data.duration
+    });
+  }
+});
+
+// Handler para abrir arquivos no player padrão do sistema
+ipcMain.handle('shell-open-path', async (_, filePath: string) => {
+  const { shell } = require('electron');
+  try {
+    await shell.openPath(filePath);
+    return { success: true };
+  } catch (error) {
+    console.error('Erro ao abrir arquivo:', error);
+    return { success: false, error: error.message };
+  }
+});
 
 let transcriptionWindow: BrowserWindow | null = null;
 

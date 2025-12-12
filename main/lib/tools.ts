@@ -52,17 +52,16 @@ export const UNIFIED_TOOLS: UnifiedTool[] = [
     },
   },
   {
-    name: "control_screen_recording",
-    description: "Start or stop the SCREEN RECORDING (video) based on user request. Use this when the user asks to record a video of the screen, stop recording, or analyze a VIDEO of the screen action over time.",
+    name: "save_screen_recording",
+    description: "Save a screen recording of the last X seconds or minutes. The screen is being continuously recorded in the background, and this function saves a clip of the specified duration. Use when the user asks to 'save the last 30 seconds', 'record/gravar the last 5 minutes', 'save what just happened', etc. WAIT for the function response before confirming to the user that you saved it.",
     parameters: {
       properties: {
-        action: {
-          type: "string",
-          enum: ["start", "stop"],
-          description: "The action to perform: 'start' to begin recording/analyzing, 'stop' to end recording.",
+        duration_seconds: {
+          type: "number",
+          description: "The number of seconds to save from the recording buffer. For example: 30 for 30 seconds, 60 for 1 minute, 300 for 5 minutes. Maximum is 600 seconds (10 minutes).",
         },
       },
-      required: ["action"],
+      required: ["duration_seconds"],
     },
   },
   {

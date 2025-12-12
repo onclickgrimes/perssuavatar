@@ -51,21 +51,27 @@ export default function Settings({
 
   // Effects (Logics)
   useEffect(() => {
-    // Só gravar se: modo Live E gravação contínua ativada
-    if (assistantMode === 'live' && continuousRecordingEnabled && !isRecording) {
+    // Gravar quando gravação contínua está ativada (independente do modo)
+    if (continuousRecordingEnabled && !isRecording) {
       startRecording();
     } 
-    // Parar se: modo Classic OU gravação desativada
-    else if ((assistantMode === 'classic' || !continuousRecordingEnabled) && isRecording) {
+    // Parar quando gravação contínua está desativada
+    else if (!continuousRecordingEnabled && isRecording) {
       stopRecording();
     }
-  }, [assistantMode, continuousRecordingEnabled, isRecording, startRecording, stopRecording]);
+  }, [continuousRecordingEnabled, isRecording, startRecording, stopRecording]);
 
   useEffect(() => {
     const unsubscribe = window.electron.onSaveRecording(async (durationSeconds) => {
       const savedPath = await saveLastSeconds(durationSeconds);
       if (savedPath) {
         console.log(`[Settings] Recording saved to: ${savedPath}`);
+        
+        // Enviar para a galeria de screenshots/gravações
+        window.electron.send('recording-saved-from-renderer', {
+          path: savedPath,
+          duration: durationSeconds
+        });
         
         // Registrar gravação no banco de dados
         try {

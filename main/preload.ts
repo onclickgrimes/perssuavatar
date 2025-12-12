@@ -227,6 +227,13 @@ const handler = {
     return () => ipcRenderer.removeListener('screenshot-captured', subscription);
   },
 
+  // Listener para gravações salvas
+  onRecordingSaved: (callback: (data: { path: string, duration: number, thumbnail?: string }) => void) => {
+    const subscription = (_: any, data: { path: string, duration: number, thumbnail?: string }) => callback(data);
+    ipcRenderer.on('recording-saved', subscription);
+    return () => ipcRenderer.removeListener('recording-saved', subscription);
+  },
+
   // Notificar backend que lista de screenshots está vazia
   notifyScreenshotsEmpty: () => ipcRenderer.send('screenshots-empty'),
   

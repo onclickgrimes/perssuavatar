@@ -472,6 +472,7 @@ export class VoiceAssistant extends EventEmitter {
     - control_screen_share: Use quando o usuário pedir para OLHAR a tela, ver o que está acontecendo, observar, assistir, ou simplesmente "olha". Isso ativa o compartilhamento de tela em tempo real. Use "start" para começar a ver e "stop" para parar.
     - save_screen_recording: A tela é gravada CONTINUAMENTE em segundo plano. Use essa função quando o usuário pedir para "gravar/salvar os últimos X segundos/minutos", "salvar o que aconteceu", etc. Informe o parâmetro duration_seconds (ex: 30, 60, 300).
     - take_screenshot: Use quando o usuário pedir para tirar print da tela.
+    - share_screenshot: Use para compartilhar o screenshot mais recente para WhatsApp, Email ou Google Drive.
 
     **REGRA CRÍTICA DE FUNCTION CALLING:**
     NUNCA confirme que executou uma ação ANTES de receber a resposta da função.
@@ -485,7 +486,7 @@ export class VoiceAssistant extends EventEmitter {
         const toolInstructionsClassic = `
     **FUNÇÕES DISPONÍVEIS (Function Calling):**
     Você tem acesso a funções especiais que pode usar quando o usuário pedir:
-    - control_screen_recording: Use para INICIAR ou PARAR gravação de vídeo da tela. action=\"start\" inicia a gravação, action=\"stop\" para e analisa o vídeo.
+    - save_screen_recording: A tela é gravada CONTINUAMENTE em segundo plano. Use essa função quando o usuário pedir para "gravar/salvar os últimos X segundos/minutos", "salvar o que aconteceu", etc. Informe o parâmetro duration_seconds (ex: 30, 60, 300).
     - take_screenshot: Use quando o usuário pedir para tirar print da tela ou olhar algo específico na tela.
     - share_screenshot: Use para compartilhar o screenshot mais recente para WhatsApp, Email ou Google Drive.
 
@@ -495,7 +496,7 @@ export class VoiceAssistant extends EventEmitter {
     - ERRADO: Chamar a função → Dizer "Screenshot tirado!" → Aguardar resposta
     
     Quando chamar uma função, PARE e AGUARDE a resposta do sistema antes de falar qualquer coisa ao usuário. 
-    Só depois de receber a confirmação da função você pode responder (ex: "Gravando!", "Tirei o print!").`;
+    Só depois de receber a confirmação da função você pode responder (ex: "Salvei!", "Tirei o print!").`;
 
         // Instructions for Gemini Live Native Audio (Uses speechStyle descritivo)
         const liveVoiceInstructions = `
@@ -763,30 +764,37 @@ export class VoiceAssistant extends EventEmitter {
                 for (const toolCall of toolCalls) {
                     const fnName = (toolCall as any).function.name;
 
-                    if (fnName === 'control_screen_recording') {
+                    if (fnName === 'save_screen_recording') {
                         const args = JSON.parse((toolCall as any).function.arguments);
-                        console.log(`Tool Call: control_screen_recording ACTION=${args.action}`);
+                        const durationSeconds = args.duration_seconds || 30;
+                        console.log(`Tool Call: save_screen_recording DURATION=${durationSeconds}s`);
 
-                        if (args.action === 'start') {
+                        // ✅ VALIDAÇÃO CRÍTICA: Verificar se a gravação contínua está ativa
+                        if (!this.continuousRecordingEnabled) {
+                            console.warn(`[VoiceAssistant][Classic] ⚠️ Tentativa de salvar gravação, mas Continuous Recording está DESATIVADO!`);
+                            this.conversationHistory.push({
+                                role: "tool",
+                                tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
+                                content: `Save recording FAILED: Continuous Recording is disabled. Ask the user to enable it in settings first.`
+                            });
+                            shouldSuppressAudio = false; // Let AI explain the issue
+                        } else {
+                            // Gravação contínua está ativa - prosseguir normalmente
                             this.recordingContext = text;
                             console.log(`Contexto da gravação definido: "${text}"`);
 
+                            this.emit('save-recording', durationSeconds);
+
+                            this.conversationHistory.push({
+                                role: "tool",
+                                tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
+                                content: `Saving the last ${durationSeconds} seconds of screen recording. The file will be saved shortly.`
+                            });
+
                             shouldSuppressAudio = true;
-                            const responses = ["Gravando!", "Iniciando...", "Luz, câmera, ação!", "Valendo!", "Rodando..."];
-                            shortFeedbackPhrase = responses[Math.floor(Math.random() * responses.length)];
-                        } else {
-                            shouldSuppressAudio = true;
-                            const responses = ["Parando...", "Analisando vídeo...", "Só um segundo.", "Processando...", "Pronto."];
+                            const responses = ["Salvando!", "Só um segundo.", "Processando...", "Pronto.", "Exportando clip..."];
                             shortFeedbackPhrase = responses[Math.floor(Math.random() * responses.length)];
                         }
-
-                        this.emit('control-recording', args.action);
-
-                        this.conversationHistory.push({
-                            role: "tool",
-                            tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
-                            content: `Screen recording action '${args.action}' executed successfully.`
-                        });
                     } else if (fnName === 'take_screenshot') {
                         console.log(`Tool Call: take_screenshot`);
                         this.recordingContext = text; // User's request is the context
