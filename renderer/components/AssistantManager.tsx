@@ -198,7 +198,10 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
         systemPrompt: assistant.systemPrompt,
         answerOnlyWhenCertain: assistant.answerOnlyWhenCertain,
         followUpPrompt: assistant.followUpPrompt,
-        emailSummaryPrompt: assistant.emailSummaryPrompt
+        emailSummaryPrompt: assistant.emailSummaryPrompt,
+        avatarBehaviorPrompt: assistant.avatarBehaviorPrompt,
+        avatarSpeechStyle: assistant.avatarSpeechStyle,
+        enableEmotions: assistant.enableEmotions
       });
       
       console.log('✅ Assistente duplicado com sucesso!');

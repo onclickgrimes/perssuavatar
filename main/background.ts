@@ -636,6 +636,13 @@ ipcMain.handle('set-continuous-recording', async (event, enabled: boolean) => {
   return { success: true };
 });
 
+// Handler para encerrar a aplicação
+ipcMain.on('quit-app', () => {
+  console.log('👋 Encerrando aplicação...');
+  app.quit();
+});
+
+
 
 // Screen Recording Logic
 ipcMain.handle('get-screen-sources', async () => {

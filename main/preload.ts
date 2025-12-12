@@ -228,7 +228,10 @@ const handler = {
   },
 
   // Notificar backend que lista de screenshots está vazia
-  notifyScreenshotsEmpty: () => ipcRenderer.send('screenshots-empty')
+  notifyScreenshotsEmpty: () => ipcRenderer.send('screenshots-empty'),
+  
+  // Encerrar aplicação
+  quitApp: () => ipcRenderer.send('quit-app')
 }
 
 contextBridge.exposeInMainWorld('electron', handler)

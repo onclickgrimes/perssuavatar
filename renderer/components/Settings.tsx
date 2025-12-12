@@ -836,7 +836,11 @@ export default function Settings({
           
           {/* Footer */}
           <div className="h-16 bg-[#0a0a0a] border-t border-[#222] flex items-center justify-between px-6">
-             <button className="text-gray-500 hover:text-red-500 transition-colors" title="Deslogar">
+             <button 
+               onClick={() => window.electron.quitApp()} 
+               className="text-gray-500 hover:text-red-500 transition-colors" 
+               title="Fechar Aplicação"
+             >
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
                    <polyline points="16 17 21 12 16 7"></polyline>

@@ -1,4 +1,5 @@
 import Store from 'electron-store';
+import { getUserDataPath } from './app-config';
 
 // Schema de tipos para o banco de dados
 interface DatabaseSchema {
@@ -152,6 +153,7 @@ This assistant must explain concepts with increasing depth, provide code solutio
     Speech Mannerisms: Frequently uses emotive interjections (like "Ehh?", "Wow!", "Yay!"), giggles, and polite phrasing. May use cutesy expressions and sounds noticeably emotionally invested in the conversation.
     Pronunciation: Crisp and "bouncy," with very clear vowels and a lighter, softer touch on consonants, avoiding harsh sounds.
     Tempo: Energetic and quick, often speeding up when excited, giving the speech a lively, skipping rhythm that feels constantly moving forward.`,
+    enableEmotions: true,       // Habilitar emoções na fala
       createdAt: Date.now(),
       updatedAt: Date.now()
     },
@@ -303,6 +305,7 @@ export function initializeDatabase(): Store<DatabaseSchema> {
   if (!storeInstance) {
     storeInstance = new Store<DatabaseSchema>({
       name: 'avatar-ai-db',
+      cwd: getUserDataPath(), // Usa o caminho correto para dev/prod
       defaults,
       schema: {
         userSettings: {
