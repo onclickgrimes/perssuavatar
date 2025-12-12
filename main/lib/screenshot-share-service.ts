@@ -164,10 +164,22 @@ export class ScreenshotShareService {
       // Abre o WhatsApp Web
       await shell.openExternal(whatsappUrl);
 
+      // Pausar o monitor de clipboard para não detectar esta cópia como novo screenshot
+      if ((global as any).pauseClipboardMonitor) {
+        (global as any).pauseClipboardMonitor(true);
+      }
+
       // Copia o screenshot para a área de transferência
       const { clipboard, nativeImage } = require('electron');
       const image = nativeImage.createFromPath(options.screenshotPath);
       clipboard.writeImage(image);
+
+      // Retomar o monitor após um delay, atualizando o lastSize para ignorar esta imagem
+      setTimeout(() => {
+        if ((global as any).pauseClipboardMonitor) {
+          (global as any).pauseClipboardMonitor(false, true);
+        }
+      }, 500);
 
       return {
         success: true,
@@ -175,6 +187,10 @@ export class ScreenshotShareService {
         platform: 'whatsapp',
       };
     } catch (error) {
+      // Garantir que o monitor seja retomado em caso de erro
+      if ((global as any).pauseClipboardMonitor) {
+        (global as any).pauseClipboardMonitor(false, true);
+      }
       throw new Error(`Erro ao abrir WhatsApp Web: ${error.message}`);
     }
   }
@@ -197,11 +213,23 @@ export class ScreenshotShareService {
       
       mailtoUrl += `?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
 
+      // Pausar o monitor de clipboard
+      if ((global as any).pauseClipboardMonitor) {
+        (global as any).pauseClipboardMonitor(true);
+      }
+
       // Note: mailto: doesn't support attachments directly
       // We'll copy the image to clipboard instead
       const { clipboard, nativeImage } = require('electron');
       const image = nativeImage.createFromPath(options.screenshotPath);
       clipboard.writeImage(image);
+
+      // Retomar o monitor após um delay
+      setTimeout(() => {
+        if ((global as any).pauseClipboardMonitor) {
+          (global as any).pauseClipboardMonitor(false, true);
+        }
+      }, 500);
 
       // Open email client
       await shell.openExternal(mailtoUrl);
@@ -212,6 +240,10 @@ export class ScreenshotShareService {
         platform: 'email',
       };
     } catch (error) {
+      // Garantir que o monitor seja retomado em caso de erro
+      if ((global as any).pauseClipboardMonitor) {
+        (global as any).pauseClipboardMonitor(false, true);
+      }
       throw new Error(`Erro ao abrir cliente de email: ${error.message}`);
     }
   }
@@ -241,10 +273,22 @@ export class ScreenshotShareService {
       // Open Google Drive upload page
       await shell.openExternal('https://drive.google.com/drive/my-drive');
 
+      // Pausar o monitor de clipboard
+      if ((global as any).pauseClipboardMonitor) {
+        (global as any).pauseClipboardMonitor(true);
+      }
+
       // Also copy image to clipboard
       const { clipboard, nativeImage } = require('electron');
       const image = nativeImage.createFromPath(options.screenshotPath);
       clipboard.writeImage(image);
+
+      // Retomar o monitor após um delay
+      setTimeout(() => {
+        if ((global as any).pauseClipboardMonitor) {
+          (global as any).pauseClipboardMonitor(false, true);
+        }
+      }, 500);
 
       // Show file in folder
       shell.showItemInFolder(destPath);
@@ -255,6 +299,10 @@ export class ScreenshotShareService {
         platform: 'drive',
       };
     } catch (error) {
+      // Garantir que o monitor seja retomado em caso de erro
+      if ((global as any).pauseClipboardMonitor) {
+        (global as any).pauseClipboardMonitor(false, true);
+      }
       throw new Error(`Erro ao preparar upload para Drive: ${error.message}`);
     }
   }

@@ -205,6 +205,26 @@ if (isProd) {
   
   let lastClipboardImageSize: { width: number, height: number } | null = null;
   let isProcessingClipboard = false; // Flag para evitar processamento simultâneo
+  let clipboardMonitorPaused = false; // Flag para pausar durante share operations
+
+  // Exportar função para pausar/despausar o monitor (usado pelo share service)
+  (global as any).pauseClipboardMonitor = (pause: boolean, updateLastSize: boolean = false) => {
+    clipboardMonitorPaused = pause;
+    console.log(`📋 Clipboard monitor ${pause ? 'PAUSADO' : 'RETOMADO'}`);
+    
+    // Se estamos retomando e devemos atualizar o lastSize, lemos a imagem atual do clipboard
+    if (!pause && updateLastSize) {
+      try {
+        const currentImage = clipboard.readImage();
+        if (!currentImage.isEmpty()) {
+          lastClipboardImageSize = currentImage.getSize();
+          console.log(`📋 lastClipboardImageSize atualizado para: ${lastClipboardImageSize.width}x${lastClipboardImageSize.height}`);
+        }
+      } catch (e) {
+        // Ignora erros
+      }
+    }
+  };
 
   // Inicializar com a imagem atual da clipboard para não capturá-la ao iniciar
   try {
@@ -220,8 +240,8 @@ if (isProd) {
 
   // Monitor de clipboard - verifica a cada 1000ms (reduzido para evitar lag)
   const clipboardMonitorInterval = setInterval(async () => {
-    // Se já está processando, pula esta iteração
-    if (isProcessingClipboard) {
+    // Se já está processando ou monitor está pausado, pula esta iteração
+    if (isProcessingClipboard || clipboardMonitorPaused) {
       return;
     }
 
