@@ -251,24 +251,42 @@ Você é um assistente com um propósito específico definido acima. Antes de ge
 
             let result = '';
             let isIgnored = false;
+            let bufferSent = false;
+            const IGNORE_CHECK_LENGTH = 15; // Tamanho mínimo para verificar "[IGNORAR]"
 
             // Handler especial para detectar [IGNORAR] no início
+            // Acumula os primeiros caracteres antes de enviar para o frontend
             const wrappedOnChunk = (chunk: string) => {
                 result += chunk;
                 
-                // Verificar se começa com [IGNORAR]
-                if (result.trim().startsWith('[IGNORAR]')) {
-                    isIgnored = true;
-                    // Não repassar chunks para o frontend
+                // Se já foi detectado como ignorado, não faz nada
+                if (isIgnored) {
                     return;
                 }
                 
-                // Só repassa se não foi ignorado
-                if (!isIgnored) {
+                // Se já enviamos o buffer, continua enviando chunks normalmente
+                if (bufferSent) {
                     onChunk(chunk);
+                    return;
+                }
+                
+                // Ainda acumulando - verificar se já temos caracteres suficientes
+                const trimmedResult = result.trim();
+                
+                // Verificar se começa com [IGNORAR]
+                if (trimmedResult.startsWith('[IGNORAR]')) {
+                    isIgnored = true;
+                    console.log('[SummaryService] Detectado [IGNORAR] - não enviando ao frontend');
+                    return;
+                }
+                
+                // Se temos caracteres suficientes e NÃO começa com [IGNORAR], enviar buffer acumulado
+                if (trimmedResult.length >= IGNORE_CHECK_LENGTH) {
+                    bufferSent = true;
+                    onChunk(result); // Envia todo o buffer acumulado de uma vez
                 }
             };
-            console.log(`[SummaryService] Prompt final: ${fullPrompt}`);
+            // console.log(`[SummaryService] Prompt final: ${fullPrompt}`);
 
             await this.generateContent(fullPrompt, wrappedOnChunk);
 
@@ -276,6 +294,11 @@ Você é um assistente com um propósito específico definido acima. Antes de ge
             if (isIgnored || result.trim() === '[IGNORAR]' || result.trim().startsWith('[IGNORAR]')) {
                 console.log(`[SummaryService] Conversa ignorada (não relevante)`);
                 return '';
+            }
+            
+            // Se o buffer ainda não foi enviado (resposta muito curta), enviar agora
+            if (!bufferSent && result.trim().length > 0) {
+                onChunk(result);
             }
 
             console.log(`[SummaryService] Resumo gerado com sucesso (${result.length} caracteres)`);

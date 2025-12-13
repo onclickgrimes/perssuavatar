@@ -108,10 +108,12 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
                         mandatory: {
                             chromeMediaSource: 'desktop',
                             chromeMediaSourceId: source.id,
-                            minWidth: 640,
-                            maxWidth: 640,
-                            minHeight: 480,
-                            maxHeight: 480
+                            minWidth: 100, // Menor resolução possível
+                            maxWidth: 100,
+                            minHeight: 100,
+                            maxHeight: 100,
+                            minFrameRate: 1, // 1 FPS para economizar máxima CPU
+                            maxFrameRate: 1
                         }
                     } as any
                 } as any);
@@ -125,10 +127,12 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
                         mandatory: {
                             chromeMediaSource: 'desktop',
                             chromeMediaSourceId: source.id,
-                            minWidth: 640,
-                            maxWidth: 640,
-                            minHeight: 480,
-                            maxHeight: 480
+                            minWidth: 100,
+                            maxWidth: 100,
+                            minHeight: 100,
+                            maxHeight: 100,
+                            minFrameRate: 1,
+                            maxFrameRate: 1
                         }
                     } as any
                 } as any);
@@ -339,10 +343,12 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
                         mandatory: {
                             chromeMediaSource: 'desktop',
                             chromeMediaSourceId: source.id,
-                            minWidth: 640,
-                            maxWidth: 640,
-                            minHeight: 480,
-                            maxHeight: 480
+                            minWidth: 100,
+                            maxWidth: 100,
+                            minHeight: 100,
+                            maxHeight: 100,
+                            minFrameRate: 1,
+                            maxFrameRate: 1
                         }
                     } as any
                 } as any);
@@ -354,10 +360,12 @@ export const useDesktopAudioTranscriber = (options: UseDesktopAudioTranscriberOp
                         mandatory: {
                             chromeMediaSource: 'desktop',
                             chromeMediaSourceId: source.id,
-                            minWidth: 640,
-                            maxWidth: 640,
-                            minHeight: 480,
-                            maxHeight: 480
+                            minWidth: 100,
+                            maxWidth: 100,
+                            minHeight: 100,
+                            maxHeight: 100,
+                            minFrameRate: 1,
+                            maxFrameRate: 1
                         }
                     } as any
                 } as any);

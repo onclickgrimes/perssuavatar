@@ -169,7 +169,7 @@ interface LightMarkdownProps {
   className?: string;
 }
 
-function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
+const LightMarkdown = React.memo(function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
   const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
   // Contador global de keys para garantir unicidade
   const keyCounter = React.useRef(0);
@@ -570,12 +570,17 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
     return result;
   };
 
+  // Early return se não há conteúdo
+  if (!content || content.trim() === '') {
+    return null;
+  }
+
   return (
     <div className={`font-['Montserrat',sans-serif] text-white ${className}`}>
       {parseMarkdown(content)}
     </div>
   );
-}
+});
 
 export default function TranscriptionWindow({ onClose }: TranscriptionWindowProps = {}) {
   const [activeTab, setActiveTab] = useState<TabMode>('transcription');
@@ -623,6 +628,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   // Buffer de mensagens para análise (empilha até 5, zera após resumo)
   const summaryMessagesBuffer = useRef<Array<{ speaker: string; text: string }>>([]);
   const MAX_SUMMARY_BUFFER_SIZE = 5;
+  // Ref para evitar loops no useEffect (não depender de isGeneratingSummary)
+  const isGeneratingRef = useRef(false);
 
   // Hook para transcrição de áudio do desktop (OUTROS)
   const { startTranscribing, stopTranscribing, changeAudioSource, isTranscribing, status } = useDesktopAudioTranscriber({
@@ -706,11 +713,15 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
 
   // Iniciar transcrição do desktop e monitoramento do microfone automaticamente quando a janela abrir
   useEffect(() => {
-    console.log('[TranscriptionWindow] Iniciando transcrição do desktop e monitoramento do microfone...');
-    startTranscribing();
-    startMonitoring();
+    // Pequeno delay para permitir que a UI renderize primeiro
+    const initTimeout = setTimeout(() => {
+      console.log('[TranscriptionWindow] Iniciando transcrição do desktop e monitoramento do microfone...');
+      startTranscribing();
+      startMonitoring();
+    }, 100);
 
     return () => {
+      clearTimeout(initTimeout);
       console.log('[TranscriptionWindow] Parando transcrição do desktop e monitoramento do microfone...');
       stopTranscribing();
       stopMonitoring();
@@ -740,6 +751,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
 
     // Configurar listener para chunks de streaming
     const unsubscribeChunk = window.electron.summary.onChunk((chunk) => {
+      // Quando receber o primeiro chunk, ativar o estado de geração
+      setIsGeneratingSummary(true);
       setSummaryContent(prev => prev + chunk);
     });
 
@@ -761,6 +774,9 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     if (!window.electron?.summary) return;
     if (isPaused) return;
     if (messages.length === 0) return;
+    
+    // Não processar se já está gerando
+    if (isGeneratingRef.current) return;
     
     // Só gera se tem mensagens novas desde a última geração
     const newMessagesCount = messages.length - lastProcessedMessageCount.current;
@@ -792,13 +808,14 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
 
     // Aguardar 1,5 segundos de "silêncio" antes de gerar feedback
     autoSummaryTimeoutRef.current = setTimeout(async () => {
-      // Verificar se ainda não está gerando e se tem mensagens no buffer
-      if (isGeneratingSummary) return;
+      // Verificar se ainda não está gerando (usar ref para evitar closure stale)
+      if (isGeneratingRef.current) return;
       if (summaryMessagesBuffer.current.length === 0) return;
       
       console.log(`[TranscriptionWindow] Gerando feedback (buffer: ${summaryMessagesBuffer.current.length} mensagens)`);
       
-      setIsGeneratingSummary(true);
+      isGeneratingRef.current = true;
+      // NÃO setar isGeneratingSummary(true) aqui - será setado quando receber o primeiro chunk
       setSummaryContent('');
       
       try {
@@ -830,6 +847,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       } catch (error) {
         console.error('[TranscriptionWindow] Erro na geração automática:', error);
       } finally {
+        isGeneratingRef.current = false;
         setIsGeneratingSummary(false);
       }
     }, 1500); // 1,5 segundos de debounce
@@ -839,7 +857,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
         clearTimeout(autoSummaryTimeoutRef.current);
       }
     };
-  }, [messages, isPaused, isGeneratingSummary]);
+  }, [messages, isPaused]); // Removido isGeneratingSummary das dependências
 
   const addMessage = (speaker: 'VOCÊ' | 'OUTROS', text: string) => {
     // Remove avatar tags from transcription display
@@ -877,15 +895,20 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     }
   };
 
-  // Auto-scroll para transcrições (só se estiver no final)
+  // Auto-scroll para transcrições (só se estiver no final e houver mensagens)
   useEffect(() => {
+    if (messages.length === 0) return;
+    
     if (isUserAtBottomTranscription.current && chatEndRef.current) {
       chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages]);
 
-  // Auto-scroll para resumos (só se estiver no final)
+  // Auto-scroll para resumos (só se estiver no final e houver conteúdo)
   useEffect(() => {
+    // Só fazer scroll se há conteúdo real
+    if (!summaryContent && summaryChatHistory.length === 0) return;
+    
     if (isUserAtBottomSummary.current && summaryEndRef.current) {
       summaryEndRef.current.scrollIntoView({ behavior: 'smooth' });
     }
@@ -1253,29 +1276,21 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
                 </div>
               ))}
 
-              {/* Resumo sendo gerado (streaming) */}
-              {(summaryContent || isGeneratingSummary) && summaryChatHistory.length === 0 && (
+              {/* Resumo sendo gerado (streaming) - só mostra se há conteúdo */}
+              {summaryContent && summaryChatHistory.length === 0 && (
                 <div>
-                  {summaryContent ? (
-                    <LightMarkdown content={summaryContent} />
-                  ) : (
-                    <span className="text-gray-500">...</span>
-                  )}
-                  {isGeneratingSummary && summaryContent && (
+                  <LightMarkdown content={summaryContent} />
+                  {isGeneratingSummary && (
                     <span className="inline-block w-1 h-3 bg-white/50 ml-0.5 animate-pulse" />
                   )}
                 </div>
               )}
 
-              {/* Resposta sendo gerada (streaming durante pergunta) */}
-              {isGeneratingSummary && summaryChatHistory.length > 0 && (
+              {/* Resposta sendo gerada (streaming durante pergunta) - só mostra se há conteúdo */}
+              {summaryContent && summaryChatHistory.length > 0 && (
                 <div className="mb-4">
-                  {summaryContent ? (
-                    <LightMarkdown content={summaryContent} />
-                  ) : (
-                    <span className="text-gray-500">...</span>
-                  )}
-                  {summaryContent && (
+                  <LightMarkdown content={summaryContent} />
+                  {isGeneratingSummary && (
                     <span className="inline-block w-1 h-3 bg-white/50 ml-0.5 animate-pulse" />
                   )}
                 </div>
@@ -1283,8 +1298,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               <div ref={summaryEndRef} />
             </div>
 
-            {/* Botão de parar geração */}
-            {isGeneratingSummary && (
+            {/* Botão de parar geração - só mostra se há conteúdo sendo gerado */}
+            {isGeneratingSummary && summaryContent && (
               <div className="px-3 py-2 bg-black flex justify-center">
                 <button
                   onClick={handleAbortSummary}
