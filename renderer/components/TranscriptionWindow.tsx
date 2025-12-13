@@ -160,6 +160,299 @@ function isSimilarToModelTranscription(
   return false;
 }
 
+// ============================================
+// COMPONENTE LIGHTMARKDOWN
+// ============================================
+
+interface LightMarkdownProps {
+  content: string;
+  className?: string;
+}
+
+function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
+  const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
+
+  const copyToClipboard = async (text: string, index: number) => {
+    try {
+      // Usar Electron clipboard via IPC
+      if (window.electron?.copyToClipboard) {
+        await window.electron.copyToClipboard(text);
+      } else {
+        // Fallback para API do navegador
+        await navigator.clipboard.writeText(text);
+      }
+      setCopiedIndex(index);
+      setTimeout(() => setCopiedIndex(null), 2000);
+    } catch (error) {
+      console.error('Erro ao copiar:', error);
+    }
+  };
+
+  const parseMarkdown = (text: string) => {
+    const elements: React.ReactNode[] = [];
+    const lines = text.split('\n');
+    let i = 0;
+    let codeBlockIndex = 0;
+
+    while (i < lines.length) {
+      const line = lines[i];
+
+      // Bloco de código (```)
+      if (line.trim().startsWith('```')) {
+        const language = line.trim().slice(3).trim();
+        const codeLines: string[] = [];
+        i++;
+        
+        while (i < lines.length && !lines[i].trim().startsWith('```')) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        
+        const codeContent = codeLines.join('\n');
+        const currentIndex = codeBlockIndex++;
+        
+        elements.push(
+          <div key={`code-${currentIndex}`} className="my-3 rounded-lg overflow-hidden bg-[#0d0d0d] border border-[#222]">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-[#161616] border-b border-[#222]">
+              <span className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
+                {language || 'code'}
+              </span>
+              <button
+                onClick={() => copyToClipboard(codeContent, currentIndex)}
+                className="text-[10px] text-gray-500 hover:text-white transition-colors flex items-center gap-1"
+              >
+                {copiedIndex === currentIndex ? (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                    Copiado!
+                  </>
+                ) : (
+                  <>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                    </svg>
+                    Copiar
+                  </>
+                )}
+              </button>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <tbody>
+                  {codeLines.map((codeLine, lineIdx) => (
+                    <tr key={lineIdx} className="hover:bg-[#1a1a1a]">
+                      <td className="px-3 py-0.5 text-[10px] text-gray-600 select-none text-right border-r border-[#222] w-8">
+                        {lineIdx + 1}
+                      </td>
+                      <td className="px-3 py-0.5 text-xs text-cyan-300 font-mono whitespace-pre">
+                        {codeLine}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+        i++;
+        continue;
+      }
+
+      // Título H1 (#)
+      if (line.startsWith('# ')) {
+        elements.push(
+          <h1 key={`h1-${i}`} className="text-lg font-bold text-white mt-4 mb-2 border-b border-[#333] pb-1">
+            {parseInline(line.slice(2))}
+          </h1>
+        );
+        i++;
+        continue;
+      }
+
+      // Título H2 (##)
+      if (line.startsWith('## ')) {
+        elements.push(
+          <h2 key={`h2-${i}`} className="text-base font-bold text-white mt-3 mb-2">
+            {parseInline(line.slice(3))}
+          </h2>
+        );
+        i++;
+        continue;
+      }
+
+      // Título H3 (###)
+      if (line.startsWith('### ')) {
+        elements.push(
+          <h3 key={`h3-${i}`} className="text-sm font-bold text-gray-200 mt-2 mb-1">
+            {parseInline(line.slice(4))}
+          </h3>
+        );
+        i++;
+        continue;
+      }
+
+      // Lista com bullet (-)
+      if (line.trim().startsWith('- ')) {
+        const listItems: string[] = [];
+        while (i < lines.length && lines[i].trim().startsWith('- ')) {
+          listItems.push(lines[i].trim().slice(2));
+          i++;
+        }
+        elements.push(
+          <ul key={`ul-${i}`} className="my-2 space-y-1">
+            {listItems.map((item, idx) => (
+              <li key={idx} className="flex items-start gap-2 text-xs text-gray-200">
+                <span className="text-cyan-400 mt-0.5">•</span>
+                <span>{parseInline(item)}</span>
+              </li>
+            ))}
+          </ul>
+        );
+        continue;
+      }
+
+      // Lista numerada (1. 2. 3.)
+      if (/^\d+\.\s/.test(line.trim())) {
+        const listItems: string[] = [];
+        while (i < lines.length && /^\d+\.\s/.test(lines[i].trim())) {
+          listItems.push(lines[i].trim().replace(/^\d+\.\s/, ''));
+          i++;
+        }
+        elements.push(
+          <ol key={`ol-${i}`} className="my-2 space-y-1">
+            {listItems.map((item, idx) => (
+              <li key={idx} className="flex items-start gap-2 text-xs text-gray-200">
+                <span className="text-cyan-400 font-medium min-w-[16px]">{idx + 1}.</span>
+                <span>{parseInline(item)}</span>
+              </li>
+            ))}
+          </ol>
+        );
+        continue;
+      }
+
+      // Linha vazia
+      if (line.trim() === '') {
+        elements.push(<div key={`br-${i}`} className="h-2" />);
+        i++;
+        continue;
+      }
+
+      // Parágrafo normal
+      elements.push(
+        <p key={`p-${i}`} className="text-xs text-gray-200 leading-relaxed my-1">
+          {parseInline(line)}
+        </p>
+      );
+      i++;
+    }
+
+    return elements;
+  };
+
+  // Parse inline: negrito, itálico, código inline
+  const parseInline = (text: string): React.ReactNode[] => {
+    const result: React.ReactNode[] = [];
+    let remaining = text;
+    let keyIndex = 0;
+
+    while (remaining.length > 0) {
+      // Código inline `code`
+      const codeMatch = remaining.match(/`([^`]+)`/);
+      if (codeMatch && codeMatch.index !== undefined) {
+        if (codeMatch.index > 0) {
+          result.push(...parseInlineStyles(remaining.slice(0, codeMatch.index), keyIndex));
+          keyIndex++;
+        }
+        result.push(
+          <code key={`code-${keyIndex++}`} className="px-1.5 py-0.5 bg-[#1a1a1a] text-cyan-300 rounded text-[11px] font-mono">
+            {codeMatch[1]}
+          </code>
+        );
+        remaining = remaining.slice((codeMatch.index || 0) + codeMatch[0].length);
+        continue;
+      }
+
+      // Se não encontrou código inline, processa estilos
+      result.push(...parseInlineStyles(remaining, keyIndex));
+      break;
+    }
+
+    return result;
+  };
+
+  // Parse negrito e itálico
+  const parseInlineStyles = (text: string, startKey: number): React.ReactNode[] => {
+    const result: React.ReactNode[] = [];
+    let remaining = text;
+    let keyIndex = startKey;
+
+    while (remaining.length > 0) {
+      // Negrito **text**
+      const boldMatch = remaining.match(/\*\*([^*]+)\*\*/);
+      // Itálico *text*
+      const italicMatch = remaining.match(/(?<!\*)\*([^*]+)\*(?!\*)/);
+
+      // Encontrar o primeiro match
+      let firstMatch: { type: 'bold' | 'italic'; match: RegExpMatchArray } | null = null;
+
+      if (boldMatch && boldMatch.index !== undefined) {
+        if (!firstMatch || boldMatch.index < (firstMatch.match.index || Infinity)) {
+          firstMatch = { type: 'bold', match: boldMatch };
+        }
+      }
+      if (italicMatch && italicMatch.index !== undefined) {
+        if (!firstMatch || italicMatch.index < (firstMatch.match.index || Infinity)) {
+          firstMatch = { type: 'italic', match: italicMatch };
+        }
+      }
+
+      if (firstMatch) {
+        const { type, match } = firstMatch;
+        if ((match.index || 0) > 0) {
+          result.push(
+            <span key={`text-${keyIndex++}`}>{remaining.slice(0, match.index)}</span>
+          );
+        }
+
+        if (type === 'bold') {
+          result.push(
+            <strong key={`bold-${keyIndex++}`} className="font-bold text-white">
+              {match[1]}
+            </strong>
+          );
+        } else {
+          result.push(
+            <em key={`italic-${keyIndex++}`} className="italic text-gray-300">
+              {match[1]}
+            </em>
+          );
+        }
+
+        remaining = remaining.slice((match.index || 0) + match[0].length);
+        continue;
+      }
+
+      // Sem mais matches, adiciona o resto
+      if (remaining.length > 0) {
+        result.push(<span key={`text-${keyIndex++}`}>{remaining}</span>);
+      }
+      break;
+    }
+
+    return result;
+  };
+
+  return (
+    <div className={`font-['Montserrat',sans-serif] text-white ${className}`}>
+      {parseMarkdown(content)}
+    </div>
+  );
+}
+
 export default function TranscriptionWindow({ onClose }: TranscriptionWindowProps = {}) {
   const [activeTab, setActiveTab] = useState<TabMode>('transcription');
   const [language, setLanguage] = useState('Portuguese (BR)');
@@ -363,9 +656,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       // Verificar novamente se ainda não está gerando
       if (isGeneratingSummary) return;
       
-      // Só gerar se tem pelo menos 2 mensagens novas ou é a primeira geração
-      const needsGeneration = newMessagesCount >= 2 || (lastProcessedMessageCount.current === 0 && messages.length >= 1);
-      if (!needsGeneration) return;
+      // Gerar se tem pelo menos 1 mensagem nova
+      if (newMessagesCount < 1) return;
 
       // Pegar apenas as mensagens NOVAS (a partir do último índice processado)
       const startIndex = lastProcessedMessageCount.current;
@@ -409,7 +701,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       } finally {
         setIsGeneratingSummary(false);
       }
-    }, 4000); // 4 segundos de debounce
+    }, 1500); // 1,5 segundos de debounce
 
     return () => {
       if (autoSummaryTimeoutRef.current) {
@@ -782,36 +1074,36 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
                       </p>
                     </div>
                   ) : (
-                    <p className="text-white text-xs leading-relaxed whitespace-pre-wrap">
-                      {chat.content}
-                    </p>
+                    <LightMarkdown content={chat.content} />
                   )}
                 </div>
               ))}
 
               {/* Resumo sendo gerado (streaming) */}
               {(summaryContent || isGeneratingSummary) && summaryChatHistory.length === 0 && (
-                <p className="text-white text-xs leading-relaxed whitespace-pre-wrap">
-                  {summaryContent || (
+                <div>
+                  {summaryContent ? (
+                    <LightMarkdown content={summaryContent} />
+                  ) : (
                     <span className="text-gray-500">...</span>
                   )}
                   {isGeneratingSummary && summaryContent && (
                     <span className="inline-block w-1 h-3 bg-white/50 ml-0.5 animate-pulse" />
                   )}
-                </p>
+                </div>
               )}
 
               {/* Resposta sendo gerada (streaming durante pergunta) */}
               {isGeneratingSummary && summaryChatHistory.length > 0 && (
                 <div className="mb-4">
-                  <p className="text-white text-xs leading-relaxed whitespace-pre-wrap">
-                    {summaryContent || (
-                      <span className="text-gray-500">...</span>
-                    )}
-                    {summaryContent && (
-                      <span className="inline-block w-1 h-3 bg-white/50 ml-0.5 animate-pulse" />
-                    )}
-                  </p>
+                  {summaryContent ? (
+                    <LightMarkdown content={summaryContent} />
+                  ) : (
+                    <span className="text-gray-500">...</span>
+                  )}
+                  {summaryContent && (
+                    <span className="inline-block w-1 h-3 bg-white/50 ml-0.5 animate-pulse" />
+                  )}
                 </div>
               )}
               <div ref={summaryEndRef} />

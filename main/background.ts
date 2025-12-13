@@ -502,6 +502,12 @@ ipcMain.on('set-always-on-top', (event, enabled: boolean) => {
   }
 });
 
+// Copy to clipboard
+ipcMain.handle('copy-to-clipboard', async (_, text: string) => {
+  clipboard.writeText(text);
+  return true;
+});
+
 let settingsWindow: BrowserWindow | null = null;
 
 ipcMain.on('open-settings', async () => {

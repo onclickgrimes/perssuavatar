@@ -60,6 +60,7 @@ const handler = {
   openSettings: () => ipcRenderer.send('open-settings'),
   setContentProtection: (enabled: boolean) => ipcRenderer.send('set-content-protection', enabled),
   setAlwaysOnTop: (enabled: boolean) => ipcRenderer.send('set-always-on-top', enabled),
+  copyToClipboard: (text: string) => ipcRenderer.invoke('copy-to-clipboard', text),
   getScreenSources: () => ipcRenderer.invoke('get-screen-sources'),
   analyzeVideo: (buffer: ArrayBuffer) => ipcRenderer.send('analyze-video', buffer),
   onControlRecording: (callback: (action: 'start' | 'stop') => void) => {
