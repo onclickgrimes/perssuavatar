@@ -182,13 +182,6 @@ const handler = {
     generate: (transcription: Array<{ speaker: string; text: string }>) => 
       ipcRenderer.invoke('summary:generate', transcription),
     
-    // Fazer pergunta sobre a transcrição (streaming)
-    ask: (data: { 
-      transcription: Array<{ speaker: string; text: string }>; 
-      question: string; 
-      previousSummary: string | null 
-    }) => ipcRenderer.invoke('summary:ask', data),
-    
     // Abortar geração em andamento
     abort: () => ipcRenderer.invoke('summary:abort'),
     

@@ -175,7 +175,6 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   // Estados para a aba de Resumo
   const [summaryContent, setSummaryContent] = useState<string>('');
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
-  const [summaryQuestion, setSummaryQuestion] = useState('');
   const [summaryChatHistory, setSummaryChatHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
   const [selectedAssistantName, setSelectedAssistantName] = useState<string>('Carregando...');
   
@@ -368,14 +367,18 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       const needsGeneration = newMessagesCount >= 2 || (lastProcessedMessageCount.current === 0 && messages.length >= 1);
       if (!needsGeneration) return;
 
-      console.log(`[TranscriptionWindow] Gerando feedback automático (${newMessagesCount} novas mensagens)`);
+      // Pegar apenas as mensagens NOVAS (a partir do último índice processado)
+      const startIndex = lastProcessedMessageCount.current;
+      const newMessages = messages.slice(startIndex);
+      
+      console.log(`[TranscriptionWindow] Gerando feedback (${newMessages.length} novas mensagens, índice ${startIndex}-${messages.length})`);
       
       setIsGeneratingSummary(true);
       setSummaryContent('');
       
       try {
-        // Converter mensagens para o formato esperado
-        const transcription = messages.map(m => ({
+        // Converter apenas as mensagens NOVAS para o formato esperado
+        const transcription = newMessages.map(m => ({
           speaker: m.speaker,
           text: m.text
         }));
@@ -383,16 +386,18 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
         const result = await window.electron.summary.generate(transcription);
         
         if (result.success) {
-          // Atualizar contagem de mensagens processadas
-          lastProcessedMessageCount.current = messages.length;
-          
           // Só adicionar ao histórico se tiver conteúdo (IA pode ignorar conversas triviais)
           if (result.result && result.result.trim().length > 0) {
             setSummaryChatHistory(prev => [...prev, { 
               role: 'assistant', 
               content: result.result 
             }]);
+            // Resetar o contador - próximas análises começam do índice atual
+            lastProcessedMessageCount.current = messages.length;
+            console.log(`[TranscriptionWindow] Resumo gerado! Próxima análise começa do índice ${messages.length}`);
           } else {
+            // Conversa ignorada, mas ainda atualiza o contador para não reprocessar
+            lastProcessedMessageCount.current = messages.length;
             console.log('[TranscriptionWindow] Conversa ignorada pela IA (não relevante)');
           }
           setSummaryContent('');
@@ -614,51 +619,6 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     handleClose();
   };
 
-  // Fazer pergunta sobre a transcrição
-  const handleAskQuestion = async () => {
-    if (!window.electron?.summary || !summaryQuestion.trim()) return;
-    
-    const question = summaryQuestion.trim();
-    setSummaryQuestion('');
-    
-    // Adicionar pergunta ao histórico
-    setSummaryChatHistory(prev => [...prev, { role: 'user', content: question }]);
-    
-    setIsGeneratingSummary(true);
-    setSummaryContent('');
-    
-    try {
-      console.log('[TranscriptionWindow] Fazendo pergunta:', question);
-      
-      // Converter mensagens para o formato esperado
-      const transcription = messages.map(m => ({
-        speaker: m.speaker,
-        text: m.text
-      }));
-      
-      const result = await window.electron.summary.ask({
-        transcription,
-        question,
-        previousSummary: summaryChatHistory.length > 0 
-          ? summaryChatHistory.filter(m => m.role === 'assistant').map(m => m.content).join('\n')
-          : null
-      });
-      
-      if (result.success) {
-        // Adicionar resposta ao histórico
-        setSummaryChatHistory(prev => [...prev, { role: 'assistant', content: result.result }]);
-      } else {
-        console.error('[TranscriptionWindow] Erro ao responder pergunta:', result.error);
-        setSummaryContent(`Erro: ${result.error}`);
-      }
-    } catch (error: any) {
-      console.error('[TranscriptionWindow] Erro ao responder pergunta:', error);
-      setSummaryContent(`Erro: ${error.message}`);
-    } finally {
-      setIsGeneratingSummary(false);
-    }
-  };
-
   // Abortar geração em andamento
   const handleAbortSummary = () => {
     window.electron?.summary?.abort();
@@ -857,40 +817,15 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               <div ref={summaryEndRef} />
             </div>
 
-            {/* Input de Perguntas - Minimalista */}
-            {(summaryContent || summaryChatHistory.length > 0) && (
-              <div className="px-3 py-2 bg-black">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={summaryQuestion}
-                    onChange={(e) => setSummaryQuestion(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleAskQuestion()}
-                    placeholder="Perguntar..."
-                    className="flex-1 px-3 py-2 bg-[#111] border border-[#222] rounded text-xs text-white placeholder-gray-600 focus:outline-none focus:border-gray-500"
-                    disabled={isGeneratingSummary}
-                  />
-                  {isGeneratingSummary ? (
-                    <button
-                      onClick={handleAbortSummary}
-                      className="px-3 py-2 text-gray-400 text-xs hover:text-white transition-colors"
-                    >
-                      ×
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handleAskQuestion}
-                      disabled={!summaryQuestion.trim()}
-                      className={`px-3 py-2 text-xs transition-colors ${
-                        !summaryQuestion.trim()
-                          ? 'text-gray-600 cursor-not-allowed'
-                          : 'text-white hover:text-gray-300'
-                      }`}
-                    >
-                      →
-                    </button>
-                  )}
-                </div>
+            {/* Botão de parar geração */}
+            {isGeneratingSummary && (
+              <div className="px-3 py-2 bg-black flex justify-center">
+                <button
+                  onClick={handleAbortSummary}
+                  className="px-4 py-1 text-gray-400 text-xs hover:text-white transition-colors"
+                >
+                  × Parar
+                </button>
               </div>
             )}
           </div>

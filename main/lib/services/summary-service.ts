@@ -213,33 +213,47 @@ export class SummaryService extends EventEmitter {
             // Construir o prompt baseado no assistente
             const systemPrompt = assistant.systemPrompt || '';
 
-            // Prompt simplificado para gerar resumos curtos e focados
-            const summaryPrompt = `
-**CONTEXTO DO ASSISTENTE:**
-${systemPrompt}
+            // Instrução de relevância dinâmica - a IA analisa o prompt e decide se a conversa é relevante
+            const relevanceInstruction = `
+**REGRA CRÍTICA - AVALIAÇÃO DE RELEVÂNCIA CONTEXTUAL:**
+
+Você é um assistente com um propósito específico definido acima. Antes de gerar qualquer resposta, você DEVE:
+
+1. **IDENTIFICAR SUA PERSONA E FOCO**: Analise o prompt do sistema acima e identifique:
+   - Qual é sua especialidade/área de atuação
+   - Que tipo de conteúdo você deve responder
+   - Qual é o propósito principal da sua existência
+
+2. **AVALIAR A RELEVÂNCIA DA CONVERSA**: Verifique se a transcrição contém conteúdo que:
+   - Se encaixa na sua área de especialidade
+   - Merece uma resposta baseada no seu propósito
+   - É substancial o suficiente (não apenas saudações ou ruído)
+
+3. **DECIDIR**: 
+   - Se a conversa NÃO for relevante para seu propósito/especialidade → Responda APENAS: [IGNORAR]
+   - Se a conversa FOR relevante → Gere seu feedback normalmente
+
+**EXEMPLOS DE QUANDO IGNORAR:**
+- Saudações simples (oi, olá, bom dia) - sempre ignorar
+- Conversas sobre assuntos fora da sua especialidade
+- Ruídos, transcrições sem sentido, ou falas triviais
+- Qualquer coisa que não se beneficiaria do seu conhecimento específico
+
+**LEMBRE-SE:** Você só deve responder quando puder agregar valor real baseado na sua persona e expertise definidas no prompt.
+`;
+
+            const fullPrompt = `${systemPrompt}
+
+${relevanceInstruction}
 
 ---
 
-**SUA TAREFA:**
-1. Analise o prompt acima e identifique qual é o TEMA/ASSUNTO focal desse assistente.
-2. Verifique se a transcrição abaixo contém algo relevante para esse tema.
-3. Se NÃO for relevante (saudações, ruídos, assuntos fora do tema) → Responda APENAS: [IGNORAR]
-4. Se FOR relevante → Gere uma BREVE explicação ou insight sobre o assunto discutido.
-
-**REGRAS DO RESUMO:**
-- Máximo 5 linhas
-- Seja direto e objetivo
-- Foque apenas no que é relevante para o tema do assistente
-- Não repita o que foi dito, agregue valor
-
----
-
-**TRANSCRIÇÃO:**
+**TRANSCRIÇÃO DA CONVERSA:**
 ${transcriptionText}
 
 ---
 
-**RESPOSTA (máximo 5 linhas, ou [IGNORAR]):**`;
+**SUA RESPOSTA (ou [IGNORAR] se não for relevante para sua especialidade):**`;
 
             let result = '';
             let isIgnored = false;
@@ -261,7 +275,7 @@ ${transcriptionText}
                 }
             };
 
-            await this.generateContent(summaryPrompt, wrappedOnChunk);
+            await this.generateContent(fullPrompt, wrappedOnChunk);
 
             // Se foi ignorado, retornar vazio
             if (isIgnored || result.trim() === '[IGNORAR]' || result.trim().startsWith('[IGNORAR]')) {
@@ -278,86 +292,6 @@ ${transcriptionText}
                 return '';
             }
             console.error('[SummaryService] Erro ao gerar resumo:', error);
-            throw error;
-        } finally {
-            this.abortController = null;
-        }
-    }
-
-    /**
-     * Gera resposta para uma pergunta sobre a transcrição
-     * @param transcription Array de mensagens da transcrição
-     * @param question Pergunta do usuário
-     * @param previousSummary Resumo anterior gerado (se houver)
-     * @param onChunk Callback chamado para cada chunk de texto gerado
-     */
-    public async askQuestion(
-        transcription: Array<{ speaker: string; text: string }>,
-        question: string,
-        previousSummary: string | null,
-        onChunk: (chunk: string) => void
-    ): Promise<string> {
-        // Abortar qualquer geração anterior em andamento
-        this.abort();
-        
-        this.abortController = new AbortController();
-        
-        try {
-            const assistant = this.getSelectedAssistant();
-            
-            if (!assistant) {
-                throw new Error("Nenhum assistente encontrado");
-            }
-
-            const provider = this.getAIProvider();
-            console.log(`[SummaryService] Respondendo pergunta com assistente: ${assistant.name} (Provider: ${provider})`);
-
-            // Formatar a transcrição para o prompt
-            const transcriptionText = transcription
-                .map(msg => `${msg.speaker}: ${msg.text}`)
-                .join('\n');
-
-            // Construir o prompt
-            const systemPrompt = assistant.systemPrompt || '';
-            const behaviorPrompt = assistant.avatarBehaviorPrompt || '';
-
-            let contextSection = '';
-            if (previousSummary) {
-                contextSection = `**RESUMO ANTERIOR:**
-${previousSummary}
-
-`;
-            }
-
-            const fullPrompt = `${systemPrompt}
-
-${behaviorPrompt}
-
----
-
-**TRANSCRIÇÃO DA CONVERSA:**
-${transcriptionText}
-
-${contextSection}---
-
-**PERGUNTA DO USUÁRIO:**
-${question}
-
----
-
-**SUA RESPOSTA:**`;
-
-            const result = await this.generateContent(fullPrompt, onChunk);
-
-            console.log(`[SummaryService] Resposta gerada com sucesso (${result.length} caracteres)`);
-            return result;
-
-        } catch (error: any) {
-            if (error.name === 'AbortError') {
-                console.log('[SummaryService] Geração abortada');
-                return '';
-            }
-            console.error('[SummaryService] Erro ao responder pergunta:', error);
             throw error;
         } finally {
             this.abortController = null;

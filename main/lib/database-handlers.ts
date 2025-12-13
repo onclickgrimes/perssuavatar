@@ -186,34 +186,6 @@ export function registerDatabaseHandlers() {
     }
   });
   
-  ipcMain.handle('summary:ask', async (event, data: { 
-    transcription: Array<{ speaker: string; text: string }>;
-    question: string;
-    previousSummary: string | null;
-  }) => {
-    const summaryService = getSummaryService();
-    const senderWindow = BrowserWindow.fromWebContents(event.sender);
-    
-    try {
-      const result = await summaryService.askQuestion(
-        data.transcription,
-        data.question,
-        data.previousSummary,
-        (chunk) => {
-          // Enviar chunk para o renderer via IPC
-          if (senderWindow && !senderWindow.isDestroyed()) {
-            senderWindow.webContents.send('summary:chunk', chunk);
-          }
-        }
-      );
-      
-      return { success: true, result };
-    } catch (error: any) {
-      console.error('[SummaryHandler] Erro ao responder pergunta:', error);
-      return { success: false, error: error.message };
-    }
-  });
-  
   ipcMain.handle('summary:abort', () => {
     const summaryService = getSummaryService();
     summaryService.abort();
@@ -274,7 +246,6 @@ export function unregisterDatabaseHandlers() {
     // Summary Service
     'summary:get-selected-assistant',
     'summary:generate',
-    'summary:ask',
     'summary:abort'
   ];
   

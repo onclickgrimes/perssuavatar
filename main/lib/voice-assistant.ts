@@ -417,7 +417,6 @@ export class VoiceAssistant extends EventEmitter {
         const assistants = getAssistants();
         const selectedAssistantId = settings.selectedAssistant || 'general'; // Default: assistente geral
 
-        console.log(`[VoiceAssistant] Usando assistente: ${selectedAssistantId}`);
         // console.log(`[VoiceAssistant] Assistentes disponiveis: ${JSON.stringify(assistants)}`);
         // console.log(`[VoiceAssistant] Configuracoes do usuario: ${JSON.stringify(settings)}`);
         
@@ -434,6 +433,7 @@ export class VoiceAssistant extends EventEmitter {
             selectedAssistant = assistants[0];
         }
         
+        console.log(`[VoiceAssistant] Usando assistente: ${selectedAssistant.name}`);
         if (selectedAssistant) {
             console.log(`[VoiceAssistant] Usando prompt dinamico do assistente: ${selectedAssistant.name} (ID: ${selectedAssistant.id})`);
         } else {
