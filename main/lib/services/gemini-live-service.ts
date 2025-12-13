@@ -248,7 +248,7 @@ export class GeminiLiveService extends EventEmitter {
                 // ❌ SKIP AUDIO if in transcribe-only mode
                 if (part.inlineData) {
                     if (this.transcribeOnlyMode) {
-                        console.log('[GeminiLive] Transcribe-only mode: skipping audio emission');
+                        // console.log('[GeminiLive] Transcribe-only mode: skipping audio emission');
                         return; // Skip audio chunks
                     }
 

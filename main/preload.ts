@@ -171,6 +171,36 @@ const handler = {
   },
   
   // ========================================
+  // SUMMARY SERVICE (Assistente na Transcrição)
+  // ========================================
+  
+  summary: {
+    // Obter assistente atualmente selecionado
+    getSelectedAssistant: () => ipcRenderer.invoke('summary:get-selected-assistant'),
+    
+    // Gerar resumo da transcrição (streaming)
+    generate: (transcription: Array<{ speaker: string; text: string }>) => 
+      ipcRenderer.invoke('summary:generate', transcription),
+    
+    // Fazer pergunta sobre a transcrição (streaming)
+    ask: (data: { 
+      transcription: Array<{ speaker: string; text: string }>; 
+      question: string; 
+      previousSummary: string | null 
+    }) => ipcRenderer.invoke('summary:ask', data),
+    
+    // Abortar geração em andamento
+    abort: () => ipcRenderer.invoke('summary:abort'),
+    
+    // Listener para chunks de streaming
+    onChunk: (callback: (chunk: string) => void) => {
+      const subscription = (_: any, chunk: string) => callback(chunk);
+      ipcRenderer.on('summary:chunk', subscription);
+      return () => ipcRenderer.removeListener('summary:chunk', subscription);
+    }
+  },
+  
+  // ========================================
   // DESKTOP AUDIO TRANSCRIPTION
   // ========================================
   

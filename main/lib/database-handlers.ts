@@ -1,5 +1,6 @@
-import { ipcMain } from 'electron';
+import { ipcMain, BrowserWindow } from 'electron';
 import * as db from './database';
+import { getSummaryService } from './services/summary-service';
 
 /**
  * Registra todos os handlers IPC relacionados ao banco de dados
@@ -157,6 +158,68 @@ export function registerDatabaseHandlers() {
     return true;
   });
   
+  // ===============================================
+  // SUMMARY SERVICE
+  // ===============================================
+  
+  ipcMain.handle('summary:get-selected-assistant', () => {
+    const summaryService = getSummaryService();
+    return summaryService.getSelectedAssistant();
+  });
+  
+  ipcMain.handle('summary:generate', async (event, transcription: Array<{ speaker: string; text: string }>) => {
+    const summaryService = getSummaryService();
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    
+    try {
+      const result = await summaryService.generateSummary(transcription, (chunk) => {
+        // Enviar chunk para o renderer via IPC
+        if (senderWindow && !senderWindow.isDestroyed()) {
+          senderWindow.webContents.send('summary:chunk', chunk);
+        }
+      });
+      
+      return { success: true, result };
+    } catch (error: any) {
+      console.error('[SummaryHandler] Erro ao gerar resumo:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  ipcMain.handle('summary:ask', async (event, data: { 
+    transcription: Array<{ speaker: string; text: string }>;
+    question: string;
+    previousSummary: string | null;
+  }) => {
+    const summaryService = getSummaryService();
+    const senderWindow = BrowserWindow.fromWebContents(event.sender);
+    
+    try {
+      const result = await summaryService.askQuestion(
+        data.transcription,
+        data.question,
+        data.previousSummary,
+        (chunk) => {
+          // Enviar chunk para o renderer via IPC
+          if (senderWindow && !senderWindow.isDestroyed()) {
+            senderWindow.webContents.send('summary:chunk', chunk);
+          }
+        }
+      );
+      
+      return { success: true, result };
+    } catch (error: any) {
+      console.error('[SummaryHandler] Erro ao responder pergunta:', error);
+      return { success: false, error: error.message };
+    }
+  });
+  
+  ipcMain.handle('summary:abort', () => {
+    const summaryService = getSummaryService();
+    summaryService.abort();
+    return true;
+  });
+  
   console.log('✅ Database IPC handlers registered');
 }
 
@@ -206,7 +269,13 @@ export function unregisterDatabaseHandlers() {
     'db:get-stats',
     'db:export',
     'db:get-path',
-    'db:clear-all'
+    'db:clear-all',
+    
+    // Summary Service
+    'summary:get-selected-assistant',
+    'summary:generate',
+    'summary:ask',
+    'summary:abort'
   ];
   
   handlers.forEach(handler => {

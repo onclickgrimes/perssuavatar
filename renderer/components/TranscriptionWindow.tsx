@@ -172,6 +172,13 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const [showSourceSelector, setShowSourceSelector] = useState(false);
   const [selectedAudioSourceId, setSelectedAudioSourceId] = useState<string | null>(null);
   
+  // Estados para a aba de Resumo
+  const [summaryContent, setSummaryContent] = useState<string>('');
+  const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
+  const [summaryQuestion, setSummaryQuestion] = useState('');
+  const [summaryChatHistory, setSummaryChatHistory] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [selectedAssistantName, setSelectedAssistantName] = useState<string>('Carregando...');
+  
   const chatEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const resizeHandleRef = useRef<HTMLDivElement>(null);
@@ -186,6 +193,11 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
 
   // Buffer de transcrições do modelo (avatar) para comparação
   const modelTranscriptionBuffer = useRef<ModelTranscription[]>([]);
+
+  // Refs para geração automática de resumo
+  const autoSummaryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const lastProcessedMessageCount = useRef<number>(0);
+  const summaryEndRef = useRef<HTMLDivElement>(null);
 
   // Hook para transcrição de áudio do desktop (OUTROS)
   const { startTranscribing, stopTranscribing, changeAudioSource, isTranscribing, status } = useDesktopAudioTranscriber({
@@ -281,6 +293,36 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     };
   }, []);
 
+  // Carregar assistente selecionado e configurar listener de chunks
+  useEffect(() => {
+    if (!window.electron?.summary) return;
+
+    // Carregar nome do assistente
+    const loadAssistant = async () => {
+      try {
+        const assistant = await window.electron.summary.getSelectedAssistant();
+        if (assistant) {
+          setSelectedAssistantName(assistant.name);
+          console.log('[TranscriptionWindow] Assistente carregado:', assistant.name);
+        }
+      } catch (error) {
+        console.error('[TranscriptionWindow] Erro ao carregar assistente:', error);
+        setSelectedAssistantName('Assistente');
+      }
+    };
+
+    loadAssistant();
+
+    // Configurar listener para chunks de streaming
+    const unsubscribeChunk = window.electron.summary.onChunk((chunk) => {
+      setSummaryContent(prev => prev + chunk);
+    });
+
+    return () => {
+      unsubscribeChunk?.();
+    };
+  }, []);
+
   // Trocar fonte de áudio sem desconectar Deepgram
   useEffect(() => {
     if (isTranscribing && changeAudioSource) {
@@ -293,6 +335,83 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  // Auto scroll na aba de resumo quando novo conteúdo chega
+  useEffect(() => {
+    if (activeTab === 'summary') {
+      summaryEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [summaryContent, summaryChatHistory, activeTab]);
+
+  // Geração automática de resumo/feedback quando novas mensagens chegam
+  useEffect(() => {
+    if (!window.electron?.summary) return;
+    if (isPaused) return;
+    if (messages.length === 0) return;
+    
+    // Só gera se tem mensagens novas desde a última geração
+    const newMessagesCount = messages.length - lastProcessedMessageCount.current;
+    if (newMessagesCount <= 0) return;
+
+    // Limpar timeout anterior
+    if (autoSummaryTimeoutRef.current) {
+      clearTimeout(autoSummaryTimeoutRef.current);
+    }
+
+    // Aguardar 4 segundos de "silêncio" antes de gerar feedback
+    // Isso permite que a conversa se desenvolva antes de interromper com análise
+    autoSummaryTimeoutRef.current = setTimeout(async () => {
+      // Verificar novamente se ainda não está gerando
+      if (isGeneratingSummary) return;
+      
+      // Só gerar se tem pelo menos 2 mensagens novas ou é a primeira geração
+      const needsGeneration = newMessagesCount >= 2 || (lastProcessedMessageCount.current === 0 && messages.length >= 1);
+      if (!needsGeneration) return;
+
+      console.log(`[TranscriptionWindow] Gerando feedback automático (${newMessagesCount} novas mensagens)`);
+      
+      setIsGeneratingSummary(true);
+      setSummaryContent('');
+      
+      try {
+        // Converter mensagens para o formato esperado
+        const transcription = messages.map(m => ({
+          speaker: m.speaker,
+          text: m.text
+        }));
+        
+        const result = await window.electron.summary.generate(transcription);
+        
+        if (result.success) {
+          // Atualizar contagem de mensagens processadas
+          lastProcessedMessageCount.current = messages.length;
+          
+          // Só adicionar ao histórico se tiver conteúdo (IA pode ignorar conversas triviais)
+          if (result.result && result.result.trim().length > 0) {
+            setSummaryChatHistory(prev => [...prev, { 
+              role: 'assistant', 
+              content: result.result 
+            }]);
+          } else {
+            console.log('[TranscriptionWindow] Conversa ignorada pela IA (não relevante)');
+          }
+          setSummaryContent('');
+        } else {
+          console.error('[TranscriptionWindow] Erro na geração automática:', result.error);
+        }
+      } catch (error) {
+        console.error('[TranscriptionWindow] Erro na geração automática:', error);
+      } finally {
+        setIsGeneratingSummary(false);
+      }
+    }, 4000); // 4 segundos de debounce
+
+    return () => {
+      if (autoSummaryTimeoutRef.current) {
+        clearTimeout(autoSummaryTimeoutRef.current);
+      }
+    };
+  }, [messages, isPaused, isGeneratingSummary]);
 
   const addMessage = (speaker: 'VOCÊ' | 'OUTROS', text: string) => {
     // Remove avatar tags from transcription display
@@ -495,6 +614,57 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     handleClose();
   };
 
+  // Fazer pergunta sobre a transcrição
+  const handleAskQuestion = async () => {
+    if (!window.electron?.summary || !summaryQuestion.trim()) return;
+    
+    const question = summaryQuestion.trim();
+    setSummaryQuestion('');
+    
+    // Adicionar pergunta ao histórico
+    setSummaryChatHistory(prev => [...prev, { role: 'user', content: question }]);
+    
+    setIsGeneratingSummary(true);
+    setSummaryContent('');
+    
+    try {
+      console.log('[TranscriptionWindow] Fazendo pergunta:', question);
+      
+      // Converter mensagens para o formato esperado
+      const transcription = messages.map(m => ({
+        speaker: m.speaker,
+        text: m.text
+      }));
+      
+      const result = await window.electron.summary.ask({
+        transcription,
+        question,
+        previousSummary: summaryChatHistory.length > 0 
+          ? summaryChatHistory.filter(m => m.role === 'assistant').map(m => m.content).join('\n')
+          : null
+      });
+      
+      if (result.success) {
+        // Adicionar resposta ao histórico
+        setSummaryChatHistory(prev => [...prev, { role: 'assistant', content: result.result }]);
+      } else {
+        console.error('[TranscriptionWindow] Erro ao responder pergunta:', result.error);
+        setSummaryContent(`Erro: ${result.error}`);
+      }
+    } catch (error: any) {
+      console.error('[TranscriptionWindow] Erro ao responder pergunta:', error);
+      setSummaryContent(`Erro: ${error.message}`);
+    } finally {
+      setIsGeneratingSummary(false);
+    }
+  };
+
+  // Abortar geração em andamento
+  const handleAbortSummary = () => {
+    window.electron?.summary?.abort();
+    setIsGeneratingSummary(false);
+  };
+
   return (
     <div className="w-full h-screen flex flex-col p-2">
       {/* Main Container */}
@@ -592,34 +762,139 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
           </div>
         </div>
 
-        {/* Chat Messages */}
-        <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 bg-black" style={{
-          scrollbarWidth: 'thin',
-          scrollbarColor: '#1a1a1a #0a0a0a'
-        }}>
-          {messages.map((message) => (
-            <div
-              key={message.id}
-              className={`flex ${message.speaker === 'VOCÊ' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div className={`max-w-[85%] ${message.speaker === 'VOCÊ' ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
-                <span className={`text-[9px] font-semibold tracking-wide uppercase ${
-                  message.speaker === 'VOCÊ' ? 'text-blue-400' : 'text-gray-500'
-                }`}>
-                  {message.speaker}
-                </span>
-                <div className={`px-2.5 py-1.5 rounded-md text-xs leading-snug ${
-                  message.speaker === 'VOCÊ'
-                    ? 'bg-blue-600 text-white'
-                    : 'bg-[#1f1f1f] text-white'
-                }`}>
-                  {message.text}
+        {/* Content Area - Condicional baseado na aba ativa */}
+        {activeTab === 'transcription' ? (
+          /* Chat Messages - Aba Transcrição */
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 bg-black" style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: '#1a1a1a #0a0a0a'
+          }}>
+            {messages.map((message) => (
+              <div
+                key={message.id}
+                className={`flex ${message.speaker === 'VOCÊ' ? 'justify-end' : 'justify-start'}`}
+              >
+                <div className={`max-w-[85%] ${message.speaker === 'VOCÊ' ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
+                  <span className={`text-[9px] font-semibold tracking-wide uppercase ${
+                    message.speaker === 'VOCÊ' ? 'text-blue-400' : 'text-gray-500'
+                  }`}>
+                    {message.speaker}
+                  </span>
+                  <div className={`px-2.5 py-1.5 rounded-md text-xs leading-snug ${
+                    message.speaker === 'VOCÊ'
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-[#1f1f1f] text-white'
+                  }`}>
+                    {message.text}
+                  </div>
                 </div>
               </div>
+            ))}
+            <div ref={chatEndRef} />
+          </div>
+        ) : (
+          /* Summary Tab - Aba Resumo - Interface Minimalista */
+          <div className="flex-1 flex flex-col overflow-hidden bg-black">
+            {/* Área de Conteúdo do Resumo */}
+            <div className="flex-1 overflow-y-auto px-4 py-3" style={{
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#1a1a1a #000'
+            }}>
+              {/* Estado Inicial - Aguardando */}
+              {!summaryContent && summaryChatHistory.length === 0 && !isGeneratingSummary && (
+                <div className="flex items-center justify-center h-full">
+                  <p className="text-gray-500 text-xs">
+                    {messages.length === 0 
+                      ? 'Aguardando transcrição...' 
+                      : 'Analisando conversa...'
+                    }
+                  </p>
+                </div>
+              )}
+
+              {/* Histórico de Chat */}
+              {summaryChatHistory.map((chat, index) => (
+                <div key={index} className="mb-4">
+                  {chat.role === 'user' ? (
+                    <div className="text-right">
+                      <p className="text-gray-400 text-xs leading-relaxed whitespace-pre-wrap inline-block text-left max-w-[90%]">
+                        → {chat.content}
+                      </p>
+                    </div>
+                  ) : (
+                    <p className="text-white text-xs leading-relaxed whitespace-pre-wrap">
+                      {chat.content}
+                    </p>
+                  )}
+                </div>
+              ))}
+
+              {/* Resumo sendo gerado (streaming) */}
+              {(summaryContent || isGeneratingSummary) && summaryChatHistory.length === 0 && (
+                <p className="text-white text-xs leading-relaxed whitespace-pre-wrap">
+                  {summaryContent || (
+                    <span className="text-gray-500">...</span>
+                  )}
+                  {isGeneratingSummary && summaryContent && (
+                    <span className="inline-block w-1 h-3 bg-white/50 ml-0.5 animate-pulse" />
+                  )}
+                </p>
+              )}
+
+              {/* Resposta sendo gerada (streaming durante pergunta) */}
+              {isGeneratingSummary && summaryChatHistory.length > 0 && (
+                <div className="mb-4">
+                  <p className="text-white text-xs leading-relaxed whitespace-pre-wrap">
+                    {summaryContent || (
+                      <span className="text-gray-500">...</span>
+                    )}
+                    {summaryContent && (
+                      <span className="inline-block w-1 h-3 bg-white/50 ml-0.5 animate-pulse" />
+                    )}
+                  </p>
+                </div>
+              )}
+              <div ref={summaryEndRef} />
             </div>
-          ))}
-          <div ref={chatEndRef} />
-        </div>
+
+            {/* Input de Perguntas - Minimalista */}
+            {(summaryContent || summaryChatHistory.length > 0) && (
+              <div className="px-3 py-2 bg-black">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={summaryQuestion}
+                    onChange={(e) => setSummaryQuestion(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && handleAskQuestion()}
+                    placeholder="Perguntar..."
+                    className="flex-1 px-3 py-2 bg-[#111] border border-[#222] rounded text-xs text-white placeholder-gray-600 focus:outline-none focus:border-gray-500"
+                    disabled={isGeneratingSummary}
+                  />
+                  {isGeneratingSummary ? (
+                    <button
+                      onClick={handleAbortSummary}
+                      className="px-3 py-2 text-gray-400 text-xs hover:text-white transition-colors"
+                    >
+                      ×
+                    </button>
+                  ) : (
+                    <button
+                      onClick={handleAskQuestion}
+                      disabled={!summaryQuestion.trim()}
+                      className={`px-3 py-2 text-xs transition-colors ${
+                        !summaryQuestion.trim()
+                          ? 'text-gray-600 cursor-not-allowed'
+                          : 'text-white hover:text-gray-300'
+                      }`}
+                    >
+                      →
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Audio Meters Section */}
         <div className="border-t border-[#222] bg-[#0f0f0f] px-4 py-3 flex-shrink-0">
