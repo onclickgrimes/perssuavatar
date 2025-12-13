@@ -25,11 +25,11 @@ export class DeepgramService extends EventEmitter {
         console.log('Iniciando DeepgramService...');
         this.deepgramLive = this.client.listen.live({
             model: "nova-3",
-            language: "pt-BR",
+            language: "multi",
             encoding: 'linear16',
             sample_rate: 16000,
             punctuate: true,
-            endpointing: 300,
+            endpointing: 100,
             interim_results: true,
             vad_events: true,
             utterance_end_ms: 1000
