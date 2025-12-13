@@ -231,29 +231,23 @@ Você é um assistente com um propósito específico definido acima. Antes de ge
 
 3. **DECIDIR**: 
    - Se a conversa NÃO for relevante para seu propósito/especialidade → Responda APENAS: [IGNORAR]
-   - Se a conversa FOR relevante → Gere seu feedback normalmente
 
 **EXEMPLOS DE QUANDO IGNORAR:**
 - Saudações simples (oi, olá, bom dia) - sempre ignorar
-- Conversas sobre assuntos fora da sua especialidade
-- Ruídos, transcrições sem sentido, ou falas triviais
-- Qualquer coisa que não se beneficiaria do seu conhecimento específico
+- Conversas sobre assuntos fora da especialidade do assistente
 
 **LEMBRE-SE:** Você só deve responder quando puder agregar valor real baseado na sua persona e expertise definidas no prompt.
 `;
 
-            const fullPrompt = `${systemPrompt}
-
-${relevanceInstruction}
-
----
-
-**TRANSCRIÇÃO DA CONVERSA:**
-${transcriptionText}
-
----
-
-**SUA RESPOSTA (ou [IGNORAR] se não for relevante para sua especialidade):**`;
+            const fullPrompt = `
+            PROMPT DO ASSISTENTE:
+            ${systemPrompt}
+            ${relevanceInstruction}
+            ---
+            **TRANSCRIÇÃO DA CONVERSA:**
+            ${transcriptionText}
+            ---
+            **SUA RESPOSTA (ou [IGNORAR] se não for relevante para sua especialidade):**`;
 
             let result = '';
             let isIgnored = false;
@@ -274,6 +268,7 @@ ${transcriptionText}
                     onChunk(chunk);
                 }
             };
+            console.log(`[SummaryService] Prompt final: ${fullPrompt}`);
 
             await this.generateContent(fullPrompt, wrappedOnChunk);
 
