@@ -171,6 +171,9 @@ interface LightMarkdownProps {
 
 function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
   const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
+  // Contador global de keys para garantir unicidade
+  const keyCounter = React.useRef(0);
+  const getUniqueKey = (prefix: string) => `${prefix}-${keyCounter.current++}`;
 
   const copyToClipboard = async (text: string, index: number) => {
     try {
@@ -191,23 +194,10 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
   // Syntax highlighting simples para código
   const highlightCode = (line: string): React.ReactNode => {
     const tokens: React.ReactNode[] = [];
-    let remaining = line;
-    let keyIdx = 0;
+    const remaining = line;
 
-    // Palavras-chave de várias linguagens
-    const keywords = /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|static|public|private|protected|interface|type|enum|implements|abstract|readonly|void|null|undefined|true|false|this|super|constructor|get|set|of|in|typeof|instanceof|as|is|def|self|elif|pass|lambda|yield|with|assert|raise|except|print|None|True|False)\b/g;
-    
-    // Strings (aspas simples, duplas e template literals)
-    const stringPattern = /(['"`])(?:(?!\1)[^\\]|\\.)*?\1/g;
-    
-    // Números
-    const numberPattern = /\b(\d+\.?\d*|0x[a-fA-F0-9]+)\b/g;
-    
     // Comentários
     const commentPattern = /(\/\/.*$|#.*$|\/\*[\s\S]*?\*\/)/g;
-    
-    // Funções (nome seguido de parênteses)
-    const functionPattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/g;
 
     // Primeiro, processa comentários (têm precedência)
     const commentMatch = remaining.match(commentPattern);
@@ -219,33 +209,31 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
         const afterComment = remaining.slice(commentIndex + comment.length);
         
         if (beforeComment) {
-          tokens.push(...highlightCodePart(beforeComment, keyIdx));
-          keyIdx += 100;
+          tokens.push(...highlightCodePart(beforeComment));
         }
         tokens.push(
-          <span key={`comment-${keyIdx++}`} className="text-gray-500 italic">{comment}</span>
+          <span key={getUniqueKey('comment')} className="text-gray-500 italic">{comment}</span>
         );
         if (afterComment) {
-          tokens.push(...highlightCodePart(afterComment, keyIdx));
+          tokens.push(...highlightCodePart(afterComment));
         }
         return tokens;
       }
     }
 
-    return highlightCodePart(line, 0);
+    return highlightCodePart(line);
   };
 
-  const highlightCodePart = (line: string, startKey: number): React.ReactNode[] => {
+  const highlightCodePart = (line: string): React.ReactNode[] => {
     const tokens: React.ReactNode[] = [];
     let remaining = line;
-    let keyIdx = startKey;
 
     while (remaining.length > 0) {
       // Strings
       const stringMatch = remaining.match(/^(['"`])(?:(?!\1)[^\\]|\\.)*?\1/);
       if (stringMatch) {
         tokens.push(
-          <span key={`str-${keyIdx++}`} className="text-green-400">{stringMatch[0]}</span>
+          <span key={getUniqueKey('str')} className="text-green-400">{stringMatch[0]}</span>
         );
         remaining = remaining.slice(stringMatch[0].length);
         continue;
@@ -255,7 +243,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       const keywordMatch = remaining.match(/^(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|static|public|private|protected|interface|type|enum|implements|abstract|readonly|void|null|undefined|true|false|this|super|constructor|get|set|of|in|typeof|instanceof|as|is|def|self|elif|pass|lambda|yield|with|assert|raise|except|print|None|True|False)\b/);
       if (keywordMatch) {
         tokens.push(
-          <span key={`kw-${keyIdx++}`} className="text-purple-400">{keywordMatch[0]}</span>
+          <span key={getUniqueKey('kw')} className="text-purple-400">{keywordMatch[0]}</span>
         );
         remaining = remaining.slice(keywordMatch[0].length);
         continue;
@@ -265,7 +253,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       const funcMatch = remaining.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/);
       if (funcMatch) {
         tokens.push(
-          <span key={`fn-${keyIdx++}`} className="text-blue-400">{funcMatch[0]}</span>
+          <span key={getUniqueKey('fn')} className="text-blue-400">{funcMatch[0]}</span>
         );
         remaining = remaining.slice(funcMatch[0].length);
         continue;
@@ -275,7 +263,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       const numMatch = remaining.match(/^(\d+\.?\d*|0x[a-fA-F0-9]+)\b/);
       if (numMatch) {
         tokens.push(
-          <span key={`num-${keyIdx++}`} className="text-yellow-400">{numMatch[0]}</span>
+          <span key={getUniqueKey('num')} className="text-yellow-400">{numMatch[0]}</span>
         );
         remaining = remaining.slice(numMatch[0].length);
         continue;
@@ -285,10 +273,10 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       const propMatch = remaining.match(/^\.([a-zA-Z_][a-zA-Z0-9_]*)/);
       if (propMatch) {
         tokens.push(
-          <span key={`dot-${keyIdx++}`} className="text-gray-300">.</span>
+          <span key={getUniqueKey('dot')} className="text-gray-300">.</span>
         );
         tokens.push(
-          <span key={`prop-${keyIdx++}`} className="text-orange-300">{propMatch[1]}</span>
+          <span key={getUniqueKey('prop')} className="text-orange-300">{propMatch[1]}</span>
         );
         remaining = remaining.slice(propMatch[0].length);
         continue;
@@ -298,7 +286,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       const opMatch = remaining.match(/^([{}()\[\];:,=+\-*/<>!&|?]+)/);
       if (opMatch) {
         tokens.push(
-          <span key={`op-${keyIdx++}`} className="text-gray-400">{opMatch[0]}</span>
+          <span key={getUniqueKey('op')} className="text-gray-400">{opMatch[0]}</span>
         );
         remaining = remaining.slice(opMatch[0].length);
         continue;
@@ -308,7 +296,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       const identMatch = remaining.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
       if (identMatch) {
         tokens.push(
-          <span key={`id-${keyIdx++}`} className="text-cyan-300">{identMatch[0]}</span>
+          <span key={getUniqueKey('id')} className="text-cyan-300">{identMatch[0]}</span>
         );
         remaining = remaining.slice(identMatch[0].length);
         continue;
@@ -316,7 +304,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
 
       // Caracter desconhecido - adiciona como está
       tokens.push(
-        <span key={`char-${keyIdx++}`} className="text-gray-300">{remaining[0]}</span>
+        <span key={getUniqueKey('char')} className="text-gray-300">{remaining[0]}</span>
       );
       remaining = remaining.slice(1);
     }
@@ -325,6 +313,9 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
   };
 
   const parseMarkdown = (text: string) => {
+    // Resetar contador de keys para cada renderização
+    keyCounter.current = 0;
+    
     const elements: React.ReactNode[] = [];
     const lines = text.split('\n');
     let i = 0;
@@ -348,7 +339,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
         const currentIndex = codeBlockIndex++;
         
         elements.push(
-          <div key={`code-${currentIndex}`} className="my-3 rounded-lg overflow-hidden bg-[#0d0d0d] border border-[#222]">
+          <div key={getUniqueKey('codeblock')} className="my-3 rounded-lg overflow-hidden bg-[#0d0d0d] border border-[#222]">
             <div className="flex items-center justify-between px-3 py-1.5 bg-[#161616] border-b border-[#222]">
               <span className="text-[10px] text-gray-500 uppercase tracking-wider font-medium">
                 {language || 'code'}
@@ -400,7 +391,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       // Título H1 (#)
       if (line.startsWith('# ')) {
         elements.push(
-          <h1 key={`h1-${i}`} className="text-lg font-bold text-white mt-4 mb-2 border-b border-[#333] pb-1">
+          <h1 key={getUniqueKey('h1')} className="text-lg font-bold text-white mt-4 mb-2 border-b border-[#333] pb-1">
             {parseInline(line.slice(2))}
           </h1>
         );
@@ -411,7 +402,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       // Título H2 (##)
       if (line.startsWith('## ')) {
         elements.push(
-          <h2 key={`h2-${i}`} className="text-base font-bold text-white mt-3 mb-2">
+          <h2 key={getUniqueKey('h2')} className="text-base font-bold text-white mt-3 mb-2">
             {parseInline(line.slice(3))}
           </h2>
         );
@@ -422,7 +413,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       // Título H3 (###)
       if (line.startsWith('### ')) {
         elements.push(
-          <h3 key={`h3-${i}`} className="text-sm font-bold text-gray-200 mt-2 mb-1">
+          <h3 key={getUniqueKey('h3')} className="text-sm font-bold text-gray-200 mt-2 mb-1">
             {parseInline(line.slice(4))}
           </h3>
         );
@@ -438,7 +429,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
           i++;
         }
         elements.push(
-          <ul key={`ul-${i}`} className="my-2 space-y-1">
+          <ul key={getUniqueKey('ul')} className="my-2 space-y-1">
             {listItems.map((item, idx) => (
               <li key={idx} className="flex items-start gap-2 text-xs text-gray-200">
                 <span className="text-cyan-400 mt-0.5">•</span>
@@ -458,7 +449,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
           i++;
         }
         elements.push(
-          <ol key={`ol-${i}`} className="my-2 space-y-1">
+          <ol key={getUniqueKey('ol')} className="my-2 space-y-1">
             {listItems.map((item, idx) => (
               <li key={idx} className="flex items-start gap-2 text-xs text-gray-200">
                 <span className="text-cyan-400 font-medium min-w-[16px]">{idx + 1}.</span>
@@ -472,14 +463,14 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
 
       // Linha vazia
       if (line.trim() === '') {
-        elements.push(<div key={`br-${i}`} className="h-2" />);
+        elements.push(<div key={getUniqueKey('br')} className="h-2" />);
         i++;
         continue;
       }
 
       // Parágrafo normal
       elements.push(
-        <p key={`p-${i}`} className="text-xs text-gray-200 leading-relaxed my-1">
+        <p key={getUniqueKey('p')} className="text-xs text-gray-200 leading-relaxed my-1">
           {parseInline(line)}
         </p>
       );
@@ -493,18 +484,16 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
   const parseInline = (text: string): React.ReactNode[] => {
     const result: React.ReactNode[] = [];
     let remaining = text;
-    let keyIndex = 0;
 
     while (remaining.length > 0) {
       // Código inline `code`
       const codeMatch = remaining.match(/`([^`]+)`/);
       if (codeMatch && codeMatch.index !== undefined) {
         if (codeMatch.index > 0) {
-          result.push(...parseInlineStyles(remaining.slice(0, codeMatch.index), keyIndex));
-          keyIndex++;
+          result.push(...parseInlineStyles(remaining.slice(0, codeMatch.index)));
         }
         result.push(
-          <code key={`code-${keyIndex++}`} className="px-1.5 py-0.5 bg-[#1a1a1a] text-cyan-300 rounded text-[11px] font-mono">
+          <code key={getUniqueKey('inlinecode')} className="px-1.5 py-0.5 bg-[#1a1a1a] text-cyan-300 rounded text-[11px] font-mono">
             {codeMatch[1]}
           </code>
         );
@@ -513,7 +502,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
       }
 
       // Se não encontrou código inline, processa estilos
-      result.push(...parseInlineStyles(remaining, keyIndex));
+      result.push(...parseInlineStyles(remaining));
       break;
     }
 
@@ -521,10 +510,9 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
   };
 
   // Parse negrito e itálico
-  const parseInlineStyles = (text: string, startKey: number): React.ReactNode[] => {
+  const parseInlineStyles = (text: string): React.ReactNode[] => {
     const result: React.ReactNode[] = [];
     let remaining = text;
-    let keyIndex = startKey;
 
     while (remaining.length > 0) {
       // Negrito **text**
@@ -550,19 +538,19 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
         const { type, match } = firstMatch;
         if ((match.index || 0) > 0) {
           result.push(
-            <span key={`text-${keyIndex++}`}>{remaining.slice(0, match.index)}</span>
+            <span key={getUniqueKey('text')}>{remaining.slice(0, match.index)}</span>
           );
         }
 
         if (type === 'bold') {
           result.push(
-            <strong key={`bold-${keyIndex++}`} className="font-bold text-white">
+            <strong key={getUniqueKey('bold')} className="font-bold text-white">
               {match[1]}
             </strong>
           );
         } else {
           result.push(
-            <em key={`italic-${keyIndex++}`} className="italic text-gray-300">
+            <em key={getUniqueKey('italic')} className="italic text-gray-300">
               {match[1]}
             </em>
           );
@@ -574,7 +562,7 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
 
       // Sem mais matches, adiciona o resto
       if (remaining.length > 0) {
-        result.push(<span key={`text-${keyIndex++}`}>{remaining}</span>);
+        result.push(<span key={getUniqueKey('text')}>{remaining}</span>);
       }
       break;
     }
