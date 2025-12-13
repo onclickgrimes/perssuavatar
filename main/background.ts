@@ -308,6 +308,13 @@ if (isProd) {
                   path: filePath,
                   timestamp: Date.now()
                 });
+                
+                // Se estiver no modo live, envia a imagem para o Gemini Live analisar
+                // (igual ao comportamento de screenshot por comando de voz)
+                if (assistant.getMode() === 'live') {
+                  console.log('📋 Enviando screenshot da clipboard para Gemini Live...');
+                  assistant.sendScreenFrame(base64Data);
+                }
               }
               
               // Cria janela sob demanda e envia screenshot
