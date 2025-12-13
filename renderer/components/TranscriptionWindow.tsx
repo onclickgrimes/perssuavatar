@@ -1139,7 +1139,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
           </div>
 
           {/* Controls */}
-          <div className="flex items-center gap-1 sm:gap-1.5 bg-[#1a1a1a] rounded-lg px-1 sm:px-1.5 py-1 border border-[#2a2a2a] flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <div className="flex items-center gap-1 sm:gap-1.5 bg-[#1a1a1a] rounded-lg px-1 sm:px-1.5 py-1 border border-[#2a2a2a] flex-shrink-0 ml-auto" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
             <button
               onClick={() => setIsPaused(!isPaused)}
               className="w-5 h-5 sm:w-6 sm:h-6 flex items-center justify-center rounded hover:bg-[#252525] text-gray-400 hover:text-white transition-colors"
