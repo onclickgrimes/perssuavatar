@@ -626,6 +626,9 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const autoSummaryTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastProcessedMessageCount = useRef<number>(0);
   const summaryEndRef = useRef<HTMLDivElement>(null);
+  // Buffer de mensagens para análise (empilha até 5, zera após resumo)
+  const summaryMessagesBuffer = useRef<Array<{ speaker: string; text: string }>>([]);
+  const MAX_SUMMARY_BUFFER_SIZE = 5;
 
   // Hook para transcrição de áudio do desktop (OUTROS)
   const { startTranscribing, stopTranscribing, changeAudioSource, isTranscribing, status } = useDesktopAudioTranscriber({
@@ -781,35 +784,46 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     const newMessagesCount = messages.length - lastProcessedMessageCount.current;
     if (newMessagesCount <= 0) return;
 
+    // Adicionar mensagens novas ao buffer
+    const startIndex = lastProcessedMessageCount.current;
+    const newMessages = messages.slice(startIndex);
+    
+    // Adicionar cada nova mensagem ao buffer
+    newMessages.forEach(m => {
+      summaryMessagesBuffer.current.push({
+        speaker: m.speaker,
+        text: m.text
+      });
+      // Manter apenas as últimas MAX_SUMMARY_BUFFER_SIZE mensagens
+      if (summaryMessagesBuffer.current.length > MAX_SUMMARY_BUFFER_SIZE) {
+        summaryMessagesBuffer.current.shift(); // Remove a mais antiga
+      }
+    });
+    
+    // Atualizar o contador de mensagens processadas
+    lastProcessedMessageCount.current = messages.length;
+
     // Limpar timeout anterior
     if (autoSummaryTimeoutRef.current) {
       clearTimeout(autoSummaryTimeoutRef.current);
     }
 
-    // Aguardar 4 segundos de "silêncio" antes de gerar feedback
-    // Isso permite que a conversa se desenvolva antes de interromper com análise
+    // Aguardar 1,5 segundos de "silêncio" antes de gerar feedback
     autoSummaryTimeoutRef.current = setTimeout(async () => {
-      // Verificar novamente se ainda não está gerando
+      // Verificar se ainda não está gerando e se tem mensagens no buffer
       if (isGeneratingSummary) return;
+      if (summaryMessagesBuffer.current.length === 0) return;
       
-      // Gerar se tem pelo menos 1 mensagem nova
-      if (newMessagesCount < 1) return;
-
-      // Pegar apenas as mensagens NOVAS (a partir do último índice processado)
-      const startIndex = lastProcessedMessageCount.current;
-      const newMessages = messages.slice(startIndex);
-      
-      console.log(`[TranscriptionWindow] Gerando feedback (${newMessages.length} novas mensagens, índice ${startIndex}-${messages.length})`);
+      console.log(`[TranscriptionWindow] Gerando feedback (buffer: ${summaryMessagesBuffer.current.length} mensagens)`);
       
       setIsGeneratingSummary(true);
       setSummaryContent('');
       
       try {
-        // Converter apenas as mensagens NOVAS para o formato esperado
-        const transcription = newMessages.map(m => ({
-          speaker: m.speaker,
-          text: m.text
-        }));
+        // Enviar todas as mensagens do buffer concatenadas
+        const transcription = [...summaryMessagesBuffer.current];
+        
+        console.log(`[TranscriptionWindow] Mensagens enviadas para análise:`, transcription.map(m => `${m.speaker}: ${m.text.substring(0, 50)}...`));
         
         const result = await window.electron.summary.generate(transcription);
         
@@ -820,13 +834,12 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               role: 'assistant', 
               content: result.result 
             }]);
-            // Resetar o contador - próximas análises começam do índice atual
-            lastProcessedMessageCount.current = messages.length;
-            console.log(`[TranscriptionWindow] Resumo gerado! Próxima análise começa do índice ${messages.length}`);
+            // ZERAR o buffer após resumo bem-sucedido
+            summaryMessagesBuffer.current = [];
+            console.log(`[TranscriptionWindow] Resumo gerado! Buffer zerado.`);
           } else {
-            // Conversa ignorada, mas ainda atualiza o contador para não reprocessar
-            lastProcessedMessageCount.current = messages.length;
-            console.log('[TranscriptionWindow] Conversa ignorada pela IA (não relevante)');
+            // Conversa ignorada - NÃO zera o buffer, continua acumulando
+            console.log('[TranscriptionWindow] Conversa ignorada pela IA (não relevante) - buffer mantido');
           }
           setSummaryContent('');
         } else {
