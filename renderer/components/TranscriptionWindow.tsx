@@ -600,6 +600,12 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [isOverResizeHandle, setIsOverResizeHandle] = useState(false);
+  
+  // Refs para controle de auto-scroll (só rola se estiver no fim)
+  const transcriptionScrollRef = useRef<HTMLDivElement>(null);
+  const summaryScrollRef = useRef<HTMLDivElement>(null);
+  const isUserAtBottomTranscription = useRef(true);
+  const isUserAtBottomSummary = useRef(true);
 
   // Buffers para acumular fragmentos de transcrição
   const userTranscriptionBuffer = useRef<string>('');
@@ -750,18 +756,6 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     }
   }, [selectedAudioSourceId]);
 
-  // Auto scroll to bottom when new messages arrive
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  // Auto scroll na aba de resumo quando novo conteúdo chega
-  useEffect(() => {
-    if (activeTab === 'summary') {
-      summaryEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }
-  }, [summaryContent, summaryChatHistory, activeTab]);
-
   // Geração automática de resumo/feedback quando novas mensagens chegam
   useEffect(() => {
     if (!window.electron?.summary) return;
@@ -863,6 +857,39 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       timestamp: new Date()
     }]);
   };
+
+  // Handlers de scroll para detectar se usuário está no final
+  const handleTranscriptionScroll = () => {
+    const container = transcriptionScrollRef.current;
+    if (container) {
+      const threshold = 50; // Tolerância de 50px
+      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+      isUserAtBottomTranscription.current = isAtBottom;
+    }
+  };
+
+  const handleSummaryScroll = () => {
+    const container = summaryScrollRef.current;
+    if (container) {
+      const threshold = 50;
+      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+      isUserAtBottomSummary.current = isAtBottom;
+    }
+  };
+
+  // Auto-scroll para transcrições (só se estiver no final)
+  useEffect(() => {
+    if (isUserAtBottomTranscription.current && chatEndRef.current) {
+      chatEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [messages]);
+
+  // Auto-scroll para resumos (só se estiver no final)
+  useEffect(() => {
+    if (isUserAtBottomSummary.current && summaryEndRef.current) {
+      summaryEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [summaryChatHistory, summaryContent]);
 
   // Click-through for transparent areas - usando uma abordagem mais estável
   useEffect(() => {
@@ -1154,10 +1181,15 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
         {/* Content Area - Condicional baseado na aba ativa */}
         {activeTab === 'transcription' ? (
           /* Chat Messages - Aba Transcrição */
-          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2 bg-black" style={{
-            scrollbarWidth: 'thin',
-            scrollbarColor: '#1a1a1a #0a0a0a'
-          }}>
+          <div 
+            ref={transcriptionScrollRef}
+            onScroll={handleTranscriptionScroll}
+            className="flex-1 overflow-y-auto px-3 py-2 space-y-2 bg-black" 
+            style={{
+              scrollbarWidth: 'thin',
+              scrollbarColor: '#1a1a1a #0a0a0a'
+            }}
+          >
             {messages.map((message) => (
               <div
                 key={message.id}
@@ -1185,10 +1217,15 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
           /* Summary Tab - Aba Resumo - Interface Minimalista */
           <div className="flex-1 flex flex-col overflow-hidden bg-black">
             {/* Área de Conteúdo do Resumo */}
-            <div className="flex-1 overflow-y-auto px-4 py-3" style={{
-              scrollbarWidth: 'thin',
-              scrollbarColor: '#1a1a1a #000'
-            }}>
+            <div 
+              ref={summaryScrollRef}
+              onScroll={handleSummaryScroll}
+              className="flex-1 overflow-y-auto px-4 py-3" 
+              style={{
+                scrollbarWidth: 'thin',
+                scrollbarColor: '#1a1a1a #000'
+              }}
+            >
               {/* Estado Inicial - Aguardando */}
               {!summaryContent && summaryChatHistory.length === 0 && !isGeneratingSummary && (
                 <div className="flex items-center justify-center h-full">
