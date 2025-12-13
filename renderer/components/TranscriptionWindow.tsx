@@ -188,6 +188,142 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
     }
   };
 
+  // Syntax highlighting simples para código
+  const highlightCode = (line: string): React.ReactNode => {
+    const tokens: React.ReactNode[] = [];
+    let remaining = line;
+    let keyIdx = 0;
+
+    // Palavras-chave de várias linguagens
+    const keywords = /\b(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|static|public|private|protected|interface|type|enum|implements|abstract|readonly|void|null|undefined|true|false|this|super|constructor|get|set|of|in|typeof|instanceof|as|is|def|self|elif|pass|lambda|yield|with|assert|raise|except|print|None|True|False)\b/g;
+    
+    // Strings (aspas simples, duplas e template literals)
+    const stringPattern = /(['"`])(?:(?!\1)[^\\]|\\.)*?\1/g;
+    
+    // Números
+    const numberPattern = /\b(\d+\.?\d*|0x[a-fA-F0-9]+)\b/g;
+    
+    // Comentários
+    const commentPattern = /(\/\/.*$|#.*$|\/\*[\s\S]*?\*\/)/g;
+    
+    // Funções (nome seguido de parênteses)
+    const functionPattern = /\b([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/g;
+
+    // Primeiro, processa comentários (têm precedência)
+    const commentMatch = remaining.match(commentPattern);
+    if (commentMatch) {
+      const commentIndex = remaining.indexOf(commentMatch[0]);
+      if (commentIndex >= 0) {
+        const beforeComment = remaining.slice(0, commentIndex);
+        const comment = commentMatch[0];
+        const afterComment = remaining.slice(commentIndex + comment.length);
+        
+        if (beforeComment) {
+          tokens.push(...highlightCodePart(beforeComment, keyIdx));
+          keyIdx += 100;
+        }
+        tokens.push(
+          <span key={`comment-${keyIdx++}`} className="text-gray-500 italic">{comment}</span>
+        );
+        if (afterComment) {
+          tokens.push(...highlightCodePart(afterComment, keyIdx));
+        }
+        return tokens;
+      }
+    }
+
+    return highlightCodePart(line, 0);
+  };
+
+  const highlightCodePart = (line: string, startKey: number): React.ReactNode[] => {
+    const tokens: React.ReactNode[] = [];
+    let remaining = line;
+    let keyIdx = startKey;
+
+    while (remaining.length > 0) {
+      // Strings
+      const stringMatch = remaining.match(/^(['"`])(?:(?!\1)[^\\]|\\.)*?\1/);
+      if (stringMatch) {
+        tokens.push(
+          <span key={`str-${keyIdx++}`} className="text-green-400">{stringMatch[0]}</span>
+        );
+        remaining = remaining.slice(stringMatch[0].length);
+        continue;
+      }
+
+      // Palavras-chave
+      const keywordMatch = remaining.match(/^(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|static|public|private|protected|interface|type|enum|implements|abstract|readonly|void|null|undefined|true|false|this|super|constructor|get|set|of|in|typeof|instanceof|as|is|def|self|elif|pass|lambda|yield|with|assert|raise|except|print|None|True|False)\b/);
+      if (keywordMatch) {
+        tokens.push(
+          <span key={`kw-${keyIdx++}`} className="text-purple-400">{keywordMatch[0]}</span>
+        );
+        remaining = remaining.slice(keywordMatch[0].length);
+        continue;
+      }
+
+      // Funções (nome seguido de parênteses)
+      const funcMatch = remaining.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/);
+      if (funcMatch) {
+        tokens.push(
+          <span key={`fn-${keyIdx++}`} className="text-blue-400">{funcMatch[0]}</span>
+        );
+        remaining = remaining.slice(funcMatch[0].length);
+        continue;
+      }
+
+      // Números
+      const numMatch = remaining.match(/^(\d+\.?\d*|0x[a-fA-F0-9]+)\b/);
+      if (numMatch) {
+        tokens.push(
+          <span key={`num-${keyIdx++}`} className="text-yellow-400">{numMatch[0]}</span>
+        );
+        remaining = remaining.slice(numMatch[0].length);
+        continue;
+      }
+
+      // Propriedades (após ponto)
+      const propMatch = remaining.match(/^\.([a-zA-Z_][a-zA-Z0-9_]*)/);
+      if (propMatch) {
+        tokens.push(
+          <span key={`dot-${keyIdx++}`} className="text-gray-300">.</span>
+        );
+        tokens.push(
+          <span key={`prop-${keyIdx++}`} className="text-orange-300">{propMatch[1]}</span>
+        );
+        remaining = remaining.slice(propMatch[0].length);
+        continue;
+      }
+
+      // Operadores e pontuação
+      const opMatch = remaining.match(/^([{}()\[\];:,=+\-*/<>!&|?]+)/);
+      if (opMatch) {
+        tokens.push(
+          <span key={`op-${keyIdx++}`} className="text-gray-400">{opMatch[0]}</span>
+        );
+        remaining = remaining.slice(opMatch[0].length);
+        continue;
+      }
+
+      // Identificadores e outros caracteres
+      const identMatch = remaining.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
+      if (identMatch) {
+        tokens.push(
+          <span key={`id-${keyIdx++}`} className="text-cyan-300">{identMatch[0]}</span>
+        );
+        remaining = remaining.slice(identMatch[0].length);
+        continue;
+      }
+
+      // Caracter desconhecido - adiciona como está
+      tokens.push(
+        <span key={`char-${keyIdx++}`} className="text-gray-300">{remaining[0]}</span>
+      );
+      remaining = remaining.slice(1);
+    }
+
+    return tokens;
+  };
+
   const parseMarkdown = (text: string) => {
     const elements: React.ReactNode[] = [];
     const lines = text.split('\n');
@@ -247,8 +383,8 @@ function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
                       <td className="px-3 py-0.5 text-[10px] text-gray-600 select-none text-right border-r border-[#222] w-8">
                         {lineIdx + 1}
                       </td>
-                      <td className="px-3 py-0.5 text-xs text-cyan-300 font-mono whitespace-pre">
-                        {codeLine}
+                      <td className="px-3 py-0.5 text-xs font-mono whitespace-pre">
+                        {highlightCode(codeLine)}
                       </td>
                     </tr>
                   ))}
