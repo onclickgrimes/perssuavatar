@@ -1,0 +1,71 @@
+/* Animações para o Menu Radial */
+@keyframes radial-appear {
+  from {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes radial-item-appear {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.5);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes radial-pulse {
+  0%, 100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.5;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes radial-ripple {
+  0% {
+    transform: scale(1);
+    opacity: 0.5;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+.radial-menu-container {
+  animation: radial-appear 0.2s ease-out;
+}
+
+.radial-menu-center {
+  animation: radial-pulse 2s ease-in-out infinite;
+}
+
+.radial-menu-item {
+  animation: radial-item-appear 0.3s ease-out forwards;
+  transition: all 0.2s ease-out;
+}
+
+.radial-menu-item:hover {
+  transform: scale(1.15);
+  filter: brightness(1.2);
+}
+
+.radial-menu-ripple {
+  animation: radial-ripple 1s ease-out infinite;
+}
+
+/* Smooth transitions */
+.radial-menu * {
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}

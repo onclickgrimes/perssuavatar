@@ -1275,8 +1275,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
         
         {/* Header */}
         <div 
-          className="h-14 bg-[#0f0f0f] flex items-center justify-center px-2 sm:px-3 gap-2 sm:gap-3 flex-shrink-0 border-b border-[#222]"
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+          className="h-14 bg-[#0f0f0f] flex items-center justify-center px-2 sm:px-3 gap-2 sm:gap-3 flex-shrink-0 border-b border-[#222] window-drag"
         >
           {/* Language Selector foi movido para Configurações */}
 

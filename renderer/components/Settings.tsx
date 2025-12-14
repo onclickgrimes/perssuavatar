@@ -366,10 +366,10 @@ export default function Settings({
             ${isControlled ? 'w-[900px] h-[600px]' : 'absolute right-0 mt-2 w-80'}
         `}>
           {/* Header */}
-          <div className="h-14 border-b border-[#222] flex items-center justify-between px-6 bg-[#0f0f0f] drag">
+          <div className="h-14 border-b border-[#222] flex items-center justify-between px-6 bg-[#0f0f0f] window-drag">
             <h2 className="text-lg font-bold text-white tracking-wide">Configurações</h2>
             {(isControlled && onClose) && (
-              <button onClick={onClose} className="p-1.5 rounded-full bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-colors no-drag">
+              <button onClick={onClose} className="p-1.5 rounded-full bg-red-500/10 hover:bg-red-500 text-red-500 hover:text-white transition-colors no-drag cursor-pointer">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>

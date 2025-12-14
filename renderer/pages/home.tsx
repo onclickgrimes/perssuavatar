@@ -3,6 +3,7 @@ import Avatar from '../components/Avatar';
 import CodePopup from '../components/CodePopup';
 import Settings from '../components/Settings';
 import ActionBar from '../components/ActionBar';
+import RadialMenu from '../components/RadialMenu';
 import { useMicrophone } from '../hooks/useMicrophone';
 
 export default function HomePage() {
@@ -47,6 +48,21 @@ export default function HomePage() {
   const handleOpenSettings = () => {
     // Open modal directly, do NOT toggle action bar
     setIsSettingsOpen(true);
+  };
+
+  const handleOpenHistory = () => {
+    console.log('📜 Histórico clicado (funcionalidade a implementar)');
+    // TODO: Implementar janela de histórico
+  };
+
+  const handleStartListening = async () => {
+    console.log('🎤 Começar a ouvir acionado');
+    await window.electron.openTranscriptionWindow();
+  };
+
+  const handleAsk = () => {
+    console.log('💬 Perguntar acionado');
+    // TODO: Implementar funcionalidade de perguntar (Ctrl+Enter)
   };
 
   // When UI is open (ActionBar or Settings), disable click-through to allow interaction
@@ -112,6 +128,14 @@ export default function HomePage() {
     <div className="w-screen h-screen overflow-hidden bg-transparent">
       <Avatar modelName={selectedModel} uiOpen={showActionBar || isSettingsOpen} />
       <CodePopup />
+      
+      {/* Menu Radial - Ativado ao segurar botão direito do mouse */}
+      <RadialMenu
+        onOpenSettings={handleOpenSettings}
+        onOpenHistory={handleOpenHistory}
+        onStartListening={handleStartListening}
+        onAsk={handleAsk}
+      />
       <Settings 
         onSizeChange={handleSizeChange}
         onDragToggle={setDragEnabled}

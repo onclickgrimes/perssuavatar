@@ -2,6 +2,7 @@ import React from 'react'
 import type { AppProps } from 'next/app'
 
 import '../styles/globals.css'
+import '../styles/radial-menu.css'
 
 import Script from 'next/script'
 

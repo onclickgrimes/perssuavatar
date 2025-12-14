@@ -292,8 +292,7 @@ export default function WordExplanationWindow() {
         
         {/* Header - Arrastável */}
         <div 
-          className="h-10 bg-[#0a0a0a] flex items-center justify-between px-3 border-b border-[#222] flex-shrink-0"
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+          className="h-10 bg-[#0a0a0a] flex items-center justify-between px-3 border-b border-[#222] flex-shrink-0 window-drag"
         >
           <div className="flex items-center gap-2">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-cyan-400">

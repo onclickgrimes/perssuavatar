@@ -795,6 +795,51 @@ export default function Avatar({ modelName, uiOpen }: AvatarProps) {
     };
   }, [model]);
 
+  // 4. Window Drag Logic (Manual replacement for -webkit-app-region: drag)
+  useEffect(() => {
+    let isDragging = false;
+    let startMouseX = 0;
+    let startMouseY = 0;
+
+    const onMouseDown = (e: MouseEvent) => {
+        const target = e.target as HTMLElement;
+        // Check if left click (0) on canvas with 'drag' class (active)
+        if (e.button === 0 && target.tagName === 'CANVAS' && target.classList.contains('drag')) {
+            isDragging = true;
+            startMouseX = e.clientX;
+            startMouseY = e.clientY;
+        }
+    };
+    
+    const onMouseMove = (e: MouseEvent) => {
+        if (isDragging) {
+            // Calculate new window position based on screen coordinates
+            const newX = e.screenX - startMouseX;
+            const newY = e.screenY - startMouseY;
+            if (window.electron.moveWindow) {
+                window.electron.moveWindow(newX, newY);
+            } else {
+                // Fallback or explicit type cast if needed
+                (window.electron as any).moveWindow(newX, newY);
+            }
+        }
+    };
+
+    const onMouseUp = () => {
+        isDragging = false;
+    };
+
+    window.addEventListener('mousedown', onMouseDown);
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+
+    return () => {
+        window.removeEventListener('mousedown', onMouseDown);
+        window.removeEventListener('mousemove', onMouseMove);
+        window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
+
   return <canvas ref={canvasRef} className="w-full h-full pointer-events-none" />;
 }
 

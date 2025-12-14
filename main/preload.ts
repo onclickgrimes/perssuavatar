@@ -57,6 +57,7 @@ const handler = {
     return () => ipcRenderer.removeListener('global-mouse-move', subscription);
   },
   resizeWindow: (width: number, height: number) => ipcRenderer.send('resize-window', width, height),
+  moveWindow: (x: number, y: number) => ipcRenderer.send('move-window', x, y),
   openSettings: () => ipcRenderer.send('open-settings'),
   setContentProtection: (enabled: boolean) => ipcRenderer.send('set-content-protection', enabled),
   setAlwaysOnTop: (enabled: boolean) => ipcRenderer.send('set-always-on-top', enabled),

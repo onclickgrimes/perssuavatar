@@ -12,8 +12,15 @@ body {
   -webkit-app-region: no-drag;
 }
 
-.drag {
+.window-drag {
   -webkit-app-region: drag;
+  cursor: move;
+}
+
+.drag {
+  /* -webkit-app-region: drag; REMOVIDO PARA PERMITIR CLICK DIREITO */
+  cursor: move;
+  pointer-events: auto;
 }
 
 @keyframes slideIn {

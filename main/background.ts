@@ -195,8 +195,13 @@ if (isProd) {
     // mainWindow.webContents.openDevTools()
   }
 
+  // Desabilitar menu de contexto nativo (para permitir menu radial customizado)
+  mainWindow.webContents.on('context-menu', (event) => {
+    event.preventDefault();
+  });
+
   // Screenshot Gallery Window será criada sob demanda quando houver screenshots
-  console.log('� Screenshot Gallery Window será criada quando necessário');
+  console.log('📸 Screenshot Gallery Window será criada quando necessário');
 
 
   // ========================================
@@ -490,6 +495,13 @@ ipcMain.on('resize-window', (event, width, height) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win) {
     win.setSize(width, height);
+  }
+});
+
+ipcMain.on('move-window', (event, x, y) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (win) {
+    win.setPosition(Math.round(x), Math.round(y));
   }
 });
 
