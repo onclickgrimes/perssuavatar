@@ -507,11 +507,7 @@ export class VoiceAssistant extends EventEmitter {
     Só depois de receber a confirmação da função você pode responder (ex: "Salvei!", "Tirei o print!").`;
 
         // Instructions for Gemini Live Native Audio (Uses speechStyle descritivo)
-        const liveVoiceInstructions = `
-    **TAGS DE VOZ (Controle de Expressão):**
-    Use tags para expressar emoções na voz:
-    - Emoções: [excited], [sad], [angry], [whispers], [shouting], [sarcastically].
-    - Ações: [laughs], [chuckles], [giggles], [coughs], [clears throat].`;
+        const liveVoiceInstructions = `Emoções e ações: excited, sad, angry, whispers, shouting, sarcastically, laughs, chuckles, giggles, coughs, clears throat.`;
 
         // Instructions for Classic Mode (Text-Only output that goes to TTS)
         const classicVoiceInstructions = `
