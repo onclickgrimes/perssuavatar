@@ -687,6 +687,10 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const isGeneratingRef = useRef(false);
   const isGeneratingFollowUpRef = useRef(false);
   const wasDraggingRef = useRef(false); // Para evitar toggle após arraste
+  
+  // Refs para guardar a posição do scroll de cada aba
+  const transcriptionScrollPosition = useRef(0);
+  const summaryScrollPosition = useRef(0);
 
   // Hook para transcrição de áudio do desktop (OUTROS)
   const { startTranscribing, stopTranscribing, changeAudioSource, isTranscribing, status } = useDesktopAudioTranscriber({
@@ -1021,10 +1025,34 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const handleSummaryScroll = () => {
     const container = summaryScrollRef.current;
     if (container) {
-      const threshold = 50;
+      const threshold = 20;
       const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
       isUserAtBottomSummary.current = isAtBottom;
     }
+  };
+
+  // Função para alternar entre abas preservando a posição do scroll
+  const handleTabChange = (newTab: TabMode) => {
+    if (newTab === activeTab) return;
+    
+    // Salvar posição atual
+    if (activeTab === 'transcription' && transcriptionScrollRef.current) {
+      transcriptionScrollPosition.current = transcriptionScrollRef.current.scrollTop;
+    } else if (activeTab === 'summary' && summaryScrollRef.current) {
+      summaryScrollPosition.current = summaryScrollRef.current.scrollTop;
+    }
+    
+    // Mudar aba
+    setActiveTab(newTab);
+    
+    // Restaurar posição da nova aba após renderizar
+    requestAnimationFrame(() => {
+      if (newTab === 'transcription' && transcriptionScrollRef.current) {
+        transcriptionScrollRef.current.scrollTop = transcriptionScrollPosition.current;
+      } else if (newTab === 'summary' && summaryScrollRef.current) {
+        summaryScrollRef.current.scrollTop = summaryScrollPosition.current;
+      }
+    });
   };
 
   // Auto-scroll para transcrições (só se estiver no final e houver mensagens)
@@ -1258,7 +1286,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
             style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
           >
             <button
-              onClick={() => setActiveTab('transcription')}
+              onClick={() => handleTabChange('transcription')}
               className={`flex-1 flex items-center justify-center px-1.5 sm:px-2 py-1 rounded text-xs font-medium transition-all min-w-0 ${
                 activeTab === 'transcription'
                   ? 'bg-[#2a2a2a] text-white'
@@ -1269,7 +1297,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
 
             </button>
             <button
-              onClick={() => setActiveTab('summary')}
+              onClick={() => handleTabChange('summary')}
               className={`flex-1 flex items-center justify-center px-1.5 sm:px-2 py-1 rounded text-xs font-medium transition-all min-w-0 ${
                 activeTab === 'summary'
                   ? 'bg-[#2a2a2a] text-white'
