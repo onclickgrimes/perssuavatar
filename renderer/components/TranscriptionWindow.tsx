@@ -1012,7 +1012,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const handleTranscriptionScroll = () => {
     const container = transcriptionScrollRef.current;
     if (container) {
-      const threshold = 50; // Tolerância de 50px
+      const threshold = 20; // Tolerância de 20px
       const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
       isUserAtBottomTranscription.current = isAtBottom;
     }

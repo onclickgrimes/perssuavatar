@@ -176,6 +176,9 @@ export default function WordExplanationWindow() {
   const [windowOpacity, setWindowOpacity] = useState(100); // %
   const [showSettingsPopup, setShowSettingsPopup] = useState(false);
   const settingsRef = useRef<HTMLDivElement>(null);
+  
+  // Ref para controlar se usuário está no final da página
+  const isUserAtBottom = useRef(true);
 
   // Configurar listeners
   useEffect(() => {
@@ -231,9 +234,21 @@ export default function WordExplanationWindow() {
     };
   }, []);
 
-  // Auto-scroll quando conteúdo atualiza
+  // Handler de scroll para detectar se usuário está no final
+  const handleScroll = () => {
+    const container = scrollRef.current;
+    if (container) {
+      const threshold = 20; // Tolerância de 20px
+      const isAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < threshold;
+      isUserAtBottom.current = isAtBottom;
+    }
+  };
+
+  // Auto-scroll quando conteúdo atualiza (só se estiver no final)
   useEffect(() => {
-    if (scrollRef.current) {
+    if (!explanationContent) return;
+    
+    if (isUserAtBottom.current && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [explanationContent]);
@@ -305,6 +320,7 @@ export default function WordExplanationWindow() {
         {/* Conteúdo */}
         <div 
           ref={scrollRef}
+          onScroll={handleScroll}
           className="flex-1 overflow-y-auto p-4 bg-black"
           style={{
             scrollbarWidth: 'thin',
