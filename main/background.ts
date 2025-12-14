@@ -627,7 +627,11 @@ let transcriptionWindow: BrowserWindow | null = null;
 let wordExplanationWindow: BrowserWindow | null = null;
 
 // Função para criar janela de explicação de palavra (chamada apenas quando não existe janela)
-async function createWordExplanationWindow(word: string, context: string): Promise<BrowserWindow> {
+async function createWordExplanationWindow(
+  word: string, 
+  context: string, 
+  appearanceSettings?: { fontSize: number; opacity: number }
+): Promise<BrowserWindow> {
 
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
@@ -665,15 +669,7 @@ async function createWordExplanationWindow(word: string, context: string): Promi
     await wordExplanationWindow.loadURL(`http://localhost:${port}/word-explanation`);
   }
 
-  // Aguardar a janela carregar e enviar os dados
-  wordExplanationWindow.webContents.once('did-finish-load', () => {
-    // Pequeno delay para garantir que o React iniciou
-    setTimeout(() => {
-      if (wordExplanationWindow && !wordExplanationWindow.isDestroyed()) {
-        wordExplanationWindow.webContents.send('word-explanation:data', { word, context });
-      }
-    }, 100);
-  });
+  // O envio de dados é feito pelo handler após did-finish-load
 
   wordExplanationWindow.on('closed', () => {
     wordExplanationWindow = null;
@@ -693,7 +689,7 @@ ipcMain.on('word-explanation:close', () => {
 });
 
 // Handler para abrir janela de explicação e iniciar geração
-ipcMain.handle('word-explanation:open', async (event, word: string, context?: string) => {
+ipcMain.handle('word-explanation:open', async (event, word: string, context?: string, appearanceSettings?: { fontSize: number; opacity: number }) => {
   try {
     // Abortar qualquer geração anterior
     const { getSummaryService } = require('./lib/services/summary-service');
@@ -702,16 +698,32 @@ ipcMain.handle('word-explanation:open', async (event, word: string, context?: st
     
     // Verificar se a janela já existe e está aberta
     if (wordExplanationWindow && !wordExplanationWindow.isDestroyed()) {
-      // Reutilizar janela existente - apenas enviar novos dados
-      console.log(`💡 Reutilizando janela de explicação para: "${word}"`);
-      wordExplanationWindow.webContents.send('word-explanation:data', { word, context: context || '' });
+      // Reutilizar janela existente - NÃO enviar configurações de aparência (a janela mantém as próprias)
+      const dataToSend = { 
+        word, 
+        context: context || ''
+        // Sem appearanceSettings - a janela mantém suas próprias configurações
+      };
+      console.log(`💡 Reutilizando janela para: "${word}" (sem alterar aparência)`);
+      wordExplanationWindow.webContents.send('word-explanation:data', dataToSend);
       wordExplanationWindow.focus();
     } else {
-      // Criar nova janela
-      await createWordExplanationWindow(word, context || '');
+      // Criar nova janela (loadURL já é await, então a página já carregou)
+      await createWordExplanationWindow(word, context || '', appearanceSettings);
       
-      // Aguardar a janela carregar
-      await new Promise(resolve => setTimeout(resolve, 300));
+      // Aguardar React iniciar e montar os listeners (500ms é seguro)
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Enviar dados iniciais com configurações de aparência
+      if (wordExplanationWindow && !wordExplanationWindow.isDestroyed()) {
+        const dataToSend = { 
+          word, 
+          context: context || '',
+          appearanceSettings: appearanceSettings || { fontSize: 12, opacity: 100 }
+        };
+        console.log(`💡 Enviando dados iniciais para janela:`, JSON.stringify(dataToSend.appearanceSettings));
+        wordExplanationWindow.webContents.send('word-explanation:data', dataToSend);
+      }
     }
     
     // Gerar explicação e enviar chunks para a janela

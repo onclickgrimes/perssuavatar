@@ -192,8 +192,8 @@ const handler = {
       ipcRenderer.invoke('summary:explain-word', word, context),
     
     // Abrir janela de explicação de palavra
-    openExplanationWindow: (word: string, context?: string) =>
-      ipcRenderer.invoke('word-explanation:open', word, context),
+    openExplanationWindow: (word: string, context?: string, appearanceSettings?: { fontSize: number; opacity: number }) =>
+      ipcRenderer.invoke('word-explanation:open', word, context, appearanceSettings),
     
     // Abortar geração em andamento
     abort: () => ipcRenderer.invoke('summary:abort'),

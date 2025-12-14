@@ -831,11 +831,14 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     const cleanWord = word.replace(/[^\w\u00C0-\u017F]/g, '').trim();
     if (!cleanWord || cleanWord.length < 2) return;
     
-    console.log(`[TranscriptionWindow] Palavra clicada: "${cleanWord}" - abrindo janela de explicação`);
+    console.log(`[TranscriptionWindow] Palavra clicada: "${cleanWord}" config: fontSize=${summaryFontSize}, opacity=${windowOpacity}`);
     
-    // Abrir janela de explicação (a geração é iniciada automaticamente no background)
+    // Abrir janela de explicação com as mesmas configurações de aparência
     try {
-      await window.electron?.summary?.openExplanationWindow(cleanWord, context);
+      await window.electron?.summary?.openExplanationWindow(cleanWord, context, {
+        fontSize: summaryFontSize,
+        opacity: windowOpacity
+      });
     } catch (error) {
       console.error('[TranscriptionWindow] Erro ao abrir janela de explicação:', error);
     }
