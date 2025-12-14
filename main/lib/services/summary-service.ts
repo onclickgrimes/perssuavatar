@@ -89,8 +89,10 @@ export class SummaryService extends EventEmitter {
         let fullResponse = '';
 
         for await (const chunk of result.stream) {
+            // Verificar abort antes de processar cada chunk
             if (this.abortController?.signal.aborted) {
-                break;
+                console.log('[SummaryService] Geração Gemini abortada pelo usuário');
+                throw new Error('AbortError');
             }
 
             const chunkText = chunk.text();
@@ -107,19 +109,24 @@ export class SummaryService extends EventEmitter {
      * Gera conteúdo usando OpenAI com streaming
      */
     private async generateWithOpenAI(prompt: string, onChunk: (chunk: string) => void): Promise<string> {
+        // Passar o signal do AbortController para a API do OpenAI
         const stream = await this.openai.chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.7,
             max_tokens: 2048,
             stream: true,
+        }, {
+            signal: this.abortController?.signal as any
         });
 
         let fullResponse = '';
 
         for await (const chunk of stream) {
+            // Verificar abort antes de processar cada chunk
             if (this.abortController?.signal.aborted) {
-                break;
+                console.log('[SummaryService] Geração OpenAI abortada pelo usuário');
+                throw new Error('AbortError');
             }
 
             const content = chunk.choices[0]?.delta?.content || '';
@@ -136,19 +143,24 @@ export class SummaryService extends EventEmitter {
      * Gera conteúdo usando DeepSeek com streaming
      */
     private async generateWithDeepSeek(prompt: string, onChunk: (chunk: string) => void): Promise<string> {
+        // Passar o signal do AbortController para a API do DeepSeek
         const stream = await this.deepseek.chat.completions.create({
             model: "deepseek-chat",
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.7,
             max_tokens: 2048,
             stream: true,
+        }, {
+            signal: this.abortController?.signal as any
         });
 
         let fullResponse = '';
 
         for await (const chunk of stream) {
+            // Verificar abort antes de processar cada chunk
             if (this.abortController?.signal.aborted) {
-                break;
+                console.log('[SummaryService] Geração DeepSeek abortada pelo usuário');
+                throw new Error('AbortError');
             }
 
             const content = chunk.choices[0]?.delta?.content || '';
@@ -305,8 +317,9 @@ Você é um assistente com um propósito específico definido acima. Antes de ge
             return result;
 
         } catch (error: any) {
-            if (error.name === 'AbortError') {
-                console.log('[SummaryService] Geração abortada');
+            // Capturar tanto AbortError quanto erro de rede por abort
+            if (error.name === 'AbortError' || error.message === 'AbortError' || this.abortController?.signal.aborted) {
+                console.log('[SummaryService] Geração de resumo abortada pelo usuário');
                 return '';
             }
             console.error('[SummaryService] Erro ao gerar resumo:', error);
@@ -457,8 +470,9 @@ ${context}
             return result;
 
         } catch (error: any) {
-            if (error.name === 'AbortError') {
-                console.log('[SummaryService] Explicação abortada');
+            // Capturar tanto AbortError quanto erro de rede por abort
+            if (error.name === 'AbortError' || error.message === 'AbortError' || this.abortController?.signal.aborted) {
+                console.log('[SummaryService] Explicação de palavra abortada pelo usuário');
                 return '';
             }
             console.error('[SummaryService] Erro ao explicar palavra:', error);
