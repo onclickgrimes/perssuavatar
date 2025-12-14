@@ -299,7 +299,10 @@ const handler = {
   openTranscriptionWindow: () => ipcRenderer.invoke('open-transcription-window'),
   
   // Encerrar aplicação
-  quitApp: () => ipcRenderer.send('quit-app')
+  quitApp: () => ipcRenderer.send('quit-app'),
+  
+  // Resetar sessão Gemini Live (limpar histórico)
+  resetLiveSession: () => ipcRenderer.invoke('reset-live-session')
 }
 
 contextBridge.exposeInMainWorld('electron', handler)

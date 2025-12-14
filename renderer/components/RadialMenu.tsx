@@ -48,7 +48,7 @@ export default function RadialMenu({
       ),
       color: '#8B5CF6',
       hoverColor: '#A78BFA',
-      angle: 0,
+      angle: 270,
       action: onOpenSettings,
     },
     {
@@ -62,7 +62,7 @@ export default function RadialMenu({
       ),
       color: '#10B981',
       hoverColor: '#34D399',
-      angle: 72,
+      angle: 330,
       action: onOpenHistory,
     },
     {
@@ -77,7 +77,7 @@ export default function RadialMenu({
       ),
       color: '#0066FF',
       hoverColor: '#3B87FF',
-      angle: 144,
+      angle: 30,
       action: onStartListening,
     },
     {
@@ -92,8 +92,24 @@ export default function RadialMenu({
       ),
       color: '#F59E0B',
       hoverColor: '#FBBF24',
-      angle: 216,
+      angle: 90,
       action: onAsk,
+    },
+    {
+      id: 'reset',
+      label: 'Nova Conversa',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path>
+          <path d="M3 3v5h5"></path>
+        </svg>
+      ),
+      color: '#06B6D4',
+      hoverColor: '#22D3EE',
+      angle: 150,
+      action: async () => {
+        await window.electron.resetLiveSession();
+      },
     },
     {
       id: 'close',
@@ -106,7 +122,7 @@ export default function RadialMenu({
       ),
       color: '#EF4444',
       hoverColor: '#F87171',
-      angle: 288,
+      angle: 210,
       action: () => setIsVisible(false),
     },
   ];

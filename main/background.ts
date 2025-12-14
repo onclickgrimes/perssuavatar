@@ -963,6 +963,13 @@ ipcMain.handle('set-continuous-recording', async (event, enabled: boolean) => {
   return { success: true };
 });
 
+// Handler para resetar a sessão Gemini Live (limpar histórico)
+ipcMain.handle('reset-live-session', async () => {
+  console.log('🔄 Resetando sessão Gemini Live...');
+  assistant.resetLiveSession();
+  return { success: true };
+});
+
 // Handler para encerrar a aplicação
 ipcMain.on('quit-app', () => {
   console.log('👋 Encerrando aplicação...');

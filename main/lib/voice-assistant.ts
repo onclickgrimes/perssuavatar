@@ -713,6 +713,14 @@ export class VoiceAssistant extends EventEmitter {
         return this.transcribeOnlyMode;
     }
 
+    /**
+     * Reset Gemini Live session - clears history and starts fresh
+     */
+    public resetLiveSession() {
+        console.log('[VoiceAssistant] Resetting Gemini Live session...');
+        this.geminiLiveService.resetSession();
+    }
+
     // ========================================
     // SHARED PUBLIC METHODS - RECORDING PATH
     // ========================================

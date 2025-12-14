@@ -463,6 +463,15 @@ export class GeminiLiveService extends EventEmitter {
     }
 
     /**
+     * Reset session completely - clears session handle to start fresh without history
+     */
+    public resetSession() {
+        console.log('[GeminiLive] Resetting session - clearing handle for fresh start');
+        this.currentSessionHandle = undefined;
+        this.disconnect();
+    }
+
+    /**
      * Enable transcribe-only mode (transcription works, but no audio/actions emitted)
      */
     public enableTranscribeOnlyMode() {
