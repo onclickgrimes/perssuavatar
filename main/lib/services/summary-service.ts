@@ -391,6 +391,82 @@ ${followUpPrompt}`;
             this.abortController = null;
         }
     }
+
+    /**
+     * Explica uma palavra ou termo específico usando o systemPrompt do assistente
+     * @param word A palavra/termo a ser explicado
+     * @param context Contexto do resumo onde a palavra aparece (opcional)
+     * @param onChunk Callback para streaming da resposta
+     * @returns A explicação gerada
+     */
+    public async explainWord(
+        word: string,
+        context: string = '',
+        onChunk: (chunk: string) => void
+    ): Promise<string> {
+        // Abortar qualquer geração anterior em andamento
+        this.abort();
+        
+        this.abortController = new AbortController();
+        
+        try {
+            const assistant = this.getSelectedAssistant();
+            
+            if (!assistant) {
+                throw new Error("Nenhum assistente encontrado");
+            }
+
+            const provider = this.getAIProvider();
+            console.log(`[SummaryService] Explicando palavra "${word}" com assistente: ${assistant.name} (Provider: ${provider})`);
+
+            const systemPrompt = assistant.systemPrompt || '';
+
+            // Construir prompt para explicar a palavra
+            const explainPrompt = `
+PROMPT DO ASSISTENTE:
+${systemPrompt}
+
+---
+
+**TAREFA:** Explique de forma clara e concisa o termo/palavra a seguir.
+
+${context ? `**CONTEXTO ONDE A PALAVRA APARECE:**
+${context}
+
+---` : ''}
+
+**PALAVRA/TERMO A EXPLICAR:** ${word}
+
+**INSTRUÇÕES:**
+- Forneça uma explicação clara e direta
+- Use exemplos práticos quando apropriado
+- Adapte a explicação ao contexto do assistente acima
+- Responda no mesmo idioma da palavra/contexto
+- Seja conciso mas informativo
+
+**SUA EXPLICAÇÃO:**`;
+
+            let result = '';
+
+            await this.generateContent(explainPrompt, (chunk) => {
+                result += chunk;
+                onChunk(chunk);
+            });
+
+            console.log(`[SummaryService] Explicação gerada com sucesso (${result.length} caracteres)`);
+            return result;
+
+        } catch (error: any) {
+            if (error.name === 'AbortError') {
+                console.log('[SummaryService] Explicação abortada');
+                return '';
+            }
+            console.error('[SummaryService] Erro ao explicar palavra:', error);
+            throw error;
+        } finally {
+            this.abortController = null;
+        }
+    }
 }
 
 // Singleton

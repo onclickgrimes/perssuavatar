@@ -168,9 +168,10 @@ function isSimilarToModelTranscription(
 interface LightMarkdownProps {
   content: string;
   className?: string;
+  onWordClick?: (word: string, context: string) => void;
 }
 
-const LightMarkdown = React.memo(function LightMarkdown({ content, className = '' }: LightMarkdownProps) {
+const LightMarkdown = React.memo(function LightMarkdown({ content, className = '', onWordClick }: LightMarkdownProps) {
   const [copiedIndex, setCopiedIndex] = React.useState<number | null>(null);
   // Contador global de keys para garantir unicidade
   const keyCounter = React.useRef(0);
@@ -510,6 +511,47 @@ const LightMarkdown = React.memo(function LightMarkdown({ content, className = '
     return result;
   };
 
+  // Renderiza texto como palavras clicáveis
+  const renderClickableText = (text: string, className: string = ''): React.ReactNode => {
+    if (!onWordClick) {
+      return <span key={getUniqueKey('text')} className={className}>{text}</span>;
+    }
+
+    // Dividir em palavras e espaços, preservando a estrutura
+    const parts = text.split(/(\s+)/);
+    
+    return (
+      <span key={getUniqueKey('clickable-container')} className={className}>
+        {parts.map((part, index) => {
+          // Se for espaço, mantém como está
+          if (/^\s+$/.test(part)) {
+            return <span key={`space-${index}`}>{part}</span>;
+          }
+          
+          // Se for palavra, torna clicável
+          const cleanWord = part.replace(/[^\w\u00C0-\u017F]/g, '');
+          if (cleanWord.length >= 2) {
+            return (
+              <span
+                key={`word-${index}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onWordClick(part, content);
+                }}
+                className="cursor-pointer hover:bg-white/10 hover:text-cyan-300 transition-colors rounded px-0.5 -mx-0.5"
+                title={`Clique para explicar: ${cleanWord}`}
+              >
+                {part}
+              </span>
+            );
+          }
+          
+          return <span key={`char-${index}`}>{part}</span>;
+        })}
+      </span>
+    );
+  };
+
   // Parse negrito e itálico
   const parseInlineStyles = (text: string): React.ReactNode[] => {
     const result: React.ReactNode[] = [];
@@ -538,21 +580,19 @@ const LightMarkdown = React.memo(function LightMarkdown({ content, className = '
       if (firstMatch) {
         const { type, match } = firstMatch;
         if ((match.index || 0) > 0) {
-          result.push(
-            <span key={getUniqueKey('text')}>{remaining.slice(0, match.index)}</span>
-          );
+          result.push(renderClickableText(remaining.slice(0, match.index)));
         }
 
         if (type === 'bold') {
           result.push(
             <strong key={getUniqueKey('bold')} className="font-bold text-white">
-              {match[1]}
+              {onWordClick ? renderClickableText(match[1]) : match[1]}
             </strong>
           );
         } else {
           result.push(
             <em key={getUniqueKey('italic')} className="italic text-gray-300">
-              {match[1]}
+              {onWordClick ? renderClickableText(match[1]) : match[1]}
             </em>
           );
         }
@@ -563,7 +603,7 @@ const LightMarkdown = React.memo(function LightMarkdown({ content, className = '
 
       // Sem mais matches, adiciona o resto
       if (remaining.length > 0) {
-        result.push(<span key={getUniqueKey('text')}>{remaining}</span>);
+        result.push(renderClickableText(remaining));
       }
       break;
     }
@@ -784,6 +824,22 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       changeAudioSource(selectedAudioSourceId);
     }
   }, [selectedAudioSourceId]);
+
+  // Função para lidar com clique em palavra do resumo - abre nova janela
+  const handleWordClick = async (word: string, context: string) => {
+    // Limpar palavra de caracteres especiais
+    const cleanWord = word.replace(/[^\w\u00C0-\u017F]/g, '').trim();
+    if (!cleanWord || cleanWord.length < 2) return;
+    
+    console.log(`[TranscriptionWindow] Palavra clicada: "${cleanWord}" - abrindo janela de explicação`);
+    
+    // Abrir janela de explicação (a geração é iniciada automaticamente no background)
+    try {
+      await window.electron?.summary?.openExplanationWindow(cleanWord, context);
+    } catch (error) {
+      console.error('[TranscriptionWindow] Erro ao abrir janela de explicação:', error);
+    }
+  };
 
   // Geração automática de resumo/feedback quando novas mensagens chegam
   useEffect(() => {
@@ -1319,7 +1375,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
                       </p>
                     </div>
                   ) : (
-                    <LightMarkdown content={chat.content} />
+                    <LightMarkdown content={chat.content} onWordClick={handleWordClick} />
                   )}
                 </div>
               ))}
@@ -1327,7 +1383,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               {/* Resumo sendo gerado (streaming) - só mostra se há conteúdo */}
               {summaryContent && summaryChatHistory.length === 0 && (
                 <div>
-                  <LightMarkdown content={summaryContent} />
+                  <LightMarkdown content={summaryContent} onWordClick={handleWordClick} />
                   {isGeneratingSummary && (
                     <span className="inline-block w-1 h-3 bg-white/50 ml-0.5 animate-pulse" />
                   )}
@@ -1337,7 +1393,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               {/* Resposta sendo gerada (streaming durante pergunta) - só mostra se há conteúdo */}
               {summaryContent && summaryChatHistory.length > 0 && (
                 <div className="mb-4">
-                  <LightMarkdown content={summaryContent} />
+                  <LightMarkdown content={summaryContent} onWordClick={handleWordClick} />
                   {isGeneratingSummary && (
                     <span className="inline-block w-1 h-3 bg-white/50 ml-0.5 animate-pulse" />
                   )}

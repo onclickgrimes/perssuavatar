@@ -187,6 +187,14 @@ const handler = {
     generateFollowUp: (transcription: Array<{ speaker: string; text: string }>) => 
       ipcRenderer.invoke('summary:generate-followup', transcription),
     
+    // Explicar uma palavra do resumo (streaming)
+    explainWord: (word: string, context?: string) =>
+      ipcRenderer.invoke('summary:explain-word', word, context),
+    
+    // Abrir janela de explicação de palavra
+    openExplanationWindow: (word: string, context?: string) =>
+      ipcRenderer.invoke('word-explanation:open', word, context),
+    
     // Abortar geração em andamento
     abort: () => ipcRenderer.invoke('summary:abort'),
     
@@ -195,6 +203,13 @@ const handler = {
       const subscription = (_: any, chunk: string) => callback(chunk);
       ipcRenderer.on('summary:chunk', subscription);
       return () => ipcRenderer.removeListener('summary:chunk', subscription);
+    },
+    
+    // Listener para chunks de explicação de palavra (streaming)
+    onExplainWordChunk: (callback: (chunk: string) => void) => {
+      const subscription = (_: any, chunk: string) => callback(chunk);
+      ipcRenderer.on('summary:explain-word-chunk', subscription);
+      return () => ipcRenderer.removeListener('summary:explain-word-chunk', subscription);
     }
   },
   

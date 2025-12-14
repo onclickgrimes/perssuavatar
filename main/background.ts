@@ -624,6 +624,126 @@ ipcMain.handle('shell-open-path', async (_, filePath: string) => {
 });
 
 let transcriptionWindow: BrowserWindow | null = null;
+let wordExplanationWindow: BrowserWindow | null = null;
+
+// Função para criar janela de explicação de palavra (chamada apenas quando não existe janela)
+async function createWordExplanationWindow(word: string, context: string): Promise<BrowserWindow> {
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+  
+  const windowWidth = 450;
+  const windowHeight = 400;
+  
+  // Posicionar no centro-direita da tela
+  const x = Math.floor(screenWidth - windowWidth - 50);
+  const y = Math.floor((screenHeight - windowHeight) / 2);
+
+  wordExplanationWindow = createWindow('word-explanation', {
+    width: windowWidth,
+    height: windowHeight,
+    x,
+    y,
+    minWidth: 350,
+    minHeight: 300,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  if (isProd) {
+    await wordExplanationWindow.loadURL('app://./word-explanation');
+  } else {
+    const port = process.argv[2];
+    await wordExplanationWindow.loadURL(`http://localhost:${port}/word-explanation`);
+  }
+
+  // Aguardar a janela carregar e enviar os dados
+  wordExplanationWindow.webContents.once('did-finish-load', () => {
+    // Pequeno delay para garantir que o React iniciou
+    setTimeout(() => {
+      if (wordExplanationWindow && !wordExplanationWindow.isDestroyed()) {
+        wordExplanationWindow.webContents.send('word-explanation:data', { word, context });
+      }
+    }, 100);
+  });
+
+  wordExplanationWindow.on('closed', () => {
+    wordExplanationWindow = null;
+  });
+
+  console.log(`💡 Word explanation window opened for: "${word}"`);
+  
+  return wordExplanationWindow;
+}
+
+// Handler para fechar janela de explicação
+ipcMain.on('word-explanation:close', () => {
+  if (wordExplanationWindow && !wordExplanationWindow.isDestroyed()) {
+    wordExplanationWindow.close();
+    wordExplanationWindow = null;
+  }
+});
+
+// Handler para abrir janela de explicação e iniciar geração
+ipcMain.handle('word-explanation:open', async (event, word: string, context?: string) => {
+  try {
+    // Abortar qualquer geração anterior
+    const { getSummaryService } = require('./lib/services/summary-service');
+    const summaryService = getSummaryService();
+    summaryService.abort();
+    
+    // Verificar se a janela já existe e está aberta
+    if (wordExplanationWindow && !wordExplanationWindow.isDestroyed()) {
+      // Reutilizar janela existente - apenas enviar novos dados
+      console.log(`💡 Reutilizando janela de explicação para: "${word}"`);
+      wordExplanationWindow.webContents.send('word-explanation:data', { word, context: context || '' });
+      wordExplanationWindow.focus();
+    } else {
+      // Criar nova janela
+      await createWordExplanationWindow(word, context || '');
+      
+      // Aguardar a janela carregar
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
+    
+    // Gerar explicação e enviar chunks para a janela
+    try {
+      const result = await summaryService.explainWord(word, context || '', (chunk: string) => {
+        if (wordExplanationWindow && !wordExplanationWindow.isDestroyed()) {
+          wordExplanationWindow.webContents.send('word-explanation:chunk', chunk);
+        }
+      });
+      
+      // Notificar conclusão
+      if (wordExplanationWindow && !wordExplanationWindow.isDestroyed()) {
+        wordExplanationWindow.webContents.send('word-explanation:complete');
+      }
+      
+      return { success: true, result };
+    } catch (genError: any) {
+      if (genError.name === 'AbortError') {
+        console.log('[WordExplanation] Geração abortada (nova palavra selecionada)');
+        return { success: true, aborted: true };
+      }
+      console.error('[WordExplanation] Erro na geração:', genError);
+      if (wordExplanationWindow && !wordExplanationWindow.isDestroyed()) {
+        wordExplanationWindow.webContents.send('word-explanation:complete');
+      }
+      return { success: false, error: genError.message };
+    }
+  } catch (error: any) {
+    console.error('[WordExplanation] Erro ao abrir janela:', error);
+    return { success: false, error: error.message };
+  }
+});
 
 // Register global shortcut for transcription window
 app.whenReady().then(() => {

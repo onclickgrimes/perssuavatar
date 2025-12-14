@@ -204,6 +204,40 @@ export function registerDatabaseHandlers() {
     }
   });
   
+  ipcMain.handle('summary:explain-word', async (event, word: string, context?: string) => {
+    const summaryService = getSummaryService();
+    
+    // Buscar a janela de explicação de palavra (será criada pelo background.ts)
+    const explanationWindow = BrowserWindow.getAllWindows().find(
+      win => win.webContents.getURL().includes('word-explanation')
+    );
+    
+    try {
+      const result = await summaryService.explainWord(word, context || '', (chunk) => {
+        // Enviar chunk para a janela de explicação
+        if (explanationWindow && !explanationWindow.isDestroyed()) {
+          explanationWindow.webContents.send('word-explanation:chunk', chunk);
+        }
+      });
+      
+      // Notificar que a geração terminou
+      if (explanationWindow && !explanationWindow.isDestroyed()) {
+        explanationWindow.webContents.send('word-explanation:complete');
+      }
+      
+      return { success: true, result };
+    } catch (error: any) {
+      console.error('[SummaryHandler] Erro ao explicar palavra:', error);
+      
+      // Notificar erro na janela
+      if (explanationWindow && !explanationWindow.isDestroyed()) {
+        explanationWindow.webContents.send('word-explanation:complete');
+      }
+      
+      return { success: false, error: error.message };
+    }
+  });
+  
   console.log('✅ Database IPC handlers registered');
 }
 
@@ -259,7 +293,8 @@ export function unregisterDatabaseHandlers() {
     'summary:get-selected-assistant',
     'summary:generate',
     'summary:abort',
-    'summary:generate-followup'
+    'summary:generate-followup',
+    'summary:explain-word'
   ];
   
   handlers.forEach(handler => {
