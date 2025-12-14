@@ -879,6 +879,16 @@ app.whenReady().then(() => {
       mainWindow.webContents.send('avatar-reaction-status-changed', isAvatarReactionDisabled);
     }
   });
+
+  // Atalho global Ctrl+M para alternar ActionBar
+  globalShortcut.register('CommandOrControl+M', () => {
+    console.log(`🎯 ActionBar toggle disparado (Ctrl+M)`);
+    
+    // Notificar a janela principal para alternar a ActionBar
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('actionbar-toggle');
+    }
+  });
 });
 
 app.on('window-all-closed', () => {

@@ -27,13 +27,9 @@ export default function HomePage() {
     // No need to resize the window anymore
   };
 
-  // Listen for CTRL+M
+  // Listen for ESC to close UI
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.ctrlKey && e.key.toLowerCase() === 'm') {
-        e.preventDefault();
-        setShowActionBar(prev => !prev);
-      }
       // ESC to close
       if (e.key === 'Escape') {
          if (isSettingsOpen) {
@@ -91,6 +87,18 @@ export default function HomePage() {
     const unsubscribe = window.electron.onAvatarReactionStatusChanged((isDisabled) => {
       console.log(`🤖 Avatar reaction status changed: ${isDisabled ? 'Desabilitada' : 'Habilitada'}`);
       setIsAvatarReactionDisabled(isDisabled);
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
+
+  // Listen for ActionBar toggle from global shortcut (Ctrl+M)
+  useEffect(() => {
+    const unsubscribe = window.electron.onActionBarToggle(() => {
+      console.log(`🎯 ActionBar toggle recebido do atalho global`);
+      setShowActionBar(prev => !prev);
     });
 
     return () => {

@@ -263,6 +263,13 @@ const handler = {
     return () => ipcRenderer.removeListener('avatar-reaction-status-changed', subscription);
   },
 
+  // Listener para toggle da ActionBar (Ctrl+M global)
+  onActionBarToggle: (callback: () => void) => {
+    const subscription = () => callback();
+    ipcRenderer.on('actionbar-toggle', subscription);
+    return () => ipcRenderer.removeListener('actionbar-toggle', subscription);
+  },
+
   // Listener para screenshots capturados
   onScreenshotCaptured: (callback: (base64Image: string) => void) => {
     const subscription = (_: any, base64Image: string) => callback(base64Image);
