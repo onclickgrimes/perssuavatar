@@ -606,6 +606,11 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const [followUpHistory, setFollowUpHistory] = useState<string[][]>([]); // Histórico de 2 gerações
   const [isGeneratingFollowUp, setIsGeneratingFollowUp] = useState(false);
   
+  // Configurações de aparência
+  const [summaryFontSize, setSummaryFontSize] = useState(12); // px
+  const [windowOpacity, setWindowOpacity] = useState(100); // %
+  const [showSettingsPopup, setShowSettingsPopup] = useState(false);
+  
   const chatEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const resizeHandleRef = useRef<HTMLDivElement>(null);
@@ -1160,30 +1165,18 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   return (
     <div className="w-full h-screen flex flex-col p-2">
       {/* Main Container */}
-      <div ref={containerRef} className="flex-1 bg-[#0a0a0a] rounded-xl shadow-2xl border border-[#222] flex flex-col overflow-hidden relative">
+      <div 
+        ref={containerRef} 
+        className="flex-1 bg-[#0a0a0a] rounded-xl shadow-2xl border border-[#222] flex flex-col overflow-hidden relative"
+        style={{ opacity: windowOpacity / 100 }}
+      >
         
         {/* Header */}
         <div 
           className="h-14 bg-[#0f0f0f] flex items-center justify-center px-2 sm:px-3 gap-2 sm:gap-3 flex-shrink-0 border-b border-[#222]"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          {/* Language Selector */}
-          <div className="flex items-center flex-shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <select 
-              value={language}
-              onChange={(e) => setLanguage(e.target.value)}
-              className="bg-[#1a1a1a] text-gray-300 text-xs px-2 sm:px-3 py-1.5 rounded-lg border border-[#2a2a2a] focus:outline-none cursor-pointer appearance-none pr-6 sm:pr-8 min-w-0"
-              style={{
-                backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 12 12'%3E%3Cpath fill='%23888' d='M6 9L1 4h10z'/%3E%3C/svg%3E")`,
-                backgroundRepeat: 'no-repeat',
-                backgroundPosition: 'right 6px center'
-              }}
-            >
-              <option>🇧🇷 Portuguese (BR)</option>
-              <option>🇺🇸 English (US)</option>
-              <option>🇪🇸 Spanish (ES)</option>
-            </select>
-          </div>
+          {/* Language Selector foi movido para Configurações */}
 
           {/* Tab Toggle - Transcription/Summary */}
           <div 
@@ -1300,7 +1293,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               style={{
                 scrollbarWidth: 'thin',
                 scrollbarColor: '#1a1a1a #000',
-                flex: isBottomPanelExpanded ? `1 1 ${100 - bottomPanelHeight}%` : '1 1 auto'
+                flex: isBottomPanelExpanded ? `1 1 ${100 - bottomPanelHeight}%` : '1 1 auto',
+                fontSize: `${summaryFontSize}px`
               }}
             >
               {/* Estado Inicial - Aguardando */}
@@ -1446,7 +1440,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               {isBottomPanelExpanded && (
                 <div className="flex-1 overflow-y-auto px-4 pt-3 pb-2" style={{
                   scrollbarWidth: 'thin',
-                  scrollbarColor: '#1a1a1a #0a0a0a'
+                  scrollbarColor: '#1a1a1a #0a0a0a',
+                  fontSize: `${summaryFontSize}px`
                 }}>
                   {/* Estado de carregamento - só mostra se não tem histórico */}
                   {isGeneratingFollowUp && followUpHistory.length === 0 && (
@@ -1507,25 +1502,119 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               </span>
             </button>
 
-            {/* Toggle Compacto de Filtragem do Avatar */}
-            <button
-              onClick={() => setFilterAvatarTranscriptions(!filterAvatarTranscriptions)}
-              className="flex items-center gap-2 px-3 py-1.5 bg-[#1a1a1a] hover:bg-[#252525] rounded-full transition-colors border border-[#2a2a2a]"
-              title={`Filtro de Avatar ${filterAvatarTranscriptions ? 'ATIVO' : 'DESATIVADO'} - Clique para ${filterAvatarTranscriptions ? 'desativar' : 'ativar'}`}
-            >
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={filterAvatarTranscriptions ? 'text-green-400' : 'text-gray-500'}>
-                <path d="M22 3L2 3 10 12.46 10 19 14 21 14 12.46 22 3z"/>
-              </svg>
-              <span className="text-[10px] text-gray-400">Filtro</span>
-              {/* iOS-style toggle switch */}
-              <div className={`relative w-8 h-4 rounded-full transition-colors ${
-                filterAvatarTranscriptions ? 'bg-green-600' : 'bg-gray-600'
-              }`}>
-                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${
-                  filterAvatarTranscriptions ? 'translate-x-4' : 'translate-x-0.5'
-                }`} />
-              </div>
-            </button>
+            {/* Toggle de Filtragem foi movido para Configurações */}
+
+            {/* Botão de Configurações (Engrenagem) */}
+            <div className="relative">
+              <button
+                onClick={() => setShowSettingsPopup(!showSettingsPopup)}
+                className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
+                  showSettingsPopup ? 'bg-[#333] text-white' : 'bg-[#1a1a1a] hover:bg-[#252525] text-gray-400 hover:text-white'
+                }`}
+                title="Configurações de aparência"
+              >
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="12" cy="12" r="3"/>
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+              </button>
+
+              {/* Popup de Configurações */}
+              {showSettingsPopup && (
+                <div 
+                  className="absolute bottom-full right-0 mb-2 w-64 bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl z-50 overflow-hidden"
+                  style={{ maxHeight: 'calc(100vh - 150px)' }}
+                >
+                  {/* Header fixo */}
+                  <div className="flex items-center justify-between p-4 pb-2 border-b border-[#333]">
+                    <h3 className="text-white text-sm font-medium">Configurações</h3>
+                    <button
+                      onClick={() => setShowSettingsPopup(false)}
+                      className="text-gray-500 hover:text-white transition-colors"
+                    >
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                      </svg>
+                    </button>
+                  </div>
+
+                  {/* Conteúdo com scroll */}
+                  <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+                    {/* Tamanho da Fonte */}
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-gray-400 text-xs">Tamanho da Fonte</label>
+                        <span className="text-white text-xs font-mono">{summaryFontSize}px</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="10"
+                        max="20"
+                        value={summaryFontSize}
+                        onChange={(e) => setSummaryFontSize(Number(e.target.value))}
+                        className="w-full h-1 bg-[#333] rounded-full appearance-none cursor-pointer accent-blue-500"
+                      />
+                    </div>
+
+                    {/* Opacidade da Janela */}
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <label className="text-gray-400 text-xs">Opacidade da Janela</label>
+                        <span className="text-white text-xs font-mono">{windowOpacity}%</span>
+                      </div>
+                      <input
+                        type="range"
+                        min="30"
+                        max="100"
+                        value={windowOpacity}
+                        onChange={(e) => setWindowOpacity(Number(e.target.value))}
+                        className="w-full h-1 bg-[#333] rounded-full appearance-none cursor-pointer accent-blue-500"
+                      />
+                    </div>
+
+                    {/* Divisor */}
+                    <div className="h-px bg-[#333] my-4" />
+
+                    {/* Idioma */}
+                    <div className="mb-4">
+                      <label className="text-gray-400 text-xs block mb-2">Idioma</label>
+                      <select 
+                        value={language}
+                        onChange={(e) => setLanguage(e.target.value)}
+                        className="w-full bg-[#252525] text-white text-xs px-3 py-2 rounded-lg border border-[#333] focus:outline-none cursor-pointer"
+                      >
+                        <option>🇧🇷 Portuguese (BR)</option>
+                        <option>🇺🇸 English (US)</option>
+                        <option>🇪🇸 Spanish (ES)</option>
+                      </select>
+                    </div>
+
+                    {/* Filtro de Avatar */}
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={filterAvatarTranscriptions ? 'text-green-400' : 'text-gray-500'}>
+                            <path d="M22 3L2 3 10 12.46 10 19 14 21 14 12.46 22 3z"/>
+                          </svg>
+                          <label className="text-gray-400 text-xs">Filtrar Avatar</label>
+                        </div>
+                        {/* iOS-style toggle switch */}
+                        <button
+                          onClick={() => setFilterAvatarTranscriptions(!filterAvatarTranscriptions)}
+                          className={`relative w-10 h-5 rounded-full transition-colors ${
+                            filterAvatarTranscriptions ? 'bg-green-600' : 'bg-gray-600'
+                          }`}
+                        >
+                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                            filterAvatarTranscriptions ? 'translate-x-5' : 'translate-x-0.5'
+                          }`} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Audio Meters */}
