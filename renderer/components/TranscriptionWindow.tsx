@@ -655,6 +655,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const containerRef = useRef<HTMLDivElement>(null);
   const resizeHandleRef = useRef<HTMLDivElement>(null);
   const summaryContainerRef = useRef<HTMLDivElement>(null);
+  const settingsPopupRef = useRef<HTMLDivElement>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [isOverResizeHandle, setIsOverResizeHandle] = useState(false);
   
@@ -766,6 +767,20 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       setUserAudioLevel(level);
     }
   });
+
+  // Fechar popup de configurações ao clicar fora
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (settingsPopupRef.current && !settingsPopupRef.current.contains(event.target as Node)) {
+        setShowSettingsPopup(false);
+      }
+    };
+
+    if (showSettingsPopup) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showSettingsPopup]);
 
   // Iniciar transcrição do desktop e monitoramento do microfone automaticamente quando a janela abrir
   useEffect(() => {
@@ -1564,7 +1579,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
             {/* Toggle de Filtragem foi movido para Configurações */}
 
             {/* Botão de Configurações (Engrenagem) */}
-            <div className="relative">
+            <div className="relative" ref={settingsPopupRef}>
               <button
                 onClick={() => setShowSettingsPopup(!showSettingsPopup)}
                 className={`flex items-center justify-center w-8 h-8 rounded-full transition-colors ${
