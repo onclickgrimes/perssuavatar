@@ -167,7 +167,7 @@ if (isProd) {
   });
 
   mainWindow = createWindow('main', {
-    width: 400,  // Reduzido de 1000 para 500
+    width: 1000,  // Reduzido de 1000 para 500
     height: 600, // Reduzido de 600 para 400
     transparent: true,
     frame: false,
