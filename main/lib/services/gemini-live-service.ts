@@ -23,6 +23,7 @@ export class GeminiLiveService extends EventEmitter {
     private audioBuffer: Buffer[] = []; // Buffer for chunks while connecting
     private hasLoggedSessionProps: boolean = false; // Debug flag
     private transcribeOnlyMode: boolean = false; // If true, only transcribe without emitting audio/actions
+    private currentSessionHandle: string | undefined = undefined; // Track session handle for resumption
 
     constructor() {
         super();
@@ -80,6 +81,10 @@ export class GeminiLiveService extends EventEmitter {
                     triggerTokens: 25600,
                     slidingWindow: { targetTokens: 12800 },
                 },
+                // Enable session resumption (infinite duration logic)
+                sessionResumption: {
+                    handle: this.currentSessionHandle || undefined
+                },
                 systemInstruction: {
                     parts: [{
                         text: systemInstruction || "You are a helpful assistant."
@@ -101,6 +106,20 @@ export class GeminiLiveService extends EventEmitter {
                     onmessage: (message: LiveServerMessage) => {
                         // console.log('Gemini Live Message:', JSON.stringify(message).substring(0, 500));
                         this.responseQueue.push(message);
+
+                        // ✅ HANDLE SESSION RESUMPTION
+                        if ((message as any).sessionResumptionUpdate) {
+                            const update = (message as any).sessionResumptionUpdate;
+                            if (update.newHandle) {
+                                console.log('[GeminiLive] Session Resumption Handle updated:', update.newHandle);
+                                this.currentSessionHandle = update.newHandle;
+                            }
+                        }
+
+                        // ✅ HANDLE GO_AWAY (Session Ending Soon)
+                        if ((message as any).goAway) {
+                           console.warn('[GeminiLive] GoAway received (Session ending soon). Reconnection may be needed.');
+                        }
 
                         // ✅ TRANSCRIÇÃO DO ÁUDIO DE SAÍDA (texto do modelo)
                         if ((message.serverContent as any)?.outputTranscription && !this.transcribeOnlyMode) {
