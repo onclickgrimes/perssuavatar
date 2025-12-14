@@ -12,7 +12,7 @@ type TabMode = 'transcription' | 'summary';
 
 type Message = {
   id: string;
-  speaker: 'VOCÊ' | 'OUTROS';
+  speaker: string; // Pode ser 'VOCÊ', 'ASSISTENTE', ou o nome da fonte de áudio
   text: string;
   timestamp: Date;
 };
@@ -159,6 +159,51 @@ function isSimilarToModelTranscription(
 
   console.log(`[TranscriptionFilter] ❌ Não passou em nenhum filtro, liberando como OUTROS`);
   return false;
+}
+
+// Lista de navegadores conhecidos para extrair nome do site
+const KNOWN_BROWSERS = [
+  'Google Chrome',
+  'Mozilla Firefox',
+  'Microsoft Edge',
+  'Safari',
+  'Opera',
+  'Brave',
+  'Vivaldi',
+  'Arc'
+];
+
+// Função para extrair o nome do site de títulos de janelas de navegadores
+// Exemplo: "Curso - Udemy - Google Chrome" → "Udemy"
+// Exemplo: "YouTube - Google Chrome" → "YouTube"
+function extractSiteNameFromBrowserTitle(windowTitle: string): string | null {
+  // Verificar se é um navegador conhecido
+  const browserMatch = KNOWN_BROWSERS.find(browser => 
+    windowTitle.toLowerCase().endsWith(browser.toLowerCase())
+  );
+  
+  if (!browserMatch) {
+    return null; // Não é um navegador
+  }
+  
+  // Remover o nome do navegador do final
+  // "Titulo - Site - Google Chrome" → "Titulo - Site"
+  const withoutBrowser = windowTitle
+    .slice(0, windowTitle.length - browserMatch.length)
+    .trim()
+    .replace(/[-–—]\s*$/, '') // Remove hífen no final
+    .trim();
+  
+  if (!withoutBrowser) {
+    return browserMatch; // Só tinha o nome do navegador
+  }
+  
+  // Pegar a última parte antes do navegador (nome do site)
+  // "Titulo - Site" → "Site"
+  const parts = withoutBrowser.split(/\s*[-–—]\s*/);
+  const siteName = parts[parts.length - 1].trim();
+  
+  return siteName || withoutBrowser;
 }
 
 // ============================================
@@ -634,6 +679,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const [otherAudioLevel, setOtherAudioLevel] = useState(0);
   const [showSourceSelector, setShowSourceSelector] = useState(false);
   const [selectedAudioSourceId, setSelectedAudioSourceId] = useState<string | null>(null);
+  const [selectedAudioSourceName, setSelectedAudioSourceName] = useState<string>('Sistema');
   
   // Estados para a aba de Resumo
   const [summaryContent, setSummaryContent] = useState<string>('');
@@ -732,25 +778,22 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
             console.log(`[TranscriptionFilter] 🔍 Filtro de avatar: ${filterAvatarTranscriptions ? 'ATIVO' : 'DESATIVADO'}`);
             console.log(`[TranscriptionFilter] 🔍 Buffer do modelo tem ${modelTranscriptionBuffer.current.length} fragmentos para comparar`);
             
-            // ✅ FILTRAR TRANSCRIÇÕES DO AVATAR (se habilitado)
-            let shouldAdd = true;
+            // ✅ SEMPRE verificar se a transcrição é do avatar
+            const isFromAvatar = isSimilarToModelTranscription(desktopText, modelTranscriptionBuffer.current);
             
-            if (filterAvatarTranscriptions) {
-              // Verifica se a transcrição do desktop é similar ao que o modelo disse
-              const isFiltered = isSimilarToModelTranscription(desktopText, modelTranscriptionBuffer.current);
-              
-              if (isFiltered) {
+            if (isFromAvatar) {
+              if (filterAvatarTranscriptions) {
+                // Filtro ativo: descarta transcrições do avatar
                 console.log('[TranscriptionFilter] ❌ Transcrição filtrada (é do avatar)');
-                shouldAdd = false;
               } else {
-                console.log(`[TranscriptionFilter] ✅ Transcrição aprovada, adicionando como OUTROS`);
+                // Filtro desativado: mostra transcrições do avatar como ASSISTENTE
+                console.log('[TranscriptionFilter] 🤖 Transcrição do avatar, adicionando como ASSISTENTE');
+                addMessage('ASSISTENTE', desktopText);
               }
             } else {
-              console.log(`[TranscriptionFilter] ⚠️ Filtro desativado, adicionando sem verificar`);
-            }
-            
-            if (shouldAdd) {
-              addMessage('OUTROS', desktopText);
+              // Não é do avatar: sempre adiciona com o nome da fonte selecionada
+              console.log(`[TranscriptionFilter] ✅ Transcrição de outra pessoa, adicionando como ${selectedAudioSourceName}`);
+              addMessage(selectedAudioSourceName.toUpperCase(), desktopText);
             }
             
             desktopTranscriptionBuffer.current = '';
@@ -995,7 +1038,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
     };
   }, [messages, isPaused]); // Removido isGeneratingSummary das dependências
 
-  const addMessage = (speaker: 'VOCÊ' | 'OUTROS', text: string) => {
+  const addMessage = (speaker: string, text: string) => {
     // Remove avatar tags from transcription display
     let cleanText = text.replace(/\{\{(mood|gesture):\w+\}\}/g, '').trim();
     
@@ -1367,14 +1410,20 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               >
                 <div className={`max-w-[85%] ${message.speaker === 'VOCÊ' ? 'items-end' : 'items-start'} flex flex-col gap-0.5`}>
                   <span className={`text-[9px] font-semibold tracking-wide uppercase ${
-                    message.speaker === 'VOCÊ' ? 'text-blue-400' : 'text-gray-500'
+                    message.speaker === 'VOCÊ' 
+                      ? 'text-blue-400' 
+                      : message.speaker === 'ASSISTENTE' 
+                        ? 'text-purple-400' 
+                        : 'text-gray-500'
                   }`}>
                     {message.speaker}
                   </span>
                   <div className={`px-2.5 py-1.5 rounded-md text-xs leading-snug ${
                     message.speaker === 'VOCÊ'
                       ? 'bg-blue-600 text-white'
-                      : 'bg-[#1f1f1f] text-white'
+                      : message.speaker === 'ASSISTENTE'
+                        ? 'bg-purple-600/80 text-white'
+                        : 'bg-[#1f1f1f] text-white'
                   }`}>
                     {message.text}
                   </div>
@@ -1743,7 +1792,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
 
               {/* Others Audio Meter */}
               <div className="flex items-center gap-3">
-                <span className="text-[10px] font-semibold text-white w-14 uppercase tracking-wide">OUTROS</span>
+                <span className="text-[10px] font-semibold text-white w-14 uppercase tracking-wide truncate" title={selectedAudioSourceName}>{selectedAudioSourceName}</span>
                 <div className="flex-1 h-2 bg-[#1a1a1a] rounded-full overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-75"
@@ -1808,10 +1857,15 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
         isOpen={showSourceSelector}
         onClose={() => setShowSourceSelector(false)}
         currentSourceId={selectedAudioSourceId}
-        onSourceSelect={(sourceId) => {
+        onSourceSelect={(sourceId, sourceName) => {
           setSelectedAudioSourceId(sourceId);
-          console.log('[TranscriptionWindow] Fonte de áudio selecionada:', sourceId || 'Sistema Inteiro');
-          // TODO: Reiniciar transcrição com nova fonte
+          
+          // Tentar extrair nome do site se for navegador
+          const siteName = extractSiteNameFromBrowserTitle(sourceName);
+          const displayName = siteName || sourceName;
+          
+          setSelectedAudioSourceName(displayName);
+          console.log('[TranscriptionWindow] Fonte de áudio selecionada:', displayName, '(original:', sourceName, ')');
         }}
       />
     </div>

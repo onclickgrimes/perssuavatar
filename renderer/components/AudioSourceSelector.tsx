@@ -11,7 +11,7 @@ interface AudioSourceSelectorProps {
   isOpen: boolean;
   onClose: () => void;
   currentSourceId?: string;
-  onSourceSelect: (sourceId: string | null) => void;
+  onSourceSelect: (sourceId: string | null, sourceName: string) => void;
 }
 
 const KNOWN_APPS = {
@@ -117,9 +117,9 @@ export default function AudioSourceSelector({
     }
   };
 
-  const handleSelect = (sourceId: string | null) => {
+  const handleSelect = (sourceId: string | null, sourceName: string = 'Sistema') => {
     setSelectedId(sourceId);
-    onSourceSelect(sourceId);
+    onSourceSelect(sourceId, sourceName);
     onClose();
   };
 
@@ -199,7 +199,7 @@ export default function AudioSourceSelector({
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {/* Opção: Sistema Inteiro (padrão) */}
               <button
-                onClick={() => handleSelect(null)}
+                onClick={() => handleSelect(null, 'Sistema')}
                 className={`p-3 rounded-lg border-2 transition-all text-left ${
                   selectedId === null
                     ? 'border-blue-600 bg-blue-600/10'
@@ -229,7 +229,7 @@ export default function AudioSourceSelector({
               {filteredSources.map(source => (
                 <button
                   key={source.id}
-                  onClick={() => handleSelect(source.id)}
+                  onClick={() => handleSelect(source.id, source.name)}
                   className={`p-3 rounded-lg border-2 transition-all text-left ${
                     selectedId === source.id
                       ? 'border-blue-600 bg-blue-600/10'
