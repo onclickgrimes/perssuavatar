@@ -183,6 +183,10 @@ const handler = {
     generate: (transcription: Array<{ speaker: string; text: string }>) => 
       ipcRenderer.invoke('summary:generate', transcription),
     
+    // Gerar sugestões de follow-up
+    generateFollowUp: (transcription: Array<{ speaker: string; text: string }>) => 
+      ipcRenderer.invoke('summary:generate-followup', transcription),
+    
     // Abortar geração em andamento
     abort: () => ipcRenderer.invoke('summary:abort'),
     

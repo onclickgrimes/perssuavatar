@@ -192,6 +192,18 @@ export function registerDatabaseHandlers() {
     return true;
   });
   
+  ipcMain.handle('summary:generate-followup', async (event, transcription: Array<{ speaker: string; text: string }>) => {
+    const summaryService = getSummaryService();
+    
+    try {
+      const topics = await summaryService.generateFollowUp(transcription);
+      return { success: true, topics };
+    } catch (error: any) {
+      console.error('[SummaryHandler] Erro ao gerar follow-up:', error);
+      return { success: false, error: error.message, topics: [] };
+    }
+  });
+  
   console.log('✅ Database IPC handlers registered');
 }
 
@@ -246,7 +258,8 @@ export function unregisterDatabaseHandlers() {
     // Summary Service
     'summary:get-selected-assistant',
     'summary:generate',
-    'summary:abort'
+    'summary:abort',
+    'summary:generate-followup'
   ];
   
   handlers.forEach(handler => {

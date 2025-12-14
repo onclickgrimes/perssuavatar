@@ -317,6 +317,72 @@ Você é um assistente com um propósito específico definido acima. Antes de ge
     }
 
     /**
+     * Gera sugestões de follow-up usando o followUpPrompt do assistente
+     * @param transcription Array de mensagens da transcrição
+     * @returns Array de sugestões de follow-up
+     */
+    public async generateFollowUp(
+        transcription: Array<{ speaker: string; text: string }>
+    ): Promise<string[]> {
+        try {
+            const assistant = this.getSelectedAssistant();
+            
+            if (!assistant) {
+                throw new Error("Nenhum assistente encontrado");
+            }
+
+            const followUpPrompt = assistant.followUpPrompt;
+            if (!followUpPrompt) {
+                console.log('[SummaryService] Nenhum followUpPrompt configurado');
+                return [];
+            }
+
+            const provider = this.getAIProvider();
+            console.log(`[SummaryService] Gerando follow-up com assistente: ${assistant.name} (Provider: ${provider})`);
+
+            // Formatar a transcrição para o prompt
+            const transcriptionText = transcription
+                .map(msg => `${msg.speaker}: ${msg.text}`)
+                .join('\n');
+
+            const fullPrompt = `
+**TRANSCRIÇÃO DA CONVERSA:**
+${transcriptionText}
+
+---
+**INSTRUÇÕES:**
+${followUpPrompt}`;
+
+            let result = '';
+            
+            // Gerar sem streaming (mais simples para este caso)
+            await this.generateContent(fullPrompt, (chunk) => {
+                result += chunk;
+            });
+
+            // Se for vazio ou ignorar, retornar array vazio
+            if (!result || result.trim() === '[VAZIO]' || result.trim().startsWith('[IGNORAR]')) {
+                console.log('[SummaryService] Follow-up vazio ou ignorado');
+                return [];
+            }
+
+            // Parsear os tópicos (um por linha)
+            const topics = result
+                .split('\n')
+                .map(line => line.trim())
+                .filter(line => line.length > 0 && !line.startsWith('[') && !line.startsWith('-'))
+                .map(line => line.replace(/^[\d\.\)\-\*]+\s*/, '')); // Remove numeração
+
+            console.log(`[SummaryService] Follow-up gerado: ${topics.length} tópicos`);
+            return topics;
+
+        } catch (error: any) {
+            console.error('[SummaryService] Erro ao gerar follow-up:', error);
+            return [];
+        }
+    }
+
+    /**
      * Aborta a geração atual
      */
     public abort() {
