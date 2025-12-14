@@ -56,6 +56,8 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
     if (isOpen) {
       loadAssistants();
       setIsDirty(false); // Reset ao abrir
+      // Garantir que captura eventos ao abrir
+      window.electron.setIgnoreMouseEvents(false);
     }
   }, [isOpen]);
 
@@ -352,6 +354,7 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
     <>
     <div 
       className="fixed inset-0 z-[600] flex items-center justify-center backdrop-blur-sm animate-in fade-in duration-200 no-drag"
+      onMouseEnter={() => window.electron.setIgnoreMouseEvents(false)}
       onClick={(e) => {
         if (e.target === e.currentTarget) handleClose();
       }}
@@ -359,7 +362,7 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
       <div className="bg-[#0a0a0a] rounded-xl shadow-2xl border border-[#222] overflow-hidden flex flex-col no-drag w-[900px] h-[600px]">
         
         {/* Header */}
-        <div className="h-14 border-b border-[#222] flex items-center justify-between px-6 bg-[#0f0f0f] drag">
+        <div className="h-14 border-b border-[#222] flex items-center justify-between px-6 bg-[#0f0f0f] window-drag">
           {selectedAssistant ? (
             <div className="flex items-center gap-2 flex-1 min-w-0 mr-4">
               <div className="relative flex items-center max-w-full">

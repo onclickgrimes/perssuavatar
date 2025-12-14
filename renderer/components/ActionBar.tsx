@@ -132,6 +132,8 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
     
     <div 
       className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[500] flex flex-col items-center gap-2 no-drag font-sans pointer-events-auto"
+      onMouseEnter={() => window.electron.setIgnoreMouseEvents(false)}
+      onMouseLeave={() => window.electron.setIgnoreMouseEvents(true, { forward: true })}
     >
       {/* Dropdown Menu */}
       {isDropdownOpen && (
