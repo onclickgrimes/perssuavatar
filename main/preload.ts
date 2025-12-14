@@ -294,6 +294,9 @@ const handler = {
   // Notificar backend que lista de screenshots está vazia
   notifyScreenshotsEmpty: () => ipcRenderer.send('screenshots-empty'),
   
+  // Abrir janela de transcrição
+  openTranscriptionWindow: () => ipcRenderer.invoke('open-transcription-window'),
+  
   // Encerrar aplicação
   quitApp: () => ipcRenderer.send('quit-app')
 }

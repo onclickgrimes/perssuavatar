@@ -323,7 +323,16 @@ export default function ActionBar({ isVisible, onClose, onOpenSettings }: Action
         </button>
 
         {/* C. Right Section (Primary Action) */}
-        <button className="h-10 ml-1 pl-3 pr-4 rounded-xl bg-[#0066FF] hover:bg-[#005ce6] text-white flex items-center gap-3 shadow-[0_0_15px_rgba(0,102,255,0.3)] transition-all transform hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap flex-shrink-0">
+        <button 
+          onClick={async () => {
+            // Chamar a mesma função do Ctrl+D para abrir a janela de transcrição
+            await window.electron.openTranscriptionWindow();
+            
+            // Fechar a ActionBar após clicar
+            onClose();
+          }}
+          className="h-10 ml-1 pl-3 pr-4 rounded-xl bg-[#0066FF] hover:bg-[#005ce6] text-white flex items-center gap-3 shadow-[0_0_15px_rgba(0,102,255,0.3)] transition-all transform hover:scale-[1.02] active:scale-[0.98] whitespace-nowrap flex-shrink-0"
+        >
           <div className="flex items-center gap-1">
              <div className="flex items-center justify-center px-1.5 h-5 bg-[#3b87ff] rounded text-[10px] font-bold text-white border-b-2 border-[#004ec2] shadow-sm">
               Ctrl
