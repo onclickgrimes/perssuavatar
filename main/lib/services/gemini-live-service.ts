@@ -24,6 +24,7 @@ export class GeminiLiveService extends EventEmitter {
     private hasLoggedSessionProps: boolean = false; // Debug flag
     private transcribeOnlyMode: boolean = false; // If true, only transcribe without emitting audio/actions
     private currentSessionHandle: string | undefined = undefined; // Track session handle for resumption
+    private lastSystemInstruction: string = ''; // Store last system instruction for reconnection
 
     constructor() {
         super();
@@ -31,6 +32,11 @@ export class GeminiLiveService extends EventEmitter {
 
     public async connect(systemInstruction?: string) {
         if (this.isConnected || this.isConnecting) return; // Prevent double connect
+
+        // Store or reuse systemInstruction
+        if (systemInstruction) {
+            this.lastSystemInstruction = systemInstruction;
+        }
 
         try {
             this.isConnecting = true;
@@ -87,7 +93,7 @@ export class GeminiLiveService extends EventEmitter {
                 },
                 systemInstruction: {
                     parts: [{
-                        text: systemInstruction || "You are a helpful assistant."
+                        text: this.lastSystemInstruction || "You are a helpful assistant."
                     }]
                 },
                 outputAudioTranscription: {},  // Transcrição do áudio do modelo
@@ -96,6 +102,7 @@ export class GeminiLiveService extends EventEmitter {
             };
 
             console.log("[GeminiLive] Connecting...");
+            console.log("[GeminiLive] System instruction:", this.lastSystemInstruction);
             this.session = await ai.live.connect({
                 model,
                 callbacks: {
@@ -476,6 +483,54 @@ export class GeminiLiveService extends EventEmitter {
      */
     public isTranscribeOnlyMode(): boolean {
         return this.transcribeOnlyMode;
+    }
+
+    /**
+     * Get current connection state
+     */
+    public isSessionConnected(): boolean {
+        return this.isConnected;
+    }
+
+    /**
+     * Update system instructions dynamically during an active session
+     * @param text The new system instruction text
+     */
+    public async sendSystemInstruction(text: string) {
+        if (!this.session || !this.isConnected) {
+            console.log('[GeminiLive] Cannot send system instruction: not connected');
+            return;
+        }
+
+        console.log('[GeminiLive] Sending new system instruction...');
+        // console.log(text);
+        
+        // Store for reconnection (if server closes, next connect uses this)
+        this.lastSystemInstruction = "A partir de agora, teu nome é o que está nesse prompt:\n " + text;
+        
+        try {
+            // Construct the message for system instruction update
+            // Note: 'turns' is a single Content object, not an array (per Python SDK docs)
+            const message = {
+                clientContent: {
+                    turns: {
+                        role: "system",
+                        parts: [{ text: "A partir de agora, teu nome é o que está nesse prompt:\n " + text }]
+                    },
+                    turnComplete: false // Keep the turn open as per docs
+                }
+            };
+            
+            // Send via WebSocket (reliable method used for other inputs)
+            if ((this.session as any).conn && (this.session as any).conn.send) {
+                (this.session as any).conn.send(JSON.stringify(message));
+                console.log('[GeminiLive] System instruction sent successfully via WS');
+            } else {
+                 console.warn('[GeminiLive] WebSocket connection not directly accessible for system update');
+            }
+        } catch (error) {
+           console.error('[GeminiLive] Error sending system instruction:', error);
+        }
     }
 }
 

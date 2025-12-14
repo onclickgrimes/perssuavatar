@@ -395,11 +395,14 @@ export class VoiceAssistant extends EventEmitter {
         // Atualiza o prompt para o modo atual
         this.systemPrompt = this.getSystemPrompt(this.mode);
         
-        // Se estiver no modo live, precisa reconectar com o novo prompt
+        // Se estiver no modo live, tenta atualizar dinamicamente se conectado
         if (this.mode === 'live') {
-            console.log('[VoiceAssistant] Reconectando Gemini Live com novo prompt...');
-            await this.geminiLiveService.disconnect();
-            await this.geminiLiveService.connect(this.getSystemPrompt('live'));
+            if (this.geminiLiveService.isSessionConnected()) {
+                console.log('[VoiceAssistant] Atualizando prompt do sistema Gemini Live dinamicamente...');
+                await this.geminiLiveService.sendSystemInstruction(this.systemPrompt);
+            } else {
+                 console.log('[VoiceAssistant] Gemini Live desconectado. Novo prompt será usado na próxima conexão.');
+            }
             
             // Restaurar estado de transcribeOnly se estava ativo
             if (this.transcribeOnlyMode) {
