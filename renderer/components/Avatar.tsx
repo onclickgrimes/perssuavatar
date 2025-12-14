@@ -172,11 +172,30 @@ export default function Avatar({ modelName, uiOpen }: AvatarProps) {
     // Handle Window Resize for App
     const handleResize = () => {
         if (!appRef.current) return;
+        
         // Center wrapper if it exists
         const wrapper = appRef.current.stage.children[0] as PIXI.Container;
         if (wrapper) {
             wrapper.x = window.innerWidth / 2;
             wrapper.y = window.innerHeight / 2;
+            
+            // Recalcular scale do avatar quando a janela redimensiona
+            const avatarModel = wrapper.children[0] as any;
+            if (avatarModel && avatarModel.internalModel) {
+                // Usar dimensões originais do modelo (sem scale aplicado)
+                const originalWidth = avatarModel.internalModel.width;
+                const originalHeight = avatarModel.internalModel.height;
+                
+                const scaleX = window.innerWidth / originalWidth;
+                const scaleY = window.innerHeight / originalHeight;
+                const newScale = Math.min(scaleX, scaleY);
+                
+                // Atualizar base scale e aplicar
+                baseScaleRef.current = newScale;
+                avatarModel.scale.set(newScale);
+                
+                console.log(`[Resize] New avatar scale: ${newScale.toFixed(3)} (window: ${window.innerWidth}x${window.innerHeight}, original: ${originalWidth}x${originalHeight})`);
+            }
         }
     };
     window.addEventListener('resize', handleResize);
@@ -259,7 +278,7 @@ export default function Avatar({ modelName, uiOpen }: AvatarProps) {
             console.log(`Dimensions: ${loadedModel.width}x${loadedModel.height}`);
             const scaleX = window.innerWidth / loadedModel.width;
             const scaleY = window.innerHeight / loadedModel.height;
-            const scale = Math.min(scaleX, scaleY) * 0.8;
+            const scale = Math.min(scaleX, scaleY); // Usando 100% do espaço (removido * 0.8)
             console.log(`Calculated Base Scale: ${scale}`);
             
             // Store base scale for later use
