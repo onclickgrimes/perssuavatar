@@ -64,6 +64,16 @@ interface DatabaseSchema {
     createdAt: number;
     updatedAt: number;
   }>;
+
+  // Configurações da janela de transcrição
+  transcriptionSettings: {
+    fontSize: number;
+    windowOpacity: number;
+    includeAvatarInConversation: boolean;
+    avatarInteractionCount: number;
+    avatarInteractionMode: 'fixed' | 'dynamic';
+    avatarResponseChance: number;
+  };
 }
 
 // Valores padrão
@@ -292,7 +302,15 @@ This assistant must explain concepts with increasing depth, provide code solutio
 //       createdAt: Date.now(),
 //       updatedAt: Date.now()
 //     }
-  ]
+  ],
+  transcriptionSettings: {
+    fontSize: 12,
+    windowOpacity: 95,
+    includeAvatarInConversation: false,
+    avatarInteractionCount: 10,
+    avatarInteractionMode: 'fixed',
+    avatarResponseChance: 50
+  }
 };
 
 // Singleton da store
@@ -338,6 +356,17 @@ export function initializeDatabase(): Store<DatabaseSchema> {
         },
         assistants: {
           type: 'array'
+        },
+        transcriptionSettings: {
+          type: 'object',
+          properties: {
+            fontSize: { type: 'number', minimum: 10, maximum: 20 },
+            windowOpacity: { type: 'number', minimum: 30, maximum: 100 },
+            includeAvatarInConversation: { type: 'boolean' },
+            avatarInteractionCount: { type: 'number', minimum: 5, maximum: 60 },
+            avatarInteractionMode: { type: 'string', enum: ['fixed', 'dynamic'] },
+            avatarResponseChance: { type: 'number', minimum: 40, maximum: 90 }
+          }
         }
       }
     });
@@ -587,6 +616,22 @@ export function deleteAssistant(assistantId: string) {
 }
 
 // ===============================================
+// FUNÇÕES DE CONFIGURAÇÕES DA TRANSCRIÇÃO
+// ===============================================
+
+export function getTranscriptionSettings() {
+  const db = getDatabase();
+  return db.get('transcriptionSettings');
+}
+
+export function setTranscriptionSettings(settings: Partial<DatabaseSchema['transcriptionSettings']>) {
+  const db = getDatabase();
+  const current = db.get('transcriptionSettings');
+  db.set('transcriptionSettings', { ...current, ...settings });
+  console.log('💾 Transcription settings saved:', settings);
+}
+
+// ===============================================
 // FUNÇÕES UTILITÁRIAS
 // ===============================================
 
@@ -669,6 +714,10 @@ export default {
   createAssistant,
   updateAssistant,
   deleteAssistant,
+
+  // Transcription Settings
+  getTranscriptionSettings,
+  setTranscriptionSettings,
 
   // Utilities
   clearAllData,

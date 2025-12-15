@@ -748,6 +748,69 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const transcriptionScrollPosition = useRef(0);
   const summaryScrollPosition = useRef(0);
 
+  // ========================================
+  // CARREGAR/SALVAR CONFIGURAÇÕES DO BANCO
+  // ========================================
+  
+  // Carregar configurações do banco de dados ao montar
+  useEffect(() => {
+    const loadSettings = async () => {
+      try {
+        const result = await window.electron?.db?.getTranscriptionSettings?.();
+        if (result?.success && result.settings) {
+          const s = result.settings;
+          console.log('[TranscriptionWindow] 📖 Configurações carregadas:', s);
+          setSummaryFontSize(s.fontSize ?? 12);
+          setWindowOpacity(s.windowOpacity ?? 100);
+          setIncludeAvatarInConversation(s.includeAvatarInConversation ?? false);
+          setAvatarInteractionCount(s.avatarInteractionCount ?? 10);
+          setAvatarInteractionMode(s.avatarInteractionMode ?? 'fixed');
+          setAvatarResponseChance(s.avatarResponseChance ?? 50);
+        }
+      } catch (error) {
+        console.error('[TranscriptionWindow] ❌ Erro ao carregar configurações:', error);
+      }
+    };
+    loadSettings();
+  }, []);
+
+  // Salvar configurações quando alteradas (debounced)
+  const saveTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  useEffect(() => {
+    // Ignorar a execução inicial
+    if (saveTimeoutRef.current === null) {
+      saveTimeoutRef.current = undefined as any;
+      return;
+    }
+    
+    // Debounce: salvar 500ms após a última alteração
+    if (saveTimeoutRef.current) {
+      clearTimeout(saveTimeoutRef.current);
+    }
+    
+    saveTimeoutRef.current = setTimeout(async () => {
+      try {
+        await window.electron?.db?.setTranscriptionSettings?.({
+          fontSize: summaryFontSize,
+          windowOpacity,
+          includeAvatarInConversation,
+          avatarInteractionCount,
+          avatarInteractionMode,
+          avatarResponseChance
+        });
+        console.log('[TranscriptionWindow] 💾 Configurações salvas');
+      } catch (error) {
+        console.error('[TranscriptionWindow] ❌ Erro ao salvar configurações:', error);
+      }
+    }, 500);
+    
+    return () => {
+      if (saveTimeoutRef.current) {
+        clearTimeout(saveTimeoutRef.current);
+      }
+    };
+  }, [summaryFontSize, windowOpacity, includeAvatarInConversation, avatarInteractionCount, avatarInteractionMode, avatarResponseChance]);
+
   // Hook para transcrição de áudio do desktop (OUTROS)
   const { startTranscribing, stopTranscribing, changeAudioSource, isTranscribing, status } = useDesktopAudioTranscriber({
     sourceId: selectedAudioSourceId, // Passa a fonte selecionada

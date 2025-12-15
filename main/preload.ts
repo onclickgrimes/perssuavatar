@@ -165,6 +165,17 @@ const handler = {
       ipcRenderer.invoke('db:update-assistant', assistantId, updates),
     deleteAssistant: (assistantId: string) => ipcRenderer.invoke('db:delete-assistant', assistantId),
     
+    // Transcription Settings
+    getTranscriptionSettings: () => ipcRenderer.invoke('db:get-transcription-settings'),
+    setTranscriptionSettings: (settings: {
+      fontSize?: number;
+      windowOpacity?: number;
+      includeAvatarInConversation?: boolean;
+      avatarInteractionCount?: number;
+      avatarInteractionMode?: 'fixed' | 'dynamic';
+      avatarResponseChance?: number;
+    }) => ipcRenderer.invoke('db:set-transcription-settings', settings),
+    
     // Utilities
     getStats: () => ipcRenderer.invoke('db:get-stats'),
     export: () => ipcRenderer.invoke('db:export'),

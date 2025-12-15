@@ -112,7 +112,7 @@ import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import { VoiceAssistant } from './lib/voice-assistant';
 import ffmpeg from 'fluent-ffmpeg';
-import { initializeDatabase } from './lib/database';
+import { initializeDatabase, getTranscriptionSettings, setTranscriptionSettings } from './lib/database';
 import { registerDatabaseHandlers } from './lib/database-handlers';
 import { isProd, getUserDataPath } from './lib/app-config';
 
@@ -998,6 +998,38 @@ ipcMain.on('quit-app', () => {
   app.quit();
 });
 
+// ===============================================
+// HANDLERS DE CONFIGURAÇÕES DA TRANSCRIÇÃO
+// ===============================================
+
+ipcMain.handle('db:get-transcription-settings', async () => {
+  try {
+    const settings = getTranscriptionSettings();
+    console.log('📖 [IPC] Configurações de transcrição carregadas:', settings);
+    return { success: true, settings };
+  } catch (error) {
+    console.error('❌ [IPC] Erro ao carregar configurações de transcrição:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('db:set-transcription-settings', async (event, settings: {
+  fontSize?: number;
+  windowOpacity?: number;
+  includeAvatarInConversation?: boolean;
+  avatarInteractionCount?: number;
+  avatarInteractionMode?: 'fixed' | 'dynamic';
+  avatarResponseChance?: number;
+}) => {
+  try {
+    setTranscriptionSettings(settings);
+    console.log('💾 [IPC] Configurações de transcrição salvas:', settings);
+    return { success: true };
+  } catch (error) {
+    console.error('❌ [IPC] Erro ao salvar configurações de transcrição:', error);
+    return { success: false, error: error.message };
+  }
+});
 
 
 // Screen Recording Logic
