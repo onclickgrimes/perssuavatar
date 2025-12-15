@@ -301,6 +301,12 @@ const handler = {
   // Encerrar aplicação
   quitApp: () => ipcRenderer.send('quit-app'),
   
+  // Enviar contexto de conversa ao Gemini Live (transcrições e resumos)
+  sendConversationContext: (data: { 
+    transcriptions: Array<{ speaker: string; text: string }>;
+    summary?: string;
+  }) => ipcRenderer.invoke('send-conversation-context', data),
+  
   // Resetar sessão Gemini Live (limpar histórico)
   resetLiveSession: () => ipcRenderer.invoke('reset-live-session')
 }

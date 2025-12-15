@@ -970,6 +970,28 @@ ipcMain.handle('reset-live-session', async () => {
   return { success: true };
 });
 
+// Handler para enviar contexto de conversa ao Gemini Live
+ipcMain.handle('send-conversation-context', async (event, data: { 
+  transcriptions: Array<{ speaker: string; text: string }>;
+  summary?: string;
+}) => {
+  try {
+    console.log(`📝 [IPC] Enviando contexto de conversa ao Gemini Live (${data.transcriptions.length} transcrições, resumo: ${data.summary ? 'SIM' : 'NÃO'})`);
+    const sent = await assistant.sendConversationContext(data.transcriptions, data.summary);
+    
+    if (sent) {
+      console.log(`✅ [IPC] Contexto enviado com sucesso!`);
+      return { success: true, sent: true };
+    } else {
+      console.warn(`⚠️ [IPC] Contexto NÃO foi enviado (verifique logs acima)`);
+      return { success: true, sent: false, reason: 'Veja logs do GeminiLive para detalhes' };
+    }
+  } catch (error: any) {
+    console.error('❌ [IPC] Erro ao enviar contexto de conversa:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Handler para encerrar a aplicação
 ipcMain.on('quit-app', () => {
   console.log('👋 Encerrando aplicação...');

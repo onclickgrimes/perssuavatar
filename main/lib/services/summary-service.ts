@@ -259,7 +259,7 @@ Você é um assistente com um propósito específico definido acima. Antes de ge
             **TRANSCRIÇÃO DA CONVERSA:**
             ${transcriptionText}
             ---
-            **SUA RESPOSTA (ou [IGNORAR] se não for relevante para sua especialidade):**`;
+            **Retorne a SUA RESPOSTA ou [IGNORAR] se não for relevante para sua especialidade:**`;
 
             let result = '';
             let isIgnored = false;

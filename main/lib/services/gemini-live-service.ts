@@ -541,6 +541,75 @@ export class GeminiLiveService extends EventEmitter {
            console.error('[GeminiLive] Error sending system instruction:', error);
         }
     }
+
+    /**
+     * Envia contexto de conversa (transcrições/resumos) para a sessão Live
+     * Isso permite que o avatar tenha consciência do que está sendo discutido
+     * @param transcriptions Array de transcrições formatadas
+     * @param summary Resumo opcional da conversa
+     * @returns true se enviado com sucesso, false caso contrário
+     */
+    public async sendConversationContext(
+        transcriptions: Array<{ speaker: string; text: string }>,
+        summary?: string
+    ): Promise<boolean> {
+        // Verificar conexão
+        if (!this.session || !this.isConnected) {
+            console.error('[GeminiLive][Context] ❌ Não está conectado (session:', !!this.session, ', isConnected:', this.isConnected, ')');
+            return false;
+        }
+
+        try {
+            // ========================================
+            // FORMATAR CONTEXTO COMO TEXTO CONSOLIDADO
+            // ========================================
+            let contextText = "=== CONTEXTO ===\n";
+            contextText += "Essa é uma conversa que está acontecendo agora. Use essa informação para fazer comentários e responder perguntas sobre o que está sendo discutido.\n\n";
+
+            contextText += "Tudo que que for relacionado a 'VOCÊ' é o usuário que está interagindo. Tudo que for relacionado a 'ASSISTENTE' é o avatar/Yuki. E 'OUTROS' pode ser qualquer outra pessoa em reunião com o usuário ou um conteúdo sendo assistido no computador do usuário.\n\n"
+            contextText += "Responda como se fizesse parte da conversa. Seja breve nos comentários e não faça perguntas. \n\n";
+            
+            // Adicionar resumo se existir
+            if (summary && summary.trim()) {
+                contextText += "📋 RESUMO DA CONVERSA ATÉ AQUI:\n";
+                contextText += summary.trim() + "\n\n";
+            }
+            
+            // Adicionar transcrições recentes
+            if (transcriptions.length > 0) {
+                contextText += "💬 TRANSCRIÇÕES RECENTES:\n";
+                for (const t of transcriptions) {
+                    contextText += `[${t.speaker}]: ${t.text}\n`;
+                }
+            }
+            
+            contextText += "\n=== FIM DO CONTEXTO ===";
+            
+            console.log(`[GeminiLive][Context] 📝 Contexto formatado (${contextText.length} caracteres):`);
+            // console.log(contextText.substring(0, 300) + (contextText.length > 300 ? '...' : ''));
+            console.log("[GeminiLive][Context] Contexto:", contextText);
+            // ========================================
+            // ENVIAR VIA SDK (método oficial que funciona!)
+            // ========================================
+            
+            console.log(`[GeminiLive][Context] 📤 Enviando via session.sendClientContent()...`);
+            
+            this.session.sendClientContent({
+                turns: [{
+                    role: 'user',
+                    parts: [{ text: contextText }]
+                }],
+                turnComplete: true // 50% chance de iniciar resposta do modelo
+            } as any);
+            console.log(`[GeminiLive][Context] 📊 Stats: ${transcriptions.length} transcrições, resumo: ${summary ? 'SIM' : 'NÃO'}`);
+            
+            return true;
+            
+        } catch (error) {
+            console.error('[GeminiLive][Context] ❌ Erro ao enviar contexto:', error);
+            return false;
+        }
+    }
 }
 
 // Helper Functions

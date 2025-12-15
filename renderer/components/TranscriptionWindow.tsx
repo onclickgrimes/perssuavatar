@@ -102,13 +102,13 @@ function isSimilarToModelTranscription(
     .filter(t => t.length > 0)
     .join(' ');
 
-  console.log(`[TranscriptionFilter] 🔍 Texto desktop normalizado: "${normalizedDesktop}"`);
-  console.log(`[TranscriptionFilter] 🔍 Modelo consolidado: ${consolidatedModelText.length} caracteres`);
-  console.log(`[TranscriptionFilter] 🔍 Modelo consolidado normalizado: "${consolidatedModelText.substring(0, 150)}..."`);
+  // console.log(`[TranscriptionFilter] 🔍 Texto desktop normalizado: "${normalizedDesktop}"`);
+  // console.log(`[TranscriptionFilter] 🔍 Modelo consolidado: ${consolidatedModelText.length} caracteres`);
+  // console.log(`[TranscriptionFilter] 🔍 Modelo consolidado normalizado: "${consolidatedModelText.substring(0, 150)}..."`);
 
   // 1. Verificar se o texto do desktop está contido no modelo consolidado
   if (consolidatedModelText.includes(normalizedDesktop)) {
-    console.log(`[TranscriptionFilter] ✅ Descartando (substring encontrada no modelo consolidado):`);
+    // console.log(`[TranscriptionFilter] ✅ Descartando (substring encontrada no modelo consolidado):`);
     console.log(`  Desktop: "${text}"`);
     console.log(`  Modelo consolidado: "${consolidatedModelText}"`);
     return true;
@@ -116,7 +116,7 @@ function isSimilarToModelTranscription(
 
   // 2. Verificar se o modelo consolidado está contido no desktop
   if (normalizedDesktop.includes(consolidatedModelText) && consolidatedModelText.length > 5) {
-    console.log(`[TranscriptionFilter] ✅ Descartando (modelo consolidado encontrado no desktop):`);
+    // console.log(`[TranscriptionFilter] ✅ Descartando (modelo consolidado encontrado no desktop):`);
     console.log(`  Desktop: "${text}"`);
     console.log(`  Modelo consolidado: "${consolidatedModelText}"`);
     return true;
@@ -127,13 +127,13 @@ function isSimilarToModelTranscription(
     const similarity = calculateSimilarity(normalizedDesktop, consolidatedModelText);
     
     if (similarity >= similarityThreshold) {
-      console.log(`[TranscriptionFilter] ✅ Descartando (${similarity.toFixed(1)}% similar ao consolidado):`);
+      // console.log(`[TranscriptionFilter] ✅ Descartando (${similarity.toFixed(1)}% similar ao consolidado):`);
       console.log(`  Desktop: "${text}"`);
       console.log(`  Modelo consolidado: "${consolidatedModelText}"`);
       return true;
     }
     
-    console.log(`[TranscriptionFilter] 📊 Similaridade: ${similarity.toFixed(1)}% (threshold: ${similarityThreshold}%)`);
+    // console.log(`[TranscriptionFilter] 📊 Similaridade: ${similarity.toFixed(1)}% (threshold: ${similarityThreshold}%)`);
   }
 
   // 4. Verificar se partes significativas do desktop estão nos fragmentos individuais
@@ -147,17 +147,17 @@ function isSimilarToModelTranscription(
     }
     
     const wordMatchPercentage = (matchingWords / words.length) * 100;
-    console.log(`[TranscriptionFilter] 📊 Palavras em comum: ${matchingWords}/${words.length} = ${wordMatchPercentage.toFixed(1)}%`);
+    // console.log(`[TranscriptionFilter] 📊 Palavras em comum: ${matchingWords}/${words.length} = ${wordMatchPercentage.toFixed(1)}%`);
     
     if (wordMatchPercentage >= 70) {
-      console.log(`[TranscriptionFilter] ✅ Descartando (${wordMatchPercentage.toFixed(1)}% palavras em comum):`);
+      // console.log(`[TranscriptionFilter] ✅ Descartando (${wordMatchPercentage.toFixed(1)}% palavras em comum):`);
       console.log(`  Desktop: "${text}"`);
       console.log(`  Palavras correspondentes: ${matchingWords}/${words.length}`);
       return true;
     }
   }
 
-  console.log(`[TranscriptionFilter] ❌ Não passou em nenhum filtro, liberando como OUTROS`);
+  // console.log(`[TranscriptionFilter] ❌ Não passou em nenhum filtro, liberando como OUTROS`);
   return false;
 }
 
@@ -449,7 +449,7 @@ const LightMarkdown = React.memo(function LightMarkdown({ content, className = '
       // Título H2 (##)
       if (line.startsWith('## ')) {
         elements.push(
-          <h2 key={getUniqueKey('h2')} className="text-base font-bold text-white mt-3 mb-2">
+          <h2 key={getUniqueKey('h2')} className="font-bold text-white mt-3 mb-2" style={{ fontSize: '1.1em' }}>
             {parseInline(line.slice(3))}
           </h2>
         );
@@ -460,7 +460,7 @@ const LightMarkdown = React.memo(function LightMarkdown({ content, className = '
       // Título H3 (###)
       if (line.startsWith('### ')) {
         elements.push(
-          <h3 key={getUniqueKey('h3')} className="text-sm font-bold text-gray-200 mt-2 mb-1">
+          <h3 key={getUniqueKey('h3')} className="font-bold text-gray-200 mt-2 mb-1" style={{ fontSize: '1em' }}>
             {parseInline(line.slice(4))}
           </h3>
         );
@@ -478,7 +478,7 @@ const LightMarkdown = React.memo(function LightMarkdown({ content, className = '
         elements.push(
           <ul key={getUniqueKey('ul')} className="my-2 space-y-1">
             {listItems.map((item, idx) => (
-              <li key={idx} className="flex items-start gap-2 text-xs text-gray-200">
+              <li key={idx} className="flex items-start gap-2 text-gray-200">
                 <span className="text-cyan-400 mt-0.5">•</span>
                 <span>{parseInline(item)}</span>
               </li>
@@ -498,7 +498,7 @@ const LightMarkdown = React.memo(function LightMarkdown({ content, className = '
         elements.push(
           <ol key={getUniqueKey('ol')} className="my-2 space-y-1">
             {listItems.map((item, idx) => (
-              <li key={idx} className="flex items-start gap-2 text-xs text-gray-200">
+              <li key={idx} className="flex items-start gap-2 text-gray-200">
                 <span className="text-cyan-400 font-medium min-w-[16px]">{idx + 1}.</span>
                 <span>{parseInline(item)}</span>
               </li>
@@ -517,7 +517,7 @@ const LightMarkdown = React.memo(function LightMarkdown({ content, className = '
 
       // Parágrafo normal
       elements.push(
-        <p key={getUniqueKey('p')} className="text-xs text-gray-200 leading-relaxed my-1">
+        <p key={getUniqueKey('p')} className="text-gray-200 leading-relaxed my-1">
           {parseInline(line)}
         </p>
       );
@@ -673,7 +673,12 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const [language, setLanguage] = useState('Portuguese (BR)');
   const [isPaused, setIsPaused] = useState(false);
   const [showAudioMeters, setShowAudioMeters] = useState(true);
-  const [filterAvatarTranscriptions, setFilterAvatarTranscriptions] = useState(true);
+  // Quando true: inclui transcrições do avatar (não filtra) E envia contexto periodicamente
+  const [includeAvatarInConversation, setIncludeAvatarInConversation] = useState(false);
+  // Configurações de interação do avatar (só usadas quando includeAvatarInConversation = true)
+  const [avatarInteractionCount, setAvatarInteractionCount] = useState(10); // Mín 5, Máx 60, Padrão 10
+  const [avatarInteractionMode, setAvatarInteractionMode] = useState<'fixed' | 'dynamic'>('fixed'); // fixo ou dinâmico (random)
+  const [avatarResponseChance, setAvatarResponseChance] = useState(50); // Mín 40, Máx 90, Padrão 50 (só usado no modo dinâmico)
   const [messages, setMessages] = useState<Message[]>([]);
   const [userAudioLevel, setUserAudioLevel] = useState(0);
   const [otherAudioLevel, setOtherAudioLevel] = useState(0);
@@ -734,6 +739,11 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
   const isGeneratingFollowUpRef = useRef(false);
   const wasDraggingRef = useRef(false); // Para evitar toggle após arraste
   
+  // Ref para rastrear quantas mensagens havia no último envio de contexto ao avatar
+  const lastContextSentMessageCount = useRef<number>(0);
+  // Ref para armazenar mensagens atuais (evita stale closure no setInterval)
+  const messagesRef = useRef<Message[]>([]);
+  
   // Refs para guardar a posição do scroll de cada aba
   const transcriptionScrollPosition = useRef(0);
   const summaryScrollPosition = useRef(0);
@@ -774,25 +784,25 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
           if (desktopTranscriptionBuffer.current.trim()) {
             const desktopText = desktopTranscriptionBuffer.current.trim();
             
-            console.log(`[TranscriptionFilter] 🔍 Verificando transcrição do desktop: "${desktopText}"`);
-            console.log(`[TranscriptionFilter] 🔍 Filtro de avatar: ${filterAvatarTranscriptions ? 'ATIVO' : 'DESATIVADO'}`);
-            console.log(`[TranscriptionFilter] 🔍 Buffer do modelo tem ${modelTranscriptionBuffer.current.length} fragmentos para comparar`);
+            // console.log(`[TranscriptionFilter] 🔍 Verificando transcrição do desktop: "${desktopText}"`);
+            // console.log(`[TranscriptionFilter] 🔍 Incluir Avatar: ${includeAvatarInConversation ? 'SIM' : 'NÃO'}`);
+            // console.log(`[TranscriptionFilter] 🔍 Buffer do modelo tem ${modelTranscriptionBuffer.current.length} fragmentos para comparar`);
             
             // ✅ SEMPRE verificar se a transcrição é do avatar
             const isFromAvatar = isSimilarToModelTranscription(desktopText, modelTranscriptionBuffer.current);
             
             if (isFromAvatar) {
-              if (filterAvatarTranscriptions) {
-                // Filtro ativo: descarta transcrições do avatar
-                console.log('[TranscriptionFilter] ❌ Transcrição filtrada (é do avatar)');
+              if (!includeAvatarInConversation) {
+                // Incluir Avatar desativado: filtra (descarta) transcrições do avatar
+                console.log('[TranscriptionFilter] ❌ Transcrição filtrada (é do avatar, Incluir Avatar está OFF)');
               } else {
-                // Filtro desativado: mostra transcrições do avatar como ASSISTENTE
+                // Incluir Avatar ativado: mostra transcrições do avatar como ASSISTENTE
                 console.log('[TranscriptionFilter] 🤖 Transcrição do avatar, adicionando como ASSISTENTE');
                 addMessage('ASSISTENTE', desktopText);
               }
             } else {
               // Não é do avatar: sempre adiciona com o nome da fonte selecionada
-              console.log(`[TranscriptionFilter] ✅ Transcrição de outra pessoa, adicionando como ${selectedAudioSourceName}`);
+              // console.log(`[TranscriptionFilter] ✅ Transcrição de outra pessoa, adicionando como ${selectedAudioSourceName}`);
               addMessage(selectedAudioSourceName.toUpperCase(), desktopText);
             }
             
@@ -976,6 +986,9 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               content: result.result 
             }]);
             
+            // Contexto agora é enviado via intervalo de 10 segundos (ver useEffect abaixo)
+            // Não enviar mais aqui na geração do sumário
+            
             // ZERAR o buffer após resumo bem-sucedido
             summaryMessagesBuffer.current = [];
             console.log(`[TranscriptionWindow] Resumo gerado! Buffer zerado.`);
@@ -1037,6 +1050,122 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
       }
     };
   }, [messages, isPaused]); // Removido isGeneratingSummary das dependências
+
+  // ========================================
+  // MANTER REF DE MENSAGENS ATUALIZADO
+  // ========================================
+  useEffect(() => {
+    messagesRef.current = messages;
+  }, [messages]);
+
+  // Refs para configurações (evita recriar intervalo quando mudam)
+  const includeAvatarRef = useRef(includeAvatarInConversation);
+  const avatarInteractionCountRef = useRef(avatarInteractionCount);
+  const avatarInteractionModeRef = useRef(avatarInteractionMode);
+  const avatarResponseChanceRef = useRef(avatarResponseChance);
+  const summaryChatHistoryRef = useRef(summaryChatHistory);
+  
+  // Manter refs atualizados
+  useEffect(() => {
+    includeAvatarRef.current = includeAvatarInConversation;
+  }, [includeAvatarInConversation]);
+  
+  useEffect(() => {
+    avatarInteractionCountRef.current = avatarInteractionCount;
+  }, [avatarInteractionCount]);
+  
+  useEffect(() => {
+    avatarInteractionModeRef.current = avatarInteractionMode;
+  }, [avatarInteractionMode]);
+  
+  useEffect(() => {
+    avatarResponseChanceRef.current = avatarResponseChance;
+  }, [avatarResponseChance]);
+  
+  useEffect(() => {
+    summaryChatHistoryRef.current = summaryChatHistory;
+  }, [summaryChatHistory]);
+
+  // ========================================
+  // ENVIO PERIÓDICO DE CONTEXTO PARA O AVATAR
+  // ========================================
+  useEffect(() => {
+    // Criar intervalo apenas uma vez quando 'Incluir Avatar' for ativado
+    if (!includeAvatarInConversation) return;
+    
+    console.log('[TranscriptionWindow] 🚀 Iniciando verificação periódica de contexto (a cada 3s)');
+    
+    const contextIntervalRef = setInterval(async () => {
+      // Verificar se ainda está ativado
+      if (!includeAvatarRef.current) return;
+      
+      // Usar ref para pegar mensagens atuais (evita stale closure)
+      const currentMessages = messagesRef.current;
+      if (currentMessages.length === 0) return;
+      
+      // Usar sempre o valor configurado pelo usuário como threshold
+      const minNewMessages = avatarInteractionCountRef.current;
+      
+      // Contar apenas mensagens que NÃO são do avatar (ASSISTENTE)
+      const nonAvatarMessages = currentMessages.filter(m => m.speaker.toUpperCase() !== 'ASSISTENTE');
+      const newNonAvatarMessagesCount = nonAvatarMessages.length - lastContextSentMessageCount.current;
+      
+      if (newNonAvatarMessagesCount < minNewMessages) {
+        console.log(`[TranscriptionWindow] ⏳ Aguardando (${newNonAvatarMessagesCount}/${minNewMessages} novas, modo: ${avatarInteractionModeRef.current})`);
+        return;
+      }
+      
+      // No modo dinâmico, X% de chance de pular esta oportunidade
+      if (avatarInteractionModeRef.current === 'dynamic') {
+        const chancePercent = avatarResponseChanceRef.current;
+        const shouldRespond = Math.random() < (chancePercent / 100);
+        if (!shouldRespond) {
+          console.log(`[TranscriptionWindow] 🎲 Modo dinâmico: pulando esta vez (${chancePercent}% chance)`);
+          // Atualizar contador mesmo pulando, para não acumular
+          lastContextSentMessageCount.current = nonAvatarMessages.length;
+          return;
+        }
+        console.log(`[TranscriptionWindow] 🎲 Modo dinâmico: avatar vai responder! (${chancePercent}% chance)`);
+      }
+      
+      try {
+        // Converter messages para o formato esperado pelo backend
+        const fullHistory = currentMessages.map(m => ({
+          speaker: m.speaker,
+          text: m.text
+        }));
+        
+        // Pegar o último resumo do histórico de chat (se existir)
+        const currentSummaryHistory = summaryChatHistoryRef.current;
+        const lastSummary = currentSummaryHistory.length > 0 
+          ? currentSummaryHistory[currentSummaryHistory.length - 1].content 
+          : undefined;
+        
+        console.log(`[TranscriptionWindow] ⏰ Enviando contexto (${fullHistory.length} mensagens, ${newNonAvatarMessagesCount} novas sem avatar, threshold: ${minNewMessages})...`);
+        
+        const contextResult = await window.electron?.sendConversationContext?.({
+          transcriptions: fullHistory,
+          summary: lastSummary
+        });
+        
+        if (contextResult?.sent) {
+          // Atualizar o contador com base em mensagens não-avatar
+          lastContextSentMessageCount.current = nonAvatarMessages.length;
+          console.log(`[TranscriptionWindow] ✅ Contexto enviado (${fullHistory.length} mensagens)`);
+        } else if (contextResult?.success) {
+          console.warn(`[TranscriptionWindow] ⚠️ Contexto NÃO enviado:`, contextResult.reason || 'Verifique se está no modo Live');
+        }
+      } catch (error) {
+        console.error('[TranscriptionWindow] ❌ Erro ao enviar contexto periódico:', error);
+      }
+    }, 3000); // 3 segundos (verificação mais frequente)
+    
+    return () => {
+      console.log('[TranscriptionWindow] 🛑 Parando verificação periódica de contexto');
+      clearInterval(contextIntervalRef);
+    };
+  }, [includeAvatarInConversation]); // Só recria quando toggle liga/desliga
+
 
   const addMessage = (speaker: string, text: string) => {
     // Remove avatar tags from transcription display
@@ -1244,8 +1373,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
         .join(' ')
         .substring(0, 100);
       
-      console.log(`[TranscriptionFilter] Buffer do modelo: ${modelTranscriptionBuffer.current.length} fragmentos`);
-      console.log(`[TranscriptionFilter] Preview: "${previewText}..."`);
+      // console.log(`[TranscriptionFilter] Buffer do modelo: ${modelTranscriptionBuffer.current.length} fragmentos`);
+      // console.log(`[TranscriptionFilter] Preview: "${previewText}..."`);
     };
 
     const unsubscribeModel = window.electron.onModelTranscription?.(handleModelTranscription);
@@ -1400,7 +1529,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
             className="flex-1 overflow-y-auto px-3 py-2 space-y-2 bg-black" 
             style={{
               scrollbarWidth: 'thin',
-              scrollbarColor: '#1a1a1a #0a0a0a'
+              scrollbarColor: '#1a1a1a #0a0a0a',
+              fontSize: `${summaryFontSize}px`
             }}
           >
             {messages.map((message) => (
@@ -1418,7 +1548,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
                   }`}>
                     {message.speaker}
                   </span>
-                  <div className={`px-2.5 py-1.5 rounded-md text-xs leading-snug ${
+                  <div className={`px-2.5 py-1.5 rounded-md leading-snug ${
                     message.speaker === 'VOCÊ'
                       ? 'bg-blue-600 text-white'
                       : message.speaker === 'ASSISTENTE'
@@ -1464,7 +1594,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
                 <div key={index} className="mb-4">
                   {chat.role === 'user' ? (
                     <div className="text-right">
-                      <p className="text-gray-400 text-xs leading-relaxed whitespace-pre-wrap inline-block text-left max-w-[90%]">
+                      <p className="text-gray-400 leading-relaxed whitespace-pre-wrap inline-block text-left max-w-[90%]">
                         → {chat.content}
                       </p>
                     </div>
@@ -1672,8 +1802,8 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
               {/* Popup de Configurações */}
               {showSettingsPopup && (
                 <div 
-                  className="absolute bottom-full right-0 mb-2 w-64 bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl z-50 overflow-hidden"
-                  style={{ maxHeight: 'calc(100vh - 150px)' }}
+                  className="fixed top-2 right-2 w-64 bg-[#1a1a1a] border border-[#333] rounded-lg shadow-xl z-50 overflow-hidden"
+                  style={{ maxHeight: 'calc(100vh - 100px)' }}
                 >
                   {/* Header fixo */}
                   <div className="flex items-center justify-between p-4 pb-2 border-b border-[#333]">
@@ -1688,8 +1818,11 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
                     </button>
                   </div>
 
-                  {/* Conteúdo com scroll */}
-                  <div className="p-4 overflow-y-auto" style={{ maxHeight: 'calc(100vh - 220px)' }}>
+                  {/* Conteúdo com scroll estilizado */}
+                  <div 
+                    className="p-4 overflow-y-auto settings-scrollbar" 
+                    style={{ maxHeight: 'calc(100vh - 220px)' }}
+                  >
                     {/* Tamanho da Fonte */}
                     <div className="mb-4">
                       <div className="flex items-center justify-between mb-2">
@@ -1725,42 +1858,107 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
                     {/* Divisor */}
                     <div className="h-px bg-[#333] my-4" />
 
-                    {/* Idioma */}
-                    <div className="mb-4">
-                      <label className="text-gray-400 text-xs block mb-2">Idioma</label>
+                    {/* Idioma + Incluir Avatar (na mesma linha) */}
+                    <div className="flex items-center gap-3">
+                      {/* Select de Idioma (compacto) */}
                       <select 
                         value={language}
                         onChange={(e) => setLanguage(e.target.value)}
-                        className="w-full bg-[#252525] text-white text-xs px-3 py-2 rounded-lg border border-[#333] focus:outline-none cursor-pointer"
+                        className="flex-1 bg-[#252525] text-white text-[10px] px-2 py-1.5 rounded-lg border border-[#333] focus:outline-none cursor-pointer"
                       >
-                        <option>🇧🇷 Portuguese (BR)</option>
-                        <option>🇺🇸 English (US)</option>
-                        <option>🇪🇸 Spanish (ES)</option>
+                        <option>🇧🇷 PT-BR</option>
+                        <option>🇺🇸 EN-US</option>
+                        <option>🇪🇸 ES</option>
                       </select>
-                    </div>
 
-                    {/* Filtro de Avatar */}
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={filterAvatarTranscriptions ? 'text-green-400' : 'text-gray-500'}>
-                            <path d="M22 3L2 3 10 12.46 10 19 14 21 14 12.46 22 3z"/>
-                          </svg>
-                          <label className="text-gray-400 text-xs">Filtrar Avatar</label>
-                        </div>
-                        {/* iOS-style toggle switch */}
+                      {/* Toggle Incluir Avatar */}
+                      <div className="flex items-center gap-1.5">
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className={includeAvatarInConversation ? 'text-purple-400' : 'text-gray-500'}>
+                          <circle cx="12" cy="8" r="5"/>
+                          <path d="M20 21a8 8 0 0 0-16 0"/>
+                        </svg>
+                        <label className="text-gray-400 text-[12px]">Avatar</label>
                         <button
-                          onClick={() => setFilterAvatarTranscriptions(!filterAvatarTranscriptions)}
-                          className={`relative w-10 h-5 rounded-full transition-colors ${
-                            filterAvatarTranscriptions ? 'bg-green-600' : 'bg-gray-600'
+                          onClick={() => setIncludeAvatarInConversation(!includeAvatarInConversation)}
+                          className={`relative w-8 h-4 rounded-full transition-colors ${
+                            includeAvatarInConversation ? 'bg-purple-600' : 'bg-gray-600'
                           }`}
                         >
-                          <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
-                            filterAvatarTranscriptions ? 'translate-x-5' : 'translate-x-0.5'
+                          <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-transform ${
+                            includeAvatarInConversation ? 'translate-x-4' : 'translate-x-0.5'
                           }`} />
                         </button>
                       </div>
                     </div>
+
+                    {/* Configurações extras do Avatar (só aparecem quando incluído) */}
+                    {includeAvatarInConversation && (
+                      <div className="mt-3 pl-4 border-l-2 border-purple-500/30 space-y-3">
+                        {/* Quantidade de mensagens */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-gray-400 text-xs">Interagir a cada</label>
+                            <span className="text-purple-400 text-xs font-medium">{avatarInteractionCount} msgs</span>
+                          </div>
+                          <input
+                            type="range"
+                            min="5"
+                            max="60"
+                            value={avatarInteractionCount}
+                            onChange={(e) => setAvatarInteractionCount(parseInt(e.target.value))}
+                            className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                          />
+                          <div className="flex justify-between text-[9px] text-gray-500 mt-0.5">
+                            <span>5</span>
+                            <span>60</span>
+                          </div>
+                        </div>
+
+                        {/* Modo de interação */}
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <label className="text-gray-400 text-xs">Modo dinâmico</label>
+                            <button
+                              onClick={() => setAvatarInteractionMode(avatarInteractionMode === 'fixed' ? 'dynamic' : 'fixed')}
+                              className={`relative w-10 h-5 rounded-full transition-colors ${
+                                avatarInteractionMode === 'dynamic' ? 'bg-purple-600' : 'bg-gray-600'
+                              }`}
+                            >
+                              <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full transition-transform ${
+                                avatarInteractionMode === 'dynamic' ? 'translate-x-5' : 'translate-x-0.5'
+                              }`} />
+                            </button>
+                          </div>
+                          <p className="text-[9px] text-gray-500 mt-1">
+                            {avatarInteractionMode === 'dynamic' 
+                              ? `${avatarResponseChance}% de chance de responder a cada ${avatarInteractionCount} msgs` 
+                              : `Sempre responde após ${avatarInteractionCount} msgs`}
+                          </p>
+                          
+                          {/* Slider de porcentagem (só aparece no modo dinâmico) */}
+                          {avatarInteractionMode === 'dynamic' && (
+                            <div className="mt-2">
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-gray-400 text-xs">Chance de resposta</label>
+                                <span className="text-purple-400 text-xs font-medium">{avatarResponseChance}%</span>
+                              </div>
+                              <input
+                                type="range"
+                                min="40"
+                                max="90"
+                                value={avatarResponseChance}
+                                onChange={(e) => setAvatarResponseChance(parseInt(e.target.value))}
+                                className="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-purple-500"
+                              />
+                              <div className="flex justify-between text-[9px] text-gray-500 mt-0.5">
+                                <span>40%</span>
+                                <span>90%</span>
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -1829,7 +2027,7 @@ export default function TranscriptionWindow({ onClose }: TranscriptionWindowProp
           onMouseLeave={() => {
             setIsOverResizeHandle(false);
           }}
-          className="absolute bottom-0 right-0 w-8 h-8 cursor-nwse-resize group z-50"
+          className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize group z-50"
           style={{ 
             WebkitAppRegion: 'no-drag',
             // Adicionar uma área maior de hit-testing

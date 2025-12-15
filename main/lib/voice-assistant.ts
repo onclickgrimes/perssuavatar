@@ -717,6 +717,34 @@ export class VoiceAssistant extends EventEmitter {
         this.geminiLiveService.resetSession();
     }
 
+    /**
+     * Envia contexto de conversa (transcrições/resumos) para o Gemini Live
+     * Isso permite que o avatar tenha conhecimento do que está sendo falado no ambiente
+     * @param transcriptions Array de transcrições com speaker e texto
+     * @param summary Resumo opcional da conversa gerado pela IA
+     * @returns true se enviado com sucesso, false caso contrário
+     */
+    public async sendConversationContext(
+        transcriptions: Array<{ speaker: string; text: string }>,
+        summary?: string
+    ): Promise<boolean> {
+        if (this.mode !== 'live') {
+            console.log('[VoiceAssistant] ⚠️ sendConversationContext só funciona no modo live (modo atual:', this.mode, ')');
+            return false;
+        }
+        
+        console.log(`[VoiceAssistant] 📤 Enviando contexto de conversa para Gemini Live...`);
+        const result = await this.geminiLiveService.sendConversationContext(transcriptions, summary);
+        
+        if (result) {
+            console.log(`[VoiceAssistant] ✅ Contexto enviado com sucesso!`);
+        } else {
+            console.error(`[VoiceAssistant] ❌ Falha ao enviar contexto`);
+        }
+        
+        return result;
+    }
+
     // ========================================
     // SHARED PUBLIC METHODS - RECORDING PATH
     // ========================================
