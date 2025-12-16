@@ -268,6 +268,19 @@ const handler = {
     return () => ipcRenderer.removeListener('microphone-status-changed', subscription);
   },
   
+  // ========================================
+  // TRANSCRIPTION WINDOW CONTROL
+  // ========================================
+  
+  // Minimizar (esconder) a janela de transcrição
+  minimizeTranscriptionWindow: () => ipcRenderer.send('minimize-transcription-window'),
+  
+  // Mostrar a janela de transcrição (ou abrir se não existir)
+  showTranscriptionWindow: () => ipcRenderer.invoke('show-transcription-window'),
+  
+  // Verificar se a janela de transcrição está aberta/visível
+  isTranscriptionWindowOpen: () => ipcRenderer.invoke('is-transcription-window-open'),
+  
   // Listener para mudanças de estado da reação do avatar (habilitada/desabilitada)
   onAvatarReactionStatusChanged: (callback: (isDisabled: boolean) => void) => {
     const subscription = (_: any, isDisabled: boolean) => callback(isDisabled);

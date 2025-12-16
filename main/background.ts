@@ -862,6 +862,35 @@ ipcMain.handle('open-transcription-window', async () => {
   return { success: true };
 });
 
+// Handler IPC para minimizar (esconder) a janela de transcrição
+ipcMain.on('minimize-transcription-window', () => {
+  if (transcriptionWindow && !transcriptionWindow.isDestroyed()) {
+    transcriptionWindow.hide();
+    console.log('📝 Transcription window minimized (hidden)');
+  }
+});
+
+// Handler IPC para mostrar a janela de transcrição (se já existir)
+ipcMain.handle('show-transcription-window', async () => {
+  if (transcriptionWindow && !transcriptionWindow.isDestroyed()) {
+    transcriptionWindow.show();
+    transcriptionWindow.focus();
+    console.log('📝 Transcription window shown');
+    return { success: true, wasHidden: true };
+  } else {
+    // Se não existir, abre uma nova
+    await openTranscriptionWindow();
+    return { success: true, wasHidden: false };
+  }
+});
+
+// Handler para verificar se a janela de transcrição está aberta/visível
+ipcMain.handle('is-transcription-window-open', () => {
+  const isOpen = transcriptionWindow && !transcriptionWindow.isDestroyed();
+  const isVisible = isOpen && transcriptionWindow.isVisible();
+  return { isOpen, isVisible };
+});
+
 // Register global shortcut for transcription window
 app.whenReady().then(() => {
   const { globalShortcut } = require('electron');

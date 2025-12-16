@@ -17,6 +17,7 @@ export default function HomePage() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isMicrophonePaused, setIsMicrophonePaused] = useState(false);
   const [isAvatarReactionDisabled, setIsAvatarReactionDisabled] = useState(false);
+  const [isTranscriptionHidden, setIsTranscriptionHidden] = useState(false);
   const isHoveringAvatarRef = useRef(false);
   
   const models = [
@@ -120,6 +121,23 @@ export default function HomePage() {
     return () => {
       unsubscribe();
     };
+  }, []);
+
+  // Verificar estado da janela de transcrição periodicamente
+  useEffect(() => {
+    const checkTranscriptionWindow = async () => {
+      const result = await window.electron?.isTranscriptionWindowOpen?.();
+      if (result) {
+        // Se a janela existe mas não está visível, está "minimizada"
+        setIsTranscriptionHidden(result.isOpen && !result.isVisible);
+      }
+    };
+    
+    // Verificar a cada 1 segundo
+    const interval = setInterval(checkTranscriptionWindow, 1000);
+    checkTranscriptionWindow(); // Verificar imediatamente
+    
+    return () => clearInterval(interval);
   }, []);
 
 
@@ -245,6 +263,39 @@ export default function HomePage() {
             <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-orange-600 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-[999]">
               Reação desabilitada (Ctrl+O)
               <div className="absolute left-full top-1/2 -translate-y-1/2 border-4 border-transparent border-l-orange-600"></div>
+            </div>
+          </div>
+        )}
+
+        {/* Transcription Window Minimized Indicator - Text icon */}
+        {isTranscriptionHidden && (
+          <div className="relative group pointer-events-auto">
+            <button 
+              onClick={async () => {
+                await window.electron?.showTranscriptionWindow?.();
+                setIsTranscriptionHidden(false);
+              }}
+              className="flex items-center justify-center w-7 h-7 bg-purple-600/90 backdrop-blur-sm rounded-full shadow-lg hover:bg-purple-500 transition-colors cursor-pointer"
+            >
+              <svg 
+                width="18" 
+                height="18" 
+                viewBox="0 0 24 24" 
+                fill="none" 
+                stroke="white" 
+                strokeWidth="2" 
+                strokeLinecap="round" 
+                strokeLinejoin="round"
+              >
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+                <line x1="9" x2="15" y1="10" y2="10"/>
+                <line x1="12" x2="12" y1="7" y2="13"/>
+              </svg>
+            </button>
+            {/* Tooltip */}
+            <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 px-3 py-1.5 bg-purple-600 text-white text-xs rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none whitespace-nowrap z-[999]">
+              Abrir Transcrição (Ctrl+D)
+              <div className="absolute left-full top-1/2 -translate-y-1/2 border-4 border-transparent border-l-purple-600"></div>
             </div>
           </div>
         )}
