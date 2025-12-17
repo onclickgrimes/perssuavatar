@@ -58,6 +58,13 @@ export interface RenderOptions {
   
   /** Sobrescrever FPS */
   fps?: number;
+  
+  /** Aceleração por hardware (GPU)
+   * - 'if-possible': Usa GPU se disponível (recomendado)
+   * - 'required': Falha se GPU não disponível
+   * - 'disable': Usa apenas CPU (padrão)
+   */
+  hardwareAcceleration?: 'if-possible' | 'required' | 'disable';
 }
 
 export interface RenderResult {
@@ -298,6 +305,7 @@ export class VideoService extends EventEmitter {
       outputFileName?: string;
       codec?: 'h264' | 'h265' | 'vp8' | 'vp9';
       crf?: number;
+      hardwareAcceleration?: 'if-possible' | 'required' | 'disable';
     }
   ): Promise<RenderResult> {
     const fileName = options?.outputFileName || 
@@ -309,6 +317,8 @@ export class VideoService extends EventEmitter {
       inputProps: { project },
       codec: options?.codec || 'h264',
       crf: options?.crf,
+      // Usar GPU por padrão se disponível
+      hardwareAcceleration: options?.hardwareAcceleration || 'if-possible',
     });
   }
 
@@ -416,6 +426,10 @@ export class VideoService extends EventEmitter {
         });
       };
 
+      // Configurar aceleração por hardware
+      const hwAccel = options.hardwareAcceleration || 'if-possible';
+      console.log(`🔧 Hardware acceleration: ${hwAccel}`);
+
       await renderMedia({
         composition,
         serveUrl: bundlePath,
@@ -424,6 +438,8 @@ export class VideoService extends EventEmitter {
         inputProps: options.inputProps || {},
         crf: options.crf,
         onProgress,
+        // Aceleração por GPU (NVENC para NVIDIA, VideoToolbox para Mac, etc)
+        hardwareAcceleration: hwAccel,
       });
 
       const durationMs = Date.now() - startTime;
