@@ -630,13 +630,14 @@ function ImagesStep({
         // Converter File para ArrayBuffer
         const arrayBuffer = await file.arrayBuffer();
         
-        // Salvar no backend e obter caminho absoluto
+        // Salvar no backend e obter caminho + URL HTTP
         const result = await window.electron.videoProject.saveImage(arrayBuffer, file.name, segmentId);
         
-        if (result.success && result.path) {
-          // Usar o caminho do arquivo local (o Remotion consegue acessar)
-          onUpdateImage(segmentId, result.path);
-          console.log(`✅ Image saved for segment ${segmentId}:`, result.path);
+        if (result.success && result.httpUrl) {
+          // Usar a URL HTTP para preview E renderização
+          // O servidor HTTP estará rodando durante ambos
+          onUpdateImage(segmentId, result.httpUrl);
+          console.log(`✅ Image saved for segment ${segmentId}:`, result.httpUrl);
         } else {
           console.error('Failed to save image:', result.error);
           // Fallback: usar blob URL
@@ -796,14 +797,35 @@ function ImagesStep({
                     )}
                   </>
                 ) : (
-                  <label className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-purple-500/10 flex items-center justify-center cursor-pointer hover:from-pink-500/20 hover:to-purple-500/20 transition-all">
-                    <div className="text-center">
+                  <label 
+                    className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-purple-500/10 flex items-center justify-center cursor-pointer hover:from-pink-500/20 hover:to-purple-500/20 transition-all"
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.currentTarget.classList.add('from-pink-500/30', 'to-purple-500/30');
+                    }}
+                    onDragLeave={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.currentTarget.classList.remove('from-pink-500/30', 'to-purple-500/30');
+                    }}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      e.currentTarget.classList.remove('from-pink-500/30', 'to-purple-500/30');
+                      const file = e.dataTransfer.files?.[0];
+                      if (file && file.type.startsWith('image/')) {
+                        handleImageUpload(segment.id, file);
+                      }
+                    }}
+                  >
+                    <div className="text-center pointer-events-none">
                       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mx-auto mb-2 text-white/40">
                         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
                         <circle cx="8.5" cy="8.5" r="1.5"></circle>
                         <polyline points="21 15 16 10 5 21"></polyline>
                       </svg>
-                      <p className="text-white/60 text-sm mb-2">Faça upload de uma imagem</p>
+                      <p className="text-white/60 text-sm mb-2">Arraste uma imagem aqui</p>
                       <p className="text-white/40 text-xs">ou clique para selecionar</p>
                     </div>
                     <input

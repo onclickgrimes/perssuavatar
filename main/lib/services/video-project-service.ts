@@ -244,8 +244,15 @@ export class VideoProjectService extends EventEmitter {
 
   /**
    * Salva arquivo de áudio temporário para transcrição
+   * Retorna caminho real (para renderização) e URL HTTP (para preview)
    */
-  public async saveAudioFile(buffer: Buffer, originalName: string): Promise<string> {
+  public async saveAudioFile(buffer: Buffer, originalName: string): Promise<{
+    path: string;
+    httpUrl: string;
+  }> {
+    // Garantir que servidor está rodando para preview
+    await this.startImageServer();
+    
     const ext = path.extname(originalName) || '.mp3';
     const fileName = `audio-${Date.now()}${ext}`;
     const filePath = path.join(this.projectsDir, fileName);
@@ -253,14 +260,21 @@ export class VideoProjectService extends EventEmitter {
     fs.writeFileSync(filePath, buffer);
     console.log(`💾 Audio saved: ${filePath}`);
     
-    return filePath;
+    const httpUrl = `http://localhost:${this.imageServerPort}/${fileName}`;
+    return { path: filePath, httpUrl };
   }
 
   /**
    * Salva arquivo de imagem para uso no projeto
-   * Retorna o caminho absoluto do arquivo salvo
+   * Retorna caminho real (para renderização) e URL HTTP (para preview)
    */
-  public async saveImageFile(buffer: Buffer, originalName: string, segmentId: number): Promise<string> {
+  public async saveImageFile(buffer: Buffer, originalName: string, segmentId: number): Promise<{
+    path: string;
+    httpUrl: string;
+  }> {
+    // Garantir que servidor está rodando para preview
+    await this.startImageServer();
+    
     const ext = path.extname(originalName) || '.jpg';
     const fileName = `segment-${segmentId}-${Date.now()}${ext}`;
     const filePath = path.join(this.projectsDir, 'images', fileName);
@@ -274,7 +288,8 @@ export class VideoProjectService extends EventEmitter {
     fs.writeFileSync(filePath, buffer);
     console.log(`🖼️ Image saved: ${filePath}`);
     
-    return filePath;
+    const httpUrl = `http://localhost:${this.imageServerPort}/images/${fileName}`;
+    return { path: filePath, httpUrl };
   }
 
   // ========================================
