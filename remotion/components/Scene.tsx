@@ -32,6 +32,11 @@ export const Scene: React.FC<SceneProps> = ({
     fps,
   });
   
+  // Debug camera effect
+  if (relativeFrame % 30 === 0) { // Log a cada segundo
+    console.log(`[Scene ${scene.id}] Camera Movement: ${scene.camera_movement}, Frame: ${relativeFrame}/${sceneDurationFrames}, Effect:`, cameraEffect);
+  }
+  
   return (
     <AbsoluteFill>
       {/* Container com efeito de câmera */}

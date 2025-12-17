@@ -1042,6 +1042,22 @@ ipcMain.handle('video-project:render', async (event, project: VideoProjectData) 
   }
 });
 
+
+// Handler para carregar projeto salvo
+ipcMain.handle('video-project:load', async (event, filePath: string) => {
+  try {
+    const project = videoProjectService.loadProject(filePath);
+    if (project) {
+      return { success: true, project };
+    }
+    return { success: false, error: 'Projeto não encontrado' };
+  } catch (error: any) {
+    console.error('❌ [VideoProject] Load error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+
 // Handler para salvar projeto
 ipcMain.handle('video-project:save', async (event, project: VideoProjectData) => {
   try {

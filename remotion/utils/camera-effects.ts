@@ -18,6 +18,61 @@ interface CameraTransform {
   transformOrigin?: string;
 }
 
+export const CAMERA_EFFECTS: Record<CameraMovement, { description: string; apply: (params: CameraEffectParams) => CameraTransform }> = {
+  static: {
+    description: 'Usado para foco total no conteúdo, clareza e estabilidade (falas diretas, explicações).',
+    apply: () => ({ transform: 'scale(1) translate(0, 0)' }),
+  },
+  zoom_in_slow: {
+    description: 'Cria aproximação gradual para aumentar atenção, tensão leve ou destaque emocional.',
+    apply: (params) => zoomIn(params.frame, params.durationInFrames, 1, 1.15),
+  },
+  zoom_in_fast: {
+    description: 'Impacto imediato, surpresa ou ênfase forte em um momento específico.',
+    apply: (params) => zoomIn(params.frame, params.durationInFrames, 1, 1.3),
+  },
+  zoom_out_slow: {
+    description: 'Sensação de distanciamento, reflexão ou encerramento de ideia.',
+    apply: (params) => zoomOut(params.frame, params.durationInFrames, 1.15, 1),
+  },
+  zoom_out_fast: {
+    description: 'Quebra de expectativa, alívio de tensão ou mudança brusca de contexto.',
+    apply: (params) => zoomOut(params.frame, params.durationInFrames, 1.3, 1),
+  },
+  ken_burns: {
+    description: 'Movimento suave (pan + zoom) usado em imagens estáticas para estilo documentário ou narrativo.',
+    apply: (params) => kenBurns(params.frame, params.durationInFrames),
+  },
+  pan_left: {
+    description: 'Revelação horizontal de informação, cenário ou transição entre elementos.',
+    apply: (params) => panHorizontal(params.frame, params.durationInFrames, 5, -5),
+  },
+  pan_right: {
+    description: 'Revelação horizontal de informação, cenário ou transição entre elementos.',
+    apply: (params) => panHorizontal(params.frame, params.durationInFrames, -5, 5),
+  },
+  pan_up: {
+    description: 'Revelação vertical, hierarquia visual ou dramatização de escala.',
+    apply: (params) => panVertical(params.frame, params.durationInFrames, 5, -5),
+  },
+  pan_down: {
+    description: 'Revelação vertical, hierarquia visual ou dramatização de escala.',
+    apply: (params) => panVertical(params.frame, params.durationInFrames, -5, 5),
+  },
+  shake: {
+    description: 'Transmite urgência, caos, tensão extrema ou impacto emocional.',
+    apply: (params) => shake(params.frame, params.fps),
+  },
+  rotate_cw: {
+    description: 'Desorientação, instabilidade emocional ou efeito estilizado/dramático.',
+    apply: (params) => rotate(params.frame, params.durationInFrames, 0, 3),
+  },
+  rotate_ccw: {
+    description: 'Desorientação, instabilidade emocional ou efeito estilizado/dramático.',
+    apply: (params) => rotate(params.frame, params.durationInFrames, 0, -3),
+  },
+};
+
 /**
  * Aplica o efeito de câmera baseado no tipo
  */
@@ -25,51 +80,11 @@ export function applyCameraEffect(
   movement: CameraMovement,
   params: CameraEffectParams
 ): CameraTransform {
-  const { frame, durationInFrames, fps } = params;
-  
-  switch (movement) {
-    case 'static':
-      return { transform: 'scale(1) translate(0, 0)' };
-      
-    case 'zoom_in_slow':
-      return zoomIn(frame, durationInFrames, 1, 1.15);
-      
-    case 'zoom_in_fast':
-      return zoomIn(frame, durationInFrames, 1, 1.3);
-      
-    case 'zoom_out_slow':
-      return zoomOut(frame, durationInFrames, 1.15, 1);
-      
-    case 'zoom_out_fast':
-      return zoomOut(frame, durationInFrames, 1.3, 1);
-      
-    case 'pan_left':
-      return panHorizontal(frame, durationInFrames, 5, -5);
-      
-    case 'pan_right':
-      return panHorizontal(frame, durationInFrames, -5, 5);
-      
-    case 'pan_up':
-      return panVertical(frame, durationInFrames, 5, -5);
-      
-    case 'pan_down':
-      return panVertical(frame, durationInFrames, -5, 5);
-      
-    case 'ken_burns':
-      return kenBurns(frame, durationInFrames);
-      
-    case 'shake':
-      return shake(frame, fps);
-      
-    case 'rotate_cw':
-      return rotate(frame, durationInFrames, 0, 3);
-      
-    case 'rotate_ccw':
-      return rotate(frame, durationInFrames, 0, -3);
-      
-    default:
-      return { transform: 'scale(1)' };
+  const effect = CAMERA_EFFECTS[movement];
+  if (effect) {
+    return effect.apply(params);
   }
+  return { transform: 'scale(1)' };
 }
 
 // ========================================

@@ -355,7 +355,7 @@ const handler = {
       ipcRenderer.invoke('video-project:transcribe', audioPath),
     
     // Analisar segmentos com IA
-    analyze: (segments: any[], options?: { editingStyle?: string; authorConclusion?: string }) => 
+    analyze: (segments: any[], options?: { editingStyle?: string; authorConclusion?: string; provider?: 'gemini' | 'openai' | 'deepseek' }) => 
       ipcRenderer.invoke('video-project:analyze', segments, options),
     
     // Converter projeto para formato Remotion
@@ -373,6 +373,10 @@ const handler = {
     // Listar projetos salvos
     list: () => 
       ipcRenderer.invoke('video-project:list'),
+    
+    // Carregar projeto salvo
+    load: (filePath: string) => 
+      ipcRenderer.invoke('video-project:load', filePath),
     
     // Obter diretório de projetos
     getDirectory: () => 

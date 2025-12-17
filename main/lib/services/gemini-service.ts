@@ -179,5 +179,47 @@ export class GeminiService extends EventEmitter {
             this.emit('status', 'Idle');
             throw error;
         }
-      }
+    }
+
+    /**
+     * Specialized method for video/project analysis returning JSON
+     */
+    public async getChatVideoAnalysis(messages: GeminiMessage[]): Promise<any> {
+        try {
+            console.log('🧠 Gemini VideoAnalysis: Requesting JSON response...');
+
+            const systemInstruction = messages.find(m => m.role === 'system')?.content || 'Respond with valid JSON.';
+            
+            // Build contents only for user/model messages
+            const contents: Content[] = messages
+                .filter(m => m.role === 'user' || m.role === 'assistant')
+                .map(m => ({
+                    role: m.role === 'user' ? 'user' : 'model',
+                    parts: [{ text: m.content }]
+                }));
+
+            // Use generation config for JSON
+            const model = this.genAI.getGenerativeModel({
+                model: "gemini-2.5-flash-lite", // or gemini-1.5-flash
+                systemInstruction: systemInstruction,
+            });
+
+            const result = await model.generateContent({
+                contents: contents,
+                generationConfig: {
+                    responseMimeType: "application/json"
+                }
+            });
+
+            const response = result.response;
+            const text = response.text();
+            console.log(`🧠 Gemini VideoAnalysis Response (${text.length} chars)`);
+            
+            return JSON.parse(text);
+
+        } catch (error) {
+            console.error("GeminiService getChatVideoAnalysis Error:", error);
+            throw error;
+        }
+    }
 }

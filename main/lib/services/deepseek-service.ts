@@ -200,4 +200,63 @@ export class DeepSeekService {
         this.model = model;
         console.log(`DeepSeekService: Model changed to ${model}`);
     }
+
+    /**
+     * Specialized method for video analysis returning JSON
+     * Ensures the response is parsed as JSON
+     */
+    public async getChatVideoAnalysis(messages: DeepSeekMessage[]): Promise<any> {
+        try {
+            // Ensure system message asks for JSON
+            const systemMessage = messages.find(m => m.role === 'system');
+            if (systemMessage) {
+                if (!systemMessage.content.includes('JSON')) {
+                    systemMessage.content += ' Respond ONLY with valid JSON.';
+                }
+            } else {
+                messages.unshift({
+                    role: 'system',
+                    content: 'You are a helpful assistant. Respond ONLY with valid JSON.'
+                });
+            }
+
+            console.log('🧠 DeepSeek VideoAnalysis: Requesting JSON response...');
+            
+            const response = await this.client.chat.completions.create({
+                model: this.model,
+                messages: messages as any,
+                temperature: 0.3, // Lower temperature for more deterministic JSON
+                max_tokens: 2000,
+                response_format: { type: 'json_object' } // Try to force JSON mode if supported
+            });
+
+            const content = response.choices[0].message.content || '';
+            console.log(`🧠 DeepSeek VideoAnalysis Response (${content.length} chars)`);
+
+            // Clean up content to extract JSON
+            let jsonString = content;
+            
+            // Remove markdown code blocks if present
+            const markdownMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || content.match(/```\n?([\s\S]*?)\n?```/);
+            if (markdownMatch) {
+                jsonString = markdownMatch[1];
+            }
+            
+            // Try to parse
+            try {
+                return JSON.parse(jsonString);
+            } catch (e) {
+                console.warn('DeepSeek JSON parse failed, trying looser regex match');
+                const jsonMatch = content.match(/\{[\s\S]*\}|\[[\s\S]*\]/);
+                if (jsonMatch) {
+                    return JSON.parse(jsonMatch[0]);
+                }
+                throw new Error('Failed to parse JSON from DeepSeek response');
+            }
+
+        } catch (error) {
+            console.error("DeepSeekService getChatVideoAnalysis Error:", error);
+            throw error;
+        }
+    }
 }

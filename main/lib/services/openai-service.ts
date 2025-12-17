@@ -66,4 +66,28 @@ export class OpenAIService {
             throw error;
         }
     }
+
+    /**
+     * Specialized method for video/project analysis returning JSON
+     */
+    public async getChatVideoAnalysis(messages: any[]): Promise<any> {
+        try {
+            console.log('🧠 OpenAI VideoAnalysis: Requesting JSON response...');
+            
+            const response = await this.openai.chat.completions.create({
+                model: this.model,
+                messages: messages,
+                temperature: 0.3,
+                response_format: { type: "json_object" }
+            });
+
+            const content = response.choices[0].message.content || '{}';
+            console.log(`🧠 OpenAI VideoAnalysis Response (${content.length} chars)`);
+            
+            return JSON.parse(content);
+        } catch (error) {
+            console.error("OpenAIService getChatVideoAnalysis Error:", error);
+            throw error;
+        }
+    }
 }

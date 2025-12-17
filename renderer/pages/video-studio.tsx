@@ -32,6 +32,9 @@ interface TranscriptionSegment {
   emotion?: string;
   imagePrompt?: string;
   imageUrl?: string;
+  assetType?: string;
+  cameraMovement?: string;
+  transition?: string;
 }
 
 interface ProjectState {
@@ -58,6 +61,111 @@ export default function VideoStudioPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renderProgress, setRenderProgress] = useState(0);
+
+  // Estados para gerenciamento de projetos
+  const [showProjectsModal, setShowProjectsModal] = useState(false);
+  const [savedProjects, setSavedProjects] = useState<any[]>([]);
+  const [isLoadingProjects, setIsLoadingProjects] = useState(false);
+  const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'openai' | 'deepseek'>('gemini');
+
+  // Carregar lista de projetos
+  const loadProjectsList = useCallback(async () => {
+    try {
+      setIsLoadingProjects(true);
+      const result = await window.electron.videoProject.list();
+      if (result.success) {
+        setSavedProjects(result.projects);
+      }
+    } catch (error) {
+      console.error('Error loading projects list:', error);
+    } finally {
+      setIsLoadingProjects(false);
+    }
+  }, []);
+
+  // Handler para salvar projeto
+  const handleSaveProject = async () => {
+    if (!project.title) return;
+    
+    try {
+      // Converter para formato esperado pelo backend (VideoProjectData)
+      const projectData = {
+        title: project.title,
+        description: project.description,
+        duration: project.duration,
+        audioPath: project.audioPath,
+        segments: project.segments.map(seg => ({
+          id: seg.id,
+          text: seg.text,
+          start: seg.start,
+          end: seg.end,
+          speaker: seg.speaker,
+          emotion: seg.emotion,
+          imagePrompt: seg.imagePrompt,
+          imageUrl: seg.imageUrl,
+        })),
+        editingStyle: project.editingStyle,
+        authorConclusion: project.authorConclusion,
+      };
+
+      const result = await window.electron.videoProject.save(projectData);
+      
+      if (result.success) {
+        alert('Projeto salvo com sucesso!');
+      } else {
+        throw new Error(result.error);
+      }
+    } catch (error: any) {
+      console.error('Error saving project:', error);
+      alert('Erro ao salvar projeto: ' + error.message);
+    }
+  };
+
+  // Handler para carregar projeto
+  const handleLoadProject = async (filePath: string) => {
+    try {
+      const result = await window.electron.videoProject.load(filePath);
+      
+      if (result.success && result.project) {
+        const loadedProject = result.project;
+        
+        setProject({
+          title: loadedProject.title,
+          description: loadedProject.description,
+          duration: loadedProject.duration,
+          audioPath: loadedProject.audioPath,
+          segments: loadedProject.segments.map((seg: any) => ({
+             id: seg.id,
+             text: seg.text,
+             start: seg.start,
+             end: seg.end,
+             speaker: seg.speaker,
+             emotion: seg.emotion,
+             imagePrompt: seg.imagePrompt,
+             imageUrl: seg.imageUrl,
+          })),
+          authorConclusion: loadedProject.authorConclusion || '',
+          editingStyle: loadedProject.editingStyle || 'dinâmico',
+        });
+        
+        // Determinar em qual passo estamos baseado nos dados
+        if (loadedProject.segments.some((s: any) => s.imageUrl)) {
+          setCurrentStep('images');
+        } else if (loadedProject.segments.some((s: any) => s.imagePrompt)) {
+          setCurrentStep('prompts');
+        } else if (loadedProject.segments.length > 0) {
+          setCurrentStep('keyframes');
+        } else {
+          setCurrentStep('upload');
+        }
+        
+        setShowProjectsModal(false);
+      }
+    } catch (error) {
+      console.error('Error loading project:', error);
+      alert('Erro ao carregar projeto');
+    }
+  };
 
   // Listener para status do projeto
   React.useEffect(() => {
@@ -152,6 +260,7 @@ export default function VideoStudioPage() {
         {
           editingStyle: project.editingStyle,
           authorConclusion: project.authorConclusion,
+          provider: selectedProvider
         }
       );
 
@@ -197,7 +306,12 @@ export default function VideoStudioPage() {
     setProject(prev => ({
       ...prev,
       segments: prev.segments.map(seg =>
-        seg.id === segmentId ? { ...seg, imageUrl } : seg
+        seg.id === segmentId ? { 
+          ...seg, 
+          imageUrl,
+          // Se estamos definindo uma imagem, garantir que o tipo seja compatível (evita erro de <Video> com PNG)
+          assetType: imageUrl ? 'image_static' : seg.assetType
+        } : seg
       ),
     }));
   }, []);
@@ -258,6 +372,8 @@ export default function VideoStudioPage() {
             onUpdateEmotion={handleUpdateEmotion}
             onContinue={handleAnalyzeWithAI}
             onBack={() => setCurrentStep('upload')}
+            provider={selectedProvider}
+            onProviderChange={(p) => setSelectedProvider(p)}
           />
         );
       
@@ -338,6 +454,27 @@ export default function VideoStudioPage() {
                   <h1 className="text-xl font-bold text-white">Video Studio</h1>
                   <p className="text-sm text-white/60">Crie vídeos a partir de áudio</p>
                 </div>
+                
+                {/* Botões de Ação */}
+                <div className="flex gap-2 ml-4">
+                  <button
+                    onClick={() => {
+                       loadProjectsList();
+                       setShowProjectsModal(true);
+                    }}
+                    className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-sm rounded-lg transition-all flex items-center gap-2"
+                  >
+                    📂 Abrir
+                  </button>
+                  {project.segments.length > 0 && (
+                    <button
+                      onClick={handleSaveProject}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-sm rounded-lg transition-all flex items-center gap-2"
+                    >
+                      💾 Salvar
+                    </button>
+                  )}
+                </div>
               </div>
               
               {/* Progress Steps */}
@@ -376,6 +513,58 @@ export default function VideoStudioPage() {
           {renderStepContent()}
         </main>
       </div>
+
+      {/* Projects Modal */}
+      {showProjectsModal && (
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[80vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b border-white/10 flex items-center justify-between">
+              <h2 className="text-xl font-bold text-white">Meus Projetos</h2>
+              <button 
+                onClick={() => setShowProjectsModal(false)}
+                className="text-white/40 hover:text-white"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6">
+              {isLoadingProjects ? (
+                <div className="text-center py-8">
+                  <div className="w-8 h-8 border-2 border-pink-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+                  <p className="text-white/40">Carregando...</p>
+                </div>
+              ) : savedProjects.length === 0 ? (
+                <div className="text-center py-8 text-white/40">
+                  <p>Nenhum projeto salvo encontrado.</p>
+                </div>
+              ) : (
+                <div className="grid gap-3">
+                  {savedProjects.map((proj) => (
+                    <button
+                      key={proj.path}
+                      onClick={() => handleLoadProject(proj.path)}
+                      className="flex items-center justify-between p-4 bg-white/5 hover:bg-white/10 rounded-xl border border-white/5 hover:border-pink-500/30 transition-all group text-left"
+                    >
+                      <div>
+                        <h3 className="text-white font-medium group-hover:text-pink-400 transition-colors">
+                          {proj.name.replace('.json', '')}
+                        </h3>
+                        <p className="text-white/40 text-xs mt-1">
+                          {new Date(proj.createdAt).toLocaleDateString()} às {new Date(proj.createdAt).toLocaleTimeString()}
+                        </p>
+                      </div>
+                      <div className="w-8 h-8 rounded-full bg-white/5 flex items-center justify-center group-hover:bg-pink-500 group-hover:text-white transition-all">
+                        →
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
@@ -463,11 +652,15 @@ function KeyframesStep({
   onUpdateEmotion,
   onContinue,
   onBack,
+  provider = 'gemini',
+  onProviderChange,
 }: {
   segments: TranscriptionSegment[];
   onUpdateEmotion: (id: number, emotion: string) => void;
   onContinue: () => void;
   onBack: () => void;
+  provider?: 'gemini' | 'openai' | 'deepseek';
+  onProviderChange?: (p: 'gemini' | 'openai' | 'deepseek') => void;
 }) {
   const emotions = ['surpresa', 'empolgação', 'nostalgia', 'seriedade', 'alegria', 'tristeza', 'raiva', 'medo', 'neutro'];
 
@@ -477,6 +670,21 @@ function KeyframesStep({
         <div>
           <h2 className="text-2xl font-bold text-white">Keyframes & Emoções</h2>
           <p className="text-white/60">Revise e ajuste as emoções sugeridas para cada segmento</p>
+          
+          {onProviderChange && (
+            <div className="flex items-center gap-3 mt-4">
+               <span className="text-white/60 text-sm">IA de Análise:</span>
+               <select
+                 value={provider}
+                 onChange={(e) => onProviderChange(e.target.value as any)}
+                 className="bg-black/30 border border-white/10 rounded-lg px-3 py-1 text-white text-sm focus:border-pink-500 focus:outline-none"
+               >
+                 <option value="gemini">Google Gemini</option>
+                 <option value="openai">OpenAI (GPT-4)</option>
+                 <option value="deepseek">DeepSeek V3</option>
+               </select>
+            </div>
+          )}
         </div>
         <div className="flex gap-3">
           <button
@@ -624,6 +832,8 @@ function ImagesStep({
   const [approvedSegments, setApprovedSegments] = useState<Set<number>>(new Set());
   const [generatingSegments, setGeneratingSegments] = useState<Set<number>>(new Set());
   const [uploadingSegments, setUploadingSegments] = useState<Set<number>>(new Set());
+  
+
 
   // Handler para upload de imagem manual - salva no disco
   const handleImageUpload = async (segmentId: number, file: File) => {
@@ -932,11 +1142,11 @@ function PreviewStep({
           art_style: 'photorealistic',
           emotion: seg.emotion || 'neutro',
         },
-        asset_type: 'image_static',
+        asset_type: seg.assetType || 'image_static',
         asset_url: seg.imageUrl || '',
         prompt_suggestion: seg.imagePrompt || '',
-        camera_movement: 'static',
-        transition: 'fade',
+        camera_movement: seg.cameraMovement || 'static',
+        transition: seg.transition || 'fade',
         transition_duration: 0.5,
         text_overlay: {
           text: seg.text,

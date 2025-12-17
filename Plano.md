@@ -268,3 +268,35 @@ Exemplo de resposta:
 
 
 2. Envia a transcrição para a LLM (openai, gemini ou DeepSeek - Services já existem) com um system prompt específico com o estilo de edição, a conclusão do autor sobre o tema e outro fixo dizendo para analisar a transcrição, sugerir emoções para as minutagens dos parágrafos do vídeo (retornado no deepgram) que seriam os keyframes que achar válido, o usuário pode aceitar ou alterar as emoções. Após isso, o sistema vai para a parte da criação de imagens baseadas na transcrição e keyframes. O sistema sugere prompts de imagens e o usuário pode aprovar, usar seus próprios prompts, ou carregar a própria imagem. Esses prompts vão para apis como o flux ou replicate.com para criar as imagens (Não crie esses serviços de imagem ainda). Essas imagens podem ser aprovadas pelo usuário, desaprovadas (mandar refazer) ou o usuário carregar sua própria imagem. Após isso, o sistema vai pra fazer gerar vídeos a partir dessas imagens e transcrição do deepgram usando o Remotion. 
+
+
+🚀 O que podemos implementar/melhorar
+🔴 Prioridade Alta (Funcionalidade Core)
+Feature	Descrição	Esforço
+1. Geração de Imagens por IA	Integrar Flux/DALL-E/Midjourney para gerar imagens automaticamente a partir dos prompts	Médio
+2. Preview do Vídeo	Mostrar preview do vídeo no browser antes de renderizar (Remotion Player)	Baixo
+3. Salvar/Carregar Projetos	O backend já tem, mas a UI não - adicionar lista de projetos salvos	Baixo
+4. Cancelar Renderização	Botão para cancelar renderização em andamento	Baixo
+🟡 Prioridade Média (UX/Qualidade)
+Feature	Descrição	Esforço
+5. Edição de Timeline	UI para ajustar timing/duração de cada segmento	Médio
+6. Múltiplas Vozes	Suporte a diferentes speakers do Deepgram com labels	Baixo
+7. Estilos de Vídeo	Templates pré-definidos (Cinematic, YouTube, TikTok, Documentary)	Médio
+8. Música de Fundo	Adicionar música separada da narração	Baixo
+9. Legendas Customizáveis	Escolher fonte, cor, posição, animação das legendas	Baixo
+🟢 Prioridade Baixa (Nice to Have)
+Feature	Descrição	Esforço
+10. Vídeos AI	Integrar Kling/Runway para gerar vídeos AI ao invés de imagens estáticas	Alto
+11. Avatar AI	Adicionar avatar falando (HeyGen, D-ID)	Alto
+12. Exportar para YouTube	Upload direto para YouTube/TikTok	Médio
+13. Formatos Múltiplos	Exportar em diferentes aspectos (16:9, 9:16, 1:1)	Baixo
+14. Histórico de Renders	Lista de vídeos renderizados com replay	Baixo
+15. Efeitos de Texto	Kinetic typography, text animation	Médio
+🐛 Bugs/Melhorias Pendentes
+Item	Descrição
+Validação de Áudio	Verificar formato/duração antes de transcrever
+Retry em Falhas	Retentar transcrição/análise em caso de erro
+Otimização de Bundle	Cache mais inteligente do bundle Remotion
+Compressão de Imagens	Reduzir tamanho de imagens antes de usar
+Logs/Debug	Painel de logs para troubleshooting
+📁 Estrutura Atual do Código
