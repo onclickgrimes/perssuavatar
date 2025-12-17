@@ -19,6 +19,7 @@ type WorkflowStep =
   | 'keyframes'     // Revisão de keyframes/emoções
   | 'prompts'       // Geração/edição de prompts
   | 'images'        // Geração/aprovação de imagens
+  | 'preview'       // Preview do vídeo antes de renderizar
   | 'rendering'     // Renderizando vídeo
   | 'complete';     // Vídeo pronto
 
@@ -275,8 +276,17 @@ export default function VideoStudioPage() {
           <ImagesStep
             segments={project.segments}
             onUpdateImage={handleUpdateImage}
-            onContinue={handleStartRender}
+            onContinue={() => setCurrentStep('preview')}
             onBack={() => setCurrentStep('prompts')}
+          />
+        );
+      
+      case 'preview':
+        return (
+          <PreviewStep
+            project={project}
+            onContinue={handleStartRender}
+            onBack={() => setCurrentStep('images')}
           />
         );
       
@@ -332,13 +342,13 @@ export default function VideoStudioPage() {
               
               {/* Progress Steps */}
               <div className="flex items-center gap-2">
-                {['upload', 'keyframes', 'prompts', 'images', 'rendering'].map((step, index) => (
+                {['upload', 'keyframes', 'prompts', 'images', 'preview', 'rendering'].map((step, index) => (
                   <div
                     key={step}
                     className={`w-3 h-3 rounded-full transition-all ${
                       currentStep === step
                         ? 'bg-pink-500 scale-125'
-                        : ['upload', 'keyframes', 'prompts', 'images', 'rendering'].indexOf(currentStep) > index
+                        : ['upload', 'keyframes', 'prompts', 'images', 'preview', 'rendering'].indexOf(currentStep) > index
                         ? 'bg-green-500'
                         : 'bg-white/20'
                     }`}
@@ -881,6 +891,221 @@ function ImagesStep({
         })}
       </div>
     </div>
+  );
+}
+
+// Preview Step - Visualizar vídeo antes de renderizar
+function PreviewStep({
+  project,
+  onContinue,
+  onBack,
+}: {
+  project: ProjectState;
+  onContinue: () => void;
+  onBack: () => void;
+}) {
+  // Converter ProjectState para formato do Remotion
+  const remotionProject = React.useMemo(() => {
+    const fps = 30;
+    return {
+      project_title: project.title,
+      description: project.description,
+      config: {
+        width: 1920,
+        height: 1080,
+        fps,
+        backgroundColor: '#0a0a0a',
+        backgroundMusic: project.audioPath ? {
+          src: project.audioPath.startsWith('http') 
+            ? project.audioPath 
+            : `http://localhost:9999/${project.audioPath.split(/[\\/]/).pop()}`,
+          volume: 1.0,
+        } : undefined,
+      },
+      scenes: project.segments.map(seg => ({
+        id: seg.id,
+        start_time: seg.start,
+        end_time: seg.end,
+        transcript_segment: seg.text,
+        visual_concept: {
+          description: seg.text,
+          art_style: 'photorealistic',
+          emotion: seg.emotion || 'neutro',
+        },
+        asset_type: 'image_static',
+        asset_url: seg.imageUrl || '',
+        prompt_suggestion: seg.imagePrompt || '',
+        camera_movement: 'static',
+        transition: 'fade',
+        transition_duration: 0.5,
+        text_overlay: {
+          text: seg.text,
+          position: 'bottom',
+          style: 'subtitle',
+          animation: 'fade',
+        },
+      })),
+      schema_version: '1.0',
+    };
+  }, [project]);
+
+  // Calcular duração
+  const lastScene = project.segments[project.segments.length - 1];
+  const durationInSeconds = lastScene ? lastScene.end : 10;
+  const fps = 30;
+  const durationInFrames = Math.ceil(durationInSeconds * fps);
+
+  return (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white mb-2">👁️ Preview do Vídeo</h2>
+          <p className="text-white/60">
+            Visualize o resultado antes de renderizar
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={onBack}
+            className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+          >
+            ← Voltar
+          </button>
+          <button
+            onClick={onContinue}
+            className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all"
+          >
+            🎬 Renderizar Vídeo
+          </button>
+        </div>
+      </div>
+
+      {/* Player de Preview */}
+      <div className="bg-black/50 rounded-xl overflow-hidden shadow-2xl">
+        <div className="relative" style={{ aspectRatio: '16/9' }}>
+          {/* Importação dinâmica do Player para evitar SSR issues */}
+          <VideoPreviewPlayer
+            project={remotionProject}
+            durationInFrames={durationInFrames}
+            fps={fps}
+          />
+        </div>
+      </div>
+
+      {/* Informações do projeto */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="p-4 bg-white/5 rounded-lg text-center">
+          <p className="text-white/60 text-sm">Duração</p>
+          <p className="text-white text-lg font-bold">
+            {Math.floor(durationInSeconds / 60)}:{String(Math.floor(durationInSeconds % 60)).padStart(2, '0')}
+          </p>
+        </div>
+        <div className="p-4 bg-white/5 rounded-lg text-center">
+          <p className="text-white/60 text-sm">Cenas</p>
+          <p className="text-white text-lg font-bold">{project.segments.length}</p>
+        </div>
+        <div className="p-4 bg-white/5 rounded-lg text-center">
+          <p className="text-white/60 text-sm">Resolução</p>
+          <p className="text-white text-lg font-bold">1080p</p>
+        </div>
+      </div>
+
+      {/* Aviso sobre renderização */}
+      <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg">
+        <p className="text-purple-300 text-sm">
+          💡 <strong>Dica:</strong> O preview usa qualidade reduzida para performance. 
+          O vídeo final será renderizado em alta qualidade com aceleração por GPU.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+// Componente do Player de Preview (lazy loaded)
+function VideoPreviewPlayer({ 
+  project, 
+  durationInFrames, 
+  fps 
+}: { 
+  project: any; 
+  durationInFrames: number; 
+  fps: number;
+}) {
+  const [Player, setPlayer] = React.useState<any>(null);
+  const [VideoProjectComposition, setVideoProjectComposition] = React.useState<any>(null);
+  const [isLoading, setIsLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  // Carregar componentes dinamicamente (evita SSR)
+  React.useEffect(() => {
+    const loadComponents = async () => {
+      try {
+        setIsLoading(true);
+        // Importar Player do Remotion
+        const playerModule = await import('@remotion/player');
+        setPlayer(() => playerModule.Player);
+        
+        // Importar composição
+        const compositionModule = await import('../../remotion/compositions/VideoProject');
+        setVideoProjectComposition(() => compositionModule.VideoProjectComposition);
+        
+        setIsLoading(false);
+      } catch (err: any) {
+        console.error('Error loading preview components:', err);
+        setError(err.message || 'Failed to load preview');
+        setIsLoading(false);
+      }
+    };
+
+    loadComponents();
+  }, []);
+
+  if (isLoading) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-black">
+        <div className="text-center">
+          <div className="w-12 h-12 mx-auto mb-4 border-2 border-pink-500/30 border-t-pink-500 rounded-full animate-spin" />
+          <p className="text-white/60">Carregando preview...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="absolute inset-0 flex items-center justify-center bg-black">
+        <div className="text-center p-4">
+          <p className="text-red-400 mb-2">❌ Erro ao carregar preview</p>
+          <p className="text-white/60 text-sm">{error}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!Player || !VideoProjectComposition) {
+    return null;
+  }
+
+  return (
+    <Player
+      component={VideoProjectComposition}
+      inputProps={{ project }}
+      durationInFrames={durationInFrames}
+      fps={fps}
+      compositionWidth={1920}
+      compositionHeight={1080}
+      style={{
+        width: '100%',
+        height: '100%',
+      }}
+      controls
+      loop
+      autoPlay={false}
+      allowFullscreen
+      clickToPlay
+      doubleClickToFullscreen
+      spaceKeyToPlayOrPause
+    />
   );
 }
 
