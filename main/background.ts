@@ -977,8 +977,8 @@ ipcMain.handle('video-project:transcribe', async (event, audioPath: string) => {
 ipcMain.handle('video-project:save-audio', async (event, arrayBuffer: ArrayBuffer, fileName: string) => {
   try {
     const buffer = Buffer.from(arrayBuffer);
-    const audioPath = await videoProjectService.saveAudioFile(buffer, fileName);
-    return { success: true, path: audioPath };
+    const result = await videoProjectService.saveAudioFile(buffer, fileName);
+    return { success: true, path: result.path, httpUrl: result.httpUrl };
   } catch (error: any) {
     console.error('❌ [VideoProject] Save audio error:', error);
     return { success: false, error: error.message };
@@ -994,8 +994,8 @@ ipcMain.handle('video-project:save-image', async (
 ) => {
   try {
     const buffer = Buffer.from(arrayBuffer);
-    const imagePath = await videoProjectService.saveImageFile(buffer, fileName, segmentId);
-    return { success: true, path: imagePath };
+    const result = await videoProjectService.saveImageFile(buffer, fileName, segmentId);
+    return { success: true, path: result.path, httpUrl: result.httpUrl };
   } catch (error: any) {
     console.error('❌ [VideoProject] Save image error:', error);
     return { success: false, error: error.message };
