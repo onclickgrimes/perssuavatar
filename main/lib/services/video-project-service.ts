@@ -141,6 +141,20 @@ export class VideoProjectService extends EventEmitter {
         this.videoService.on('progress', (data) => {
             this.emit('render-progress', data);
         });
+
+        // Iniciar servidor de imagens ao instanciar (para poupar recursos, só instanciar quando necessário)
+        this.startImageServer().catch(err => {
+            console.error('❌ Failed to start image server in constructor:', err);
+        });
+    }
+
+    /**
+     * Encerra o serviço e libera recursos
+     */
+    public destroy(): void {
+        this.stopImageServer();
+        this.removeAllListeners();
+        console.log('🎬 VideoProjectService destroyed');
     }
 
     /**
@@ -300,8 +314,7 @@ export class VideoProjectService extends EventEmitter {
         path: string;
         httpUrl: string;
     }> {
-        // Garantir que servidor está rodando para preview
-        await this.startImageServer();
+        // Servidor já iniciado no construtor
 
         const ext = path.extname(originalName) || '.mp3';
         const fileName = `audio-${Date.now()}${ext}`;
@@ -322,8 +335,7 @@ export class VideoProjectService extends EventEmitter {
         path: string;
         httpUrl: string;
     }> {
-        // Garantir que servidor está rodando para preview
-        await this.startImageServer();
+        // Servidor já iniciado no construtor
 
         const ext = path.extname(originalName) || '.jpg';
         const fileName = `segment-${segmentId}-${Date.now()}${ext}`;
@@ -572,8 +584,7 @@ Responda APENAS com um array JSON válido no formato:
         this.emit('status', { stage: 'rendering', message: 'Preparando renderização...' });
 
         try {
-            // Iniciar servidor HTTP para servir imagens
-            await this.startImageServer();
+            // Servidor já iniciado no construtor
             console.log(`🌐 Image server ready on port ${this.imageServerPort}`);
 
             const remotionProject = this.convertToRemotionProject(project);
@@ -600,10 +611,8 @@ Responda APENAS com um array JSON válido no formato:
                 success: false,
                 error: error.message,
             };
-        } finally {
-            // Parar servidor HTTP após renderização
-            this.stopImageServer();
         }
+        // Servidor continua rodando até o serviço ser destruído
     }
 
     // ========================================

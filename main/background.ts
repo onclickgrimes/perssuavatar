@@ -903,6 +903,24 @@ async function openVideoStudioWindow() {
     return;
   }
 
+  // Instanciar o serviço agora que a janela vai abrir
+  if (!videoProjectService) {
+    videoProjectService = new VideoProjectService();
+
+    // Propagar eventos de status para a janela do Video Studio
+    videoProjectService!.on('status', (data: any) => {
+      if (videoStudioWindow && !videoStudioWindow.isDestroyed()) {
+        videoStudioWindow.webContents.send('video-project:status', data);
+      }
+    });
+
+    videoProjectService!.on('render-progress', (data: any) => {
+      if (videoStudioWindow && !videoStudioWindow.isDestroyed()) {
+        videoStudioWindow.webContents.send('video-project:render-progress', data);
+      }
+    });
+  }
+
   const primaryDisplay = screen.getPrimaryDisplay();
   const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
 
@@ -930,6 +948,13 @@ async function openVideoStudioWindow() {
 
   videoStudioWindow.on('closed', () => {
     videoStudioWindow = null;
+    
+    // Encerrar o serviço quando a janela fechar para poupar recursos
+    if (videoProjectService) {
+      console.log('🎬 Video Studio closed, destroying service...');
+      videoProjectService.destroy();
+      videoProjectService = null;
+    }
   });
 
   console.log('🎬 Video Studio window opened');
@@ -944,26 +969,14 @@ ipcMain.handle('open-video-studio-window', async () => {
 // VIDEO PROJECT SERVICE HANDLERS
 // ========================================
 
-import { getVideoProjectService, VideoProjectSegment, VideoProjectData } from './lib/services/video-project-service';
+import { VideoProjectSegment, VideoProjectData, VideoProjectService } from './lib/services/video-project-service';
 
-const videoProjectService = getVideoProjectService();
-
-// Propagar eventos de status para a janela do Video Studio
-videoProjectService.on('status', (data) => {
-  if (videoStudioWindow && !videoStudioWindow.isDestroyed()) {
-    videoStudioWindow.webContents.send('video-project:status', data);
-  }
-});
-
-videoProjectService.on('render-progress', (data) => {
-  if (videoStudioWindow && !videoStudioWindow.isDestroyed()) {
-    videoStudioWindow.webContents.send('video-project:render-progress', data);
-  }
-});
+let videoProjectService: VideoProjectService | null = null;
 
 // Handler para transcrever arquivo de áudio
 ipcMain.handle('video-project:transcribe', async (event, audioPath: string) => {
   try {
+    if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
     console.log('🎤 [VideoProject] Transcribing audio:', audioPath);
     const result = await videoProjectService.transcribeAudio(audioPath);
     return result;
@@ -976,6 +989,7 @@ ipcMain.handle('video-project:transcribe', async (event, audioPath: string) => {
 // Handler para salvar arquivo de áudio enviado do renderer
 ipcMain.handle('video-project:save-audio', async (event, arrayBuffer: ArrayBuffer, fileName: string) => {
   try {
+    if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
     const buffer = Buffer.from(arrayBuffer);
     const result = await videoProjectService.saveAudioFile(buffer, fileName);
     return { success: true, path: result.path, httpUrl: result.httpUrl };
@@ -993,6 +1007,7 @@ ipcMain.handle('video-project:save-image', async (
   segmentId: number
 ) => {
   try {
+    if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
     const buffer = Buffer.from(arrayBuffer);
     const result = await videoProjectService.saveImageFile(buffer, fileName, segmentId);
     return { success: true, path: result.path, httpUrl: result.httpUrl };
@@ -1009,6 +1024,7 @@ ipcMain.handle('video-project:analyze', async (
   options?: { editingStyle?: string; authorConclusion?: string }
 ) => {
   try {
+    if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
     console.log('🤖 [VideoProject] Analyzing segments with AI...');
     const result = await videoProjectService.analyzeWithAI(segments, options);
     return result;
@@ -1021,6 +1037,7 @@ ipcMain.handle('video-project:analyze', async (
 // Handler para converter projeto para formato Remotion
 ipcMain.handle('video-project:convert-to-remotion', async (event, project: VideoProjectData) => {
   try {
+    if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
     console.log('🎬 [VideoProject] Converting to Remotion format...');
     const remotionProject = videoProjectService.convertToRemotionProject(project);
     return { success: true, project: remotionProject };
@@ -1033,6 +1050,7 @@ ipcMain.handle('video-project:convert-to-remotion', async (event, project: Video
 // Handler para renderizar projeto
 ipcMain.handle('video-project:render', async (event, project: VideoProjectData) => {
   try {
+    if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
     console.log('🎬 [VideoProject] Starting render...');
     const result = await videoProjectService.renderProject(project);
     return result;
@@ -1046,6 +1064,7 @@ ipcMain.handle('video-project:render', async (event, project: VideoProjectData) 
 // Handler para carregar projeto salvo
 ipcMain.handle('video-project:load', async (event, filePath: string) => {
   try {
+    if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
     const project = videoProjectService.loadProject(filePath);
     if (project) {
       return { success: true, project };
@@ -1061,6 +1080,7 @@ ipcMain.handle('video-project:load', async (event, filePath: string) => {
 // Handler para salvar projeto
 ipcMain.handle('video-project:save', async (event, project: VideoProjectData) => {
   try {
+    if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
     const filePath = videoProjectService.saveProject(project);
     return { success: true, path: filePath };
   } catch (error: any) {
@@ -1071,6 +1091,14 @@ ipcMain.handle('video-project:save', async (event, project: VideoProjectData) =>
 // Handler para listar projetos salvos
 ipcMain.handle('video-project:list', async () => {
   try {
+    if (!videoProjectService) {
+        const tempService = new VideoProjectService();
+        const projects = tempService.listProjects();
+        // Não precisamos do servidor de imagens para listar, mas o VideoProjectService
+        // inicia ele no construtor. Então paramos logo em seguida se for temporário.
+        tempService.destroy();
+        return { success: true, projects };
+    }
     const projects = videoProjectService.listProjects();
     return { success: true, projects };
   } catch (error: any) {
@@ -1080,6 +1108,12 @@ ipcMain.handle('video-project:list', async () => {
 
 // Handler para obter diretório de projetos
 ipcMain.handle('video-project:get-directory', async () => {
+  if (!videoProjectService) {
+      const tempService = new VideoProjectService();
+      const path = tempService.getProjectsDirectory();
+      tempService.destroy();
+      return { path };
+  }
   return { path: videoProjectService.getProjectsDirectory() };
 });
 
