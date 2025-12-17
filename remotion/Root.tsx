@@ -1,0 +1,97 @@
+/**
+ * Remotion Root
+ * 
+ * Registra todas as composições de vídeo disponíveis.
+ * Adicione novas composições aqui conforme necessário.
+ */
+import React from 'react';
+import { Composition } from 'remotion';
+import { ExampleComposition, exampleCompositionSchema } from './compositions/ExampleComposition';
+import { 
+  VideoProjectComposition, 
+  videoProjectCompositionSchema,
+  defaultVideoProject,
+} from './compositions/VideoProject';
+import { calculateProjectFrames } from './types/project';
+
+export const RemotionRoot: React.FC = () => {
+  // Calcular duração do projeto de exemplo
+  const exampleProjectFrames = calculateProjectFrames(defaultVideoProject, 30);
+  
+  return (
+    <>
+      {/* 
+        =========================================
+        VIDEO PROJECT - Composição Principal
+        =========================================
+        Recebe um JSON estruturado e gera o vídeo completo.
+        Use esta composição para projetos gerados por IA.
+      */}
+      <Composition
+        id="VideoProject"
+        component={VideoProjectComposition}
+        durationInFrames={exampleProjectFrames}
+        fps={defaultVideoProject.config?.fps || 30}
+        width={defaultVideoProject.config?.width || 1920}
+        height={defaultVideoProject.config?.height || 1080}
+        schema={videoProjectCompositionSchema}
+        defaultProps={{
+          project: defaultVideoProject,
+        }}
+        // Permite calcular metadados dinamicamente
+        calculateMetadata={async ({ props }) => {
+          const project = props.project;
+          const fps = project.config?.fps || 30;
+          const lastScene = project.scenes[project.scenes.length - 1];
+          const duration = lastScene ? lastScene.end_time : 10;
+          
+          return {
+            durationInFrames: Math.ceil(duration * fps),
+            fps,
+            width: project.config?.width || 1920,
+            height: project.config?.height || 1080,
+          };
+        }}
+      />
+
+      {/* 
+        =========================================
+        EXAMPLE - Composição de Exemplo Simples
+        =========================================
+        Use como referência para criar composições customizadas.
+      */}
+      <Composition
+        id="Example"
+        component={ExampleComposition}
+        durationInFrames={150}
+        fps={30}
+        width={1920}
+        height={1080}
+        schema={exampleCompositionSchema}
+        defaultProps={{
+          title: 'Hello, Remotion!',
+          backgroundColor: '#1a1a2e',
+        }}
+      />
+
+      {/* 
+        =========================================
+        ADICIONE NOVAS COMPOSIÇÕES AQUI
+        =========================================
+        
+        Exemplo:
+        
+        <Composition
+          id="MinhaComposicao"
+          component={MinhaComposicao}
+          durationInFrames={300}
+          fps={30}
+          width={1920}
+          height={1080}
+          schema={minhaComposicaoSchema}
+          defaultProps={{}}
+        />
+      */}
+    </>
+  );
+};

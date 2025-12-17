@@ -1,0 +1,145 @@
+{
+  "project_title": "Raspadinhas Online",
+  "description": "Vídeo explicando a nova loteria digital aprovada pelo governo",
+  "config": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "backgroundColor": "#0a0a0a",
+    "backgroundMusic": {
+      "src": "https://example.com/background-music.mp3",
+      "volume": 0.2
+    }
+  },
+  "scenes": [
+    {
+      "id": 1,
+      "start_time": 0.0,
+      "end_time": 7.44,
+      "transcript_segment": "Gente, o governo federal aprovou as raspadinhas online! Agora você pode jogar de qualquer lugar.",
+      "visual_concept": {
+        "description": "Close up de uma mão segurando um celular com app de loteria brilhando",
+        "art_style": "photorealistic, 8k, vibrant colors",
+        "emotion": "surpresa/novidade",
+        "color_palette": ["#FFD700", "#1a1a2e", "#00BFFF"]
+      },
+      "asset_type": "image_flux",
+      "asset_url": "",
+      "prompt_suggestion": "close up shot of a smartphone screen displaying a digital lottery scratch card app, glowing interface, shallow depth of field, photorealistic, golden coins, celebration confetti --ar 16:9",
+      "camera_movement": "zoom_in_slow",
+      "transition": "fade",
+      "transition_duration": 0.8,
+      "text_overlay": {
+        "text": "RASPADINHAS DIGITAIS APROVADAS! 🎉",
+        "position": "top",
+        "style": "highlight",
+        "animation": "pop",
+        "backgroundColor": "#FFD700",
+        "color": "#000000"
+      },
+      "audio": {
+        "useTTS": true,
+        "ttsVoice": "elevenlabs-sarah"
+      }
+    },
+    {
+      "id": 2,
+      "start_time": 7.44,
+      "end_time": 12.58,
+      "transcript_segment": "Pois é, agora elas podem ser compradas online, sem precisar ir até uma lotérica!",
+      "visual_concept": {
+        "description": "Pessoa feliz ganhando prêmio no celular, celebrando em casa",
+        "art_style": "cinematic, warm lighting",
+        "emotion": "euforia, celebração",
+        "lighting": "golden hour, rim lighting"
+      },
+      "asset_type": "video_kling",
+      "asset_url": "",
+      "prompt_suggestion": "cinematic shot of a young brazilian person celebrating looking at phone screen, confetti falling, dynamic lighting, home interior, 4k, slow motion celebration",
+      "camera_movement": "static",
+      "transition": "crossfade",
+      "transition_duration": 1.0,
+      "text_overlay": {
+        "text": "Jogue de qualquer lugar!",
+        "position": "bottom",
+        "style": "subtitle",
+        "animation": "slide_up"
+      }
+    },
+    {
+      "id": 3,
+      "start_time": 12.58,
+      "end_time": 18.2,
+      "transcript_segment": "Os prêmios variam de R$ 5 até R$ 500 mil reais! E o melhor: você recebe na hora.",
+      "visual_concept": {
+        "description": "Pilhas de dinheiro brasileiro, notas voando, atmosfera de jackpot",
+        "art_style": "3D render, glossy, dramatic",
+        "emotion": "excitação, desejo"
+      },
+      "asset_type": "image_flux",
+      "asset_url": "",
+      "prompt_suggestion": "dramatic 3d render of brazilian real banknotes flying in the air, golden coins, jackpot atmosphere, dark luxury background, volumetric lighting, 8k --ar 16:9",
+      "camera_movement": "ken_burns",
+      "transition": "slide_left",
+      "transition_duration": 0.5,
+      "text_overlay": {
+        "text": "Prêmios de até R$ 500 MIL! 💰",
+        "position": "center",
+        "style": "title",
+        "animation": "bounce",
+        "fontSize": 80
+      }
+    },
+    {
+      "id": 4,
+      "start_time": 18.2,
+      "end_time": 24.0,
+      "transcript_segment": "Mas atenção: jogue com responsabilidade. A loteria deve ser diversão, não vício.",
+      "visual_concept": {
+        "description": "Ícone de alerta, mensagem de jogo responsável, tom sério mas amigável",
+        "art_style": "flat design, modern UI",
+        "emotion": "seriedade, cuidado",
+        "color_palette": ["#FF6B6B", "#1a1a2e", "#FFFFFF"]
+      },
+      "asset_type": "solid_color",
+      "camera_movement": "static",
+      "transition": "fade",
+      "transition_duration": 0.8,
+      "text_overlay": {
+        "text": "⚠️ Jogue com Responsabilidade",
+        "position": "center",
+        "style": "title",
+        "animation": "fade",
+        "color": "#FF6B6B"
+      }
+    },
+    {
+      "id": 5,
+      "start_time": 24.0,
+      "end_time": 28.0,
+      "transcript_segment": "Gostou? Deixa o like e segue pra mais novidades!",
+      "visual_concept": {
+        "description": "Call to action, botões de like e seguir, estilo redes sociais",
+        "art_style": "social media UI, vibrant",
+        "emotion": "amigável, convidativo"
+      },
+      "asset_type": "solid_color",
+      "camera_movement": "zoom_in_slow",
+      "transition": "slide_up",
+      "transition_duration": 0.5,
+      "text_overlay": {
+        "text": "👍 CURTA & SIGA! ✅",
+        "position": "center",
+        "style": "title",
+        "animation": "pop"
+      },
+      "metadata": {
+        "cta": true,
+        "socialPlatform": "instagram"
+      }
+    }
+  ],
+  "schema_version": "1.0",
+  "created_at": "2025-12-17T06:00:00Z",
+  "tags": ["notícias", "loteria", "governo", "viral", "shorts"]
+}

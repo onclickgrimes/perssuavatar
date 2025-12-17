@@ -8,13 +8,17 @@
   "scripts": {
     "dev": "chcp 65001 >nul && nextron",
     "build": "nextron build",
-    "postinstall": "electron-builder install-app-deps"
+    "postinstall": "electron-builder install-app-deps",
+    "remotion:studio": "npx remotion studio remotion/index.ts",
+    "remotion:render": "npx remotion render remotion/index.ts"
   },
   "dependencies": {
     "@deepgram/sdk": "^4.11.2",
     "@elevenlabs/elevenlabs-js": "^2.26.0",
     "@google/genai": "^1.31.0",
     "@google/generative-ai": "^0.24.1",
+    "@remotion/cli": "4.0.392",
+    "@remotion/renderer": "4.0.392",
     "@types/fluent-ffmpeg": "^2.1.28",
     "aws-sdk": "^2.1692.0",
     "dotenv": "^17.2.3",
@@ -31,7 +35,9 @@
     "openai": "^6.10.0",
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^6.5.0",
-    "sqlite3": "^5.1.7"
+    "remotion": "4.0.392",
+    "sqlite3": "^5.1.7",
+    "zod": "^4.2.1"
   },
   "devDependencies": {
     "@types/node": "^20.11.16",
