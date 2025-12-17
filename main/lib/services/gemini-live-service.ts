@@ -102,7 +102,7 @@ export class GeminiLiveService extends EventEmitter {
             };
 
             console.log("[GeminiLive] Connecting...");
-            console.log("[GeminiLive] System instruction:", this.lastSystemInstruction);
+            // console.log("[GeminiLive] System instruction:", this.lastSystemInstruction);
             this.session = await ai.live.connect({
                 model,
                 callbacks: {

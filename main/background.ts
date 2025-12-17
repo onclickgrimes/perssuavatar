@@ -891,6 +891,183 @@ ipcMain.handle('is-transcription-window-open', () => {
   return { isOpen, isVisible };
 });
 
+// ========================================
+// VIDEO STUDIO WINDOW
+// ========================================
+
+let videoStudioWindow: BrowserWindow | null = null;
+
+async function openVideoStudioWindow() {
+  if (videoStudioWindow && !videoStudioWindow.isDestroyed()) {
+    videoStudioWindow.focus();
+    return;
+  }
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  videoStudioWindow = createWindow('video-studio', {
+    width: Math.min(1400, screenWidth - 100),
+    height: Math.min(900, screenHeight - 100),
+    minWidth: 1000,
+    minHeight: 700,
+    frame: true,
+    transparent: false,
+    resizable: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  if (isProd) {
+    await videoStudioWindow.loadURL('app://./video-studio');
+  } else {
+    const port = process.argv[2];
+    await videoStudioWindow.loadURL(`http://localhost:${port}/video-studio`);
+  }
+
+  videoStudioWindow.on('closed', () => {
+    videoStudioWindow = null;
+  });
+
+  console.log('🎬 Video Studio window opened');
+}
+
+ipcMain.handle('open-video-studio-window', async () => {
+  await openVideoStudioWindow();
+  return { success: true };
+});
+
+// ========================================
+// VIDEO PROJECT SERVICE HANDLERS
+// ========================================
+
+import { getVideoProjectService, VideoProjectSegment, VideoProjectData } from './lib/services/video-project-service';
+
+const videoProjectService = getVideoProjectService();
+
+// Propagar eventos de status para a janela do Video Studio
+videoProjectService.on('status', (data) => {
+  if (videoStudioWindow && !videoStudioWindow.isDestroyed()) {
+    videoStudioWindow.webContents.send('video-project:status', data);
+  }
+});
+
+videoProjectService.on('render-progress', (data) => {
+  if (videoStudioWindow && !videoStudioWindow.isDestroyed()) {
+    videoStudioWindow.webContents.send('video-project:render-progress', data);
+  }
+});
+
+// Handler para transcrever arquivo de áudio
+ipcMain.handle('video-project:transcribe', async (event, audioPath: string) => {
+  try {
+    console.log('🎤 [VideoProject] Transcribing audio:', audioPath);
+    const result = await videoProjectService.transcribeAudio(audioPath);
+    return result;
+  } catch (error: any) {
+    console.error('❌ [VideoProject] Transcription error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Handler para salvar arquivo de áudio enviado do renderer
+ipcMain.handle('video-project:save-audio', async (event, arrayBuffer: ArrayBuffer, fileName: string) => {
+  try {
+    const buffer = Buffer.from(arrayBuffer);
+    const audioPath = await videoProjectService.saveAudioFile(buffer, fileName);
+    return { success: true, path: audioPath };
+  } catch (error: any) {
+    console.error('❌ [VideoProject] Save audio error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Handler para salvar arquivo de imagem enviado do renderer
+ipcMain.handle('video-project:save-image', async (
+  event, 
+  arrayBuffer: ArrayBuffer, 
+  fileName: string, 
+  segmentId: number
+) => {
+  try {
+    const buffer = Buffer.from(arrayBuffer);
+    const imagePath = await videoProjectService.saveImageFile(buffer, fileName, segmentId);
+    return { success: true, path: imagePath };
+  } catch (error: any) {
+    console.error('❌ [VideoProject] Save image error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Handler para analisar segmentos com IA
+ipcMain.handle('video-project:analyze', async (
+  event, 
+  segments: VideoProjectSegment[], 
+  options?: { editingStyle?: string; authorConclusion?: string }
+) => {
+  try {
+    console.log('🤖 [VideoProject] Analyzing segments with AI...');
+    const result = await videoProjectService.analyzeWithAI(segments, options);
+    return result;
+  } catch (error: any) {
+    console.error('❌ [VideoProject] Analysis error:', error);
+    return { success: false, error: error.message, segments };
+  }
+});
+
+// Handler para converter projeto para formato Remotion
+ipcMain.handle('video-project:convert-to-remotion', async (event, project: VideoProjectData) => {
+  try {
+    console.log('🎬 [VideoProject] Converting to Remotion format...');
+    const remotionProject = videoProjectService.convertToRemotionProject(project);
+    return { success: true, project: remotionProject };
+  } catch (error: any) {
+    console.error('❌ [VideoProject] Conversion error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Handler para renderizar projeto
+ipcMain.handle('video-project:render', async (event, project: VideoProjectData) => {
+  try {
+    console.log('🎬 [VideoProject] Starting render...');
+    const result = await videoProjectService.renderProject(project);
+    return result;
+  } catch (error: any) {
+    console.error('❌ [VideoProject] Render error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Handler para salvar projeto
+ipcMain.handle('video-project:save', async (event, project: VideoProjectData) => {
+  try {
+    const filePath = videoProjectService.saveProject(project);
+    return { success: true, path: filePath };
+  } catch (error: any) {
+    return { success: false, error: error.message };
+  }
+});
+
+// Handler para listar projetos salvos
+ipcMain.handle('video-project:list', async () => {
+  try {
+    const projects = videoProjectService.listProjects();
+    return { success: true, projects };
+  } catch (error: any) {
+    return { success: false, error: error.message, projects: [] };
+  }
+});
+
+// Handler para obter diretório de projetos
+ipcMain.handle('video-project:get-directory', async () => {
+  return { path: videoProjectService.getProjectsDirectory() };
+});
+
+
 // Register global shortcut for transcription window
 app.whenReady().then(() => {
   const { globalShortcut } = require('electron');

@@ -27,6 +27,7 @@ import {
   getCompositions,
   RenderMediaOnProgress,
 } from '@remotion/renderer';
+import { bundle } from '@remotion/bundler';
 import path from 'path';
 import { app } from 'electron';
 import { EventEmitter } from 'events';
@@ -78,13 +79,17 @@ export interface RenderProgress {
   /** Progresso de 0 a 1 */
   progress: number;
   /** Estágio atual */
-  stage: 'preparing' | 'rendering' | 'encoding' | 'complete';
+  stage: 'bundling' | 'preparing' | 'rendering' | 'encoding' | 'complete';
   /** Frame atual sendo renderizado */
   renderedFrames?: number;
   /** Total de frames */
   totalFrames?: number;
   /** Título do projeto (se aplicável) */
   projectTitle?: string;
+  /** Porcentagem (0-100) */
+  percent?: number;
+  /** Frame atual */
+  frame?: number;
 }
 
 // Interface simplificada do VideoProject (espelha o tipo do Remotion)
@@ -136,23 +141,148 @@ export interface VideoProjectInput {
 // ========================================
 
 export class VideoService extends EventEmitter {
-  private bundlePath: string;
+  private entryPoint: string;
   private outputDir: string;
+  private bundleDir: string;
+  private rootDir: string;
+  private cachedBundlePath: string | null = null;
   private isRendering: boolean = false;
 
   constructor() {
     super();
     
-    // Caminho do entry point do Remotion
-    this.bundlePath = path.join(app.getAppPath(), 'remotion', 'index.ts');
+    // Diretório raiz do projeto (onde está node_modules, remotion, etc)
+    this.rootDir = app.getAppPath();
+    
+    // Caminho do entry point do Remotion (arquivo TypeScript)
+    this.entryPoint = path.resolve(this.rootDir, 'remotion', 'index.ts');
+    
+    // Diretório para bundles temporários (fora do app, onde podemos escrever)
+    this.bundleDir = path.resolve(app.getPath('userData'), 'remotion-bundle');
     
     // Diretório de saída dos vídeos
-    this.outputDir = path.join(app.getPath('userData'), 'generated-videos');
+    this.outputDir = path.resolve(app.getPath('userData'), 'generated-videos');
     
-    // Criar diretório se não existir
+    console.log('🎬 VideoService initialized');
+    console.log('📂 Root dir:', this.rootDir);
+    console.log('📂 Entry point:', this.entryPoint);
+    console.log('📂 Bundle dir:', this.bundleDir);
+    console.log('📂 Output dir:', this.outputDir);
+    
+    // Criar diretórios se não existirem
     if (!fs.existsSync(this.outputDir)) {
       fs.mkdirSync(this.outputDir, { recursive: true });
     }
+    if (!fs.existsSync(this.bundleDir)) {
+      fs.mkdirSync(this.bundleDir, { recursive: true });
+    }
+  }
+
+  /**
+   * Cria o bundle webpack do Remotion (necessário antes de renderizar)
+   */
+  private async ensureBundle(): Promise<string> {
+    // Se já temos um bundle cacheado e o source não mudou, reutilizar
+    if (this.cachedBundlePath && fs.existsSync(this.cachedBundlePath)) {
+      console.log('🎬 Usando bundle cacheado');
+      return this.cachedBundlePath;
+    }
+
+    console.log('🎬 Criando bundle do Remotion...');
+    this.emitProgress({ 
+      progress: 0, 
+      stage: 'bundling',
+      percent: 0,
+    });
+
+    try {
+      // Limpar bundle anterior para evitar conflitos
+      if (fs.existsSync(this.bundleDir)) {
+        fs.rmSync(this.bundleDir, { recursive: true, force: true });
+        fs.mkdirSync(this.bundleDir, { recursive: true });
+      }
+
+      const bundlePath = await bundle({
+        entryPoint: this.entryPoint,
+        outDir: this.bundleDir,
+        // Configuração crítica: definir rootDir para resolver node_modules corretamente
+        rootDir: this.rootDir,
+        onProgress: (progress) => {
+          this.emitProgress({ 
+            progress: progress * 0.1,
+            stage: 'bundling',
+            percent: Math.round(progress * 10),
+          });
+        },
+      });
+
+      this.cachedBundlePath = bundlePath;
+      console.log('✅ Bundle criado:', bundlePath);
+      return bundlePath;
+    } catch (error: any) {
+      console.error('❌ Erro ao criar bundle:', error);
+      console.error('❌ Stack:', error.stack);
+      
+      // Se o bundle falhou, tentar usar CLI do Remotion como fallback
+      console.log('🔄 Tentando fallback via CLI do Remotion...');
+      return this.bundleViaCLI();
+    }
+  }
+
+  /**
+   * Fallback: Cria bundle via CLI do Remotion (mais robusto em ambiente Electron)
+   */
+  private async bundleViaCLI(): Promise<string> {
+    const { spawn } = await import('child_process');
+    
+    return new Promise((resolve, reject) => {
+      const npxPath = process.platform === 'win32' ? 'npx.cmd' : 'npx';
+      
+      const args = [
+        'remotion',
+        'bundle',
+        this.entryPoint,
+        '--out-dir', this.bundleDir,
+      ];
+
+      console.log(`🎬 Executando: ${npxPath} ${args.join(' ')}`);
+      console.log(`📁 CWD: ${this.rootDir}`);
+
+      const child = spawn(npxPath, args, {
+        cwd: this.rootDir,
+        shell: true,
+        env: { ...process.env, FORCE_COLOR: '0' },
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      child.stdout?.on('data', (data) => {
+        stdout += data.toString();
+        console.log('[Remotion]', data.toString().trim());
+      });
+
+      child.stderr?.on('data', (data) => {
+        stderr += data.toString();
+        console.error('[Remotion Error]', data.toString().trim());
+      });
+
+      child.on('close', (code) => {
+        if (code === 0) {
+          // O bundle fica em bundleDir/index.html
+          const bundlePath = this.bundleDir;
+          this.cachedBundlePath = bundlePath;
+          console.log('✅ Bundle criado via CLI:', bundlePath);
+          resolve(bundlePath);
+        } else {
+          reject(new Error(`Remotion bundle falhou com código ${code}: ${stderr}`));
+        }
+      });
+
+      child.on('error', (error) => {
+        reject(new Error(`Falha ao executar Remotion CLI: ${error.message}`));
+      });
+    });
   }
 
   // ========================================
@@ -229,16 +359,19 @@ export class VideoService extends EventEmitter {
         projectTitle,
       });
 
-      // 1. Verificar se o bundlePath existe
-      if (!fs.existsSync(this.bundlePath)) {
-        throw new Error(`Entry point não encontrado: ${this.bundlePath}`);
+      // 1. Verificar se o entry point existe
+      if (!fs.existsSync(this.entryPoint)) {
+        throw new Error(`Entry point não encontrado: ${this.entryPoint}`);
       }
 
-      // 2. Selecionar a composição
+      // 2. Criar bundle do Remotion
+      const bundlePath = await this.ensureBundle();
+
+      // 3. Selecionar a composição
       console.log(`🎬 Selecionando composição: ${options.compositionId}`);
       
       const composition = await selectComposition({
-        serveUrl: this.bundlePath,
+        serveUrl: bundlePath,
         id: options.compositionId,
         inputProps: options.inputProps || {},
       });
@@ -271,18 +404,21 @@ export class VideoService extends EventEmitter {
 
       // 4. Renderizar
       const onProgress: RenderMediaOnProgress = ({ progress, renderedFrames }) => {
+        const percentComplete = Math.round((0.1 + (progress * 0.9)) * 100);
         this.emitProgress({
-          progress: 0.05 + (progress * 0.9),
+          progress: 0.1 + (progress * 0.9),
           stage: progress >= 0.95 ? 'encoding' : 'rendering',
           renderedFrames: renderedFrames,
           totalFrames: composition.durationInFrames,
           projectTitle,
+          percent: percentComplete,
+          frame: renderedFrames,
         });
       };
 
       await renderMedia({
         composition,
-        serveUrl: this.bundlePath,
+        serveUrl: bundlePath,
         codec: this.mapCodec(options.codec || 'h264'),
         outputLocation: outputPath,
         inputProps: options.inputProps || {},
@@ -321,7 +457,8 @@ export class VideoService extends EventEmitter {
    */
   public async listCompositions(): Promise<CompositionInfo[]> {
     try {
-      const compositions = await getCompositions(this.bundlePath);
+      const bundlePath = await this.ensureBundle();
+      const compositions = await getCompositions(bundlePath);
       
       return compositions.map(comp => ({
         id: comp.id,

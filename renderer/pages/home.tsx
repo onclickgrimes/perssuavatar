@@ -66,6 +66,11 @@ export default function HomePage() {
     // TODO: Implementar funcionalidade de perguntar (Ctrl+Enter)
   };
 
+  const handleOpenVideoStudio = () => {
+    console.log('🎬 Abrindo Video Studio');
+    window.electron.openVideoStudioWindow?.();
+  };
+
   // When UI is open (ActionBar or Settings), disable click-through to allow interaction
   useEffect(() => {
     const uiOpen = showActionBar || isSettingsOpen;
@@ -153,6 +158,7 @@ export default function HomePage() {
         onOpenHistory={handleOpenHistory}
         onStartListening={handleStartListening}
         onAsk={handleAsk}
+        onOpenVideoStudio={handleOpenVideoStudio}
       />
       <Settings 
         onSizeChange={handleSizeChange}

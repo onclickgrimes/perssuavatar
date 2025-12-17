@@ -332,7 +332,66 @@ const handler = {
   }) => ipcRenderer.invoke('send-conversation-context', data),
   
   // Resetar sessão Gemini Live (limpar histórico)
-  resetLiveSession: () => ipcRenderer.invoke('reset-live-session')
+  resetLiveSession: () => ipcRenderer.invoke('reset-live-session'),
+  
+  // Abrir janela do Video Studio
+  openVideoStudioWindow: () => ipcRenderer.invoke('open-video-studio-window'),
+  
+  // ========================================
+  // VIDEO PROJECT SERVICE
+  // ========================================
+  
+  videoProject: {
+    // Salvar arquivo de áudio e retornar caminho
+    saveAudio: (arrayBuffer: ArrayBuffer, fileName: string) => 
+      ipcRenderer.invoke('video-project:save-audio', arrayBuffer, fileName),
+    
+    // Salvar arquivo de imagem e retornar caminho
+    saveImage: (arrayBuffer: ArrayBuffer, fileName: string, segmentId: number) => 
+      ipcRenderer.invoke('video-project:save-image', arrayBuffer, fileName, segmentId),
+    
+    // Transcrever arquivo de áudio
+    transcribe: (audioPath: string) => 
+      ipcRenderer.invoke('video-project:transcribe', audioPath),
+    
+    // Analisar segmentos com IA
+    analyze: (segments: any[], options?: { editingStyle?: string; authorConclusion?: string }) => 
+      ipcRenderer.invoke('video-project:analyze', segments, options),
+    
+    // Converter projeto para formato Remotion
+    convertToRemotion: (project: any) => 
+      ipcRenderer.invoke('video-project:convert-to-remotion', project),
+    
+    // Renderizar projeto
+    render: (project: any) => 
+      ipcRenderer.invoke('video-project:render', project),
+    
+    // Salvar projeto como JSON
+    save: (project: any) => 
+      ipcRenderer.invoke('video-project:save', project),
+    
+    // Listar projetos salvos
+    list: () => 
+      ipcRenderer.invoke('video-project:list'),
+    
+    // Obter diretório de projetos
+    getDirectory: () => 
+      ipcRenderer.invoke('video-project:get-directory'),
+    
+    // Listener para status do projeto
+    onStatus: (callback: (data: { stage: string; message: string }) => void) => {
+      const subscription = (_: any, data: { stage: string; message: string }) => callback(data);
+      ipcRenderer.on('video-project:status', subscription);
+      return () => ipcRenderer.removeListener('video-project:status', subscription);
+    },
+    
+    // Listener para progresso de renderização
+    onRenderProgress: (callback: (data: { percent: number; frame: number; totalFrames: number }) => void) => {
+      const subscription = (_: any, data: { percent: number; frame: number; totalFrames: number }) => callback(data);
+      ipcRenderer.on('video-project:render-progress', subscription);
+      return () => ipcRenderer.removeListener('video-project:render-progress', subscription);
+    }
+  }
 }
 
 contextBridge.exposeInMainWorld('electron', handler)

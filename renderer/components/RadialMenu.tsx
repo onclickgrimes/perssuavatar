@@ -5,6 +5,7 @@ interface RadialMenuProps {
   onOpenHistory: () => void;
   onStartListening: () => void;
   onAsk: () => void;
+  onOpenVideoStudio?: () => void;
 }
 
 interface MenuItem {
@@ -22,6 +23,7 @@ export default function RadialMenu({
   onOpenHistory,
   onStartListening,
   onAsk,
+  onOpenVideoStudio,
 }: RadialMenuProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -48,7 +50,7 @@ export default function RadialMenu({
       ),
       color: '#8B5CF6',
       hoverColor: '#A78BFA',
-      angle: 270,
+      angle: 257,
       action: onOpenSettings,
     },
     {
@@ -62,7 +64,7 @@ export default function RadialMenu({
       ),
       color: '#10B981',
       hoverColor: '#34D399',
-      angle: 330,
+      angle: 308,
       action: onOpenHistory,
     },
     {
@@ -77,7 +79,7 @@ export default function RadialMenu({
       ),
       color: '#0066FF',
       hoverColor: '#3B87FF',
-      angle: 30,
+      angle: 0,
       action: onStartListening,
     },
     {
@@ -92,7 +94,7 @@ export default function RadialMenu({
       ),
       color: '#F59E0B',
       hoverColor: '#FBBF24',
-      angle: 90,
+      angle: 51,
       action: onAsk,
     },
     {
@@ -106,9 +108,27 @@ export default function RadialMenu({
       ),
       color: '#06B6D4',
       hoverColor: '#22D3EE',
-      angle: 150,
+      angle: 103,
       action: async () => {
         await window.electron.resetLiveSession();
+      },
+    },
+    {
+      id: 'video-studio',
+      label: 'Video Studio',
+      icon: (
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="m22 8-6 4 6 4V8Z"></path>
+          <rect width="14" height="12" x="2" y="6" rx="2" ry="2"></rect>
+        </svg>
+      ),
+      color: '#EC4899',
+      hoverColor: '#F472B6',
+      angle: 154,
+      action: () => {
+        if (onOpenVideoStudio) {
+          onOpenVideoStudio();
+        }
       },
     },
     {
@@ -122,7 +142,7 @@ export default function RadialMenu({
       ),
       color: '#EF4444',
       hoverColor: '#F87171',
-      angle: 210,
+      angle: 206,
       action: () => setIsVisible(false),
     },
   ];
