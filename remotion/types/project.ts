@@ -24,6 +24,7 @@ export const CameraMovementSchema = z.enum([
   'shake',            // Shake/tremor
   'rotate_cw',        // Rotação horária
   'rotate_ccw',       // Rotação anti-horária
+  'trail_printing',   // Accordion blur / trail printing effect
 ]);
 
 export type CameraMovement = z.infer<typeof CameraMovementSchema>;

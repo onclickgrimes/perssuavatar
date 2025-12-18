@@ -12,6 +12,8 @@ import {
   videoProjectCompositionSchema,
   defaultVideoProject,
 } from './compositions/VideoProject';
+import { TrailPrintingDemo } from './compositions/TrailPrintingDemo';
+import { TrailPrintingVisualGuide } from './compositions/TrailPrintingVisualGuide';
 import { calculateProjectFrames } from './types/project';
 
 export const RemotionRoot: React.FC = () => {
@@ -72,6 +74,30 @@ export const RemotionRoot: React.FC = () => {
           title: 'Hello, Remotion!',
           backgroundColor: '#1a1a2e',
         }}
+      />
+
+      {/* 
+        =========================================
+        TRAIL PRINTING EFFECT DEMOS
+        =========================================
+        Demonstrações do efeito trail printing / accordion blur.
+      */}
+      <Composition
+        id="TrailPrintingDemo"
+        component={TrailPrintingDemo}
+        durationInFrames={400}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
+
+      <Composition
+        id="TrailPrintingVisualGuide"
+        component={TrailPrintingVisualGuide}
+        durationInFrames={400}
+        fps={30}
+        width={1920}
+        height={1080}
       />
 
       {/* 

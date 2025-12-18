@@ -33,8 +33,36 @@ export const Scene: React.FC<SceneProps> = ({
   });
   
   // Debug camera effect
-  if (relativeFrame % 30 === 0) { // Log a cada segundo
-    console.log(`[Scene ${scene.id}] Camera Movement: ${scene.camera_movement}, Frame: ${relativeFrame}/${sceneDurationFrames}, Effect:`, cameraEffect);
+  if (relativeFrame % 30 === 0 && scene.camera_movement === 'trail_printing') { // Log a cada segundo
+    console.log(`[Scene ${scene.id}] Camera Movement: ${scene.camera_movement}, Frame: ${relativeFrame}/${sceneDurationFrames}`);
+    console.log('🔍 Verificando condição trail_printing:', {
+      camera_movement: scene.camera_movement,
+      é_igual: scene.camera_movement === 'trail_printing',
+      tipo: typeof scene.camera_movement
+    });
+  }
+  
+  // Trail printing effect - renderiza múltiplas frames
+  if (scene.camera_movement === 'trail_printing') {
+    console.log('✅ ENTRANDO NO IF DO TRAIL_PRINTING!');
+    return (
+      <AbsoluteFill>
+        <TrailPrintingEffect
+          scene={scene}
+          relativeFrame={relativeFrame}
+          sceneDurationFrames={sceneDurationFrames}
+        />
+        
+        {/* Overlay de texto */}
+        {scene.text_overlay && (
+          <TextOverlayComponent
+            config={scene.text_overlay}
+            relativeFrame={relativeFrame}
+            sceneDurationFrames={sceneDurationFrames}
+          />
+        )}
+      </AbsoluteFill>
+    );
   }
   
   return (
@@ -67,6 +95,97 @@ export const Scene: React.FC<SceneProps> = ({
           sceneDurationFrames={sceneDurationFrames}
         />
       )}
+    </AbsoluteFill>
+  );
+};
+
+// ========================================
+// TRAIL PRINTING EFFECT
+// ========================================
+
+interface TrailPrintingEffectProps {
+  scene: SceneType;
+  relativeFrame: number;
+  sceneDurationFrames: number;
+}
+
+const TrailPrintingEffect: React.FC<TrailPrintingEffectProps> = ({
+  scene,
+  relativeFrame,
+  sceneDurationFrames,
+}) => {
+  // Debug log - MUITO IMPORTANTE
+  if (relativeFrame % 30 === 0) {
+    console.log('🎬 TrailPrintingEffect RENDERIZANDO', { sceneId: scene.id, frame: relativeFrame });
+  }
+  
+  // Configuração do efeito
+  const trailCount = 6; // Número de "ecos"/rastros
+  const baseOpacity = 0.2; // Opacidade base de cada rastro
+  
+  // Criar array de índices para os rastros (do mais antigo ao mais recente)
+  const trails = Array.from({ length: trailCount }, (_, i) => i);
+  
+  // Criar efeito de movimento suave usando seno
+  const waveFactor = Math.sin(relativeFrame * 0.02) * 15;
+  
+  return (
+    <AbsoluteFill>
+      {/* Container com overflow hidden */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          overflow: 'hidden',
+        }}
+      >
+        {/* Renderizar cada rastro, do mais antigo ao mais recente */}
+        {trails.map((trailIndex) => {
+          // Calcular opacidade decrescente (mais antigo = mais transparente)
+          const opacity = baseOpacity * (1 - trailIndex / (trailCount + 2));
+          
+          // Offset de posição para criar um efeito de trailing
+          // Rastros mais antigos ficam ligeiramente atrás
+          const horizontalOffset = trailIndex * 8 - waveFactor * (trailIndex / trailCount);
+          const verticalOffset = Math.sin((relativeFrame - trailIndex * 3) * 0.03) * (trailIndex * 2);
+          
+          // Escala ligeiramente menor para rastros mais antigos
+          const scale = 1 - (trailIndex * 0.01);
+          
+          // Rotação sutil baseada no índice do rastro
+          const rotation = (trailIndex - trailCount / 2) * 0.3;
+          
+          return (
+            <div
+              key={trailIndex}
+              style={{
+                position: 'absolute',
+                inset: 0,
+                opacity,
+                transform: `
+                  translate(${-horizontalOffset}px, ${verticalOffset}px) 
+                  scale(${scale}) 
+                  rotate(${rotation}deg)
+                `,
+                transformOrigin: 'center center',
+                filter: `blur(${trailIndex * 0.5}px)`, // Blur progressivo
+              }}
+            >
+              <AssetRenderer scene={scene} />
+            </div>
+          );
+        })}
+        
+        {/* Frame atual (100% de opacidade) */}
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+          }}
+        >
+          <AssetRenderer scene={scene} />
+        </div>
+      </div>
     </AbsoluteFill>
   );
 };

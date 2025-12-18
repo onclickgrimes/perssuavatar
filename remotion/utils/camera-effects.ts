@@ -71,6 +71,10 @@ export const CAMERA_EFFECTS: Record<CameraMovement, { description: string; apply
     description: 'Desorientação, instabilidade emocional ou efeito estilizado/dramático.',
     apply: (params) => rotate(params.frame, params.durationInFrames, 0, -3),
   },
+  trail_printing: {
+    description: 'Trail printing / accordion blur — deixa um rastro das frames anteriores antes de alcançar a cena atual, criando efeito de múltipla exposição.',
+    apply: (params) => ({ transform: 'scale(1) translate(0, 0)' }),
+  },
 };
 
 /**
