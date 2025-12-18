@@ -57,10 +57,10 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
       className="video-preview-container"
       style={{
         width: typeof width === 'number' ? `${width}px` : width,
-        aspectRatio: typeof height === 'undefined' ? `${videoWidth}/${videoHeight}` : undefined,
-        borderRadius: '12px',
-        overflow: 'hidden',
-        backgroundColor: '#000',
+        height: typeof height === 'number' ? `${height}px` : height,
+        display: 'flex',
+        flexDirection: 'column',
+        position: 'relative',
       }}
     >
       <Player
@@ -72,7 +72,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
         compositionHeight={videoHeight}
         style={{
           width: '100%',
-          height: calculatedHeight,
+          height: '100%',
+          borderRadius: '8px',
+          overflow: 'hidden',
         }}
         controls
         autoPlay={autoPlay}
