@@ -46,21 +46,39 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
   
   // Pré-calcular informações das cenas
   const sceneInfos = useMemo(() => {
-    return project.scenes.map((scene) => {
+    return project.scenes.map((scene, index) => {
       const startFrame = Math.round(scene.start_time * fps);
       const endFrame = Math.round(scene.end_time * fps);
-      const durationFrames = endFrame - startFrame;
+      const baseDuration = endFrame - startFrame;
       const transitionFrames = transitionSecondsToFrames(
         scene.transition_duration || 0.5, 
         fps
       );
       
+      const isFirstScene = index === 0;
+      const isLastScene = index === project.scenes.length - 1;
+      
+      // Ajustar o início da Sequence:
+      // - Primeira cena: começa no frame original
+      // - Demais cenas: começam ANTES do tempo original (para sobrepor com saída da anterior)
+      const sequenceStart = isFirstScene ? startFrame : startFrame - transitionFrames;
+      
+      // Ajustar a duração da Sequence:
+      // - Se for a última cena: duração base + transição de entrada (se não for a primeira)
+      // - Se não for a última: duração base + transição de entrada + transição de saída (para sobrepor com a próxima)
+      const sequenceDuration = isLastScene
+        ? baseDuration + (isFirstScene ? 0 : transitionFrames) // Última cena não precisa de transição de saída
+        : baseDuration + (isFirstScene ? transitionFrames : transitionFrames * 2); // Outras cenas precisam de entrada e saída
+      
       return {
         scene,
-        startFrame,
+        startFrame: sequenceStart,
         endFrame,
-        durationFrames,
+        durationFrames: sequenceDuration,
         transitionFrames,
+        baseDuration,
+        isFirstScene,
+        isLastScene,
       };
     });
   }, [project.scenes, fps]);
@@ -75,8 +93,7 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
       >
         {/* Renderizar cada cena como uma Sequence */}
         {sceneInfos.map((info, index) => {
-          const { scene, startFrame, durationFrames, transitionFrames } = info;
-          const nextScene = sceneInfos[index + 1];
+          const { scene, startFrame, durationFrames, transitionFrames, baseDuration, isFirstScene, isLastScene } = info;
           
           return (
             <Sequence
@@ -89,7 +106,9 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
                 scene={scene}
                 durationFrames={durationFrames}
                 transitionFrames={transitionFrames}
-                hasNextScene={!!nextScene}
+                baseDuration={baseDuration}
+                isFirstScene={isFirstScene}
+                isLastScene={isLastScene}
               />
             </Sequence>
           );
@@ -115,33 +134,45 @@ interface SceneWithTransitionProps {
   scene: VideoProject['scenes'][0];
   durationFrames: number;
   transitionFrames: number;
-  hasNextScene: boolean;
+  baseDuration: number;
+  isFirstScene: boolean;
+  isLastScene: boolean;
 }
 
 const SceneWithTransition: React.FC<SceneWithTransitionProps> = ({
   scene,
   durationFrames,
   transitionFrames,
-  hasNextScene,
+  baseDuration,
+  isFirstScene,
+  isLastScene,
 }) => {
   const frame = useCurrentFrame();
   
+  // Calcular o offset inicial (transição de entrada)
+  // Se não for a primeira cena, temos um offset de transitionFrames
+  const entryOffset = isFirstScene ? 0 : transitionFrames;
+  
   // Calcular estilos de transição
-  const isInEnterTransition = frame < transitionFrames;
-  const isInExitTransition = hasNextScene && frame > durationFrames - transitionFrames;
+  const isInEnterTransition = frame < entryOffset + transitionFrames;
+  const isInExitTransition = !isLastScene && frame > entryOffset + baseDuration;
   
   let transitionStyles: React.CSSProperties = {};
   
   if (isInEnterTransition) {
     // Transição de entrada
+    // Para a primeira cena, frame vai de 0 a transitionFrames
+    // Para outras cenas, frame vai de 0 a entryOffset+transitionFrames, mas a transição começa em entryOffset
+    const enterFrame = frame - entryOffset;
     transitionStyles = applyTransition(scene.transition, {
-      frame,
+      frame: Math.max(0, enterFrame),
       transitionFrames,
       isEntering: true,
     });
   } else if (isInExitTransition) {
     // Transição de saída
-    const exitFrame = frame - (durationFrames - transitionFrames);
+    const exitStartFrame = entryOffset + baseDuration;
+    const exitFrame = frame - exitStartFrame;
     transitionStyles = applyTransition(scene.transition, {
       frame: exitFrame,
       transitionFrames,
