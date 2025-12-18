@@ -18,6 +18,7 @@ import { GeminiService } from './gemini-service';
 import { OpenAIService } from './openai-service';
 import { DeepSeekService } from './deepseek-service';
 import { CAMERA_EFFECTS } from '../../../remotion/utils/camera-effects';
+import { TRANSITION_EFFECTS } from '../../../remotion/utils/transitions';
 
 export type AIProvider = 'gemini' | 'openai' | 'deepseek';
 
@@ -379,6 +380,7 @@ export class VideoProjectService extends EventEmitter {
         try {
             const prompt = this.buildAnalysisPrompt(segments, options);
             console.log('📝 [VideoProject] Prompt built, length:', prompt.length);
+            console.log('📝 [VideoProject] Prompt built:', prompt);
 
             let analyzedSegments: Array<{
                 id: number;
@@ -386,6 +388,7 @@ export class VideoProjectService extends EventEmitter {
                 imagePrompt: string;
                 assetType: string;
                 cameraMovement: string;
+                transition: string;
             }>;
 
             const systemMsg = 'You are a video editor AI. Respond ONLY with a valid JSON array of segments.';
@@ -451,6 +454,7 @@ export class VideoProjectService extends EventEmitter {
                         imagePrompt: analysis.imagePrompt || seg.imagePrompt,
                         assetType: analysis.assetType || 'image_flux',
                         cameraMovement: analysis.cameraMovement || 'static',
+                        transition: analysis.transition || 'fade',
                     };
                 }
                 return seg;
@@ -495,6 +499,8 @@ export class VideoProjectService extends EventEmitter {
 4. **cameraMovement**: Movimento de câmera sugerido:
 ${Object.entries(CAMERA_EFFECTS).map(([key, config]) => `- **${key}**\n  ${config.description}`).join('\n')}
 
+5. **transition**: Transição para a próxima cena:
+${Object.entries(TRANSITION_EFFECTS).map(([key, config]) => `- **${key}**\n  ${config.description}`).join('\n')}
 
 ${options?.editingStyle ? `\nEstilo de edição desejado: ${options.editingStyle}` : ''}
 ${options?.authorConclusion ? `\nConclusão/tom do autor: ${options.authorConclusion}` : ''}
@@ -509,7 +515,8 @@ Responda APENAS com um array JSON válido no formato:
     "emotion": "surpresa",
     "imagePrompt": "detailed prompt in English...",
     "assetType": "image_flux",
-    "cameraMovement": "zoom_in_slow"
+    "cameraMovement": "zoom_in_slow",
+    "transition": "fade"
   },
   ...
 ]`;

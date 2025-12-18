@@ -23,6 +23,51 @@ interface TransitionStyles {
 }
 
 /**
+ * Configuração de todas as transições disponíveis
+ */
+export const TRANSITION_EFFECTS: Record<Transition, { description: string }> = {
+  none: {
+    description: 'Corte seco - sem transição, mudança instantânea (usado para impacto imediato ou ritmo rápido).',
+  },
+  fade: {
+    description: 'Fade suave - transição gradual de opacidade (usado para mudanças naturais e fluidas).',
+  },
+  crossfade: {
+    description: 'Dissolve entre cenas - sobreposição gradual (usado para continuidade temporal ou temática).',
+  },
+  slide_left: {
+    description: 'Desliza para esquerda - revela próxima cena da direita (usado para progressão ou avanço na narrativa).',
+  },
+  slide_right: {
+    description: 'Desliza para direita - revela próxima cena da esquerda (usado para retrocesso ou flashback).',
+  },
+  slide_up: {
+    description: 'Desliza para cima - revela próxima cena de baixo (usado para elevação ou conclusão).',
+  },
+  slide_down: {
+    description: 'Desliza para baixo - revela próxima cena de cima (usado para descida ou aprofundamento).',
+  },
+  zoom_in: {
+    description: 'Zoom crescente na transição - aproximação dramática (usado para foco ou intensificação).',
+  },
+  zoom_out: {
+    description: 'Zoom decrescente na transição - afastamento revelador (usado para contexto ou distanciamento).',
+  },
+  wipe_left: {
+    description: 'Wipe para esquerda - limpa a tela horizontalmente (usado para mudança definitiva).',
+  },
+  wipe_right: {
+    description: 'Wipe para direita - limpa a tela horizontalmente (usado para mudança definitiva).',
+  },
+  blur: {
+    description: 'Desfoque entre cenas - transição suave com blur (usado para sonhos, memórias ou passagem de tempo).',
+  },
+  glitch: {
+    description: 'Efeito glitch digital - transição com distorção (usado para erro, falha ou estilo cyberpunk).',
+  },
+};
+
+/**
  * Aplica o efeito de transição baseado no tipo
  */
 export function applyTransition(
