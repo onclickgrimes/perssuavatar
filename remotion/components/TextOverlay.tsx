@@ -68,26 +68,31 @@ export const TextOverlayComponent: React.FC<TextOverlayProps> = ({
       return null;
     }
     
+    
     return (
       <div
         style={{
           position: 'absolute',
-          ...positionStyles,
+          // Centralizar horizontalmente e posicionar na parte inferior
+          left: '50%',
+          bottom: '10%',
+          transform: 'translateX(-50%) scale(1.1)',
           ...animation,
-          // Sobrescrever estilos do positionStyles para word-by-word
+          // Estilos do texto
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
           fontFamily: 'Inter, Arial, sans-serif',
-          fontSize: config.fontSize || 48, // Maior para destaque
+          fontSize: config.fontSize || 48,
           fontWeight: 'bold',
           padding: 0,
           maxWidth: '90%',
           backgroundColor: 'transparent',
           borderRadius: 0,
-          color: '#FFD700', // Sempre dourado
+          color: '#FFD700',
           textShadow: '0 0 10px #FFD700, 0 0 20px #FFD700, 0 2px 10px rgba(0,0,0,0.8)',
-          transform: 'scale(1.1)',
+          textAlign: 'center',
+          whiteSpace: 'nowrap',
         }}
       >
         {activeWord.punctuatedWord || activeWord.word}
