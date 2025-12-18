@@ -868,7 +868,7 @@ function PromptsStep({
   );
 }
 
-// Images Step - Com suporte a upload manual
+// Media Step (Images & Videos) - Com suporte a upload manual
 function ImagesStep({
   segments,
   onUpdateImage,
@@ -881,25 +881,33 @@ function ImagesStep({
   onBack: () => void;
 }) {
   // Helper para converter caminho de arquivo em URL para preview
-  const getImageSrc = (imagePath: string | undefined): string => {
-    if (!imagePath) return '';
+  const getMediaSrc = (mediaPath: string | undefined): string => {
+    if (!mediaPath) return '';
     // Se já é uma URL (blob: ou http:), usar diretamente
-    if (imagePath.startsWith('blob:') || imagePath.startsWith('http')) {
-      return imagePath;
+    if (mediaPath.startsWith('blob:') || mediaPath.startsWith('http')) {
+      return mediaPath;
     }
     // Caminho de arquivo Windows/Unix - converter para file:// URL
     // Substituir backslashes por forward slashes e encodar
-    const normalizedPath = imagePath.replace(/\\/g, '/');
+    const normalizedPath = mediaPath.replace(/\\/g, '/');
     return `file:///${normalizedPath}`;
   };
+  
+  // Helper para detectar se é vídeo
+  const isVideo = (url: string | undefined): boolean => {
+    if (!url) return false;
+    const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+    return videoExtensions.some(ext => url.toLowerCase().endsWith(ext));
+  };
+  
   const [approvedSegments, setApprovedSegments] = useState<Set<number>>(new Set());
   const [generatingSegments, setGeneratingSegments] = useState<Set<number>>(new Set());
   const [uploadingSegments, setUploadingSegments] = useState<Set<number>>(new Set());
   
 
 
-  // Handler para upload de imagem manual - salva no disco
-  const handleImageUpload = async (segmentId: number, file: File) => {
+  // Handler para upload de mídia (imagem ou vídeo) - salva no disco
+  const handleMediaUpload = async (segmentId: number, file: File) => {
     setUploadingSegments(prev => new Set([...prev, segmentId]));
     
     try {
@@ -907,8 +915,8 @@ function ImagesStep({
       if (!window.electron?.videoProject?.saveImage) {
         console.error('saveImage API not available');
         // Fallback: usar blob URL (não funcionará na renderização)
-        const imageUrl = URL.createObjectURL(file);
-        onUpdateImage(segmentId, imageUrl);
+        const mediaUrl = URL.createObjectURL(file);
+        onUpdateImage(segmentId, mediaUrl);
       } else {
         // Converter File para ArrayBuffer
         const arrayBuffer = await file.arrayBuffer();
@@ -920,19 +928,19 @@ function ImagesStep({
           // Usar a URL HTTP para preview E renderização
           // O servidor HTTP estará rodando durante ambos
           onUpdateImage(segmentId, result.httpUrl);
-          console.log(`✅ Image saved for segment ${segmentId}:`, result.httpUrl);
+          console.log(`✅ Media saved for segment ${segmentId}:`, result.httpUrl);
         } else {
-          console.error('Failed to save image:', result.error);
+          console.error('Failed to save media:', result.error);
           // Fallback: usar blob URL
-          const imageUrl = URL.createObjectURL(file);
-          onUpdateImage(segmentId, imageUrl);
+          const mediaUrl = URL.createObjectURL(file);
+          onUpdateImage(segmentId, mediaUrl);
         }
       }
       
       // Auto-aprovar quando faz upload manual
       setApprovedSegments(prev => new Set([...prev, segmentId]));
     } catch (error) {
-      console.error('Error uploading image:', error);
+      console.error('Error uploading media:', error);
     } finally {
       setUploadingSegments(prev => {
         const next = new Set(prev);
@@ -982,8 +990,8 @@ function ImagesStep({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Imagens das Cenas</h2>
-          <p className="text-white/60">Aprove, refaça ou faça upload das suas próprias imagens</p>
+          <h2 className="text-2xl font-bold text-white">Imagens e Vídeos das Cenas</h2>
+          <p className="text-white/60">Aprove, refaça ou faça upload das suas próprias imagens ou vídeos</p>
         </div>
         <div className="flex gap-3">
           <button
@@ -1046,11 +1054,22 @@ function ImagesStep({
                   </div>
                 ) : hasImage ? (
                   <>
-                    <img
-                      src={getImageSrc(segment.imageUrl)}
-                      alt={`Cena ${segment.id}`}
-                      className="w-full h-full object-cover"
-                    />
+                    {isVideo(segment.imageUrl) ? (
+                      <video
+                        src={getMediaSrc(segment.imageUrl)}
+                        className="w-full h-full object-cover"
+                        autoPlay
+                        loop
+                        muted
+                        playsInline
+                      />
+                    ) : (
+                      <img
+                        src={getMediaSrc(segment.imageUrl)}
+                        alt={`Cena ${segment.id}`}
+                        className="w-full h-full object-cover"
+                      />
+                    )}
                     {/* Overlay de ações */}
                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
                       <button
@@ -1063,11 +1082,11 @@ function ImagesStep({
                         📁 Trocar
                         <input
                           type="file"
-                          accept="image/*"
+                          accept="image/*,video/*"
                           className="hidden"
                           onChange={(e) => {
                             const file = e.target.files?.[0];
-                            if (file) handleImageUpload(segment.id, file);
+                            if (file) handleMediaUpload(segment.id, file);
                           }}
                         />
                       </label>
@@ -1097,8 +1116,8 @@ function ImagesStep({
                       e.stopPropagation();
                       e.currentTarget.classList.remove('from-pink-500/30', 'to-purple-500/30');
                       const file = e.dataTransfer.files?.[0];
-                      if (file && file.type.startsWith('image/')) {
-                        handleImageUpload(segment.id, file);
+                      if (file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
+                        handleMediaUpload(segment.id, file);
                       }
                     }}
                   >
@@ -1108,16 +1127,16 @@ function ImagesStep({
                         <circle cx="8.5" cy="8.5" r="1.5"></circle>
                         <polyline points="21 15 16 10 5 21"></polyline>
                       </svg>
-                      <p className="text-white/60 text-sm mb-2">Arraste uma imagem aqui</p>
+                      <p className="text-white/60 text-sm mb-2">Arraste uma imagem ou vídeo aqui</p>
                       <p className="text-white/40 text-xs">ou clique para selecionar</p>
                     </div>
                     <input
                       type="file"
-                      accept="image/*"
+                      accept="image/*,video/*"
                       className="hidden"
                       onChange={(e) => {
                         const file = e.target.files?.[0];
-                        if (file) handleImageUpload(segment.id, file);
+                        if (file) handleMediaUpload(segment.id, file);
                       }}
                     />
                   </label>
