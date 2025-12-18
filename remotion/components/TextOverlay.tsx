@@ -6,19 +6,23 @@
 import React from 'react';
 import { interpolate, spring, useVideoConfig } from 'remotion';
 import type { TextOverlay } from '../types/project';
+import { useProjectConfig } from '../contexts/ProjectConfigContext';
 
 interface TextOverlayProps {
   config: NonNullable<TextOverlay>;
   relativeFrame: number;
   sceneDurationFrames: number;
+  sceneStartTime?: number; // Tempo de início da cena em segundos
 }
 
 export const TextOverlayComponent: React.FC<TextOverlayProps> = ({
   config,
   relativeFrame,
   sceneDurationFrames,
+  sceneStartTime = 0,
 }) => {
   const { fps } = useVideoConfig();
+  const projectConfig = useProjectConfig();
   
   // Animação de entrada
   const animation = getAnimation(config.animation || 'fade', relativeFrame, sceneDurationFrames, fps);
@@ -28,6 +32,73 @@ export const TextOverlayComponent: React.FC<TextOverlayProps> = ({
   
   // Estilo visual
   const visualStyle = getVisualStyle(config.style || 'subtitle', config);
+  
+  // Verificar se temos words e qual modo usar
+  const hasWords = config.words && config.words.length > 0;
+  const subtitleMode = projectConfig.subtitleMode || 'paragraph';
+  
+  // Debug - verificar apenas uma vez por cena
+  if (relativeFrame === 0) {
+    console.log('🎤 TextOverlay Debug:', {
+      subtitleMode,
+      hasWords,
+      wordsCount: config.words?.length,
+      projectConfig,
+      configWords: config.words,
+      sceneStartTime,
+    });
+  }
+  
+  // Se estiver em modo word-by-word E tiver words, renderizar palavra por palavra
+  if (subtitleMode === 'word-by-word' && hasWords) {
+    if (relativeFrame === 0) {
+      console.log('✅ Rendering WORD-BY-WORD mode');
+    }
+    
+    // Calcular tempo ABSOLUTO (desde o início do áudio)
+    const currentTimeInSeconds = sceneStartTime + (relativeFrame / fps);
+    
+    // Encontrar a palavra ATIVA no momento
+    const activeWord = config.words!.find((wordData: any) => 
+      currentTimeInSeconds >= wordData.start && currentTimeInSeconds <= wordData.end
+    );
+    
+    // Se não houver palavra ativa no momento, não renderizar nada
+    if (!activeWord) {
+      return null;
+    }
+    
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          ...positionStyles,
+          ...animation,
+          // Sobrescrever estilos do positionStyles para word-by-word
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          fontFamily: 'Inter, Arial, sans-serif',
+          fontSize: config.fontSize || 48, // Maior para destaque
+          fontWeight: 'bold',
+          padding: 0,
+          maxWidth: '90%',
+          backgroundColor: 'transparent',
+          borderRadius: 0,
+          color: '#FFD700', // Sempre dourado
+          textShadow: '0 0 10px #FFD700, 0 0 20px #FFD700, 0 2px 10px rgba(0,0,0,0.8)',
+          transform: 'scale(1.1)',
+        }}
+      >
+        {activeWord.punctuatedWord || activeWord.word}
+      </div>
+    );
+  }
+  
+  // Modo parágrafo tradicional
+  if (relativeFrame === 0) {
+    console.log('❌ Rendering PARAGRAPH mode (fallback)');
+  }
   
   return (
     <div

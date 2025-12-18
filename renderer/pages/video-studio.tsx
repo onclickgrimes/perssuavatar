@@ -29,13 +29,35 @@ interface TranscriptionSegment {
   start: number;
   end: number;
   speaker: number;
+  words?: Array<{
+    word: string;
+    start: number;
+    end: number;
+    confidence: number;
+    speaker: number;
+    punctuatedWord: string;
+  }>;
   emotion?: string;
   imagePrompt?: string;
   imageUrl?: string;
   assetType?: string;
   cameraMovement?: string;
   transition?: string;
+  highlightWords?: Array<{
+    text: string;
+    time: number;
+    duration?: number;
+    entryAnimation?: string;
+    exitAnimation?: string;
+    size?: string | number;
+    position?: string;
+    effect?: string;
+    color?: string;
+    highlightColor?: string;
+    fontWeight?: string;
+  }>;
 }
+
 
 interface ProjectState {
   title: string;
@@ -51,6 +73,8 @@ interface ProjectState {
 
 export default function VideoStudioPage() {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
+  // Estado do modo de legenda
+  const [subtitleMode, setSubtitleMode] = useState<'paragraph' | 'word-by-word'>('paragraph');
   const [project, setProject] = useState<ProjectState>({
     title: '',
     duration: 0,
@@ -100,12 +124,14 @@ export default function VideoStudioPage() {
           start: seg.start,
           end: seg.end,
           speaker: seg.speaker,
+          words: seg.words, // ✅ Salvar words do Deepgram
           emotion: seg.emotion,
           imagePrompt: seg.imagePrompt,
           imageUrl: seg.imageUrl,
           assetType: seg.assetType,
           cameraMovement: seg.cameraMovement,
           transition: seg.transition,
+          highlightWords: seg.highlightWords, // ✅ Salvar highlight words
         })),
         editingStyle: project.editingStyle,
         authorConclusion: project.authorConclusion,
@@ -143,12 +169,14 @@ export default function VideoStudioPage() {
              start: seg.start,
              end: seg.end,
              speaker: seg.speaker,
+             words: seg.words, // ✅ Carregar words do Deepgram
              emotion: seg.emotion,
              imagePrompt: seg.imagePrompt,
              imageUrl: seg.imageUrl,
              assetType: seg.assetType,
              cameraMovement: seg.cameraMovement,
              transition: seg.transition,
+             highlightWords: seg.highlightWords, // ✅ Carregar highlight words
           })),
           authorConclusion: loadedProject.authorConclusion || '',
           editingStyle: loadedProject.editingStyle || '',
@@ -233,6 +261,7 @@ export default function VideoStudioPage() {
           start: seg.start,
           end: seg.end,
           speaker: seg.speaker,
+          words: seg.words, // ✅ Preservar timing do Deepgram
           emotion: undefined, // Será preenchido pela IA
           imagePrompt: undefined,
           imageUrl: undefined,
@@ -344,6 +373,7 @@ export default function VideoStudioPage() {
         segments: project.segments,
         editingStyle: project.editingStyle,
         authorConclusion: project.authorConclusion,
+        subtitleMode: subtitleMode, // ✅ Modo de legenda para renderização
       });
 
       if (result.success && result.outputPath) {
@@ -357,7 +387,7 @@ export default function VideoStudioPage() {
       setError(err instanceof Error ? err.message : 'Erro ao renderizar');
       setCurrentStep('images'); // Voltar para step anterior
     }
-  }, [project]);
+  }, [project, subtitleMode]);
 
   // Renderizar conteúdo baseado no step atual
   const renderStepContent = () => {
@@ -415,6 +445,8 @@ export default function VideoStudioPage() {
         return (
           <PreviewStep
             project={project}
+            subtitleMode={subtitleMode}
+            setSubtitleMode={setSubtitleMode}
             onContinue={handleStartRender}
             onBack={() => setCurrentStep('images')}
           />
@@ -1189,10 +1221,14 @@ function ImagesStep({
 // Preview Step - Visualizar vídeo antes de renderizar
 function PreviewStep({
   project,
+  subtitleMode,
+  setSubtitleMode,
   onContinue,
   onBack,
 }: {
   project: ProjectState;
+  subtitleMode: 'paragraph' | 'word-by-word';
+  setSubtitleMode: (mode: 'paragraph' | 'word-by-word') => void;
   onContinue: () => void;
   onBack: () => void;
 }) {
@@ -1207,6 +1243,7 @@ function PreviewStep({
         height: 1080,
         fps,
         backgroundColor: '#0a0a0a',
+        subtitleMode, // ✅ Modo de legenda
         backgroundMusic: project.audioPath ? {
           src: project.audioPath.startsWith('http') 
             ? project.audioPath 
@@ -1235,11 +1272,29 @@ function PreviewStep({
           position: 'bottom',
           style: 'subtitle',
           animation: 'fade',
+          words: seg.words, // ✅ Palavras do Deepgram
         },
+        // Incluir palavras destacadas
+        ...(seg.highlightWords && seg.highlightWords.length > 0 && {
+          highlight_words: seg.highlightWords,
+        }),
       })),
       schema_version: '1.0',
     };
-  }, [project]);
+  }, [project, subtitleMode]);
+  
+  // Debug: verificar se highlight_words está presente
+  React.useEffect(() => {
+    console.log('🎬 RemotionProject:', remotionProject);
+    remotionProject.scenes.forEach((scene, i) => {
+      if (scene.highlight_words && scene.highlight_words.length > 0) {
+        console.log(`✨ Scene ${i + 1} has ${scene.highlight_words.length} highlight words:`, scene.highlight_words);
+      }
+      if (scene.text_overlay) {
+        console.log(`📝 Scene ${i + 1} text_overlay words:`, scene.text_overlay.words?.length || 0, 'words');
+      }
+    });
+  }, [remotionProject]);
 
   // Calcular duração
   const lastScene = project.segments[project.segments.length - 1];
@@ -1274,6 +1329,38 @@ function PreviewStep({
 
       {/* Player de Preview */}
       <div className="bg-black/50 rounded-xl overflow-hidden shadow-2xl">
+        {/* Controle de Modo de Legenda */}
+        <div className="p-4 border-b border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-white/60 text-sm">📝 Modo de Legenda:</span>
+            <div className="flex bg-white/5 rounded-lg p-1 gap-1">
+              <button
+                onClick={() => setSubtitleMode('paragraph')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  subtitleMode === 'paragraph'
+                    ? 'bg-purple-500 text-white shadow-lg'
+                    : 'text-white/60 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                📄 Parágrafo
+              </button>
+              <button
+                onClick={() => setSubtitleMode('word-by-word')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${
+                  subtitleMode === 'word-by-word'
+                    ? 'bg-purple-500 text-white shadow-lg'
+                    : 'text-white/60 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                🎤 Palavra por Palavra
+              </button>
+            </div>
+          </div>
+          <span className="text-white/40 text-xs">
+            {subtitleMode === 'paragraph' ? 'Texto completo' : 'Sincronizado com áudio'}
+          </span>
+        </div>
+        
         <div className="relative" style={{ aspectRatio: '16/9' }}>
           {/* Importação dinâmica do Player para evitar SSR issues */}
           <VideoPreviewPlayer

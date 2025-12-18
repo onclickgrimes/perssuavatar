@@ -25,6 +25,7 @@ import {
 } from '../types/project';
 import { Scene } from '../components/Scene';
 import { applyTransition, transitionSecondsToFrames } from '../utils/transitions';
+import { ProjectConfigContext } from '../contexts/ProjectConfigContext';
 
 // Schema das props
 export const videoProjectCompositionSchema = z.object({
@@ -65,42 +66,44 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
   }, [project.scenes, fps]);
   
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor,
-        overflow: 'hidden',
-      }}
-    >
-      {/* Renderizar cada cena como uma Sequence */}
-      {sceneInfos.map((info, index) => {
-        const { scene, startFrame, durationFrames, transitionFrames } = info;
-        const nextScene = sceneInfos[index + 1];
+    <ProjectConfigContext.Provider value={config}>
+      <AbsoluteFill
+        style={{
+          backgroundColor,
+          overflow: 'hidden',
+        }}
+      >
+        {/* Renderizar cada cena como uma Sequence */}
+        {sceneInfos.map((info, index) => {
+          const { scene, startFrame, durationFrames, transitionFrames } = info;
+          const nextScene = sceneInfos[index + 1];
+          
+          return (
+            <Sequence
+              key={scene.id}
+              from={startFrame}
+              durationInFrames={durationFrames}
+              name={`Cena ${scene.id}`}
+            >
+              <SceneWithTransition
+                scene={scene}
+                durationFrames={durationFrames}
+                transitionFrames={transitionFrames}
+                hasNextScene={!!nextScene}
+              />
+            </Sequence>
+          );
+        })}
         
-        return (
-          <Sequence
-            key={scene.id}
-            from={startFrame}
-            durationInFrames={durationFrames}
-            name={`Cena ${scene.id}`}
-          >
-            <SceneWithTransition
-              scene={scene}
-              durationFrames={durationFrames}
-              transitionFrames={transitionFrames}
-              hasNextScene={!!nextScene}
-            />
-          </Sequence>
-        );
-      })}
-      
-      {/* Áudio de fundo (música) */}
-      {config.backgroundMusic?.src && (
-        <Audio
-          src={config.backgroundMusic.src}
-          volume={config.backgroundMusic.volume || 0.3}
-        />
-      )}
-    </AbsoluteFill>
+        {/* Áudio de fundo (música) */}
+        {config.backgroundMusic?.src && (
+          <Audio
+            src={config.backgroundMusic.src}
+            volume={config.backgroundMusic.volume || 0.3}
+          />
+        )}
+      </AbsoluteFill>
+    </ProjectConfigContext.Provider>
   );
 };
 
@@ -217,7 +220,23 @@ export const defaultVideoProject: VideoProject = {
         style: 'subtitle',
         animation: 'slide_up',
       },
+      // Exemplo de palavras destacadas
+      highlight_words: [
+        {
+          text: 'Ken Burns',
+          time: 1.0,
+          duration: 1.5,
+          entryAnimation: 'pop',
+          exitAnimation: 'evaporate',
+          size: 'huge',
+          position: 'center',
+          color: '#FFD700',
+          effect: 'glow',
+          fontWeight: 'black',
+        },
+      ],
     },
+
     {
       id: 3,
       start_time: 9,

@@ -83,9 +83,63 @@ export const TextOverlaySchema = z.object({
   fontSize: z.number().optional(),
   color: z.string().optional(),
   backgroundColor: z.string().optional(),
+  // Palavras individuais do Deepgram para modo palavra-por-palavra
+  words: z.array(z.object({
+    word: z.string(),
+    start: z.number(),
+    end: z.number(),
+    confidence: z.number(),
+    speaker: z.number(),
+    punctuatedWord: z.string(),
+  })).optional(),
 }).optional();
 
 export type TextOverlay = z.infer<typeof TextOverlaySchema>;
+
+// ========================================
+// HIGHLIGHT WORDS (Palavras Destacadas)
+// ========================================
+
+export const HighlightWordSchema = z.object({
+  /** Palavra ou frase a ser destacada */
+  text: z.string(),
+  /** Tempo de aparição em segundos (relativo ao início da cena) */
+  time: z.number(),
+  /** Duração da exibição em segundos */
+  duration: z.number().default(1.5),
+  /** Animação de entrada */
+  entryAnimation: z.enum(['pop', 'bounce', 'explode', 'slide_up', 'zoom_in', 'fade']).default('pop'),
+  /** Animação de saída */
+  exitAnimation: z.enum(['evaporate', 'fade', 'implode', 'slide_down', 'dissolve', 'scatter']).default('evaporate'),
+  /** Tamanho do texto (em pixels ou 'small', 'medium', 'large', 'huge') */
+  size: z.union([z.number(), z.enum(['small', 'medium', 'large', 'huge'])]).default('large'),
+  /** Cor do texto */
+  color: z.string().default('#FFFFFF'),
+  /** Cor de destaque/fundo */
+  highlightColor: z.string().optional(),
+  /** Posição na tela */
+  position: z.enum([
+    'center', 
+    'top', 
+    'top-center',
+    'bottom', 
+    'bottom-center',
+    'top-left', 
+    'top-right', 
+    'bottom-left', 
+    'bottom-right',
+    'left',
+    'center-left',
+    'right',
+    'center-right'
+  ]).default('center'),
+  /** Estilo adicional (bold, italic, etc) */
+  fontWeight: z.enum(['normal', 'bold', 'black']).default('bold'),
+  /** Efeito adicional */
+  effect: z.enum(['none', 'glow', 'shadow', 'outline', 'neon']).default('glow'),
+});
+
+export type HighlightWord = z.infer<typeof HighlightWordSchema>;
 
 // ========================================
 // VISUAL CONCEPT
@@ -163,8 +217,12 @@ export const SceneSchema = z.object({
   /** Overlay de texto */
   text_overlay: TextOverlaySchema,
   
+  /** Palavras/frases destacadas para animar durante a cena */
+  highlight_words: z.array(HighlightWordSchema).optional(),
+  
   /** Configuração de áudio específica da cena */
   audio: AudioConfigSchema,
+
   
   /** Metadados extras */
   metadata: z.record(z.string(), z.unknown()).optional(),
@@ -188,6 +246,9 @@ export const ProjectConfigSchema = z.object({
   
   /** Cor de fundo padrão */
   backgroundColor: z.string().default('#000000'),
+  
+  /** Modo de exibição das legendas */
+  subtitleMode: z.enum(['paragraph', 'word-by-word']).optional(),
   
   /** Áudio de fundo (música) */
   backgroundMusic: z.object({

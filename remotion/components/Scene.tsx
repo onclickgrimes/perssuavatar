@@ -9,6 +9,9 @@ import { AbsoluteFill, Img, Video, useCurrentFrame, useVideoConfig } from 'remot
 import type { Scene as SceneType, CameraMovement } from '../types/project';
 import { applyCameraEffect } from '../utils/camera-effects';
 import { TextOverlayComponent } from './TextOverlay';
+import { HighlightWordComponent } from './HighlightWord';
+import { useProjectConfig } from '../contexts/ProjectConfigContext';
+
 
 interface SceneProps {
   scene: SceneType;
@@ -24,6 +27,10 @@ export const Scene: React.FC<SceneProps> = ({
   sceneDurationFrames,
 }) => {
   const { fps } = useVideoConfig();
+  const currentFrame = useCurrentFrame(); // Chamar hook no nível do componente
+  
+  // Calcular o frame de início da cena
+  const sceneStartFrame = currentFrame - relativeFrame;
   
   // Aplicar efeito de câmera
   const cameraEffect = applyCameraEffect(scene.camera_movement, {
@@ -31,6 +38,11 @@ export const Scene: React.FC<SceneProps> = ({
     durationInFrames: sceneDurationFrames,
     fps,
   });
+  
+  // Debug: verificar highlight_words
+  if (relativeFrame === 0 && scene.highlight_words) {
+    console.log(`🎬 Scene ${scene.id} highlight_words:`, scene.highlight_words);
+  }
   
   
   // Trail printing effect - renderiza múltiplas frames
@@ -49,8 +61,19 @@ export const Scene: React.FC<SceneProps> = ({
             config={scene.text_overlay}
             relativeFrame={relativeFrame}
             sceneDurationFrames={sceneDurationFrames}
+            sceneStartTime={scene.start_time}
           />
         )}
+        
+        {/* Palavras destacadas */}
+        {scene.highlight_words?.map((highlight, index) => (
+          <HighlightWordComponent
+            key={`highlight-${index}`}
+            highlight={highlight}
+            sceneStartFrame={sceneStartFrame}
+            sceneDurationFrames={sceneDurationFrames}
+          />
+        ))}
       </AbsoluteFill>
     );
   }
@@ -83,8 +106,19 @@ export const Scene: React.FC<SceneProps> = ({
           config={scene.text_overlay}
           relativeFrame={relativeFrame}
           sceneDurationFrames={sceneDurationFrames}
+          sceneStartTime={scene.start_time}
         />
       )}
+      
+      {/* Palavras destacadas com animações */}
+      {scene.highlight_words?.map((highlight, index) => (
+        <HighlightWordComponent
+          key={`highlight-${index}`}
+          highlight={highlight}
+          sceneStartFrame={sceneStartFrame}
+          sceneDurationFrames={sceneDurationFrames}
+        />
+      ))}
     </AbsoluteFill>
   );
 };

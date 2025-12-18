@@ -38,7 +38,30 @@ export interface VideoProjectSegment {
     assetType?: string;
     cameraMovement?: string;
     transition?: string;
+    // Palavras individuais com timing do Deepgram
+    words?: Array<{
+        word: string;
+        start: number;
+        end: number;
+        confidence: number;
+        speaker: number;
+        punctuatedWord: string;
+    }>;
+    highlightWords?: Array<{
+        text: string;
+        time: number;
+        duration?: number;
+        entryAnimation?: string;
+        exitAnimation?: string;
+        size?: string | number;
+        position?: string;
+        effect?: string;
+        color?: string;
+        highlightColor?: string;
+        fontWeight?: string;
+    }>;
 }
+
 
 export interface VideoProjectData {
     title: string;
@@ -48,6 +71,7 @@ export interface VideoProjectData {
     segments: VideoProjectSegment[];
     editingStyle?: string;
     authorConclusion?: string;
+    subtitleMode?: 'paragraph' | 'word-by-word';
 }
 
 export interface AnalysisResult {
@@ -64,6 +88,7 @@ export interface RemotionProject {
         height: number;
         fps: number;
         backgroundColor: string;
+        subtitleMode?: 'paragraph' | 'word-by-word';
         backgroundMusic?: {
             src: string;
             volume?: number;
@@ -389,7 +414,21 @@ export class VideoProjectService extends EventEmitter {
                 assetType: string;
                 cameraMovement: string;
                 transition: string;
+                highlightWords?: Array<{
+                    text: string;
+                    time: number;
+                    duration?: number;
+                    entryAnimation?: string;
+                    exitAnimation?: string;
+                    size?: string | number;
+                    position?: string;
+                    effect?: string;
+                    color?: string;
+                    highlightColor?: string;
+                    fontWeight?: string;
+                }>;
             }>;
+
 
             const systemMsg = 'You are a video editor AI. Respond ONLY with a valid JSON array of segments.';
 
@@ -448,14 +487,26 @@ export class VideoProjectService extends EventEmitter {
             const updatedSegments = segments.map(seg => {
                 const analysis = segmentsArray.find((a: any) => a.id === seg.id);
                 if (analysis) {
-                    return {
+                    const merged = {
                         ...seg,
                         emotion: analysis.emotion || seg.emotion,
                         imagePrompt: analysis.imagePrompt || seg.imagePrompt,
                         assetType: analysis.assetType || 'image_flux',
                         cameraMovement: analysis.cameraMovement || 'static',
                         transition: analysis.transition || 'fade',
+                        highlightWords: analysis.highlightWords || seg.highlightWords,
                     };
+                    
+                    // Sincronizar highlight_words com timing do Deepgram
+                    if (merged.highlightWords && merged.words) {
+                        merged.highlightWords = this.syncHighlightWordsWithDeepgram(
+                            merged.highlightWords,
+                            merged.words,
+                            merged.start
+                        );
+                    }
+                    
+                    return merged;
                 }
                 return seg;
             });
@@ -475,6 +526,63 @@ export class VideoProjectService extends EventEmitter {
                 segments,
             };
         }
+    }
+
+    // ========================================
+    // HIGHLIGHT WORDS TIMING SYNC
+    // ========================================
+    
+    /**
+     * Sincroniza highlight_words com o timing real do Deepgram
+     * A IA sugere QUAIS palavras destacar, mas NÃO o tempo
+     * Esta função busca o tempo real no array de words do Deepgram
+     */
+    private syncHighlightWordsWithDeepgram(
+        highlightWords: any[],
+        deepgramWords: Array<{
+            word: string;
+            start: number;
+            end: number;
+            confidence: number;
+            speaker: number;
+            punctuatedWord: string;
+        }>,
+        sceneStart: number
+    ): any[] {
+        return highlightWords.map(hw => {
+            // Normalizar texto para busca (remover pontuação, case-insensitive)
+            const searchText = hw.text.toLowerCase().replace(/[.,!?;:]/g, '').trim();
+            
+            // Tentar encontrar a palavra no array do Deepgram
+            let matchedWord = deepgramWords.find(dw => 
+                dw.word.toLowerCase() === searchText || 
+                dw.punctuatedWord.toLowerCase().replace(/[.,!?;:]/g, '') === searchText
+            );
+            
+            // Se não encontrar, tentar buscar por palavra parcial (primeira palavra do texto)
+            if (!matchedWord && searchText.includes(' ')) {
+                const firstWord = searchText.split(' ')[0];
+                matchedWord = deepgramWords.find(dw => 
+                    dw.word.toLowerCase() === firstWord
+                );
+            }
+            
+            if (matchedWord) {
+                // Calcular tempo relativo à cena (em vez de absoluto)
+                const relativeTime = matchedWord.start - sceneStart;
+                
+                console.log(`✅ Matched "${hw.text}" → ${relativeTime.toFixed(2)}s (absolute: ${matchedWord.start.toFixed(2)}s)`);
+                
+                return {
+                    ...hw,
+                    time: relativeTime, // Tempo relativo à cena
+                };
+            } else {
+                // Se não encontrar, manter o tempo sugerido pela IA (fallback)
+                console.warn(`⚠️  Could not find timing for "${hw.text}", using AI suggestion`);
+                return hw;
+            }
+        });
     }
 
     private buildAnalysisPrompt(
@@ -502,6 +610,36 @@ ${Object.entries(CAMERA_EFFECTS).map(([key, config]) => `- **${key}**\n  ${confi
 5. **transition**: Transição para a próxima cena:
 ${Object.entries(TRANSITION_EFFECTS).map(([key, config]) => `- **${key}**\n  ${config.description}`).join('\n')}
 
+6. **highlightWords**: Array de palavras ou frases-chave que devem ser destacadas visualmente durante a cena.
+   Para cada palavra destacada, especifique:
+   - **text**: A palavra ou frase EXATA como aparece na transcrição (será sincronizada automaticamente com o áudio)
+   - **time**: Tempo de aparição em segundos (relativo ao início da cena, ex: 0.5)
+   - **duration**: Duração da exibição em segundos (padrão: 1.5s)
+   - **entryAnimation**: Animação de entrada (pop, bounce, explode, slide_up, zoom_in, fade)
+   - **exitAnimation**: Animação de saída (evaporate, fade, implode, slide_down, dissolve, scatter)
+   - **size**: Tamanho (small, medium, large, huge)
+   - **position**: Posição (center, top, top-center, bottom, bottom-center, top-left, top-right, bottom-left, bottom-right, left, center-left, right, center-right)
+   - **effect**: Efeito visual (glow, shadow, outline, neon, none)
+   - **color**: Cor do texto em HEX (ex: "#FFD700" dourado, "#FF1744" vermelho, "#00E5FF" ciano, "#FFFFFF" branco)
+   - **fontWeight**: Peso da fonte (normal, bold, black)
+   
+   IMPORTANTE: 
+   - Especifique o texto EXATAMENTE como aparece na transcrição
+
+   Identifique entre 1 e 3 palavras-chave importantes por segmento que merecem destaque visual.
+   IMPORTANTE: Sempre especifique uma **color** apropriada para o efeito escolhido.
+   Cores recomendadas:
+   - Dourado (#FFD700) para sucesso, destaque, valor
+   - Ciano (#00E5FF) para tecnologia, modernidade
+   - Verde neon (#00FF00) para crescimento, novidade
+   - Magenta (#FF00FF) para criatividade, inovação
+   - Vermelho (#FF1744) para urgência, alerta, ação
+   Escolha palavras que sejam:
+   - Conceitos-chave ou termos técnicos importantes
+   - Números ou estatísticas relevantes
+   - Palavras que expressam emoção forte
+   - Calls to action ou mensagens principais
+
 ${options?.editingStyle ? `\nEstilo de edição desejado: ${options.editingStyle}` : ''}
 ${options?.authorConclusion ? `\nConclusão/tom do autor: ${options.authorConclusion}` : ''}
 
@@ -516,11 +654,25 @@ Responda APENAS com um array JSON válido no formato:
     "imagePrompt": "detailed prompt in English...",
     "assetType": "image_flux",
     "cameraMovement": "zoom_in_slow",
-    "transition": "fade"
+    "transition": "fade",
+    "highlightWords": [
+      {
+        "text": "palavra importante",
+        "duration": 1.5,
+        "entryAnimation": "pop",
+        "exitAnimation": "evaporate",
+        "size": "large",
+        "position": "center",
+        "effect": "glow",
+        "color": "#FFD700",
+        "fontWeight": "bold"
+      }
+    ]
   },
   ...
 ]`;
     }
+
 
     // ========================================
     // REMOTION CONVERSION
@@ -530,6 +682,8 @@ Responda APENAS com um array JSON válido no formato:
      * Converte projeto para formato Remotion
      */
     public convertToRemotionProject(project: VideoProjectData): RemotionProject {
+        console.log('🔧 convertToRemotionProject - subtitleMode:', project.subtitleMode);
+        
         const scenes = project.segments.map(seg => ({
             id: seg.id,
             start_time: seg.start,
@@ -552,8 +706,15 @@ Responda APENAS com um array JSON válido no formato:
                 position: 'bottom',
                 style: 'subtitle',
                 animation: 'fade',
+                words: seg.words, // ✅ Palavras do Deepgram para word-by-word
             },
+            // Incluir palavras destacadas (se houver)
+            ...(seg.highlightWords && seg.highlightWords.length > 0 && {
+                highlight_words: seg.highlightWords,
+            }),
         }));
+
+        console.log('🔧 Scene 1 text_overlay.words:', scenes[0]?.text_overlay?.words?.length || 0, 'words');
 
         return {
             project_title: project.title,
@@ -563,6 +724,7 @@ Responda APENAS com um array JSON válido no formato:
                 height: 1080,
                 fps: 30,
                 backgroundColor: '#0a0a0a',
+                subtitleMode: project.subtitleMode, // ✅ Modo de legenda
                 // Incluir áudio da narração/transcrição
                 ...(project.audioPath && {
                     backgroundMusic: {
