@@ -56,7 +56,7 @@ export default function VideoStudioPage() {
     duration: 0,
     segments: [],
     authorConclusion: '',
-    editingStyle: 'dinâmico e envolvente',
+    editingStyle: '',
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -103,6 +103,9 @@ export default function VideoStudioPage() {
           emotion: seg.emotion,
           imagePrompt: seg.imagePrompt,
           imageUrl: seg.imageUrl,
+          assetType: seg.assetType,
+          cameraMovement: seg.cameraMovement,
+          transition: seg.transition,
         })),
         editingStyle: project.editingStyle,
         authorConclusion: project.authorConclusion,
@@ -143,9 +146,12 @@ export default function VideoStudioPage() {
              emotion: seg.emotion,
              imagePrompt: seg.imagePrompt,
              imageUrl: seg.imageUrl,
+             assetType: seg.assetType,
+             cameraMovement: seg.cameraMovement,
+             transition: seg.transition,
           })),
           authorConclusion: loadedProject.authorConclusion || '',
-          editingStyle: loadedProject.editingStyle || 'dinâmico',
+          editingStyle: loadedProject.editingStyle || '',
         });
         
         // Determinar em qual passo estamos baseado nos dados
@@ -357,7 +363,15 @@ export default function VideoStudioPage() {
   const renderStepContent = () => {
     switch (currentStep) {
       case 'upload':
-        return <UploadStep onUpload={handleAudioUpload} />;
+        return (
+          <UploadStep 
+            onUpload={handleAudioUpload}
+            editingStyle={project.editingStyle}
+            onEditingStyleChange={(value) => setProject(prev => ({ ...prev, editingStyle: value }))}
+            authorConclusion={project.authorConclusion}
+            onAuthorConclusionChange={(value) => setProject(prev => ({ ...prev, authorConclusion: value }))}
+          />
+        );
       
       case 'transcribing':
         return <ProcessingStep message="Transcrevendo áudio..." />;
@@ -421,7 +435,7 @@ export default function VideoStudioPage() {
                 duration: 0,
                 segments: [],
                 authorConclusion: '',
-                editingStyle: 'dinâmico e envolvente',
+                editingStyle: '',
               });
             }} 
           />
@@ -574,7 +588,19 @@ export default function VideoStudioPage() {
 // ========================================
 
 // Upload Step
-function UploadStep({ onUpload }: { onUpload: (file: File) => void }) {
+function UploadStep({ 
+  onUpload,
+  editingStyle,
+  onEditingStyleChange,
+  authorConclusion,
+  onAuthorConclusionChange,
+}: { 
+  onUpload: (file: File) => void;
+  editingStyle: string;
+  onEditingStyleChange: (value: string) => void;
+  authorConclusion: string;
+  onAuthorConclusionChange: (value: string) => void;
+}) {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDrop = (e: React.DragEvent) => {
@@ -631,6 +657,43 @@ function UploadStep({ onUpload }: { onUpload: (file: File) => void }) {
             Suporta MP3, WAV, M4A, OGG
           </p>
         </label>
+      </div>
+
+      {/* Campos de Configuração */}
+      <div className="w-full max-w-xl mt-8 space-y-6">
+        {/* Estilo de Edição */}
+        <div>
+          <label className="block text-white/80 font-medium mb-2">
+            Estilo de Edição
+          </label>
+          <input
+            type="text"
+            value={editingStyle}
+            onChange={(e) => onEditingStyleChange(e.target.value)}
+            className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none transition-all"
+            placeholder="Ex: dinâmico e envolvente, calmo e reflexivo..."
+          />
+          <p className="text-xs text-white/40 mt-2">
+            Descreva o estilo de edição desejado para o vídeo
+          </p>
+        </div>
+
+        {/* Conclusão do Autor */}
+        <div>
+          <label className="block text-white/80 font-medium mb-2">
+            Conclusão do Autor
+          </label>
+          <textarea
+            value={authorConclusion}
+            onChange={(e) => onAuthorConclusionChange(e.target.value)}
+            className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-none transition-all"
+            placeholder="Adicione uma conclusão ou mensagem final do autor..."
+            rows={4}
+          />
+          <p className="text-xs text-white/40 mt-2">
+            Mensagem final que aparecerá ao término do vídeo
+          </p>
+        </div>
       </div>
     </div>
   );
