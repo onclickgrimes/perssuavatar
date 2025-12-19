@@ -28,7 +28,7 @@ export const TrailPrintingDemo: React.FC = () => {
     },
     asset_type: 'image_static',
     // Você pode substituir por uma imagem real ou usar o placeholder
-    asset_url: '', // Deixe vazio para usar o placeholder
+    asset_url: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSSJLRoL1q7QIf1WZ07RYwmjttQsgMmntvsJg&s', // Deixe vazio para usar o placeholder
     camera_movement: 'trail_printing',
     transition: 'fade',
     transition_duration: 0.5,

@@ -14,6 +14,7 @@ import {
 } from './compositions/VideoProject';
 import { TrailPrintingDemo } from './compositions/TrailPrintingDemo';
 import { TrailPrintingVisualGuide } from './compositions/TrailPrintingVisualGuide';
+import { WaveEffectDemo } from './compositions/WaveEffectDemo';
 import { calculateProjectFrames } from './types/project';
 
 export const RemotionRoot: React.FC = () => {
@@ -96,6 +97,21 @@ export const RemotionRoot: React.FC = () => {
         component={TrailPrintingVisualGuide}
         durationInFrames={400}
         fps={30}
+        width={1920}
+        height={1080}
+      />
+
+      {/* 
+        =========================================
+        WAVE EFFECT DEMO
+        =========================================
+        Demonstração do efeito wave em highlight words.
+      */}
+      <Composition
+        id="WaveEffectDemo"
+        component={WaveEffectDemo}
+        durationInFrames={1440} // 24 segundos a 60fps
+        fps={60}
         width={1920}
         height={1080}
       />

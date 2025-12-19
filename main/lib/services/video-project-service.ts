@@ -72,6 +72,12 @@ export interface VideoProjectData {
     editingStyle?: string;
     authorConclusion?: string;
     subtitleMode?: 'paragraph' | 'word-by-word';
+    config?: {
+        width?: number;
+        height?: number;
+        fps?: number;
+        backgroundColor?: string;
+    };
 }
 
 export interface AnalysisResult {
@@ -612,11 +618,25 @@ ${Object.entries(TRANSITION_EFFECTS).map(([key, config]) => `- **${key}**\n  ${c
 
 6. **highlightWords**: Array de palavras ou frases-chave que devem ser destacadas visualmente durante a cena.
    Para cada palavra destacada, especifique:
-   - **text**: A palavra ou frase EXATA como aparece na transcrição (será sincronizada automaticamente com o áudio)
+   - **text**: A palavra EXATA como aparece na transcrição (será sincronizada automaticamente com o áudio)
    - **time**: Tempo de aparição em segundos (relativo ao início da cena, ex: 0.5)
    - **duration**: Duração da exibição em segundos (padrão: 1.5s)
-   - **entryAnimation**: Animação de entrada (pop, bounce, explode, slide_up, zoom_in, fade)
-   - **exitAnimation**: Animação de saída (evaporate, fade, implode, slide_down, dissolve, scatter)
+   - **entryAnimation**: Animação de entrada
+     * **pop** - Escala rápida com bounce
+     * **bounce** - Múltiplos bounces ao aparecer
+     * **explode** - Explosão com rotação
+     * **slide_up** - Desliza de baixo para cima
+     * **zoom_in** - Zoom gradual
+     * **fade** - Fade in simples
+     * **wave** - Texto vazado que enche de baixo pra cima como onda (efeito premium!)
+   - **exitAnimation**: Animação de saída
+     * **evaporate** - Evapora subindo com partículas
+     * **fade** - Fade out simples
+     * **implode** - Implosão com rotação
+     * **slide_down** - Desliza para baixo
+     * **dissolve** - Dissolve com blur
+     * **scatter** - Dispersa com partículas
+     * **wave** - Texto esvazia de cima pra baixo como onda (efeito premium!)
    - **size**: Tamanho (small, medium, large, huge)
    - **position**: Posição (center, top, top-center, bottom, bottom-center, top-left, top-right, bottom-left, bottom-right, left, center-left, right, center-right)
    - **effect**: Efeito visual (glow, shadow, outline, neon, none)
@@ -795,7 +815,26 @@ Responda APENAS com um array JSON válido no formato:
         const fileName = `project-${Date.now()}.json`;
         const filePath = path.join(this.projectsDir, fileName);
 
-        fs.writeFileSync(filePath, JSON.stringify(project, null, 2));
+        // Reorganizar propriedades na ordem desejada
+        const orderedProject = {
+            title: project.title,
+            description: project.description,
+            duration: project.duration,
+            audioPath: project.audioPath,
+            editingStyle: project.editingStyle || '',
+            authorConclusion: project.authorConclusion || '',
+            subtitleMode: project.subtitleMode,
+            config: {
+                width: 1920,
+                height: 1080,
+                fps: 60,
+                backgroundColor: '#0a0a0a',
+                ...project.config, // Sobrescreve com valores do projeto se existirem
+            },
+            segments: project.segments,
+        };
+
+        fs.writeFileSync(filePath, JSON.stringify(orderedProject, null, 2));
         console.log(`💾 Project saved: ${filePath}`);
 
         return filePath;
@@ -807,7 +846,19 @@ Responda APENAS com um array JSON válido no formato:
     public loadProject(filePath: string): VideoProjectData | null {
         try {
             const content = fs.readFileSync(filePath, 'utf-8');
-            return JSON.parse(content) as VideoProjectData;
+            const project = JSON.parse(content) as VideoProjectData;
+            
+            // Adicionar config padrão se não existir (compatibilidade com projetos antigos)
+            if (!project.config) {
+                project.config = {
+                    width: 1920,
+                    height: 1080,
+                    fps: 60,
+                    backgroundColor: '#0a0a0a',
+                };
+            }
+            
+            return project;
         } catch (error) {
             console.error('Error loading project:', error);
             return null;

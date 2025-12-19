@@ -1,0 +1,148 @@
+{
+  "project_title": "Demonstração Efeito Wave",
+  "description": "Exemplo de uso do efeito wave em highlight words",
+  "config": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "backgroundColor": "#0a0a0a"
+  },
+  "scenes": [
+    {
+      "id": 1,
+      "start_time": 0,
+      "end_time": 8,
+      "transcript_segment": "Confira o incrível efeito de onda!",
+      "visual_concept": {
+        "description": "Fundo escuro gradiente",
+        "art_style": "modern",
+        "emotion": "energético"
+      },
+      "asset_type": "solid_color",
+      "camera_movement": "static",
+      "transition": "fade",
+      "transition_duration": 0.5,
+      "highlight_words": [
+        {
+          "text": "WAVE",
+          "time": 1.0,
+          "duration": 3.0,
+          "entryAnimation": "wave",
+          "exitAnimation": "fade",
+          "size": "huge",
+          "color": "#FF6B35",
+          "position": "center",
+          "effect": "glow",
+          "fontWeight": "black"
+        },
+        {
+          "text": "EFEITO",
+          "time": 4.5,
+          "duration": 2.5,
+          "entryAnimation": "wave",
+          "exitAnimation": "evaporate",
+          "size": "large",
+          "color": "#00D9FF",
+          "position": "top",
+          "effect": "neon",
+          "fontWeight": "bold"
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "start_time": 8,
+      "end_time": 16,
+      "transcript_segment": "Veja diferentes combinações do efeito onda",
+      "visual_concept": {
+        "description": "Fundo escuro com partículas",
+        "art_style": "futurista",
+        "emotion": "impressionante"
+      },
+      "asset_type": "solid_color",
+      "camera_movement": "zoom_in_slow",
+      "transition": "crossfade",
+      "transition_duration": 1.0,
+      "highlight_words": [
+        {
+          "text": "ONDA",
+          "time": 1.0,
+          "duration": 2.5,
+          "entryAnimation": "wave",
+          "exitAnimation": "wave",
+          "size": 144,
+          "color": "#FFD700",
+          "position": "center",
+          "effect": "glow",
+          "fontWeight": "black"
+        },
+        {
+          "text": "SUAVE",
+          "time": 4.0,
+          "duration": 3.0,
+          "entryAnimation": "wave",
+          "exitAnimation": "dissolve",
+          "size": "huge",
+          "color": "#FF3366",
+          "position": "bottom",
+          "effect": "outline",
+          "fontWeight": "bold"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "start_time": 16,
+      "end_time": 24,
+      "transcript_segment": "Saída com efeito wave é igualmente impressionante",
+      "visual_concept": {
+        "description": "Fundo escuro elegante",
+        "art_style": "minimalista",
+        "emotion": "sofisticado"
+      },
+      "asset_type": "solid_color",
+      "camera_movement": "static",
+      "transition": "fade",
+      "transition_duration": 0.8,
+      "highlight_words": [
+        {
+          "text": "ENTRADA",
+          "time": 1.0,
+          "duration": 2.0,
+          "entryAnimation": "wave",
+          "exitAnimation": "fade",
+          "size": "large",
+          "color": "#00FFAA",
+          "position": "top-left",
+          "effect": "shadow",
+          "fontWeight": "bold"
+        },
+        {
+          "text": "SAÍDA",
+          "time": 3.5,
+          "duration": 2.0,
+          "entryAnimation": "pop",
+          "exitAnimation": "wave",
+          "size": "large",
+          "color": "#AA00FF",
+          "position": "bottom-right",
+          "effect": "shadow",
+          "fontWeight": "bold"
+        },
+        {
+          "text": "COMPLETO",
+          "time": 6.0,
+          "duration": 2.5,
+          "entryAnimation": "wave",
+          "exitAnimation": "wave",
+          "size": "huge",
+          "color": "#FFFFFF",
+          "position": "center",
+          "effect": "neon",
+          "fontWeight": "black"
+        }
+      ]
+    }
+  ],
+  "schema_version": "1.0"
+}

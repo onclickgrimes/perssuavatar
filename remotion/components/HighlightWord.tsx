@@ -110,6 +110,11 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
       case 'fade':
         entryOpacity = entryProgress;
         break;
+        
+      case 'wave':
+        // Efeito de onda: texto aparece vazado e enche de baixo pra cima
+        // Não aplicamos transformações aqui, o efeito é feito via CSS
+        break;
     }
   }
   
@@ -168,6 +173,11 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
         
       case 'fade':
         exitOpacity = interpolate(exitProgress, [0, 1], [1, 0]);
+        break;
+        
+      case 'wave':
+        // Efeito de onda: texto esvazia de cima pra baixo
+        // Não aplicamos transformações aqui, o efeito é feito via CSS
         break;
     }
   }
@@ -292,6 +302,42 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
   const combinedTransform = [entryTransform, exitTransform].filter(Boolean).join(' ');
   const combinedOpacity = entryOpacity * exitOpacity;
   
+  // ========================================
+  // EFEITO WAVE (Preenchimento de baixo pra cima)
+  // ========================================
+  
+  let waveClipPath = 'none';
+  let waveStroke = 'none';
+  let waveStrokeWidth = 0;
+  let waveFillOpacity = 1;
+  
+  // Se a animação é wave, calcular o progresso do preenchimento
+  if (highlight.entryAnimation === 'wave' || highlight.exitAnimation === 'wave') {
+    const isEntry = highlight.entryAnimation === 'wave' && frameInHighlight < entryDuration;
+    const isExit = highlight.exitAnimation === 'wave' && frameInHighlight > exitStart;
+    
+    let fillProgress = 1; // 1 = totalmente preenchido, 0 = vazio
+    
+    if (isEntry) {
+      // Durante entrada: enche de baixo pra cima (0 -> 1)
+      fillProgress = frameInHighlight / entryDuration;
+    } else if (isExit) {
+      // Durante saída: esvazia de cima pra baixo (1 -> 0)
+      fillProgress = 1 - ((frameInHighlight - exitStart) / exitDuration);
+    }
+    
+    // Clip path que revela de baixo pra cima
+    const clipPercent = fillProgress * 100;
+    waveClipPath = `inset(${100 - clipPercent}% 0 0 0)`;
+    
+    // Outline sempre visível
+    waveStroke = textColor;
+    waveStrokeWidth = 3;
+    
+    // Opacidade do preenchimento baseado no progresso
+    waveFillOpacity = fillProgress;
+  }
+  
   return (
     <AbsoluteFill style={{ pointerEvents: 'none', zIndex: 100 }}>
       <div
@@ -301,6 +347,32 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
           transform: `translate(-50%, -50%) ${combinedTransform}`,
           opacity: combinedOpacity,
           filter: exitFilter,
+        }}
+      >
+        {/* Renderizar diferente se for efeito wave */}
+        {(highlight.entryAnimation === 'wave' || highlight.exitAnimation === 'wave') ? (
+          <WaveText
+            text={highlight.text}
+            fontSize={fontSize}
+            fontWeight={weight === 'black' ? 900 : weight === 'bold' ? 700 : 400}
+            color={textColor}
+            fillProgress={(() => {
+              const isEntry = highlight.entryAnimation === 'wave' && frameInHighlight < entryDuration;
+              const isExit = highlight.exitAnimation === 'wave' && frameInHighlight > exitStart;
+              
+              if (isEntry) {
+                return frameInHighlight / entryDuration;
+              } else if (isExit) {
+                return 1 - ((frameInHighlight - exitStart) / exitDuration);
+              }
+              return 1;
+            })()}
+            frame={frameInHighlight}
+          />
+        ) : (
+          // Renderização normal para outros efeitos
+          <div
+            style={{
           fontSize: `${fontSize}px`,
           fontWeight: weight === 'black' ? 900 : weight === 'bold' ? 700 : 400,
           color: textColor,
@@ -315,6 +387,8 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
         }}
       >
         {highlight.text}
+      </div>
+        )}
       </div>
       
       {/* Efeito de partículas para evaporate/scatter */}
@@ -372,6 +446,163 @@ const ParticleEffect: React.FC<ParticleEffectProps> = ({ text, progress, positio
         </div>
       ))}
     </>
+  );
+};
+
+// ========================================
+// WAVE TEXT COMPONENT
+// ========================================
+
+interface WaveTextProps {
+  text: string;
+  fontSize: number;
+  fontWeight: number;
+  color: string;
+  fillProgress: number; // 0 = vazio, 1 = cheio
+  frame: number;
+}
+
+const WaveText: React.FC<WaveTextProps> = ({ 
+  text, 
+  fontSize, 
+  fontWeight, 
+  color, 
+  fillProgress,
+  frame 
+}) => {
+  // Calcular a posição vertical da onda (de baixo pra cima)
+  const waveBaseY = 100 - (fillProgress * 100);
+  
+  // Criar IDs únicos para os elementos SVG
+  const clipId = `wave-clip-${text.replace(/\s/g, '-')}-${Math.random().toString(36).substr(2, 9)}`;
+  
+
+    // Animação da onda (movimento horizontal) - suave e elegante
+  // const wavePhase1 = (frame * 0.4) % 1; // Onda principal (mais lenta)
+  // const wavePhase2 = (frame * 0.6) % 1; // Onda secundária (um pouco mais rápida)
+  // Animação da onda (movimento horizontal) - lenta e contemplativa
+  const wavePhase1 = (frame * 0.1) % 1; // Onda principal (bem lenta)
+  const wavePhase2 = (frame * 0.1) % 1; // Onda secundária (um pouco mais rápida)
+  
+  // Amplitude das ondas (quanto elas sobem e descem) - valores para ondulação visível
+  const amplitude = 6; // 6% de altura - picos e vales bem definidos
+  const amplitudeCrest = 10; // 10% para a crista - ondulação mais pronunciada
+  
+  return (
+    <div style={{ position: 'relative', display: 'inline-block' }}>
+      {/* Outline (sempre visível) */}
+      <div
+        style={{
+          fontSize: `${fontSize}px`,
+          fontWeight,
+          color: 'transparent',
+          WebkitTextStroke: `3px ${color}`,
+          whiteSpace: 'nowrap',
+          fontFamily: 'Pricedown',
+          letterSpacing: '0.05em',
+          textAlign: 'center',
+        }}
+      >
+        {text}
+      </div>
+      
+      {/* Container SVG para as ondas */}
+      <svg
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          overflow: 'visible',
+          pointerEvents: 'none',
+        }}
+        viewBox="0 0 1 1"
+        preserveAspectRatio="none"
+      >
+        <defs>
+          {/* Definir o clipPath com ondas animadas */}
+          <clipPath id={clipId} clipPathUnits="objectBoundingBox">
+            {/* Onda principal (sólida) - ondas longas e fluidas */}
+            <path
+              d={`
+                M 0,${(waveBaseY + amplitude * Math.sin(wavePhase1 * Math.PI * 2)) / 100}
+                Q 0.25,${(waveBaseY + amplitude * Math.sin((wavePhase1 + 0.25) * Math.PI * 2)) / 100}
+                  0.5,${(waveBaseY + amplitude * Math.sin((wavePhase1 + 0.5) * Math.PI * 2)) / 100}
+                Q 0.75,${(waveBaseY + amplitude * Math.sin((wavePhase1 + 0.75) * Math.PI * 2)) / 100}
+                  1,${(waveBaseY + amplitude * Math.sin((wavePhase1 + 1) * Math.PI * 2)) / 100}
+                L 1,1
+                L 0,1
+                Z
+              `}
+              vectorEffect="non-scaling-stroke"
+            />
+          </clipPath>
+          
+          {/* Clip para a onda transparente (crista) - ondas ainda maiores */}
+          <clipPath id={`${clipId}-transparent`} clipPathUnits="objectBoundingBox">
+            <path
+              d={`
+                M 0,${((waveBaseY - 8) + amplitudeCrest * Math.sin(wavePhase2 * Math.PI * 2)) / 100}
+                Q 0.25,${((waveBaseY - 8) + amplitudeCrest * Math.sin((wavePhase2 + 0.25) * Math.PI * 2)) / 100}
+                  0.5,${((waveBaseY - 8) + amplitudeCrest * Math.sin((wavePhase2 + 0.5) * Math.PI * 2)) / 100}
+                Q 0.75,${((waveBaseY - 8) + amplitudeCrest * Math.sin((wavePhase2 + 0.75) * Math.PI * 2)) / 100}
+                  1,${((waveBaseY - 8) + amplitudeCrest * Math.sin((wavePhase2 + 1) * Math.PI * 2)) / 100}
+                L 1,1
+                L 0,1
+                Z
+              `}
+              vectorEffect="non-scaling-stroke"
+            />
+          </clipPath>
+        </defs>
+      </svg>
+      
+      {/* Preenchimento sólido com clip das ondas */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '100%',
+          height: '100%',
+          fontSize: `${fontSize}px`,
+          fontWeight,
+          color,
+          whiteSpace: 'nowrap',
+          fontFamily: 'Pricedown',
+          letterSpacing: '0.05em',
+          textAlign: 'center',
+          clipPath: `url(#${clipId})`,
+        }}
+      >
+        {text}
+      </div>
+      
+      {/* Onda transparente adicional (efeito de espuma na crista) */}
+      {fillProgress > 0 && fillProgress < 1 && (
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '100%',
+            height: '100%',
+            fontSize: `${fontSize}px`,
+            fontWeight,
+            color,
+            whiteSpace: 'nowrap',
+            fontFamily: 'Pricedown',
+            letterSpacing: '0.05em',
+            textAlign: 'center',
+            opacity: 0.4,
+            clipPath: `url(#${clipId}-transparent)`,
+          }}
+        >
+          {text}
+        </div>
+      )}
+    </div>
   );
 };
 

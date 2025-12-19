@@ -1,0 +1,905 @@
+{
+  "title": "openai-fm-ash-cheerleader",
+  "duration": 36.79994,
+  "audioPath": "C:\\Users\\Shaolin\\AppData\\Roaming\\my-nextron-app(development)\\video-projects\\audio-1766049119862.wav",
+  "segments": [
+    {
+      "id": 1,
+      "text": "Plataforma Automacar centraliza todos os seus veículos em só lugar e automatiza a publicação deles em múltiplas contas do Facebook Market Place com apenas UClick.",
+      "start": 0.16,
+      "end": 10.66,
+      "speaker": 0,
+      "words": [
+        {
+          "word": "plataforma",
+          "start": 0.16,
+          "end": 0.65999997,
+          "confidence": 0.9997887,
+          "speaker": 0,
+          "punctuatedWord": "Plataforma"
+        },
+        {
+          "word": "automacar",
+          "start": 0.96,
+          "end": 1.46,
+          "confidence": 0.8541285,
+          "speaker": 0,
+          "punctuatedWord": "Automacar"
+        },
+        {
+          "word": "centraliza",
+          "start": 2.1599998,
+          "end": 2.3999999,
+          "confidence": 0.84329146,
+          "speaker": 0,
+          "punctuatedWord": "centraliza"
+        },
+        {
+          "word": "todos",
+          "start": 2.3999999,
+          "end": 2.6399999,
+          "confidence": 0.999851,
+          "speaker": 0,
+          "punctuatedWord": "todos"
+        },
+        {
+          "word": "os",
+          "start": 2.6399999,
+          "end": 2.8,
+          "confidence": 0.9993068,
+          "speaker": 0,
+          "punctuatedWord": "os"
+        },
+        {
+          "word": "seus",
+          "start": 2.8,
+          "end": 3.04,
+          "confidence": 0.9995716,
+          "speaker": 0,
+          "punctuatedWord": "seus"
+        },
+        {
+          "word": "veículos",
+          "start": 3.04,
+          "end": 3.4399998,
+          "confidence": 0.9999454,
+          "speaker": 0,
+          "punctuatedWord": "veículos"
+        },
+        {
+          "word": "em",
+          "start": 3.4399998,
+          "end": 3.6,
+          "confidence": 0.9997315,
+          "speaker": 0,
+          "punctuatedWord": "em"
+        },
+        {
+          "word": "só",
+          "start": 3.76,
+          "end": 4,
+          "confidence": 0.999959,
+          "speaker": 0,
+          "punctuatedWord": "só"
+        },
+        {
+          "word": "lugar",
+          "start": 4,
+          "end": 4.3199997,
+          "confidence": 0.99997604,
+          "speaker": 0,
+          "punctuatedWord": "lugar"
+        },
+        {
+          "word": "e",
+          "start": 4.3199997,
+          "end": 4.56,
+          "confidence": 0.89012855,
+          "speaker": 0,
+          "punctuatedWord": "e"
+        },
+        {
+          "word": "automatiza",
+          "start": 4.56,
+          "end": 5.06,
+          "confidence": 0.99840724,
+          "speaker": 0,
+          "punctuatedWord": "automatiza"
+        },
+        {
+          "word": "a",
+          "start": 5.2799997,
+          "end": 5.44,
+          "confidence": 0.99925727,
+          "speaker": 0,
+          "punctuatedWord": "a"
+        },
+        {
+          "word": "publicação",
+          "start": 5.44,
+          "end": 5.94,
+          "confidence": 0.99987996,
+          "speaker": 0,
+          "punctuatedWord": "publicação"
+        },
+        {
+          "word": "deles",
+          "start": 6.08,
+          "end": 6.48,
+          "confidence": 0.9996991,
+          "speaker": 0,
+          "punctuatedWord": "deles"
+        },
+        {
+          "word": "em",
+          "start": 6.48,
+          "end": 6.7999997,
+          "confidence": 0.992493,
+          "speaker": 0,
+          "punctuatedWord": "em"
+        },
+        {
+          "word": "múltiplas",
+          "start": 6.7999997,
+          "end": 7.2999997,
+          "confidence": 0.99971396,
+          "speaker": 0,
+          "punctuatedWord": "múltiplas"
+        },
+        {
+          "word": "contas",
+          "start": 7.3599997,
+          "end": 7.68,
+          "confidence": 0.998676,
+          "speaker": 0,
+          "punctuatedWord": "contas"
+        },
+        {
+          "word": "do",
+          "start": 7.68,
+          "end": 7.9199996,
+          "confidence": 0.9977139,
+          "speaker": 0,
+          "punctuatedWord": "do"
+        },
+        {
+          "word": "facebook",
+          "start": 7.9199996,
+          "end": 8.42,
+          "confidence": 0.9998565,
+          "speaker": 0,
+          "punctuatedWord": "Facebook"
+        },
+        {
+          "word": "market",
+          "start": 8.48,
+          "end": 8.96,
+          "confidence": 0.8359425,
+          "speaker": 0,
+          "punctuatedWord": "Market"
+        },
+        {
+          "word": "place",
+          "start": 8.96,
+          "end": 9.28,
+          "confidence": 0.9820287,
+          "speaker": 0,
+          "punctuatedWord": "Place"
+        },
+        {
+          "word": "com",
+          "start": 9.28,
+          "end": 9.599999,
+          "confidence": 0.7401231,
+          "speaker": 0,
+          "punctuatedWord": "com"
+        },
+        {
+          "word": "apenas",
+          "start": 9.599999,
+          "end": 10.099999,
+          "confidence": 0.9977507,
+          "speaker": 0,
+          "punctuatedWord": "apenas"
+        },
+        {
+          "word": "uclick",
+          "start": 10.16,
+          "end": 10.66,
+          "confidence": 0.79910946,
+          "speaker": 0,
+          "punctuatedWord": "UClick."
+        }
+      ],
+      "emotion": "curiosidade",
+      "imagePrompt": "A clean, modern UI of a dashboard displaying multiple car listings, with a prominent 'Automacar' logo. Subtle icons representing Facebook Marketplace and a single 'click' action are visible. The background is a soft gradient of blues and whites. Style: Flat design with subtle gradients. Lighting: Soft, even lighting. Colors: Dominant blues, white, and grey, with a touch of accent color for the 'click' icon.",
+      "imageUrl": "http://localhost:9999/images/segment-1-1766049142346.png",
+      "assetType": "image_static",
+      "cameraMovement": "pan_right",
+      "transition": "fade",
+      "highlightWords": [
+        {
+          "text": "Plataforma Automacar",
+          "duration": 20,
+          "entryAnimation": "wave",
+          "exitAnimation": "wave",
+          "size": "large",
+          "position": "top-center",
+          "effect": "none",
+          "color": "#FFFFFF",
+          "fontWeight": "bold",
+          "time": 0
+        },
+        {
+          "text": "multiplas contas do Facebook Market Place",
+          "duration": 3,
+          "entryAnimation": "wave",
+          "exitAnimation": "wave",
+          "size": "medium",
+          "position": "center",
+          "effect": "neon",
+          "color": "#00E5FF",
+          "fontWeight": "bold",
+          "time": 6
+        },
+        {
+          "text": "um clique",
+          "duration": 1,
+          "entryAnimation": "bounce",
+          "exitAnimation": "implode",
+          "size": "large",
+          "position": "bottom-center",
+          "effect": "glow",
+          "color": "#FFD700",
+          "fontWeight": "black",
+          "time": 10
+        }
+      ]
+    },
+    {
+      "id": 2,
+      "text": "Após cadastrar seus veículos, o sistema percorre todos os grupos da sua conta do Facebook e permite que você escolha os 20 melhores que quer que sejam selecionados ao final da publicação.",
+      "start": 11.5199995,
+      "end": 23.224998,
+      "speaker": 0,
+      "words": [
+        {
+          "word": "após",
+          "start": 11.5199995,
+          "end": 11.92,
+          "confidence": 0.99970645,
+          "speaker": 0,
+          "punctuatedWord": "Após"
+        },
+        {
+          "word": "cadastrar",
+          "start": 11.92,
+          "end": 12.42,
+          "confidence": 0.9999311,
+          "speaker": 0,
+          "punctuatedWord": "cadastrar"
+        },
+        {
+          "word": "seus",
+          "start": 12.48,
+          "end": 12.639999,
+          "confidence": 0.99703324,
+          "speaker": 0,
+          "punctuatedWord": "seus"
+        },
+        {
+          "word": "veículos",
+          "start": 12.639999,
+          "end": 13.139999,
+          "confidence": 0.97833943,
+          "speaker": 0,
+          "punctuatedWord": "veículos,"
+        },
+        {
+          "word": "o",
+          "start": 13.445,
+          "end": 13.605,
+          "confidence": 0.9999597,
+          "speaker": 0,
+          "punctuatedWord": "o"
+        },
+        {
+          "word": "sistema",
+          "start": 13.605,
+          "end": 14.005,
+          "confidence": 0.9999219,
+          "speaker": 0,
+          "punctuatedWord": "sistema"
+        },
+        {
+          "word": "percorre",
+          "start": 14.005,
+          "end": 14.505,
+          "confidence": 0.9991658,
+          "speaker": 0,
+          "punctuatedWord": "percorre"
+        },
+        {
+          "word": "todos",
+          "start": 14.6449995,
+          "end": 14.965,
+          "confidence": 0.99984586,
+          "speaker": 0,
+          "punctuatedWord": "todos"
+        },
+        {
+          "word": "os",
+          "start": 14.965,
+          "end": 15.205,
+          "confidence": 0.99996054,
+          "speaker": 0,
+          "punctuatedWord": "os"
+        },
+        {
+          "word": "grupos",
+          "start": 15.205,
+          "end": 15.605,
+          "confidence": 0.99991095,
+          "speaker": 0,
+          "punctuatedWord": "grupos"
+        },
+        {
+          "word": "da",
+          "start": 15.605,
+          "end": 15.844999,
+          "confidence": 0.9998012,
+          "speaker": 0,
+          "punctuatedWord": "da"
+        },
+        {
+          "word": "sua",
+          "start": 15.844999,
+          "end": 16.085,
+          "confidence": 0.9998246,
+          "speaker": 0,
+          "punctuatedWord": "sua"
+        },
+        {
+          "word": "conta",
+          "start": 16.085,
+          "end": 16.325,
+          "confidence": 0.9996669,
+          "speaker": 0,
+          "punctuatedWord": "conta"
+        },
+        {
+          "word": "do",
+          "start": 16.325,
+          "end": 16.564999,
+          "confidence": 0.99775165,
+          "speaker": 0,
+          "punctuatedWord": "do"
+        },
+        {
+          "word": "facebook",
+          "start": 16.564999,
+          "end": 17.064999,
+          "confidence": 0.99997556,
+          "speaker": 0,
+          "punctuatedWord": "Facebook"
+        },
+        {
+          "word": "e",
+          "start": 17.445,
+          "end": 17.685,
+          "confidence": 0.93450254,
+          "speaker": 0,
+          "punctuatedWord": "e"
+        },
+        {
+          "word": "permite",
+          "start": 17.685,
+          "end": 18.085,
+          "confidence": 0.99992263,
+          "speaker": 0,
+          "punctuatedWord": "permite"
+        },
+        {
+          "word": "que",
+          "start": 18.085,
+          "end": 18.325,
+          "confidence": 0.99979275,
+          "speaker": 0,
+          "punctuatedWord": "que"
+        },
+        {
+          "word": "você",
+          "start": 18.325,
+          "end": 18.645,
+          "confidence": 0.9999058,
+          "speaker": 0,
+          "punctuatedWord": "você"
+        },
+        {
+          "word": "escolha",
+          "start": 18.645,
+          "end": 19.045,
+          "confidence": 0.9999515,
+          "speaker": 0,
+          "punctuatedWord": "escolha"
+        },
+        {
+          "word": "os",
+          "start": 19.045,
+          "end": 19.285,
+          "confidence": 0.99991786,
+          "speaker": 0,
+          "punctuatedWord": "os"
+        },
+        {
+          "word": "20",
+          "start": 19.285,
+          "end": 19.605,
+          "confidence": 0.9924696,
+          "speaker": 0,
+          "punctuatedWord": "20"
+        },
+        {
+          "word": "melhores",
+          "start": 19.605,
+          "end": 20.005,
+          "confidence": 0.99987733,
+          "speaker": 0,
+          "punctuatedWord": "melhores"
+        },
+        {
+          "word": "que",
+          "start": 20.005,
+          "end": 20.244999,
+          "confidence": 0.99890804,
+          "speaker": 0,
+          "punctuatedWord": "que"
+        },
+        {
+          "word": "quer",
+          "start": 20.244999,
+          "end": 20.485,
+          "confidence": 0.9997739,
+          "speaker": 0,
+          "punctuatedWord": "quer"
+        },
+        {
+          "word": "que",
+          "start": 20.485,
+          "end": 20.724998,
+          "confidence": 0.9945359,
+          "speaker": 0,
+          "punctuatedWord": "que"
+        },
+        {
+          "word": "sejam",
+          "start": 20.724998,
+          "end": 21.045,
+          "confidence": 0.9998995,
+          "speaker": 0,
+          "punctuatedWord": "sejam"
+        },
+        {
+          "word": "selecionados",
+          "start": 21.045,
+          "end": 21.545,
+          "confidence": 0.9994184,
+          "speaker": 0,
+          "punctuatedWord": "selecionados"
+        },
+        {
+          "word": "ao",
+          "start": 21.925,
+          "end": 22.244999,
+          "confidence": 0.9931739,
+          "speaker": 0,
+          "punctuatedWord": "ao"
+        },
+        {
+          "word": "final",
+          "start": 22.244999,
+          "end": 22.564999,
+          "confidence": 0.99981564,
+          "speaker": 0,
+          "punctuatedWord": "final"
+        },
+        {
+          "word": "da",
+          "start": 22.564999,
+          "end": 22.724998,
+          "confidence": 0.9997116,
+          "speaker": 0,
+          "punctuatedWord": "da"
+        },
+        {
+          "word": "publicação",
+          "start": 22.724998,
+          "end": 23.224998,
+          "confidence": 0.99789476,
+          "speaker": 0,
+          "punctuatedWord": "publicação."
+        }
+      ],
+      "emotion": "reflexão",
+      "imagePrompt": "An abstract visualization of a system 'scanning' through various Facebook group interfaces, represented by stylized group icons. A highlighted selection of 20 icons emerges from the main group. The overall mood is digital and analytical. Style: Digital abstract art. Lighting: Illuminated by screen glow. Colors: Dark background with vibrant blue and cyan highlights for data flow and selection.",
+      "imageUrl": "http://localhost:9999/images/segment-2-1766049144388.png",
+      "assetType": "image_static",
+      "cameraMovement": "ken_burns",
+      "transition": "crossfade",
+      "highlightWords": [
+        {
+          "text": "cadastrar seus veículos",
+          "duration": 1.5,
+          "entryAnimation": "fade",
+          "exitAnimation": "fade",
+          "size": "medium",
+          "position": "top-center",
+          "effect": "none",
+          "color": "#FFFFFF",
+          "fontWeight": "normal",
+          "time": 0.4000004999999991
+        },
+        {
+          "text": "todos os grupos",
+          "duration": 1.5,
+          "entryAnimation": "slide_up",
+          "exitAnimation": "slide_down",
+          "size": "medium",
+          "position": "center",
+          "effect": "outline",
+          "color": "#00E5FF",
+          "fontWeight": "bold",
+          "time": 3.125
+        },
+        {
+          "text": "20 melhores",
+          "duration": 1.5,
+          "entryAnimation": "zoom_in",
+          "exitAnimation": "zoom_out",
+          "size": "large",
+          "position": "bottom-center",
+          "effect": "glow",
+          "color": "#FFD700",
+          "fontWeight": "black",
+          "time": 7.765000499999999
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "text": "Depois de tudo configurado, basta selecionar os veículos que deseja postar e clicar em Postás selecionados na extensão do navegador.",
+      "start": 23.845,
+      "end": 31.924938,
+      "speaker": 0,
+      "words": [
+        {
+          "word": "depois",
+          "start": 23.845,
+          "end": 24.165,
+          "confidence": 0.999803,
+          "speaker": 0,
+          "punctuatedWord": "Depois"
+        },
+        {
+          "word": "de",
+          "start": 24.165,
+          "end": 24.325,
+          "confidence": 0.999393,
+          "speaker": 0,
+          "punctuatedWord": "de"
+        },
+        {
+          "word": "tudo",
+          "start": 24.325,
+          "end": 24.645,
+          "confidence": 0.99998677,
+          "speaker": 0,
+          "punctuatedWord": "tudo"
+        },
+        {
+          "word": "configurado",
+          "start": 24.645,
+          "end": 25.145,
+          "confidence": 0.9983673,
+          "speaker": 0,
+          "punctuatedWord": "configurado,"
+        },
+        {
+          "word": "basta",
+          "start": 25.744938,
+          "end": 25.984938,
+          "confidence": 0.999998,
+          "speaker": 0,
+          "punctuatedWord": "basta"
+        },
+        {
+          "word": "selecionar",
+          "start": 25.984938,
+          "end": 26.484938,
+          "confidence": 0.99936026,
+          "speaker": 0,
+          "punctuatedWord": "selecionar"
+        },
+        {
+          "word": "os",
+          "start": 26.544937,
+          "end": 26.784939,
+          "confidence": 0.9998266,
+          "speaker": 0,
+          "punctuatedWord": "os"
+        },
+        {
+          "word": "veículos",
+          "start": 26.784939,
+          "end": 27.264938,
+          "confidence": 0.99962735,
+          "speaker": 0,
+          "punctuatedWord": "veículos"
+        },
+        {
+          "word": "que",
+          "start": 27.264938,
+          "end": 27.504938,
+          "confidence": 0.9998753,
+          "speaker": 0,
+          "punctuatedWord": "que"
+        },
+        {
+          "word": "deseja",
+          "start": 27.504938,
+          "end": 28.004938,
+          "confidence": 0.9997968,
+          "speaker": 0,
+          "punctuatedWord": "deseja"
+        },
+        {
+          "word": "postar",
+          "start": 28.064938,
+          "end": 28.544937,
+          "confidence": 0.8242816,
+          "speaker": 0,
+          "punctuatedWord": "postar"
+        },
+        {
+          "word": "e",
+          "start": 28.544937,
+          "end": 28.864939,
+          "confidence": 0.9899554,
+          "speaker": 0,
+          "punctuatedWord": "e"
+        },
+        {
+          "word": "clicar",
+          "start": 28.864939,
+          "end": 29.104939,
+          "confidence": 0.9999417,
+          "speaker": 0,
+          "punctuatedWord": "clicar"
+        },
+        {
+          "word": "em",
+          "start": 29.104939,
+          "end": 29.424938,
+          "confidence": 0.99994457,
+          "speaker": 0,
+          "punctuatedWord": "em"
+        },
+        {
+          "word": "postás",
+          "start": 29.424938,
+          "end": 29.904938,
+          "confidence": 0.87142664,
+          "speaker": 0,
+          "punctuatedWord": "Postás"
+        },
+        {
+          "word": "selecionados",
+          "start": 29.904938,
+          "end": 30.404938,
+          "confidence": 0.99750644,
+          "speaker": 0,
+          "punctuatedWord": "selecionados"
+        },
+        {
+          "word": "na",
+          "start": 30.544937,
+          "end": 30.864937,
+          "confidence": 0.99845564,
+          "speaker": 0,
+          "punctuatedWord": "na"
+        },
+        {
+          "word": "extensão",
+          "start": 30.864937,
+          "end": 31.104939,
+          "confidence": 0.9998809,
+          "speaker": 0,
+          "punctuatedWord": "extensão"
+        },
+        {
+          "word": "do",
+          "start": 31.104939,
+          "end": 31.424938,
+          "confidence": 0.99959356,
+          "speaker": 0,
+          "punctuatedWord": "do"
+        },
+        {
+          "word": "navegador",
+          "start": 31.424938,
+          "end": 31.924938,
+          "confidence": 0.9980561,
+          "speaker": 0,
+          "punctuatedWord": "navegador."
+        }
+      ],
+      "emotion": "urgência",
+      "imagePrompt": "A close-up shot of a web browser extension interface. A finger is about to click a prominent button labeled 'Postar selecionados'. The background shows a blurred preview of car listings. The lighting is dramatic, focusing on the button. Style: Realistic UI with dramatic focus. Lighting: Spotlight on the button, darker background. Colors: Dark UI elements, with a bright, action-oriented color for the button.",
+      "imageUrl": "http://localhost:9999/images/segment-3-1766049146350.png",
+      "assetType": "image_static",
+      "cameraMovement": "zoom_in_fast",
+      "transition": "slide_left",
+      "highlightWords": [
+        {
+          "text": "tudo configurado",
+          "duration": 1.5,
+          "entryAnimation": "pop",
+          "exitAnimation": "implode",
+          "size": "medium",
+          "position": "top-center",
+          "effect": "none",
+          "color": "#FFFFFF",
+          "fontWeight": "normal",
+          "time": 0.4800000000000004
+        },
+        {
+          "text": "selecionar os veículos",
+          "duration": 1.5,
+          "entryAnimation": "fade",
+          "exitAnimation": "fade",
+          "size": "medium",
+          "position": "center",
+          "effect": "none",
+          "color": "#FFFFFF",
+          "fontWeight": "normal",
+          "time": 2.139938000000001
+        },
+        {
+          "text": "Postar selecionados",
+          "duration": 2,
+          "entryAnimation": "bounce",
+          "exitAnimation": "scatter",
+          "size": "huge",
+          "position": "center",
+          "effect": "glow",
+          "color": "#FF1744",
+          "fontWeight": "black",
+          "time": 4.219938000000003
+        }
+      ]
+    },
+    {
+      "id": 4,
+      "text": "Cada publicação leva cerca de 2 minutos para ser concluída.",
+      "start": 32.62494,
+      "end": 36.644936,
+      "speaker": 0,
+      "words": [
+        {
+          "word": "cada",
+          "start": 32.62494,
+          "end": 32.94494,
+          "confidence": 0.9995609,
+          "speaker": 0,
+          "punctuatedWord": "Cada"
+        },
+        {
+          "word": "publicação",
+          "start": 32.94494,
+          "end": 33.44494,
+          "confidence": 0.99964416,
+          "speaker": 0,
+          "punctuatedWord": "publicação"
+        },
+        {
+          "word": "leva",
+          "start": 33.744938,
+          "end": 34.224937,
+          "confidence": 0.9941537,
+          "speaker": 0,
+          "punctuatedWord": "leva"
+        },
+        {
+          "word": "cerca",
+          "start": 34.224937,
+          "end": 34.46494,
+          "confidence": 0.9999416,
+          "speaker": 0,
+          "punctuatedWord": "cerca"
+        },
+        {
+          "word": "de",
+          "start": 34.46494,
+          "end": 34.704937,
+          "confidence": 0.9991761,
+          "speaker": 0,
+          "punctuatedWord": "de"
+        },
+        {
+          "word": "2",
+          "start": 34.704937,
+          "end": 35.024937,
+          "confidence": 0.99918944,
+          "speaker": 0,
+          "punctuatedWord": "2"
+        },
+        {
+          "word": "minutos",
+          "start": 35.024937,
+          "end": 35.524937,
+          "confidence": 0.9998753,
+          "speaker": 0,
+          "punctuatedWord": "minutos"
+        },
+        {
+          "word": "para",
+          "start": 35.584938,
+          "end": 35.824936,
+          "confidence": 0.9991366,
+          "speaker": 0,
+          "punctuatedWord": "para"
+        },
+        {
+          "word": "ser",
+          "start": 35.824936,
+          "end": 36.144936,
+          "confidence": 0.9999554,
+          "speaker": 0,
+          "punctuatedWord": "ser"
+        },
+        {
+          "word": "concluída",
+          "start": 36.144936,
+          "end": 36.644936,
+          "confidence": 0.99931514,
+          "speaker": 0,
+          "punctuatedWord": "concluída."
+        }
+      ],
+      "emotion": "empolgação",
+      "imagePrompt": "A progress bar rapidly filling up to 100%, with a timer showing '2:00' minutes. Subtle visual elements related to car sales or social media icons zoom out from the center as the bar completes. Style: Minimalist and dynamic. Lighting: Bright, energetic. Colors: Vibrant green for the progress bar, contrasting with a dark background and white/cyan accents.",
+      "imageUrl": "http://localhost:9999/images/segment-4-1766049149289.png",
+      "assetType": "image_static",
+      "cameraMovement": "zoom_out_slow",
+      "transition": "zoom_out",
+      "highlightWords": [
+        {
+          "text": "2 minutos",
+          "duration": 2,
+          "entryAnimation": "explode",
+          "exitAnimation": "dissolve",
+          "size": "huge",
+          "position": "center",
+          "effect": "neon",
+          "color": "#00FF00",
+          "fontWeight": "black",
+          "time": 2.0799969999999988
+        },
+        {
+          "text": "concluída",
+          "duration": 1.5,
+          "entryAnimation": "pop",
+          "exitAnimation": "implode",
+          "size": "large",
+          "position": "bottom-center",
+          "effect": "glow",
+          "color": "#FFD700",
+          "fontWeight": "bold",
+          "time": 3.519995999999999
+        }
+      ]
+    }
+  ],
+  "editingStyle": "",
+  "authorConclusion": ""
+}
