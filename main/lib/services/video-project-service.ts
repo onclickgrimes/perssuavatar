@@ -646,20 +646,15 @@ ${Object.entries(TRANSITION_EFFECTS).map(([key, config]) => `- **${key}**\n  ${c
    IMPORTANTE: 
    - Especifique o texto EXATAMENTE como aparece na transcrição
 
-   Identifique entre 1 e 3 palavras-chave importantes por segmento que merecem destaque visual.
-   IMPORTANTE: Sempre especifique uma **color** apropriada para o efeito escolhido.
-   Cores recomendadas:
-   - Dourado (#FFD700) para sucesso, destaque, valor
-   - Ciano (#00E5FF) para tecnologia, modernidade
-   - Verde neon (#00FF00) para crescimento, novidade
-   - Magenta (#FF00FF) para criatividade, inovação
-   - Vermelho (#FF1744) para urgência, alerta, ação
+   Identifique entre zero e duas palavras-chave importantes por segmento que merecem destaque visual.
    Escolha palavras que sejam:
    - Conceitos-chave ou termos técnicos importantes
    - Números ou estatísticas relevantes
    - Palavras que expressam emoção forte
    - Calls to action ou mensagens principais
 
+   IMPORTANTE: Sempre especifique uma **color** apropriada para o efeito escolhido.
+   
 ${options?.editingStyle ? `\nEstilo de edição desejado: ${options.editingStyle}` : ''}
 ${options?.authorConclusion ? `\nConclusão/tom do autor: ${options.authorConclusion}` : ''}
 
