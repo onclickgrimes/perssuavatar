@@ -306,7 +306,7 @@ const PlaceholderImage: React.FC<{ description: string }> = ({ description }) =>
         justifyContent: 'center',
         alignItems: 'center',
         color: '#666',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'inherit',
         padding: '40px',
         textAlign: 'center',
       }}
@@ -332,7 +332,7 @@ const PlaceholderVideo: React.FC<{ description: string }> = ({ description }) =>
         justifyContent: 'center',
         alignItems: 'center',
         color: '#666',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'inherit',
         padding: '40px',
         textAlign: 'center',
       }}
@@ -358,7 +358,7 @@ const PlaceholderAvatar: React.FC = () => {
         justifyContent: 'center',
         alignItems: 'center',
         color: '#666',
-        fontFamily: 'Inter, sans-serif',
+        fontFamily: 'inherit',
       }}
     >
       <div style={{ fontSize: 80, marginBottom: 20 }}>🤖</div>

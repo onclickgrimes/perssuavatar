@@ -89,6 +89,7 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
         style={{
           backgroundColor,
           overflow: 'hidden',
+          fontFamily: 'Pricedown',
         }}
       >
         {/* Renderizar cada cena como uma Sequence */}

@@ -309,7 +309,7 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
           padding: highlight.highlightColor ? '10px 30px' : undefined,
           borderRadius: highlight.highlightColor ? '15px' : undefined,
           whiteSpace: 'nowrap',
-          fontFamily: 'Inter, Arial, sans-serif',
+          fontFamily: 'Pricedown',
           letterSpacing: '0.05em',
           textAlign: 'center',
         }}

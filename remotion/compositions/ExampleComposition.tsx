@@ -77,7 +77,7 @@ export const ExampleComposition: React.FC<ExampleCompositionProps> = ({
             color: 'white',
             fontSize: 80,
             fontWeight: 'bold',
-            fontFamily: 'Arial, sans-serif',
+            fontFamily: 'Pricedown',
             textAlign: 'center',
             textShadow: '0 4px 20px rgba(0,0,0,0.5)',
           }}
