@@ -115,6 +115,11 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
         // Efeito de onda: texto aparece vazado e enche de baixo pra cima
         // Não aplicamos transformações aqui, o efeito é feito via CSS
         break;
+        
+      case 'none':
+        // Sem animação: aparece instantaneamente
+        entryOpacity = 1;
+        break;
     }
   }
   
@@ -178,6 +183,11 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
       case 'wave':
         // Efeito de onda: texto esvazia de cima pra baixo
         // Não aplicamos transformações aqui, o efeito é feito via CSS
+        break;
+        
+      case 'none':
+        // Sem animação: permanece visível
+        exitOpacity = 1;
         break;
     }
   }

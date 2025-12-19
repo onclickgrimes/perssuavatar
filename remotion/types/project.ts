@@ -108,9 +108,9 @@ export const HighlightWordSchema = z.object({
   /** Duração da exibição em segundos */
   duration: z.number().default(1.5),
   /** Animação de entrada */
-  entryAnimation: z.enum(['pop', 'bounce', 'explode', 'slide_up', 'zoom_in', 'fade', 'wave']).default('pop'),
+  entryAnimation: z.enum(['pop', 'bounce', 'explode', 'slide_up', 'zoom_in', 'fade', 'wave', 'none']).default('pop'),
   /** Animação de saída */
-  exitAnimation: z.enum(['evaporate', 'fade', 'implode', 'slide_down', 'dissolve', 'scatter', 'wave']).default('evaporate'),
+  exitAnimation: z.enum(['evaporate', 'fade', 'implode', 'slide_down', 'dissolve', 'scatter', 'wave', 'none']).default('evaporate'),
   /** Tamanho do texto (em pixels ou 'small', 'medium', 'large', 'huge') */
   size: z.union([z.number(), z.enum(['small', 'medium', 'large', 'huge'])]).default('large'),
   /** Cor do texto */

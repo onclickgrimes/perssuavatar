@@ -831,7 +831,21 @@ Responda APENAS com um array JSON válido no formato:
                 backgroundColor: '#0a0a0a',
                 ...project.config, // Sobrescreve com valores do projeto se existirem
             },
-            segments: project.segments,
+            segments: project.segments.map(segment => ({
+                id: segment.id,
+                text: segment.text,
+                start: segment.start,
+                end: segment.end,
+                speaker: segment.speaker,
+                emotion: segment.emotion,
+                imagePrompt: segment.imagePrompt,
+                imageUrl: segment.imageUrl,
+                assetType: segment.assetType,
+                cameraMovement: segment.cameraMovement,
+                transition: segment.transition,
+                highlightWords: segment.highlightWords,
+                words: segment.words, // Words fica por último
+            })),
         };
 
         fs.writeFileSync(filePath, JSON.stringify(orderedProject, null, 2));
