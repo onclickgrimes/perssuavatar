@@ -1021,7 +1021,11 @@ ipcMain.handle('video-project:save-image', async (
 ipcMain.handle('video-project:analyze', async (
   event, 
   segments: VideoProjectSegment[], 
-  options?: { editingStyle?: string; authorConclusion?: string }
+  options?: { 
+    editingStyle?: string; 
+    authorConclusion?: string; 
+    provider?: 'gemini' | 'openai' | 'deepseek' 
+  }
 ) => {
   try {
     if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');

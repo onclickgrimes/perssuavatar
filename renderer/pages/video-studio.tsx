@@ -314,7 +314,7 @@ export default function VideoStudioPage() {
     } finally {
       setIsProcessing(false);
     }
-  }, [project.segments, project.editingStyle, project.authorConclusion]);
+  }, [project.segments, project.editingStyle, project.authorConclusion, selectedProvider]);
 
   // Handler para atualizar emoção de um segmento
   const handleUpdateEmotion = useCallback((segmentId: number, emotion: string) => {

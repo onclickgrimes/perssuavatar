@@ -402,6 +402,7 @@ export class VideoProjectService extends EventEmitter {
         }
     ): Promise<AnalysisResult> {
         console.log('🔍 [VideoProjectService] analyzeWithAI called with', segments.length, 'segments');
+        console.log('🔍 [VideoProjectService] options.provider:', options?.provider);
 
         const provider = options?.provider || 'gemini';
         console.log(`🤖 Using AI provider: ${provider}`);
