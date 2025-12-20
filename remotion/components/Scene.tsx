@@ -10,6 +10,7 @@ import type { Scene as SceneType, CameraMovement } from '../types/project';
 import { applyCameraEffect } from '../utils/camera-effects';
 import { TextOverlayComponent } from './TextOverlay';
 import { HighlightWordComponent } from './HighlightWord';
+import { AnimatedSvgOverlay } from './AnimatedSvgOverlay';
 import { useProjectConfig } from '../contexts/ProjectConfigContext';
 
 
@@ -74,6 +75,16 @@ export const Scene: React.FC<SceneProps> = ({
             sceneDurationFrames={sceneDurationFrames}
           />
         ))}
+        
+        {/* SVGs animados baseados nas palavras das legendas */}
+        {scene.text_overlay?.words && (
+          <AnimatedSvgOverlay
+            words={scene.text_overlay.words}
+            sceneStartTime={scene.start_time}
+            relativeFrame={relativeFrame}
+            fps={fps}
+          />
+        )}
       </AbsoluteFill>
     );
   }
@@ -119,6 +130,16 @@ export const Scene: React.FC<SceneProps> = ({
           sceneDurationFrames={sceneDurationFrames}
         />
       ))}
+      
+      {/* SVGs animados baseados nas palavras das legendas */}
+      {scene.text_overlay?.words && (
+        <AnimatedSvgOverlay
+          words={scene.text_overlay.words}
+          sceneStartTime={scene.start_time}
+          relativeFrame={relativeFrame}
+          fps={fps}
+        />
+      )}
     </AbsoluteFill>
   );
 };

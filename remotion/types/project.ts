@@ -231,6 +231,19 @@ export const SceneSchema = z.object({
 export type Scene = z.infer<typeof SceneSchema>;
 
 // ========================================
+// SVG ANIMATIONS (Palavras → SVGs)
+// ========================================
+
+export const SvgAnimationConfigSchema = z.object({
+  /** Nome do arquivo SVG (sem extensão) */
+  svgName: z.string(),
+  /** Palavras-chave que acionam este SVG (case-insensitive) */
+  keywords: z.array(z.string()),
+});
+
+export type SvgAnimationConfig = z.infer<typeof SvgAnimationConfigSchema>;
+
+// ========================================
 // PROJECT CONFIG
 // ========================================
 
@@ -262,6 +275,12 @@ export const ProjectConfigSchema = z.object({
     color: z.string().default('#FFFFFF'),
     shadowColor: z.string().default('rgba(0,0,0,0.8)'),
   }).optional(),
+  
+  /** Mapeamento de palavras para SVGs animados */
+  svgAnimations: z.array(SvgAnimationConfigSchema).optional().describe(
+    'Configura quais palavras nas legendas acionam quais SVGs. ' +
+    'Exemplo: { svgName: "btc", keywords: ["btc", "bitcoin", "cripto"] }'
+  ),
 });
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

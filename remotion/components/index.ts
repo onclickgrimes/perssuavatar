@@ -5,3 +5,4 @@
  */
 export * from './Scene';
 export * from './TextOverlay';
+export * from './AnimatedSvgOverlay';
