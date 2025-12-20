@@ -382,6 +382,10 @@ const handler = {
     getDirectory: () => 
       ipcRenderer.invoke('video-project:get-directory'),
     
+    // Buscar vídeos no Supabase por busca semântica
+    searchVideos: (query: string, limit?: number) =>
+      ipcRenderer.invoke('video-project:search-videos', query, limit),
+    
     // Listener para status do projeto
     onStatus: (callback: (data: { stage: string; message: string }) => void) => {
       const subscription = (_: any, data: { stage: string; message: string }) => callback(data);

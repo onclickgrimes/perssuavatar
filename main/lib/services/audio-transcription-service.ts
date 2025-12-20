@@ -120,8 +120,8 @@ export class AudioTranscriptionService {
       const { result, error } = await this.client.listen.prerecorded.transcribeFile(
         audioBuffer,
         {
-          model: 'nova-2',
-          language: 'pt-BR',
+          model: 'nova-3',
+          language: 'multi',
           smart_format: true,
           diarize: true,
           punctuate: true,

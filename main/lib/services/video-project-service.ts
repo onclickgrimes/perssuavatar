@@ -208,6 +208,56 @@ export class VideoProjectService extends EventEmitter {
                     // Servir da pasta renderer/public
                     const publicDir = path.join(app.getAppPath(), 'renderer', 'public');
                     filePath = path.join(publicDir, decodeURIComponent(url));
+                } else if (url.startsWith('/videos/')) {
+                    // Servir vídeos de L:\Video-Maker\{category}\{filename}
+                    // URL format: /videos/{category}/{filename}
+                    const urlParts = url.split('/').filter(p => p);
+                    if (urlParts.length >= 3) {
+                        const category = urlParts[1];
+                        const filename = urlParts.slice(2).join('/');
+                        const decodedFilename = decodeURIComponent(filename);
+                        
+                        // Lista de categorias para fallback
+                        const categories = [
+                            category, // Tentar primeiro a categoria especificada
+                            'stock',
+                            'religion',
+                            'luxury',
+                            'memes',
+                            'background-effects',
+                            'transition',
+                            'kids'
+                        ];
+                        
+                        // Remover duplicatas mantendo a ordem
+                        const uniqueCategories = [...new Set(categories)];
+                        
+                        // Procurar o arquivo em cada categoria
+                        let foundPath: string | null = null;
+                        for (const cat of uniqueCategories) {
+                            const testPath = path.join('L:\\Video-Maker', cat, decodedFilename);
+                            if (fs.existsSync(testPath)) {
+                                foundPath = testPath;
+                                if (cat !== category) {
+                                    console.log(`📂 Vídeo encontrado em categoria diferente: ${cat} (original: ${category})`);
+                                }
+                                break;
+                            }
+                        }
+                        
+                        if (foundPath) {
+                            filePath = foundPath;
+                        } else {
+                            console.warn(`⚠️ Vídeo não encontrado em nenhuma categoria: ${decodedFilename}`);
+                            res.writeHead(404);
+                            res.end(`Video not found in any category: ${decodedFilename}`);
+                            return;
+                        }
+                    } else {
+                        res.writeHead(400);
+                        res.end('Invalid video URL format. Expected: /videos/{category}/{filename}');
+                        return;
+                    }
                 } else {
                     // Servir da pasta de projetos
                     filePath = path.join(this.projectsDir, decodeURIComponent(url));
@@ -244,6 +294,8 @@ export class VideoProjectService extends EventEmitter {
                         '.flac': 'audio/flac',
                         // Video
                         '.mp4': 'video/mp4',
+                        '.webm': 'video/webm',
+                        '.mov': 'video/quicktime',
                         // Fontes
                         '.otf': 'font/otf',
                         '.ttf': 'font/ttf',
@@ -621,7 +673,7 @@ export class VideoProjectService extends EventEmitter {
 
 1. **emotion**: A emoção principal do segmento (surpresa, empolgação, nostalgia, seriedade, alegria, tristeza, reflexão, urgência, curiosidade, neutro)
 
-2. **imagePrompt**: Um prompt detalhado em inglês para gerar uma imagem que represente visualmente o segmento. Seja específico sobre estilo, composição, iluminação e cores.
+2. **imagePrompt**: Um texto detalhado em inglês que represente visualmente o segmento. Seja específico sobre estilo, composição, iluminação e cores.
 
 3. **assetType**: O tipo de asset recomendado:
    - "image_flux" para cenas estáticas ou conceituais

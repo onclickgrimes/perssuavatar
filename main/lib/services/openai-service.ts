@@ -6,7 +6,7 @@ dotenv.config();
 
 export class OpenAIService {
     private openai: OpenAI;
-    private model: string = "gpt-4o-mini";
+    private model: string = "gpt-5-nano-2025-08-07";
 
     constructor() {
         const apiKey = process.env.OPENAI_API_KEY || '';
@@ -77,7 +77,7 @@ export class OpenAIService {
             const response = await this.openai.chat.completions.create({
                 model: this.model,
                 messages: messages,
-                temperature: 0.3,
+                temperature: 0.7,
                 response_format: { type: "json_object" }
             });
 

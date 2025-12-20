@@ -426,6 +426,7 @@ export default function VideoStudioPage() {
           <PromptsStep
             segments={project.segments}
             onUpdatePrompt={handleUpdatePrompt}
+            onUpdateImage={handleUpdateImage}
             onContinue={() => setCurrentStep('images')}
             onBack={() => setCurrentStep('keyframes')}
           />
@@ -843,18 +844,57 @@ function PromptsStep({
   onUpdatePrompt,
   onContinue,
   onBack,
+  onUpdateImage,
 }: {
   segments: TranscriptionSegment[];
   onUpdatePrompt: (id: number, prompt: string) => void;
   onContinue: () => void;
   onBack: () => void;
+  onUpdateImage: (id: number, imageUrl: string) => void;
 }) {
+  const [searching, setSearching] = React.useState(false);
+  const [searchResults, setSearchResults] = React.useState<Record<number, any[]>>({});
+
+  const handleSearchVideos = async () => {
+    setSearching(true);
+    const results: Record<number, any[]> = {};
+
+    try {
+      // Para cada seguimento, buscar vídeos relevantes
+      for (const segment of segments) {
+        const query = segment.imagePrompt || `${segment.emotion} scene depicting: ${segment.text}`;
+        console.log(`🔍 Buscando vídeos para segmento ${segment.id} com query: "${query}"`);
+
+        const response = await window.electron.videoProject.searchVideos(query, 5);
+
+        if (response.success && response.videos.length > 0) {
+          results[segment.id] = response.videos;
+          console.log(`✅ Encontrados ${response.videos.length} vídeos para segmento ${segment.id}`);
+          
+          // Auto-selecionar o primeiro vídeo (mais relevante)
+          const topVideo = response.videos[0];
+          onUpdateImage(segment.id, topVideo.filePath);
+        } else {
+          console.warn(`⚠️ Nenhum vídeo encontrado para segmento ${segment.id}`);
+          results[segment.id] = [];
+        }
+      }
+
+      setSearchResults(results);
+    } catch (error) {
+      console.error('❌ Erro ao buscar vídeos:', error);
+    } finally {
+      setSearching(false);
+      onContinue(); // Avançar para próxima etapa após busca
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Prompts de Imagem</h2>
-          <p className="text-white/60">Edite os prompts para gerar as imagens de cada cena</p>
+          <h2 className="text-2xl font-bold text-white">Prompts de Busca</h2>
+          <p className="text-white/60">Edite os prompts para buscar vídeos relevantes no banco de dados</p>
         </div>
         <div className="flex gap-3">
           <button
@@ -864,10 +904,15 @@ function PromptsStep({
             ← Voltar
           </button>
           <button
-            onClick={onContinue}
-            className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all"
+            onClick={handleSearchVideos}
+            disabled={searching}
+            className={`px-6 py-2 rounded-lg font-medium transition-all ${
+              searching
+                ? 'bg-white/10 text-white/40 cursor-not-allowed'
+                : 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white'
+            }`}
           >
-            Gerar Imagens →
+            {searching ? '🔍 Buscando Vídeos...' : '🔍 Buscar Vídeos →'}
           </button>
         </div>
       </div>
@@ -885,17 +930,21 @@ function PromptsStep({
               <span className="px-2 py-1 bg-white/10 rounded text-xs text-white/60">
                 {segment.emotion}
               </span>
+              {searchResults[segment.id] && (
+                <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs">
+                  ✓ {searchResults[segment.id].length} vídeos encontrados
+                </span>
+              )}
             </div>
             <p className="text-white/80 text-sm mb-4 italic">"{segment.text}"</p>
             <textarea
               value={segment.imagePrompt || `${segment.emotion} scene depicting: ${segment.text}`}
               onChange={(e) => onUpdatePrompt(segment.id, e.target.value)}
               className="w-full h-24 p-4 bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-none"
-              placeholder="Descreva a imagem que você quer..."
+              placeholder="Descreva o tipo de vídeo que você quer buscar..."
             />
           </div>
-        ))}
-      </div>
+        ))}</div>
     </div>
   );
 }

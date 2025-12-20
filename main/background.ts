@@ -1121,6 +1121,53 @@ ipcMain.handle('video-project:get-directory', async () => {
   return { path: videoProjectService.getProjectsDirectory() };
 });
 
+// Handler para busca semântica de vídeos no Supabase
+ipcMain.handle('video-project:search-videos', async (event, query: string, limit: number = 5) => {
+  try {
+    console.log(`🔍 [VideoProject] Buscando vídeos com query: "${query}"`);
+    
+    // Importa o serviço de busca
+    const { getVideoSearchService } = require('./lib/services/video-search-service');
+    const searchService = getVideoSearchService();
+    
+    // Realiza busca semântica
+    const results = await searchService.semanticSearch(query, limit, 0.5);
+    
+    console.log(`✅ [VideoProject] Encontrados ${results.length} vídeos relevantes`);
+    
+    return { 
+      success: true, 
+      videos: results.map(v => {
+        // Extrair apenas o nome do arquivo do file_path
+        const filename = path.basename(v.file_path);
+        const category = v.category || 'stock';
+        
+        // Construir URL HTTP: /videos/{category}/{filename}
+        const httpUrl = `http://localhost:9999/videos/${category}/${filename}`;
+        
+        console.log(`📹 Vídeo: ${filename} (${category}) -> ${httpUrl}`);
+        
+        return {
+          id: v.id,
+          filename: v.name,
+          filePath: httpUrl, // URL HTTP ao invés de file path
+          category: v.category,
+          emotion: v.emotion,
+          description: v.description,
+          visualTags: v.visual,
+          similarity: v.similarity,
+          aspectRatio: v.aspect_ratio,
+          duration: v.duration,
+        };
+      })
+    };
+  } catch (error: any) {
+    console.error('❌ [VideoProject] Search error:', error);
+    return { success: false, error: error.message, videos: [] };
+  }
+});
+
+
 
 // Register global shortcut for transcription window
 app.whenReady().then(() => {
