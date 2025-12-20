@@ -20,6 +20,7 @@ const DEFAULT_SVG_MAPPINGS = [
   { svgName: 'after-effects', keywords: ['after-effects', 'after effects', 'aftereffects'] },
   { svgName: 'filmora', keywords: ['filmora'] },
   { svgName: 'capcut', keywords: ['capcut'] },
+  { svgName: 'remotion', keywords: ['remotion'] },
 ];
 
 interface Word {
@@ -57,6 +58,7 @@ export const AnimatedSvgOverlay: React.FC<AnimatedSvgOverlayProps> = ({
 
   // Usar configuração customizada ou fallback para padrão
   const svgMappings = projectConfig.svgAnimations || DEFAULT_SVG_MAPPINGS;
+  const baseUrl = projectConfig.assetsBaseUrl || 'http://localhost:9999';
 
   // Encontrar SVGs a serem animados baseado nas palavras
   const svgAnimations = useMemo<SvgAnimation[]>(() => {
@@ -97,12 +99,6 @@ export const AnimatedSvgOverlay: React.FC<AnimatedSvgOverlayProps> = ({
   return (
     <AbsoluteFill style={{ pointerEvents: 'none', zIndex: 90 }}>
       {svgAnimations.map((animation, index) => {
-        // Verificar se esta animação deve estar visível no frame atual
-        const isActive = currentTimeInSeconds >= animation.startTime && 
-                        currentTimeInSeconds <= animation.endTime;
-        
-        if (!isActive) return null;
-        
         // Usar índice absoluto (index) para posição horizontal e vertical fixa
         const fixedIndex = index % 5; // Limitar a 5 posições para não sair muito da tela
         
@@ -132,6 +128,8 @@ export const AnimatedSvgOverlay: React.FC<AnimatedSvgOverlayProps> = ({
             endTime={animation.endTime}
             fixedIndex={fixedIndex}
             heightOffset={heightOffset}
+            sceneStartTime={sceneStartTime}
+            baseUrl={baseUrl}
           />
         );
       })}
@@ -150,6 +148,8 @@ interface AnimatedSvgProps {
   endTime: number;
   fixedIndex: number; // Índice fixo para posicionamento (não muda durante animação)
   heightOffset: number; // Offset de altura fixo (SVG do meio sobe mais quando há 3)
+  sceneStartTime: number;
+  baseUrl: string;
 }
 
 const AnimatedSvg: React.FC<AnimatedSvgProps> = ({
@@ -159,6 +159,8 @@ const AnimatedSvg: React.FC<AnimatedSvgProps> = ({
   endTime,
   fixedIndex,
   heightOffset,
+  sceneStartTime,
+  baseUrl,
 }) => {
   const duration = endTime - startTime; // Deve ser 2 segundos
   const progress = (currentTime - startTime) / duration; // 0 a 1
@@ -247,30 +249,37 @@ const AnimatedSvg: React.FC<AnimatedSvgProps> = ({
   // Calcular offset horizontal para cada SVG (usando fixedIndex para manter posição fixa)
   const horizontalOffset = fixedIndex * horizontalSpacing;
   
-  // Obter FPS do vídeo para calcular frames corretamente
   const { fps } = useVideoConfig();
   const durationInFrames = Math.floor(duration * fps);
   const risePhaseFrames = Math.floor(durationInFrames * phaseRiseEnd);
   const rotatePhaseFrames = Math.floor(durationInFrames * phaseRotateEnd);
   const fallPhaseFrames = durationInFrames - rotatePhaseFrames;
+
+  // Calcular o frame inicial relativo à cena
+  // frame 0 no Audio corresponde ao início do componente.
+  // Como o componente é montado sempre (removemos a verificação isActive), 
+  // precisamos usar 'from' no Sequence para indicar quando o áudio deve tocar relativo à cena.
+  // currentTime = sceneStartTime + frame/fps
+  // startTimeInScene = startTime - sceneStartTime
+  const startFrameInScene = Math.round((startTime - sceneStartTime) * fps);
   
   return (
     <>
       {/* Som de entrada (vento) - toca durante a fase de subida */}
-      <Sequence from={0} durationInFrames={risePhaseFrames}>
+      <Sequence from={startFrameInScene} durationInFrames={risePhaseFrames}>
         <Audio
-          src="http://localhost:9999/sounds/vento-rapido.mp3"
+          src={`${baseUrl}/sounds/vento-rapido.mp3`}
           volume={0.8}
         />
       </Sequence>
       
       {/* Som de saída (vento) - toca durante a fase de descida */}
-      <Sequence from={rotatePhaseFrames} durationInFrames={fallPhaseFrames}>
+      {/* <Sequence from={startFrameInScene + rotatePhaseFrames} durationInFrames={fallPhaseFrames}>
         <Audio
           src="http://localhost:9999/sounds/vento-rapido.mp3"
           volume={0.8}
         />
-      </Sequence>
+      </Sequence> */}
       
       <div
         style={{
@@ -283,7 +292,7 @@ const AnimatedSvg: React.FC<AnimatedSvgProps> = ({
         }}
       >
         <Img
-          src={`http://localhost:9999/svgs/${svgName}.svg`}
+          src={`${baseUrl}/svgs/${svgName}.svg`}
           style={{
             width: '120px',
             height: '120px',

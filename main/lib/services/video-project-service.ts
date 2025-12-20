@@ -99,6 +99,7 @@ export interface RemotionProject {
             src: string;
             volume?: number;
         };
+        assetsBaseUrl?: string;
     };
     scenes: Array<{
         id: number;
@@ -757,6 +758,7 @@ Responda APENAS com um array JSON válido no formato:
                 fps: 30,
                 backgroundColor: '#0a0a0a',
                 subtitleMode: project.subtitleMode, // ✅ Modo de legenda
+                assetsBaseUrl: `http://localhost:${this.imageServerPort}`, // ✅ URL base dinâmica
                 // Incluir áudio da narração/transcrição
                 ...(project.audioPath && {
                     backgroundMusic: {

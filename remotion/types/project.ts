@@ -281,6 +281,9 @@ export const ProjectConfigSchema = z.object({
     'Configura quais palavras nas legendas acionam quais SVGs. ' +
     'Exemplo: { svgName: "btc", keywords: ["btc", "bitcoin", "cripto"] }'
   ),
+
+  /** Base URL para assets servidos localmente (ex: http://localhost:9999) */
+  assetsBaseUrl: z.string().optional(),
 });
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
