@@ -16,7 +16,9 @@ remotion/
 │
 ├── components/                 # Componentes reutilizáveis
 │   ├── Scene.tsx               # Renderiza uma cena
-│   └── TextOverlay.tsx         # Overlay de texto animado
+│   ├── TextOverlay.tsx         # Overlay de texto animado
+│   ├── HighlightWord.tsx       # Palavras destacadas com animações
+│   └── AnimatedSvgOverlay.tsx  # 🎨 SVGs animados baseados em legendas
 │
 ├── types/                      # Definições TypeScript
 │   └── project.ts              # Schema do projeto JSON
@@ -25,8 +27,13 @@ remotion/
 │   ├── camera-effects.ts       # Efeitos de câmera
 │   └── transitions.ts          # Transições entre cenas
 │
+├── docs/                       # Documentação
+│   ├── ANIMATED_SVGS.md        # 🎨 Documentação dos SVGs animados
+│   └── README_TRAIL_PRINTING.md
+│
 └── examples/                   # Exemplos de projetos
-    └── raspadinhas-project.json
+    ├── raspadinhas-project.json
+    └── svg-animation-test.json # 🎨 Teste de SVGs animados
 ```
 
 ## 🚀 Comandos
@@ -159,6 +166,47 @@ A IA deve gerar um JSON seguindo este schema:
 | `slide_up` | Desliza de baixo |
 | `pop` | Efeito pop com spring |
 | `bounce` | Bounce com spring |
+
+## 🎨 SVGs Animados nas Legendas
+
+**Nova funcionalidade!** O sistema detecta automaticamente palavras nas legendas que correspondem a nomes de SVGs e os anima na tela.
+
+### SVGs Disponíveis
+
+Quando estas palavras aparecem nas legendas, os SVGs correspondentes são animados:
+
+| Palavra | SVG | Animação |
+|---------|-----|----------|
+| brave | `/svgs/brave.svg` | ⬆️ Sobe de fora + 🔄 Gira horizontal 360° + ⬇️ Desce rápido (2s) |
+| btc | `/svgs/btc.svg` | ⬆️ Sobe de fora + 🔄 Gira horizontal 360° + ⬇️ Desce rápido (2s) |
+| chrome | `/svgs/chrome.svg` | ⬆️ Sobe de fora + 🔄 Gira horizontal 360° + ⬇️ Desce rápido (2s) |
+| facebook | `/svgs/facebook.svg` | ⬆️ Sobe de fora + 🔄 Gira horizontal 360° + ⬇️ Desce rápido (2s) |
+| nvidia | `/svgs/nvidia.svg` | ⬆️ Sobe de fora + 🔄 Gira horizontal 360° + ⬇️ Desce rápido (2s) |
+
+### Como Funciona
+
+1. **Automático**: Não requer configuração adicional
+2. **Detecção**: Case-insensitive, remove pontuação
+3. **Timing**: Animação começa quando a palavra é falada
+4. **Duração**: 2 segundos (0.8s subir de fora da tela + 0.8s girar horizontal + 0.4s descer rápido)
+
+### Exemplo de Transcrição
+
+```json
+{
+  "text_overlay": {
+    "text": "Vamos falar sobre Chrome e BTC",
+    "words": [
+      { "word": "Chrome", "start": 1.5, "end": 2.0, ... },
+      { "word": "BTC", "start": 3.0, "end": 3.5, ... }
+    ]
+  }
+}
+```
+
+**Resultado**: Chrome SVG anima aos 1.5s, BTC SVG anima aos 3.0s
+
+📖 **Documentação completa**: Ver [`ANIMATED_SVGS_README.md`](./ANIMATED_SVGS_README.md) e [`docs/ANIMATED_SVGS.md`](./docs/ANIMATED_SVGS.md)
 
 ## 💻 Uso no Electron (Main Process)
 

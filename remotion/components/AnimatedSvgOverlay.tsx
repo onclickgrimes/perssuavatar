@@ -99,6 +99,26 @@ export const AnimatedSvgOverlay: React.FC<AnimatedSvgOverlayProps> = ({
                         currentTimeInSeconds <= animation.endTime;
         
         if (!isActive) return null;
+        
+        // Usar índice absoluto (index) para posição horizontal e vertical fixa
+        const fixedIndex = index % 5; // Limitar a 5 posições para não sair muito da tela
+        
+        // Calcular quais SVGs estarão ativos no momento em que ESTE SVG inicia
+        const simultaneousAnimations = svgAnimations.filter(a => 
+          a.startTime <= animation.startTime && a.endTime > animation.startTime
+        );
+        
+        // Se há exatamente 3 SVGs simultâneos no início desta animação,
+        // o do MEIO VISUALMENTE (fixedIndex === 1) recebe offset para subir mais alto
+        let heightOffset = 0;
+        if (simultaneousAnimations.length === 3 && fixedIndex === 1) {
+          heightOffset = -40; // SVG do meio visualmente sobe 40px mais alto
+        }
+        
+        // Debug
+        if (currentTimeInSeconds === animation.startTime) {
+          console.log(`SVG ${index}: fixedIndex=${fixedIndex}, heightOffset=${heightOffset}, simultaneous=${simultaneousAnimations.length}`);
+        }
 
         return (
           <AnimatedSvg
@@ -107,7 +127,8 @@ export const AnimatedSvgOverlay: React.FC<AnimatedSvgOverlayProps> = ({
             currentTime={currentTimeInSeconds}
             startTime={animation.startTime}
             endTime={animation.endTime}
-            index={index}
+            fixedIndex={fixedIndex}
+            heightOffset={heightOffset}
           />
         );
       })}
@@ -124,7 +145,8 @@ interface AnimatedSvgProps {
   currentTime: number;
   startTime: number;
   endTime: number;
-  index: number; // Para posicionamento variado
+  fixedIndex: number; // Índice fixo para posicionamento (não muda durante animação)
+  heightOffset: number; // Offset de altura fixo (SVG do meio sobe mais quando há 3)
 }
 
 const AnimatedSvg: React.FC<AnimatedSvgProps> = ({
@@ -132,7 +154,8 @@ const AnimatedSvg: React.FC<AnimatedSvgProps> = ({
   currentTime,
   startTime,
   endTime,
-  index,
+  fixedIndex,
+  heightOffset,
 }) => {
   const duration = endTime - startTime; // Deve ser 2 segundos
   const progress = (currentTime - startTime) / duration; // 0 a 1
@@ -207,24 +230,27 @@ const AnimatedSvg: React.FC<AnimatedSvgProps> = ({
   // ========================================
   // POSICIONAMENTO
   // ========================================
-  // Variar posição horizontal baseado no índice para evitar sobreposição
-  const positions = [
-    { left: '20%' },
-    { left: '40%' },
-    { left: '60%' },
-    { left: '80%' },
-    { left: '50%' },
-  ];
+  // Todos os SVGs aparecem à esquerda (15% da largura)
+  // Com espaçamento vertical de 80px entre eles e horizontal de 120px (largura do SVG)
+  const baseVerticalPosition = 30; // Posição vertical base em %
+  const verticalSpacing = 80; // Espaçamento em pixels entre SVGs
+  const horizontalSpacing = 120; // Espaçamento horizontal em pixels (largura do SVG)
   
-  const position = positions[index % positions.length];
+  // Calcular offset vertical
+  // Se este SVG não tem simultaneousAnimations ou não faz parte de um grupo de 3,
+  // usa o espaçamento vertical normal. Caso contrário, todos ficam na mesma altura base.
+  const verticalOffset = heightOffset; // heightOffset já contém -40 para o do meio quando há 3
+  
+  // Calcular offset horizontal para cada SVG (usando fixedIndex para manter posição fixa)
+  const horizontalOffset = fixedIndex * horizontalSpacing;
   
   return (
     <div
       style={{
         position: 'absolute',
-        top: '30%', // Posição vertical base
-        ...position,
-        transform: `translateX(-50%) translateY(${translateY}px) rotateY(${rotationY}deg) scale(${scale})`,
+        top: `${baseVerticalPosition}%`, // Posição vertical base
+        left: `calc(15% + ${horizontalOffset}px)`, // Posição à esquerda com offset
+        transform: `translateX(-50%) translateY(${translateY + verticalOffset}px) rotateY(${rotationY}deg) scale(${scale})`,
         opacity,
         transition: 'none', // Sem transições CSS, apenas interpolação do Remotion
       }}
