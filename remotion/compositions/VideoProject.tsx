@@ -15,6 +15,7 @@ import {
   useCurrentFrame, 
   useVideoConfig,
   interpolate,
+  Html5Audio,
 } from 'remotion';
 import { z } from 'zod';
 import { 
@@ -117,7 +118,7 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
         
         {/* Áudio de fundo (música) */}
         {config.backgroundMusic?.src && (
-          <Audio
+          <Html5Audio
             src={config.backgroundMusic.src}
             volume={config.backgroundMusic.volume || 0.3}
           />

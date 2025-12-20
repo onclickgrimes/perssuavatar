@@ -1017,13 +1017,20 @@ function ImagesStep({
   };
 
   const allApproved = segments.every(seg => approvedSegments.has(seg.id));
+  const segmentsWithMedia = segments.filter(seg => !!seg.imageUrl);
+  
+  // Handler para aprovar todas as mídias de uma vez
+  const handleApproveAll = () => {
+    const allSegmentIds = segments.map(seg => seg.id);
+    setApprovedSegments(new Set(allSegmentIds));
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">Imagens e Vídeos das Cenas</h2>
-          <p className="text-white/60">Aprove, refaça ou faça upload das suas próprias imagens ou vídeos</p>
+          <p className="text-white/60">Aprove, refaça ou faça upload das suas próprias imagens ou vídeos (opcional)</p>
         </div>
         <div className="flex gap-3">
           <button
@@ -1032,14 +1039,18 @@ function ImagesStep({
           >
             ← Voltar
           </button>
+          {/* Botão de aprovar todas */}
+          {segmentsWithMedia.length > 0 && !allApproved && (
+            <button
+              onClick={handleApproveAll}
+              className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-all font-medium flex items-center gap-2"
+            >
+              ✓ Aprovar Todas
+            </button>
+          )}
           <button
             onClick={onContinue}
-            disabled={!allApproved}
-            className={`px-6 py-2 rounded-lg font-medium transition-all ${
-              allApproved
-                ? 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white'
-                : 'bg-white/10 text-white/40 cursor-not-allowed'
-            }`}
+            className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all"
           >
             Renderizar Vídeo →
           </button>
@@ -1054,9 +1065,14 @@ function ImagesStep({
             {approvedSegments.size} de {segments.length} aprovadas
           </span>
         </div>
-        {!allApproved && (
+        {segmentsWithMedia.length === 0 && (
+          <span className="text-blue-400 text-sm">
+            ℹ️ Você pode renderizar sem mídias (apenas texto/legendas)
+          </span>
+        )}
+        {segmentsWithMedia.length > 0 && !allApproved && (
           <span className="text-orange-400 text-sm">
-            ⚠️ Aprove todas as imagens para continuar
+            ⚠️ Algumas mídias ainda não foram aprovadas
           </span>
         )}
       </div>

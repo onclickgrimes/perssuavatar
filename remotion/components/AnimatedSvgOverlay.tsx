@@ -17,6 +17,9 @@ const DEFAULT_SVG_MAPPINGS = [
   { svgName: 'nvidia', keywords: ['nvidia'] },
   { svgName: 'x', keywords: ['x', 'twitter'] },
   { svgName: 'tiktok', keywords: ['tiktok'] },
+  { svgName: 'after-effects', keywords: ['after-effects', 'after effects'] },
+  { svgName: 'filmora', keywords: ['filmora'] },
+  { svgName: 'capcut', keywords: ['capcut'] },
 ];
 
 interface Word {

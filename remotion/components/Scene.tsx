@@ -5,7 +5,7 @@
  * Suporta diferentes tipos de assets e aplica efeitos de câmera.
  */
 import React from 'react';
-import { AbsoluteFill, Img, Video, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Html5Video, Img, Video, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { Scene as SceneType, CameraMovement } from '../types/project';
 import { applyCameraEffect } from '../utils/camera-effects';
 import { TextOverlayComponent } from './TextOverlay';
@@ -250,7 +250,7 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
   if (asset_url) {
     if (isVideoUrl(asset_url)) {
       // É um vídeo - renderizar com componente Video
-      return <Video src={asset_url} style={fillStyles} />;
+      return <Html5Video src={asset_url} style={fillStyles} />;
     }
   }
   
@@ -332,11 +332,11 @@ const PlaceholderImage: React.FC<{ description: string }> = ({ description }) =>
         textAlign: 'center',
       }}
     >
-      <div style={{ fontSize: 48, marginBottom: 20 }}>🖼️</div>
-      <div style={{ fontSize: 18, opacity: 0.7 }}>Imagem Placeholder</div>
-      <div style={{ fontSize: 14, opacity: 0.5, marginTop: 10, maxWidth: 600 }}>
+      {/* <div style={{ fontSize: 48, marginBottom: 20 }}>🖼️</div> */}
+      {/* <div style={{ fontSize: 18, opacity: 0.7 }}>Imagem Placeholder</div> */}
+      {/* <div style={{ fontSize: 14, opacity: 0.5, marginTop: 10, maxWidth: 600 }}>
         {description}
-      </div>
+      </div> */}
     </div>
   );
 };
