@@ -102,3 +102,4 @@ desktop.ini
 # Arquivos de configuração local
 config.local.json
 settings.local.json
+.embeddings-cache.json
