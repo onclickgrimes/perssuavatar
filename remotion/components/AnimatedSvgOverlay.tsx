@@ -5,7 +5,7 @@
  * e os anima suavemente: sobem, giram por 2 segundos e descem
  */
 import React, { useMemo } from 'react';
-import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig, Img } from 'remotion';
+import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig, Img, Audio, Sequence } from 'remotion';
 import { useProjectConfig } from '../contexts/ProjectConfigContext';
 
 // Lista padrão de SVGs (usado se não houver configuração customizada)
@@ -17,7 +17,7 @@ const DEFAULT_SVG_MAPPINGS = [
   { svgName: 'nvidia', keywords: ['nvidia'] },
   { svgName: 'x', keywords: ['x', 'twitter'] },
   { svgName: 'tiktok', keywords: ['tiktok'] },
-  { svgName: 'after-effects', keywords: ['after-effects', 'after effects'] },
+  { svgName: 'after-effects', keywords: ['after-effects', 'after effects', 'aftereffects'] },
   { svgName: 'filmora', keywords: ['filmora'] },
   { svgName: 'capcut', keywords: ['capcut'] },
 ];
@@ -247,27 +247,52 @@ const AnimatedSvg: React.FC<AnimatedSvgProps> = ({
   // Calcular offset horizontal para cada SVG (usando fixedIndex para manter posição fixa)
   const horizontalOffset = fixedIndex * horizontalSpacing;
   
+  // Obter FPS do vídeo para calcular frames corretamente
+  const { fps } = useVideoConfig();
+  const durationInFrames = Math.floor(duration * fps);
+  const risePhaseFrames = Math.floor(durationInFrames * phaseRiseEnd);
+  const rotatePhaseFrames = Math.floor(durationInFrames * phaseRotateEnd);
+  const fallPhaseFrames = durationInFrames - rotatePhaseFrames;
+  
   return (
-    <div
-      style={{
-        position: 'absolute',
-        top: `${baseVerticalPosition}%`, // Posição vertical base
-        left: `calc(15% + ${horizontalOffset}px)`, // Posição à esquerda com offset
-        transform: `translateX(-50%) translateY(${translateY + verticalOffset}px) rotateY(${rotationY}deg) scale(${scale})`,
-        opacity,
-        transition: 'none', // Sem transições CSS, apenas interpolação do Remotion
-      }}
-    >
-      <Img
-        src={`/svgs/${svgName}.svg`}
+    <>
+      {/* Som de entrada (vento) - toca durante a fase de subida */}
+      <Sequence from={0} durationInFrames={risePhaseFrames}>
+        <Audio
+          src="http://localhost:9999/sounds/vento-rapido.mp3"
+          volume={0.8}
+        />
+      </Sequence>
+      
+      {/* Som de saída (vento) - toca durante a fase de descida */}
+      <Sequence from={rotatePhaseFrames} durationInFrames={fallPhaseFrames}>
+        <Audio
+          src="http://localhost:9999/sounds/vento-rapido.mp3"
+          volume={0.8}
+        />
+      </Sequence>
+      
+      <div
         style={{
-          width: '120px',
-          height: '120px',
-          objectFit: 'contain',
-          filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))',
+          position: 'absolute',
+          top: `${baseVerticalPosition}%`, // Posição vertical base
+          left: `calc(15% + ${horizontalOffset}px)`, // Posição à esquerda com offset
+          transform: `translateX(-50%) translateY(${translateY + verticalOffset}px) rotateY(${rotationY}deg) scale(${scale})`,
+          opacity,
+          transition: 'none', // Sem transições CSS, apenas interpolação do Remotion
         }}
-      />
-    </div>
+      >
+        <Img
+          src={`http://localhost:9999/svgs/${svgName}.svg`}
+          style={{
+            width: '120px',
+            height: '120px',
+            objectFit: 'contain',
+            filter: 'drop-shadow(0 4px 8px rgba(0, 0, 0, 0.3))',
+          }}
+        />
+      </div>
+    </>
   );
 };
 

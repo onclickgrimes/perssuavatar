@@ -200,7 +200,17 @@ export class VideoProjectService extends EventEmitter {
         return new Promise((resolve, reject) => {
             this.imageServer = http.createServer((req, res) => {
                 const url = req.url || '/';
-                const filePath = path.join(this.projectsDir, decodeURIComponent(url));
+                
+                // Determinar o caminho base correto
+                let filePath: string;
+                if (url.startsWith('/svgs/') || url.startsWith('/sounds/') || url.startsWith('/fonts/')) {
+                    // Servir da pasta renderer/public
+                    const publicDir = path.join(app.getAppPath(), 'renderer', 'public');
+                    filePath = path.join(publicDir, decodeURIComponent(url));
+                } else {
+                    // Servir da pasta de projetos
+                    filePath = path.join(this.projectsDir, decodeURIComponent(url));
+                }
 
                 // CORS headers
                 res.setHeader('Access-Control-Allow-Origin', '*');
@@ -224,6 +234,7 @@ export class VideoProjectService extends EventEmitter {
                         '.png': 'image/png',
                         '.gif': 'image/gif',
                         '.webp': 'image/webp',
+                        '.svg': 'image/svg+xml',
                         // Áudio
                         '.mp3': 'audio/mpeg',
                         '.wav': 'audio/wav',
@@ -232,6 +243,11 @@ export class VideoProjectService extends EventEmitter {
                         '.flac': 'audio/flac',
                         // Video
                         '.mp4': 'video/mp4',
+                        // Fontes
+                        '.otf': 'font/otf',
+                        '.ttf': 'font/ttf',
+                        '.woff': 'font/woff',
+                        '.woff2': 'font/woff2',
                     };
                     const contentType = mimeTypes[ext] || 'application/octet-stream';
 

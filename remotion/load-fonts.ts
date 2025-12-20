@@ -1,12 +1,10 @@
-import { staticFile } from "remotion";
-
 const fontName = "Pricedown";
-const fontPath = "fonts/Pricedown-Bl.otf";
+const fontUrl = "http://localhost:9999/fonts/Pricedown-Bl.otf";
 
 if (typeof window !== "undefined" && "FontFace" in window) {
   const font = new FontFace(
     fontName,
-    `url('${staticFile(fontPath)}') format('opentype')`
+    `url('${fontUrl}') format('opentype')`
   );
 
   font
