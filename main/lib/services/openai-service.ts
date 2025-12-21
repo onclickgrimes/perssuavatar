@@ -77,7 +77,6 @@ export class OpenAIService {
             const response = await this.openai.chat.completions.create({
                 model: this.model,
                 messages: messages,
-                temperature: 0.7,
                 response_format: { type: "json_object" }
             });
 
