@@ -144,7 +144,7 @@ class EmbeddingGenerator {
       // 1. Criar o super texto
       const superText = this.createSuperText(video);
       console.log(`  → Texto gerado (${superText.length} caracteres)`);
-      console.log(superText);
+      // console.log(superText);
 
       // 2. Gerar embedding
       const embedding = await this.generateEmbedding(superText);
