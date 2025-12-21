@@ -36,7 +36,7 @@ export class OpenAIService {
     public async analyzeImage(base64Image: string, userContext?: string): Promise<string> {
         try {
             console.log("OpenAIService: Analisando imagem...");
-            const prompt = userContext 
+            const prompt = userContext
                 ? `${userContext}`
                 : "O usuário pediu para olhar a tela. O que você vê? Identifique apps, textos ou erros.";
 
@@ -73,16 +73,19 @@ export class OpenAIService {
     public async getChatVideoAnalysis(messages: any[]): Promise<any> {
         try {
             console.log('🧠 OpenAI VideoAnalysis: Requesting JSON response...');
-            
+
             const response = await this.openai.chat.completions.create({
-                model: this.model,
                 messages: messages,
+                //'reasoning_effort' does not support 'none' with this model. Supported values are: 'minimal', 'low', 'medium', and 'high'.
+                // model: "gpt-4.1-nano-2025-04-14"
+                model: this.model,
+                reasoning_effort: "low",
                 response_format: { type: "json_object" }
             });
 
             const content = response.choices[0].message.content || '{}';
             console.log(`🧠 OpenAI VideoAnalysis Response (${content.length} chars)`);
-            
+
             return JSON.parse(content);
         } catch (error) {
             console.error("OpenAIService getChatVideoAnalysis Error:", error);
