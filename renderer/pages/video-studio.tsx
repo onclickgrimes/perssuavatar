@@ -858,6 +858,7 @@ function PromptsStep({
   const handleSearchVideos = async () => {
     setSearching(true);
     const results: Record<number, any[]> = {};
+    const usedVideos = new Set<string>(); // Rastrear vídeos já usados
 
     try {
       // Para cada seguimento, buscar vídeos relevantes
@@ -865,15 +866,30 @@ function PromptsStep({
         const query = segment.imagePrompt || `${segment.emotion} scene depicting: ${segment.text}`;
         console.log(`🔍 Buscando vídeos para segmento ${segment.id} com query: "${query}"`);
 
-        const response = await window.electron.videoProject.searchVideos(query, 5);
+        const response = await window.electron.videoProject.searchVideos(query, 10);
 
         if (response.success && response.videos.length > 0) {
-          results[segment.id] = response.videos;
-          console.log(`✅ Encontrados ${response.videos.length} vídeos para segmento ${segment.id}`);
-          
-          // Auto-selecionar o primeiro vídeo (mais relevante)
-          const topVideo = response.videos[0];
-          onUpdateImage(segment.id, topVideo.filePath);
+          // Filtrar vídeos já usados
+          const availableVideos = response.videos.filter(
+            (video: any) => !usedVideos.has(video.filename)
+          );
+
+          if (availableVideos.length > 0) {
+            results[segment.id] = availableVideos;
+            console.log(`✅ Encontrados ${availableVideos.length} vídeos únicos para segmento ${segment.id}`);
+            
+            // Auto-selecionar o primeiro vídeo disponível (não usado)
+            const selectedVideo = availableVideos[0];
+            usedVideos.add(selectedVideo.filename); // Marcar como usado
+            onUpdateImage(segment.id, selectedVideo.filePath);
+            console.log(`📹 Selecionado: ${selectedVideo.filename}`);
+          } else {
+            // Fallback: usar vídeo repetido se necessário
+            console.warn(`⚠️ Todos os vídeos já usados, permitindo repetição`);
+            results[segment.id] = response.videos;
+            const topVideo = response.videos[0];
+            onUpdateImage(segment.id, topVideo.filePath);
+          }
         } else {
           console.warn(`⚠️ Nenhum vídeo encontrado para segmento ${segment.id}`);
           results[segment.id] = [];

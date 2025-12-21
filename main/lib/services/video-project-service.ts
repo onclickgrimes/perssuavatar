@@ -191,6 +191,22 @@ export class VideoProjectService extends EventEmitter {
     }
 
     /**
+     * Busca arquivo com case-insensitive (para .MP4 vs .mp4)
+     */
+    private findFileCaseInsensitive(dirPath: string, filename: string): string | null {
+        try {
+            if (!fs.existsSync(dirPath)) return null;
+
+            const files = fs.readdirSync(dirPath);
+            const matchedFile = files.find(f => f.toLowerCase() === filename.toLowerCase());
+
+            return matchedFile ? path.join(dirPath, matchedFile) : null;
+        } catch (error) {
+            return null;
+        }
+    }
+
+    /**
      * Inicia servidor HTTP local para servir imagens durante renderização
      */
     private async startImageServer(): Promise<void> {
@@ -201,7 +217,7 @@ export class VideoProjectService extends EventEmitter {
         return new Promise((resolve, reject) => {
             this.imageServer = http.createServer(async (req, res) => {
                 const url = req.url || '/';
-                
+
                 // Determinar o caminho base correto
                 let filePath: string;
                 if (url.startsWith('/svgs/') || url.startsWith('/sounds/') || url.startsWith('/fonts/')) {
@@ -216,7 +232,7 @@ export class VideoProjectService extends EventEmitter {
                         const category = urlParts[1];
                         const filename = urlParts.slice(2).join('/');
                         const decodedFilename = decodeURIComponent(filename);
-                        
+
                         // Lista de categorias para fallback
                         const categories = [
                             category, // Tentar primeiro a categoria especificada
@@ -228,53 +244,102 @@ export class VideoProjectService extends EventEmitter {
                             'transition',
                             'kids'
                         ];
-                        
+
                         // Remover duplicatas mantendo a ordem
                         const uniqueCategories = [...new Set(categories)];
-                        
-                        
-                        // Buscar vídeo com cache otimizado
+
+
+                        // Buscar vídeo com cache otimizado (consulta específica no Supabase)
                         let foundPath: string | null = null;
-                        
+
                         try {
                             const { getSupabaseService } = require('./supabase-service');
                             const supabase = getSupabaseService();
-                            const allVideos = await supabase.listVideos(0, 10000);
-                            const video = allVideos.find((v: any) => v.name === decodedFilename);
                             
+                            // ✨ OTIMIZAÇÃO: Buscar apenas este vídeo específico (não listar todos)
+                            const { data, error } = await supabase.client
+                                .from('stock_videos')
+                                .select('id, filename, file_path')
+                                .eq('filename', decodedFilename)
+                                .limit(1)
+                                .single();
+                            
+                            if (error && error.code !== 'PGRST116') {
+                                // PGRST116 = not found, outros erros devem logar
+                                console.warn(`⚠️ Erro ao consultar Supabase:`, error.code);
+                                throw error;
+                            }
+                            
+                            const video = data;
+
                             // Verificar cache (file_path)
-                            if (video && video.file_path && fs.existsSync(video.file_path)) {
+                            if (video?.file_path && fs.existsSync(video.file_path)) {
                                 foundPath = video.file_path;
                                 console.log(`✅ Cache HIT: ${decodedFilename}`);
                             } else {
                                 // Cache MISS - buscar manualmente
-                                if (video && video.file_path) console.warn(`⚠️ Cache inválido: ${video.file_path}`);
-                                
+                                if (video?.file_path) {
+                                    console.warn(`⚠️ Cache inválido: ${video.file_path}`);
+                                }
+
                                 for (const cat of uniqueCategories) {
                                     const testPath = path.join('L:\\Video-Maker', cat, decodedFilename);
+
+                                    // 1. Tentar caminho exato
                                     if (fs.existsSync(testPath)) {
                                         foundPath = testPath;
                                         if (cat !== category) console.log(`📂 Categoria: ${cat} (≠ ${category})`);
                                         
-                                        // Atualizar cache
+                                        // Atualizar cache no Supabase
                                         if (video?.id) {
                                             supabase.updateVideo(video.id, { file_path: testPath } as any)
-                                                .then(() => console.log(`💾 Cache salvo: ${testPath}`))
-                                                .catch((e: any) => console.warn(`⚠️ Erro ao salvar cache:`, e));
+                                                .then(() => console.log(`💾 Cache atualizado: ${testPath}`))
+                                                .catch((e: any) => console.warn(`⚠️ Erro ao atualizar:`, e));
+                                        }
+                                        break;
+                                    }
+
+                                    // 2. Busca case-insensitive (.MP4 vs .mp4)
+                                    const dirPath = path.join('L:\\Video-Maker', cat);
+                                    const caseInsensitivePath = this.findFileCaseInsensitive(dirPath, decodedFilename);
+
+                                    if (caseInsensitivePath) {
+                                        foundPath = caseInsensitivePath;
+                                        console.log(`🔤 Case-insensitive: ${path.basename(caseInsensitivePath)} (${cat})`);
+                                        
+                                        // Atualizar cache no Supabase
+                                        if (video?.id) {
+                                            supabase.updateVideo(video.id, { file_path: caseInsensitivePath } as any)
+                                                .then(() => console.log(`💾 Cache atualizado: ${caseInsensitivePath}`))
+                                                .catch((e: any) => console.warn(`⚠️ Erro ao atualizar:`, e));
                                         }
                                         break;
                                     }
                                 }
                             }
                         } catch (err) {
-                            console.warn(`⚠️ Erro Supabase, fallback:`, err);
+                            console.warn(`⚠️ Erro Supabase, fallback direto:`, err);
+                            
+                            // Fallback: busca direta sem Supabase
                             for (const cat of uniqueCategories) {
                                 const testPath = path.join('L:\\Video-Maker', cat, decodedFilename);
-                                if (fs.existsSync(testPath)) { foundPath = testPath; break; }
+                                
+                                if (fs.existsSync(testPath)) {
+                                    foundPath = testPath;
+                                    break;
+                                }
+                                
+                                // Case-insensitive fallback
+                                const dirPath = path.join('L:\\Video-Maker', cat);
+                                const caseInsensitivePath = this.findFileCaseInsensitive(dirPath, decodedFilename);
+                                if (caseInsensitivePath) {
+                                    foundPath = caseInsensitivePath;
+                                    break;
+                                }
                             }
                         }
-                        
-                        
+
+
                         if (foundPath) {
                             filePath = foundPath;
                         } else {
@@ -303,6 +368,11 @@ export class VideoProjectService extends EventEmitter {
                     res.end();
                     return;
                 }
+
+
+                // Log detalhado para debug
+                console.log(`📡 Requisição: ${url}`);
+                console.log(`📂 Caminho resolvido: ${filePath}`);
 
                 if (fs.existsSync(filePath)) {
                     const stats = fs.statSync(filePath);
@@ -350,6 +420,7 @@ export class VideoProjectService extends EventEmitter {
                             'Content-Type': contentType,
                         });
 
+                        console.log(`📦 Range request: ${path.basename(filePath)} bytes ${start}-${end}/${fileSize}`);
                         const file = fs.createReadStream(filePath, { start, end });
                         file.pipe(res);
                     } else {
@@ -359,6 +430,7 @@ export class VideoProjectService extends EventEmitter {
                             'Content-Type': contentType,
                             'Accept-Ranges': 'bytes',
                         });
+                        console.log(`✅ Servindo: ${path.basename(filePath)} (${fileSize} bytes)`);
                         fs.createReadStream(filePath).pipe(res);
                     }
                 } else {
@@ -602,7 +674,7 @@ export class VideoProjectService extends EventEmitter {
                         transition: analysis.transition || 'fade',
                         highlightWords: analysis.highlightWords || seg.highlightWords,
                     };
-                    
+
                     // Sincronizar highlight_words com timing do Deepgram
                     if (merged.highlightWords && merged.words) {
                         merged.highlightWords = this.syncHighlightWordsWithDeepgram(
@@ -611,7 +683,7 @@ export class VideoProjectService extends EventEmitter {
                             merged.start
                         );
                     }
-                    
+
                     return merged;
                 }
                 return seg;
@@ -637,7 +709,7 @@ export class VideoProjectService extends EventEmitter {
     // ========================================
     // HIGHLIGHT WORDS TIMING SYNC
     // ========================================
-    
+
     /**
      * Sincroniza highlight_words com o timing real do Deepgram
      * A IA sugere QUAIS palavras destacar, mas NÃO o tempo
@@ -658,27 +730,27 @@ export class VideoProjectService extends EventEmitter {
         return highlightWords.map(hw => {
             // Normalizar texto para busca (remover pontuação, case-insensitive)
             const searchText = hw.text.toLowerCase().replace(/[.,!?;:]/g, '').trim();
-            
+
             // Tentar encontrar a palavra no array do Deepgram
-            let matchedWord = deepgramWords.find(dw => 
-                dw.word.toLowerCase() === searchText || 
+            let matchedWord = deepgramWords.find(dw =>
+                dw.word.toLowerCase() === searchText ||
                 dw.punctuatedWord.toLowerCase().replace(/[.,!?;:]/g, '') === searchText
             );
-            
+
             // Se não encontrar, tentar buscar por palavra parcial (primeira palavra do texto)
             if (!matchedWord && searchText.includes(' ')) {
                 const firstWord = searchText.split(' ')[0];
-                matchedWord = deepgramWords.find(dw => 
+                matchedWord = deepgramWords.find(dw =>
                     dw.word.toLowerCase() === firstWord
                 );
             }
-            
+
             if (matchedWord) {
                 // Calcular tempo relativo à cena (em vez de absoluto)
                 const relativeTime = matchedWord.start - sceneStart;
-                
+
                 console.log(`✅ Matched "${hw.text}" → ${relativeTime.toFixed(2)}s (absolute: ${matchedWord.start.toFixed(2)}s)`);
-                
+
                 return {
                     ...hw,
                     time: relativeTime, // Tempo relativo à cena
@@ -798,7 +870,7 @@ Responda APENAS com um array JSON válido no formato:
      */
     public convertToRemotionProject(project: VideoProjectData): RemotionProject {
         console.log('🔧 convertToRemotionProject - subtitleMode:', project.subtitleMode);
-        
+
         const scenes = project.segments.map(seg => ({
             id: seg.id,
             start_time: seg.start,
@@ -957,7 +1029,7 @@ Responda APENAS com um array JSON válido no formato:
         try {
             const content = fs.readFileSync(filePath, 'utf-8');
             const project = JSON.parse(content) as VideoProjectData;
-            
+
             // Adicionar config padrão se não existir (compatibilidade com projetos antigos)
             if (!project.config) {
                 project.config = {
@@ -967,7 +1039,7 @@ Responda APENAS com um array JSON válido no formato:
                     backgroundColor: '#0a0a0a',
                 };
             }
-            
+
             return project;
         } catch (error) {
             console.error('Error loading project:', error);

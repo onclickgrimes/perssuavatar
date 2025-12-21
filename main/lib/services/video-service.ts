@@ -440,6 +440,8 @@ export class VideoService extends EventEmitter {
         onProgress,
         // Aceleração por GPU (NVENC para NVIDIA, VideoToolbox para Mac, etc)
         hardwareAcceleration: hwAccel,
+        // Aumentar timeout para vídeos grandes ou primeira carga
+        timeoutInMilliseconds: 180000, // 3 minutos (antes: 90s não foi suficiente)
       });
 
       const durationMs = Date.now() - startTime;
