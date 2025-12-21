@@ -199,7 +199,7 @@ export class VideoProjectService extends EventEmitter {
         }
 
         return new Promise((resolve, reject) => {
-            this.imageServer = http.createServer((req, res) => {
+            this.imageServer = http.createServer(async (req, res) => {
                 const url = req.url || '/';
                 
                 // Determinar o caminho base correto
@@ -221,9 +221,9 @@ export class VideoProjectService extends EventEmitter {
                         const categories = [
                             category, // Tentar primeiro a categoria especificada
                             'stock',
-                            'religion',
                             'luxury',
                             'memes',
+                            'religion',
                             'background-effects',
                             'transition',
                             'kids'
@@ -232,18 +232,48 @@ export class VideoProjectService extends EventEmitter {
                         // Remover duplicatas mantendo a ordem
                         const uniqueCategories = [...new Set(categories)];
                         
-                        // Procurar o arquivo em cada categoria
+                        
+                        // Buscar vídeo com cache otimizado
                         let foundPath: string | null = null;
-                        for (const cat of uniqueCategories) {
-                            const testPath = path.join('L:\\Video-Maker', cat, decodedFilename);
-                            if (fs.existsSync(testPath)) {
-                                foundPath = testPath;
-                                if (cat !== category) {
-                                    console.log(`📂 Vídeo encontrado em categoria diferente: ${cat} (original: ${category})`);
+                        
+                        try {
+                            const { getSupabaseService } = require('./supabase-service');
+                            const supabase = getSupabaseService();
+                            const allVideos = await supabase.listVideos(0, 10000);
+                            const video = allVideos.find((v: any) => v.name === decodedFilename);
+                            
+                            // Verificar cache (file_path)
+                            if (video && video.file_path && fs.existsSync(video.file_path)) {
+                                foundPath = video.file_path;
+                                console.log(`✅ Cache HIT: ${decodedFilename}`);
+                            } else {
+                                // Cache MISS - buscar manualmente
+                                if (video && video.file_path) console.warn(`⚠️ Cache inválido: ${video.file_path}`);
+                                
+                                for (const cat of uniqueCategories) {
+                                    const testPath = path.join('L:\\Video-Maker', cat, decodedFilename);
+                                    if (fs.existsSync(testPath)) {
+                                        foundPath = testPath;
+                                        if (cat !== category) console.log(`📂 Categoria: ${cat} (≠ ${category})`);
+                                        
+                                        // Atualizar cache
+                                        if (video?.id) {
+                                            supabase.updateVideo(video.id, { file_path: testPath } as any)
+                                                .then(() => console.log(`💾 Cache salvo: ${testPath}`))
+                                                .catch((e: any) => console.warn(`⚠️ Erro ao salvar cache:`, e));
+                                        }
+                                        break;
+                                    }
                                 }
-                                break;
+                            }
+                        } catch (err) {
+                            console.warn(`⚠️ Erro Supabase, fallback:`, err);
+                            for (const cat of uniqueCategories) {
+                                const testPath = path.join('L:\\Video-Maker', cat, decodedFilename);
+                                if (fs.existsSync(testPath)) { foundPath = testPath; break; }
                             }
                         }
+                        
                         
                         if (foundPath) {
                             filePath = foundPath;

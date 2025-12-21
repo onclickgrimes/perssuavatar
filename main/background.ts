@@ -1130,16 +1130,16 @@ ipcMain.handle('video-project:search-videos', async (event, query: string, limit
     const { getVideoSearchService } = require('./lib/services/video-search-service');
     const searchService = getVideoSearchService();
     
-    // Realiza busca semântica
-    const results = await searchService.semanticSearch(query, limit, 0.5);
+    // Realiza busca semântica (minSimilarity: 0.3 = resultados mais amplos)
+    const results = await searchService.semanticSearch(query, limit, 0.8);
     
     console.log(`✅ [VideoProject] Encontrados ${results.length} vídeos relevantes`);
     
     return { 
       success: true, 
       videos: results.map(v => {
-        // Extrair apenas o nome do arquivo do file_path
-        const filename = path.basename(v.file_path);
+        // Usar o campo 'name' que contém o nome do arquivo
+        const filename = v.name || 'unknown.mp4';
         const category = v.category || 'stock';
         
         // Construir URL HTTP: /videos/{category}/{filename}
