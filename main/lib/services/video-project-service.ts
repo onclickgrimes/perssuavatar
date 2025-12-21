@@ -821,6 +821,8 @@ export class VideoProjectService extends EventEmitter {
    - "image_flux" para cenas estáticas ou conceituais
    - "video_kling" para cenas com ação humana complexa
    - "solid_color" para transições ou ênfase em texto
+   - "geometric_patterns" para background abstrato com padrões geométricos animados
+   - "wavy_grid" para background futurista com grade 3D ondulada (estilo Daniel Penin)
 
 4. **cameraMovement**: Movimento de câmera sugerido:
 ${Object.entries(CAMERA_EFFECTS).map(([key, config]) => `- **${key}**\n  ${config.description}`).join('\n')}

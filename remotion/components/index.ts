@@ -6,3 +6,5 @@
 export * from './Scene';
 export * from './TextOverlay';
 export * from './AnimatedSvgOverlay';
+export * from './GeometricPatterns';
+export * from './WavyGrid';

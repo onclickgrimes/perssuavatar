@@ -67,6 +67,8 @@ export const AssetTypeSchema = z.enum([
   'avatar',           // Avatar animado (Live2D, etc)
   'text_only',        // Apenas texto/tipografia
   'solid_color',      // Cor sólida de fundo
+  'geometric_patterns', // Padrões geométricos animados
+  'wavy_grid',        // Grade ondulada 3D estilo Daniel Penin
 ]);
 
 export type AssetType = z.infer<typeof AssetTypeSchema>;

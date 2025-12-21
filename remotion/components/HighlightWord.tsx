@@ -20,7 +20,7 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
   sceneDurationFrames,
 }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { fps, height, width } = useVideoConfig();
   
   // Calcular frames relativos à cena
   const relativeFrame = frame - sceneStartFrame;
@@ -193,20 +193,46 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
   }
   
   // ========================================
-  // CÁLCULO DE TAMANHO
+  // CÁLCULO DE TAMANHO RESPONSIVO
   // ========================================
+  // Usar a menor dimensão como referência para melhor adaptação
+  // Isso garante que o texto caiba tanto em vídeos horizontais quanto verticais
+  const minDimension = Math.min(width, height);
+  const fontSizeScale = minDimension / 1080;
   
-  let fontSize: number;
+  let baseFontSize: number;
   if (typeof highlight.size === 'number') {
-    fontSize = highlight.size;
+    // Se for um número customizado, ainda assim escala proporcionalmente
+    baseFontSize = highlight.size * fontSizeScale;
   } else {
-    switch (highlight.size) {
-      case 'small': fontSize = 48; break;
-      case 'medium': fontSize = 72; break;
-      case 'large': fontSize = 108; break;
-      case 'huge': fontSize = 144; break;
-      default: fontSize = 108;
-    }
+    // Tamanhos DOBRADOS para melhor legibilidade
+    const baseSizes = {
+      small: 96,   // era 48
+      medium: 144, // era 72
+      large: 216,  // era 108
+      huge: 288,   // era 144
+    };
+    const baseSize = baseSizes[highlight.size] || baseSizes.large;
+    baseFontSize = baseSize * fontSizeScale;
+  }
+  
+  
+  // Auto-scaling: ajustar fontSize se o texto for muito longo
+  // Permitir múltiplas linhas quebrando APENAS em espaços
+  const letterSpacingFactor = 1.05;
+  const characterWidthFactor = 0.65;
+  
+  // Usar mais largura disponível
+  const maxTextWidth = width * 0.95; // 95% da largura
+  const estimatedTextWidth = highlight.text.length * baseFontSize * characterWidthFactor * letterSpacingFactor;
+  
+  let fontSize = baseFontSize;
+  if (estimatedTextWidth > maxTextWidth) {
+    // Calcular fontSize ideal para caber
+    fontSize = (maxTextWidth / (highlight.text.length * characterWidthFactor * letterSpacingFactor));
+    
+    // Limite mínimo mais alto para legibilidade: 80% do tamanho base
+    fontSize = Math.max(fontSize, baseFontSize * 0.8);
   }
   
   // ========================================
@@ -357,6 +383,9 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
           transform: `translate(-50%, -50%) ${combinedTransform}`,
           opacity: combinedOpacity,
           filter: exitFilter,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
         }}
       >
         {/* Renderizar diferente se for efeito wave */}
@@ -388,9 +417,10 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
           color: textColor,
           textShadow,
           backgroundColor: highlight.highlightColor,
-          padding: highlight.highlightColor ? '10px 30px' : undefined,
-          borderRadius: highlight.highlightColor ? '15px' : undefined,
-          whiteSpace: 'nowrap',
+          padding: highlight.highlightColor ? `${10 * fontSizeScale}px ${30 * fontSizeScale}px` : undefined,
+          borderRadius: highlight.highlightColor ? `${15 * fontSizeScale}px` : undefined,
+          whiteSpace: 'normal',
+          wordBreak: 'normal',
           fontFamily: 'Pricedown',
           letterSpacing: '0.05em',
           textAlign: 'center',
@@ -426,11 +456,15 @@ interface ParticleEffectProps {
 }
 
 const ParticleEffect: React.FC<ParticleEffectProps> = ({ text, progress, positionStyles, color }) => {
+  const { height, width } = useVideoConfig();
+  const minDimension = Math.min(width, height);
+  const fontSizeScale = minDimension / 1080;
+  
   const particles = Array.from({ length: 20 }, (_, i) => {
     const angle = (i / 20) * Math.PI * 2;
-    const distance = interpolate(progress, [0, 1], [0, 200]);
+    const distance = interpolate(progress, [0, 1], [0, 200 * fontSizeScale]);
     const x = Math.cos(angle) * distance;
-    const y = Math.sin(angle) * distance - progress * 100; // Sobe também
+    const y = Math.sin(angle) * distance - progress * 100 * fontSizeScale; // Sobe também
     const opacity = interpolate(progress, [0, 0.5, 1], [0.8, 0.4, 0]);
     const scale = interpolate(progress, [0, 1], [1, 0.2]);
     
@@ -447,7 +481,7 @@ const ParticleEffect: React.FC<ParticleEffectProps> = ({ text, progress, positio
             ...positionStyles,
             transform: `translate(-50%, -50%) translate(${particle.x}px, ${particle.y}px) scale(${particle.scale})`,
             opacity: particle.opacity,
-            fontSize: '20px',
+            fontSize: `${20 * fontSizeScale}px`,
             color,
             fontWeight: 'bold',
           }}
@@ -480,6 +514,10 @@ const WaveText: React.FC<WaveTextProps> = ({
   fillProgress,
   frame 
 }) => {
+  const { height, width } = useVideoConfig();
+  const minDimension = Math.min(width, height);
+  const fontSizeScale = minDimension / 1080;
+  
   // Calcular a posição vertical da onda (de baixo pra cima)
   const waveBaseY = 100 - (fillProgress * 100);
   
@@ -506,8 +544,9 @@ const WaveText: React.FC<WaveTextProps> = ({
           fontSize: `${fontSize}px`,
           fontWeight,
           color: 'transparent',
-          WebkitTextStroke: `3px ${color}`,
-          whiteSpace: 'nowrap',
+          WebkitTextStroke: `${3 * fontSizeScale}px ${color}`,
+          whiteSpace: 'normal',
+          wordBreak: 'normal',
           fontFamily: 'Pricedown',
           letterSpacing: '0.05em',
           textAlign: 'center',
@@ -579,7 +618,8 @@ const WaveText: React.FC<WaveTextProps> = ({
           fontSize: `${fontSize}px`,
           fontWeight,
           color,
-          whiteSpace: 'nowrap',
+          whiteSpace: 'normal',
+          wordBreak: 'break-word',
           fontFamily: 'Pricedown',
           letterSpacing: '0.05em',
           textAlign: 'center',
@@ -601,7 +641,8 @@ const WaveText: React.FC<WaveTextProps> = ({
             fontSize: `${fontSize}px`,
             fontWeight,
             color,
-            whiteSpace: 'nowrap',
+            whiteSpace: 'normal',
+            wordBreak: 'normal',
             fontFamily: 'Pricedown',
             letterSpacing: '0.05em',
             textAlign: 'center',

@@ -11,6 +11,8 @@ import { applyCameraEffect } from '../utils/camera-effects';
 import { TextOverlayComponent } from './TextOverlay';
 import { HighlightWordComponent } from './HighlightWord';
 import { AnimatedSvgOverlay } from './AnimatedSvgOverlay';
+import { GeometricPatterns } from './GeometricPatterns';
+import { WavyGrid } from './WavyGrid';
 import { useProjectConfig } from '../contexts/ProjectConfigContext';
 
 
@@ -287,6 +289,14 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
           }}
         />
       );
+    
+    // Padrões Geométricos
+    case 'geometric_patterns':
+      return <GeometricPatterns />;
+    
+    // Grade Ondulada 3D
+    case 'wavy_grid':
+      return <WavyGrid />;
     
     // Apenas texto
     case 'text_only':

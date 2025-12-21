@@ -67,6 +67,7 @@ export function VideoPreviewPlayer({
 
   return (
     <Player
+      key={`${project.config?.width}-${project.config?.height}`}
       component={VideoProjectComposition}
       inputProps={{ project }}
       durationInFrames={durationInFrames}
