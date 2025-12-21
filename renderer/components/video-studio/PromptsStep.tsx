@@ -7,6 +7,7 @@ interface PromptsStepProps {
   onContinue: () => void;
   onBack: () => void;
   onUpdateImage: (id: number, imageUrl: string) => void;
+  useStockFootage: boolean;
 }
 
 export function PromptsStep({
@@ -15,11 +16,18 @@ export function PromptsStep({
   onContinue,
   onBack,
   onUpdateImage,
+  useStockFootage,
 }: PromptsStepProps) {
   const [searching, setSearching] = React.useState(false);
   const [searchResults, setSearchResults] = React.useState<Record<number, any[]>>({});
 
   const handleSearchVideos = async () => {
+    // Se não estiver usando stock footage, apenas avançar
+    if (!useStockFootage) {
+        onContinue();
+        return;
+    }
+
     setSearching(true);
     const results: Record<number, any[]> = {};
     const usedVideos = new Set<string>(); // Rastrear vídeos já usados
@@ -73,8 +81,12 @@ export function PromptsStep({
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-white">Prompts de Busca</h2>
-          <p className="text-white/60">Edite os prompts para buscar vídeos relevantes no banco de dados</p>
+          <h2 className="text-2xl font-bold text-white">Prompts {useStockFootage ? 'de Busca' : 'de Imagem'}</h2>
+          <p className="text-white/60">
+            {useStockFootage 
+                ? 'Edite os prompts para buscar vídeos relevantes no banco de dados'
+                : 'Edite os prompts para geração de imagens (Flux)'}
+          </p>
         </div>
         <div className="flex gap-3">
           <button
@@ -92,7 +104,7 @@ export function PromptsStep({
                 : 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white'
             }`}
           >
-            {searching ? '🔍 Buscando Vídeos...' : '🔍 Buscar Vídeos →'}
+            {searching ? '🔍 Buscando...' : useStockFootage ? '🔍 Buscar Vídeos →' : 'Próximo →'}
           </button>
         </div>
       </div>

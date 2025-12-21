@@ -30,6 +30,8 @@ export default function VideoStudioPage() {
     segments: [],
     authorConclusion: '',
     editingStyle: '',
+    selectedAspectRatios: ['9:16'], // Default
+    useStockFootage: false,
   });
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -84,6 +86,8 @@ export default function VideoStudioPage() {
         })),
         editingStyle: project.editingStyle,
         authorConclusion: project.authorConclusion,
+        selectedAspectRatios: project.selectedAspectRatios,
+        useStockFootage: project.useStockFootage,
       };
 
       const result = await window.electron.videoProject.save(projectData);
@@ -129,6 +133,8 @@ export default function VideoStudioPage() {
           })),
           authorConclusion: loadedProject.authorConclusion || '',
           editingStyle: loadedProject.editingStyle || '',
+          selectedAspectRatios: loadedProject.selectedAspectRatios || ['9:16'],
+          useStockFootage: loadedProject.useStockFootage || false,
         });
         
         // Determinar em qual passo estamos baseado nos dados
@@ -244,7 +250,8 @@ export default function VideoStudioPage() {
         {
           editingStyle: project.editingStyle,
           authorConclusion: project.authorConclusion,
-          provider: selectedProvider
+          provider: selectedProvider,
+          autoSelectFootage: project.useStockFootage,
         }
       );
 
@@ -303,6 +310,15 @@ export default function VideoStudioPage() {
   // Estado para armazenar caminho do vídeo gerado
   const [outputPath, setOutputPath] = useState<string | null>(null);
 
+  const ASPECT_RATIO_DIMENSIONS: Record<string, { width: number; height: number }> = {
+    '16:9': { width: 1920, height: 1080 },
+    '9:16': { width: 1080, height: 1920 },
+    '1:1': { width: 1080, height: 1080 },
+    '4:3': { width: 1440, height: 1080 },
+    '4:5': { width: 1080, height: 1350 },
+    '3:4': { width: 1080, height: 1440 },
+  };
+
   // Handler para iniciar renderização
   const handleStartRender = useCallback(async () => {
     setCurrentStep('rendering');
@@ -314,22 +330,56 @@ export default function VideoStudioPage() {
         throw new Error('Video Project API not available');
       }
 
-      const result = await window.electron.videoProject.render({
-        title: project.title,
-        description: project.description,
-        duration: project.duration,
-        audioPath: project.audioPath, // Incluir caminho do áudio
-        segments: project.segments,
-        editingStyle: project.editingStyle,
-        authorConclusion: project.authorConclusion,
-        subtitleMode: subtitleMode, // ✅ Modo de legenda para renderização
-      });
+      const ratiosToRender = (project.selectedAspectRatios && project.selectedAspectRatios.length > 0) 
+        ? project.selectedAspectRatios 
+        : ['9:16']; // Default to 9:16 if none selected
 
-      if (result.success && result.outputPath) {
-        setOutputPath(result.outputPath);
+      const outputPaths: string[] = [];
+
+      for (let i = 0; i < ratiosToRender.length; i++) {
+        const ratio = ratiosToRender[i];
+        const dims = ASPECT_RATIO_DIMENSIONS[ratio] || { width: 1080, height: 1920 };
+        
+        // Update title to include ratio if generating multiple
+        const renderTitle = ratiosToRender.length > 1 
+          ? `${project.title}-${ratio.replace(':','-')}`
+          : project.title;
+
+        console.log(`🎬 Rendering ${ratio} (${dims.width}x${dims.height})...`);
+
+        const result = await window.electron.videoProject.render({
+          title: renderTitle,
+          description: project.description,
+          duration: project.duration,
+          audioPath: project.audioPath, // Incluir caminho do áudio
+          segments: project.segments,
+          editingStyle: project.editingStyle,
+          authorConclusion: project.authorConclusion,
+          subtitleMode: subtitleMode, // ✅ Modo de legenda para renderização
+          config: {
+            width: dims.width,
+            height: dims.height,
+            fps: 30, // Default 30fps
+          }
+        });
+
+        if (result.success && result.outputPath) {
+          outputPaths.push(result.outputPath);
+        } else {
+          throw new Error(result.error || `Render failed for ${ratio}`);
+        }
+      }
+
+      if (outputPaths.length > 0) {
+        // Show the last generated video or handle logic for multiple
+        setOutputPath(outputPaths[outputPaths.length - 1]);
         setCurrentStep('complete');
+        
+        if (outputPaths.length > 1) {
+          alert(`Vídeos gerados com sucesso:\n${outputPaths.map(p => p.split(/[/\\]/).pop()).join('\n')}`);
+        }
       } else {
-        throw new Error(result.error || 'Render failed');
+        throw new Error('Nenhum vídeo foi gerado');
       }
     } catch (err) {
       console.error('Render error:', err);
@@ -337,6 +387,7 @@ export default function VideoStudioPage() {
       setCurrentStep('images'); // Voltar para step anterior
     }
   }, [project, subtitleMode]);
+
 
   // Renderizar conteúdo baseado no step atual
   const renderStepContent = () => {
@@ -349,6 +400,10 @@ export default function VideoStudioPage() {
             onEditingStyleChange={(value) => setProject(prev => ({ ...prev, editingStyle: value }))}
             authorConclusion={project.authorConclusion}
             onAuthorConclusionChange={(value) => setProject(prev => ({ ...prev, authorConclusion: value }))}
+            selectedAspectRatios={project.selectedAspectRatios || []}
+            onAspectRatiosChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: value }))}
+            useStockFootage={project.useStockFootage || false}
+            onUseStockFootageChange={(value) => setProject(prev => ({ ...prev, useStockFootage: value }))}
           />
         );
       
@@ -378,6 +433,7 @@ export default function VideoStudioPage() {
             onUpdateImage={handleUpdateImage}
             onContinue={() => setCurrentStep('images')}
             onBack={() => setCurrentStep('keyframes')}
+            useStockFootage={project.useStockFootage || false}
           />
         );
       

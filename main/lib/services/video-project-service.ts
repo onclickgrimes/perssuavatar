@@ -17,6 +17,7 @@ import { VideoService } from './video-service';
 import { GeminiService } from './gemini-service';
 import { OpenAIService } from './openai-service';
 import { DeepSeekService } from './deepseek-service';
+import { getVideoSearchService } from './video-search-service';
 import { CAMERA_EFFECTS } from '../../../remotion/utils/camera-effects';
 import { TRANSITION_EFFECTS } from '../../../remotion/utils/transitions';
 
@@ -72,6 +73,8 @@ export interface VideoProjectData {
     editingStyle?: string;
     authorConclusion?: string;
     subtitleMode?: 'paragraph' | 'word-by-word';
+    selectedAspectRatios?: string[];
+    useStockFootage?: boolean;
     config?: {
         width?: number;
         height?: number;
@@ -480,6 +483,18 @@ export class VideoProjectService extends EventEmitter {
             return filePath;
         }
 
+        // Se é um vídeo do Supabase (L:\Video-Maker)
+        // Normalizar barras para comparação
+        const normalizedPath = filePath.replace(/\\/g, '/');
+        if (normalizedPath.includes('Video-Maker/')) {
+             // Extrair parte após Video-Maker/
+             // L:/Video-Maker/Category/File.mp4 -> /videos/Category/File.mp4
+             const parts = normalizedPath.split('Video-Maker/');
+             if (parts.length > 1) {
+                 return `http://localhost:${this.imageServerPort}/videos/${encodeURIComponent(parts[1])}`;
+             }
+        }
+
         // Se é um caminho de arquivo, converter para URL do servidor local
         // Caminho esperado: C:\...\video-projects\images\segment-1-123.jpg
         // URL retornada: http://localhost:9999/images/segment-1-123.jpg
@@ -570,10 +585,11 @@ export class VideoProjectService extends EventEmitter {
             editingStyle?: string;
             authorConclusion?: string;
             provider?: AIProvider;
+            autoSelectFootage?: boolean;
         }
     ): Promise<AnalysisResult> {
         console.log('🔍 [VideoProjectService] analyzeWithAI called with', segments.length, 'segments');
-        console.log('🔍 [VideoProjectService] options.provider:', options?.provider);
+        console.log('🔍 [VideoProjectService] options:', options);
 
         const provider = options?.provider || 'gemini';
         console.log(`🤖 Using AI provider: ${provider}`);
@@ -582,8 +598,7 @@ export class VideoProjectService extends EventEmitter {
 
         try {
             const prompt = this.buildAnalysisPrompt(segments, options);
-            console.log('📝 [VideoProject] Prompt built, length:', prompt.length);
-            console.log('📝 [VideoProject] Prompt built:', prompt);
+            console.log('📝 [VideoProject] Prompt built');
 
             let analyzedSegments: Array<{
                 id: number;
@@ -637,8 +652,7 @@ export class VideoProjectService extends EventEmitter {
                 throw new Error(`Unknown provider: ${provider}`);
             }
 
-            console.log('✅ [VideoProject] AI Analysis received: ', analyzedSegments);
-            console.log('🧩 Analyzed Segments:', analyzedSegments?.length || 0, 'items');
+            console.log('✅ [VideoProject] AI Analysis received');
 
             // Robust validation/unwrapping
             let segmentsArray = analyzedSegments;
@@ -650,7 +664,6 @@ export class VideoProjectService extends EventEmitter {
                 const arrayValue = values.find(v => Array.isArray(v));
                 if (arrayValue) {
                     segmentsArray = arrayValue;
-                    console.log('✅ Unwrap successful');
                 } else {
                     console.error('❌ Could not find array in response:', analyzedSegments);
                     throw new Error('AI response format invalid (expected array)');
@@ -661,11 +674,14 @@ export class VideoProjectService extends EventEmitter {
                 throw new Error('AI response is not an array even after unwrap attempt');
             }
 
+            // AUTO SELECT FOOTAGE LOGIC
+            const searchService = options?.autoSelectFootage ? getVideoSearchService() : null;
+
             // Mesclar resultados com segmentos originais
-            const updatedSegments = segments.map(seg => {
+            const updatedSegments = await Promise.all(segments.map(async seg => {
                 const analysis = segmentsArray.find((a: any) => a.id === seg.id);
                 if (analysis) {
-                    const merged = {
+                    let merged = {
                         ...seg,
                         emotion: analysis.emotion || seg.emotion,
                         imagePrompt: analysis.imagePrompt || seg.imagePrompt,
@@ -684,10 +700,34 @@ export class VideoProjectService extends EventEmitter {
                         );
                     }
 
+                    // Se a busca automática estiver ativada
+                    if (searchService && merged.imagePrompt) {
+                        try {
+                            console.log(`🔍 [AutoSearch] Buscando mídia para segmento ${seg.id}...`);
+                            // Buscar semanticamente usando o prompt da IA
+                            const results = await searchService.semanticSearch(merged.imagePrompt, 1, 0.4); // 0.4 de threshold
+                            
+                            if (results.length > 0) {
+                                const video = results[0];
+                                console.log(`✅ [AutoSearch] Encontrado: ${video.name} (${video.similarity.toFixed(2)})`);
+                                
+                                // Se tiver file_path válido
+                                if (video.file_path && fs.existsSync(video.file_path)) {
+                                    merged.imageUrl = video.file_path; // URL absoluta, convertToHttpUrl lida com isso depois
+                                    merged.assetType = 'video_stock'; // Marcar como stock video
+                                }
+                            } else {
+                                console.log(`❌ [AutoSearch] Nada encontrado para segmento ${seg.id}`);
+                            }
+                        } catch (err) {
+                            console.error(`❌ [AutoSearch] Erro ao buscar mídia:`, err);
+                        }
+                    }
+
                     return merged;
                 }
                 return seg;
-            });
+            }));
 
             this.emit('status', { stage: 'analyzed', message: 'Análise concluída' });
 
@@ -907,10 +947,10 @@ Responda APENAS com um array JSON válido no formato:
             project_title: project.title,
             description: project.description,
             config: {
-                width: 1920,
-                height: 1080,
-                fps: 30,
-                backgroundColor: '#0a0a0a',
+                width: project.config?.width || 1920,
+                height: project.config?.height || 1080,
+                fps: project.config?.fps || 30,
+                backgroundColor: project.config?.backgroundColor || '#0a0a0a',
                 subtitleMode: project.subtitleMode, // ✅ Modo de legenda
                 assetsBaseUrl: `http://localhost:${this.imageServerPort}`, // ✅ URL base dinâmica
                 // Incluir áudio da narração/transcrição
@@ -983,6 +1023,22 @@ Responda APENAS com um array JSON válido no formato:
         const fileName = `project-${Date.now()}.json`;
         const filePath = path.join(this.projectsDir, fileName);
 
+        // Determinar dimensões baseadas na proporção selecionada (pega a primeira)
+        let defaultWidth = 1080;
+        let defaultHeight = 1920; // Default 9:16
+
+        if (project.selectedAspectRatios && project.selectedAspectRatios.length > 0) {
+            const mainRatio = project.selectedAspectRatios[0];
+            switch (mainRatio) {
+                case '16:9': defaultWidth = 1920; defaultHeight = 1080; break;
+                case '9:16': defaultWidth = 1080; defaultHeight = 1920; break;
+                case '1:1': defaultWidth = 1080; defaultHeight = 1080; break;
+                case '4:3': defaultWidth = 1440; defaultHeight = 1080; break;
+                case '4:5': defaultWidth = 1080; defaultHeight = 1350; break;
+                case '3:4': defaultWidth = 1080; defaultHeight = 1440; break;
+            }
+        }
+
         // Reorganizar propriedades na ordem desejada
         const orderedProject = {
             title: project.title,
@@ -991,10 +1047,12 @@ Responda APENAS com um array JSON válido no formato:
             audioPath: project.audioPath,
             editingStyle: project.editingStyle || '',
             authorConclusion: project.authorConclusion || '',
+            selectedAspectRatios: project.selectedAspectRatios, // Salvar as proporções
+            useStockFootage: project.useStockFootage, // Salvar configuração de busca automática
             subtitleMode: project.subtitleMode,
             config: {
-                width: 1920,
-                height: 1080,
+                width: project.config?.width || defaultWidth,
+                height: project.config?.height || defaultHeight,
                 fps: 60,
                 backgroundColor: '#0a0a0a',
                 ...project.config, // Sobrescreve com valores do projeto se existirem

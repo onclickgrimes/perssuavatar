@@ -6,7 +6,13 @@ interface UploadStepProps {
   onEditingStyleChange: (value: string) => void;
   authorConclusion: string;
   onAuthorConclusionChange: (value: string) => void;
+  selectedAspectRatios: string[];
+  onAspectRatiosChange: (value: string[]) => void;
+  useStockFootage: boolean;
+  onUseStockFootageChange: (value: boolean) => void;
 }
+
+const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '4:5', '3:4'];
 
 export function UploadStep({ 
   onUpload,
@@ -14,6 +20,10 @@ export function UploadStep({
   onEditingStyleChange,
   authorConclusion,
   onAuthorConclusionChange,
+  selectedAspectRatios = [],
+  onAspectRatiosChange,
+  useStockFootage = false,
+  onUseStockFootageChange,
 }: UploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
 
@@ -31,6 +41,14 @@ export function UploadStep({
     const file = e.target.files?.[0];
     if (file) {
       onUpload(file);
+    }
+  };
+
+  const toggleAspectRatio = (ratio: string) => {
+    if (selectedAspectRatios.includes(ratio)) {
+      onAspectRatiosChange(selectedAspectRatios.filter(r => r !== ratio));
+    } else {
+      onAspectRatiosChange([...selectedAspectRatios, ratio]);
     }
   };
 
@@ -75,6 +93,58 @@ export function UploadStep({
 
       {/* Campos de Configuração */}
       <div className="w-full max-w-xl mt-8 space-y-6">
+        {/* Proporção do Vídeo */}
+        <div>
+          <label className="block text-white/80 font-medium mb-2">
+            Proporção do Vídeo
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            {ASPECT_RATIOS.map((ratio) => (
+              <button
+                key={ratio}
+                onClick={() => toggleAspectRatio(ratio)}
+                className={`px-4 py-2 rounded-lg border transition-all text-sm font-medium ${
+                  selectedAspectRatios.includes(ratio)
+                    ? 'bg-pink-500 border-pink-500 text-white'
+                    : 'bg-black/30 border-white/10 text-white/60 hover:bg-white/5 hover:border-white/30'
+                }`}
+              >
+                {ratio}
+              </button>
+            ))}
+          </div>
+          <p className="text-xs text-white/40 mt-2">
+            Selecione uma ou mais proporções para gerar o vídeo
+          </p>
+        </div>
+
+        {/* Mídia Automática (Stock Footage) */}
+        <div>
+          <div className="flex items-center justify-between">
+            <div>
+              <label className="block text-white/80 font-medium mb-1">
+                Buscar Mídia Automática
+              </label>
+              <p className="text-xs text-white/40">
+                Utilizar banco de dados (Supabase) para encontrar vídeos
+              </p>
+            </div>
+            
+            <button
+              onClick={() => onUseStockFootageChange(!useStockFootage)}
+              className={`w-14 h-7 rounded-full p-1 transition-colors ${
+                useStockFootage ? 'bg-pink-500' : 'bg-white/10'
+              }`}
+            >
+              <div 
+                className={`w-5 h-5 bg-white rounded-full shadow-lg transition-transform ${
+                  useStockFootage ? 'translate-x-7' : 'translate-x-0'
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+
         {/* Estilo de Edição */}
         <div>
           <label className="block text-white/80 font-medium mb-2">

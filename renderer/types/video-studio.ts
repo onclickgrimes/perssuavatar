@@ -54,4 +54,6 @@ export interface ProjectState {
   segments: TranscriptionSegment[];
   authorConclusion: string;
   editingStyle: string;
+  selectedAspectRatios?: string[];
+  useStockFootage?: boolean;
 }
