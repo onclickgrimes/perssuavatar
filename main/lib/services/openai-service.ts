@@ -86,7 +86,16 @@ export class OpenAIService {
             const content = response.choices[0].message.content || '{}';
             console.log(`🧠 OpenAI VideoAnalysis Response (${content.length} chars)`);
 
-            return JSON.parse(content);
+                        // Clean up content to extract JSON
+            let jsonString = content;
+            
+            // Remove markdown code blocks if present
+            const markdownMatch = content.match(/```json\n?([\s\S]*?)\n?```/) || content.match(/```\n?([\s\S]*?)\n?```/);
+            if (markdownMatch) {
+                jsonString = markdownMatch[1];
+            }
+            
+            return JSON.parse(jsonString);
         } catch (error) {
             console.error("OpenAIService getChatVideoAnalysis Error:", error);
             throw error;
