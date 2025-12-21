@@ -1050,6 +1050,19 @@ Responda APENAS com um array JSON válido no formato:
             selectedAspectRatios: project.selectedAspectRatios, // Salvar as proporções
             useStockFootage: project.useStockFootage, // Salvar configuração de busca automática
             subtitleMode: project.subtitleMode,
+            renderConfigs: project.selectedAspectRatios?.reduce((acc, ratio) => {
+                let w = 1080, h = 1920;
+                switch (ratio) {
+                    case '16:9': w = 1920; h = 1080; break;
+                    case '9:16': w = 1080; h = 1920; break;
+                    case '1:1': w = 1080; h = 1080; break;
+                    case '4:3': w = 1440; h = 1080; break;
+                    case '4:5': w = 1080; h = 1350; break;
+                    case '3:4': w = 1080; h = 1440; break;
+                }
+                acc[ratio] = { width: w, height: h };
+                return acc;
+            }, {} as Record<string, { width: number, height: number }>),
             config: {
                 width: project.config?.width || defaultWidth,
                 height: project.config?.height || defaultHeight,

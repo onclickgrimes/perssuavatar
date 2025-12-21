@@ -71,8 +71,8 @@ export function VideoPreviewPlayer({
       inputProps={{ project }}
       durationInFrames={durationInFrames}
       fps={fps}
-      compositionWidth={1920}
-      compositionHeight={1080}
+      compositionWidth={project.config?.width || 1080}
+      compositionHeight={project.config?.height || 1920}
       style={{
         width: '100%',
         height: '100%',

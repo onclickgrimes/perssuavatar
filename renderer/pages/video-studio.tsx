@@ -455,6 +455,7 @@ export default function VideoStudioPage() {
             setSubtitleMode={setSubtitleMode}
             onContinue={handleStartRender}
             onBack={() => setCurrentStep('images')}
+            onAspectRatiosChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: value }))}
           />
         );
       
