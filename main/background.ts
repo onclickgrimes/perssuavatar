@@ -1131,7 +1131,7 @@ ipcMain.handle('video-project:search-videos', async (event, query: string, limit
     const searchService = getVideoSearchService();
     
     // Realiza busca semântica (minSimilarity: 0.3 = resultados mais amplos)
-    const results = await searchService.semanticSearch(query, limit, 0.8);
+    const results = await searchService.semanticSearch(query, limit, 0.5);
     
     console.log(`✅ [VideoProject] Encontrados ${results.length} vídeos relevantes`);
     
