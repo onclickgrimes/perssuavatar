@@ -131,7 +131,7 @@ class EmbeddingGenerator {
   /**
    * Processa um vídeo: gera embedding e salva no Supabase
    */
-  async processVideo(video: VideoJSON, filePath?: string, jsonFile?: string): Promise<boolean> {
+  async processVideo(video: VideoJSON, jsonFile?: string): Promise<boolean> {
     // Verifica se já foi processado
     if (this.isVideoProcessed(video.name)) {
       console.log(`  ⏭️  Vídeo já processado (pulando)`);
@@ -153,7 +153,6 @@ class EmbeddingGenerator {
       // 3. Preparar dados para salvar
       const videoData: VideoMetadata & { embedding_cache: number[] } = {
         name: video.name,
-        file_path: filePath || video.name,
         category: video.category,
         is_chroma_key: video.is_chroma_key,
         emotion: video.emotion,
@@ -243,7 +242,7 @@ class EmbeddingGenerator {
           const video = videos[j];
           console.log(`\n[${j + 1}/${videos.length}] ${video.name}`);
 
-          const success = await this.processVideo(video, undefined, file);
+          const success = await this.processVideo(video, file);
 
           if (success) {
             if (this.cache.videos[video.name]) {
@@ -310,7 +309,7 @@ class EmbeddingGenerator {
       const video = videos[i];
       console.log(`\n[${i + 1}/${videos.length}]`);
 
-      const success = await this.processVideo(video, undefined, jsonFileName);
+      const success = await this.processVideo(video, jsonFileName);
       
       if (success) {
         if (this.isVideoProcessed(video.name)) {
