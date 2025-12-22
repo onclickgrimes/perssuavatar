@@ -440,6 +440,10 @@ export class VideoService extends EventEmitter {
         onProgress,
         // Aceleração por GPU (NVENC para NVIDIA, VideoToolbox para Mac, etc)
         hardwareAcceleration: hwAccel,
+        // Habilitar GPU do Chromium para renderização (WebGL, sombras, etc)
+        chromiumOptions: {
+          gl: 'angle', // Recomendado para Windows
+        },
         // Aumentar timeout para vídeos grandes ou primeira carga
         timeoutInMilliseconds: 180000, // 3 minutos (antes: 90s não foi suficiente)
       });

@@ -10,7 +10,7 @@
     "build": "nextron build",
     "postinstall": "electron-builder install-app-deps",
     "remotion:studio": "npx remotion studio remotion/index.ts",
-    "remotion:render": "npx remotion render remotion/index.ts",
+    "remotion:render": "npx remotion render remotion/index.ts --gl=angle",
     "embeddings:generate": "tsx main/generate-embeddings.ts",
     "embeddings:folder": "tsx main/generate-embeddings.ts --from-folder",
     "embeddings:from-supabase": "tsx main/generate-embeddings.ts --from-supabase"
