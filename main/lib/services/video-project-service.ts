@@ -61,6 +61,18 @@ export interface VideoProjectSegment {
         highlightColor?: string;
         fontWeight?: string;
     }>;
+    asset_url?: string;
+    chroma_key?: {
+        color: 'green' | 'blue' | 'custom';
+        customColor?: { r: number; g: number; b: number };
+        threshold?: number;
+        smoothing?: number;
+    };
+    background?: {
+        type: 'image' | 'video' | 'solid_color';
+        url?: string;
+        color?: string;
+    };
 }
 
 
@@ -925,7 +937,9 @@ Responda APENAS com um array JSON válido no formato:
             },
             asset_type: seg.assetType || 'image_flux',
             // Converter caminho local para URL HTTP
-            asset_url: this.convertToHttpUrl(seg.imageUrl),
+            // Se tiver asset_url explícito (vídeo), usa ele. Senão usa imageUrl.
+            asset_url: this.convertToHttpUrl(seg.asset_url || seg.imageUrl),
+            chroma_key: seg.chroma_key, // ✅ Configuração de Chroma Key
             prompt_suggestion: seg.imagePrompt || '',
             camera_movement: seg.cameraMovement || 'static',
             transition: seg.transition || 'fade',
@@ -940,6 +954,20 @@ Responda APENAS com um array JSON válido no formato:
             // Incluir palavras destacadas (se houver)
             ...(seg.highlightWords && seg.highlightWords.length > 0 && {
                 highlight_words: seg.highlightWords,
+            }),
+            // Background
+            ...(seg.background && {
+                background: {
+                    type: seg.background.type,
+                    // Se for solid_color, usa color OU url como cor. Se não, usa color original.
+                    color: seg.background.type === 'solid_color' 
+                        ? (seg.background.color || seg.background.url) 
+                        : seg.background.color,
+                    // Se for solid_color, URL deve ser undefined. Se não, converte URL.
+                    url: seg.background.type !== 'solid_color' 
+                        ? this.convertToHttpUrl(seg.background.url) 
+                        : undefined,
+                }
             }),
         }));
 
@@ -1081,6 +1109,9 @@ Responda APENAS com um array JSON válido no formato:
                 emotion: segment.emotion,
                 imagePrompt: segment.imagePrompt,
                 imageUrl: segment.imageUrl,
+                asset_url: segment.asset_url,
+                chroma_key: segment.chroma_key,
+                background: segment.background,
                 assetType: segment.assetType,
                 cameraMovement: segment.cameraMovement,
                 transition: segment.transition,

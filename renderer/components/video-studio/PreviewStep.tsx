@@ -71,7 +71,7 @@ export function PreviewStep({
           emotion: seg.emotion || 'neutro',
         },
         asset_type: seg.assetType || 'image_static',
-        asset_url: seg.imageUrl || '',
+        asset_url: seg.asset_url || seg.imageUrl || '',
         prompt_suggestion: seg.imagePrompt || '',
         camera_movement: seg.cameraMovement || 'static',
         transition: seg.transition || 'fade',
@@ -83,8 +83,16 @@ export function PreviewStep({
           animation: 'fade',
           words: seg.words, 
         },
+        // Configuração de Chroma Key (para vídeos com fundo verde/azul)
+        ...(seg.chroma_key && {
+          chroma_key: seg.chroma_key,
+        }),
         ...(seg.highlightWords && seg.highlightWords.length > 0 && {
           highlight_words: seg.highlightWords,
+        }),
+        // Background
+        ...(seg.background && {
+          background: seg.background,
         }),
       })),
       schema_version: '1.0',

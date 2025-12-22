@@ -13,6 +13,7 @@ import { HighlightWordComponent } from './HighlightWord';
 import { AnimatedSvgOverlay } from './AnimatedSvgOverlay';
 import { GeometricPatterns } from './GeometricPatterns';
 import { WavyGrid } from './WavyGrid';
+import { ChromaKeyMedia, greenScreenPreset, blueScreenPreset } from './ChromaKeyMedia';
 import { useProjectConfig } from '../contexts/ProjectConfigContext';
 
 
@@ -108,6 +109,9 @@ export const Scene: React.FC<SceneProps> = ({
             ...cameraEffect,
           }}
         >
+          {/* Renderiza o background se existir */}
+          {scene.background && <BackgroundRenderer scene={scene} />}
+          
           {/* Renderiza o asset baseado no tipo */}
           <AssetRenderer scene={scene} />
         </div>
@@ -249,7 +253,8 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
   };
   
   // Se tiver URL, verificar se é vídeo automaticamente
-  if (asset_url) {
+  // Mas se for video_chromakey, deixar o switch tratar
+  if (asset_url && asset_type !== 'video_chromakey') {
     if (isVideoUrl(asset_url)) {
       // É um vídeo - renderizar com componente Video
       return <Html5Video src={asset_url} style={fillStyles} />;
@@ -277,6 +282,27 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
         return <Video src={asset_url} style={fillStyles} />;
       }
       return <PlaceholderVideo description={visual_concept.description} />;
+    
+    // Vídeo com Chroma Key
+    case 'video_chromakey':
+      if (asset_url) {
+        // Usar configuração de chroma key da cena ou preset padrão
+        const chromaKeyConfig = scene.chroma_key || greenScreenPreset;
+        
+        return (
+          <ChromaKeyMedia
+            src={asset_url}
+            type="video"
+            chromaKey={{
+              color: chromaKeyConfig.color || 'green',
+              customColor: chromaKeyConfig.customColor,
+              threshold: chromaKeyConfig.threshold ?? 100,
+              smoothing: chromaKeyConfig.smoothing ?? 0.2,
+            }}
+          />
+        );
+      }
+      return <PlaceholderVideo description={`Chroma Key: ${visual_concept.description}`} />;
     
     // Cor sólida
     case 'solid_color':
@@ -396,4 +422,55 @@ const PlaceholderAvatar: React.FC = () => {
       <div style={{ fontSize: 18, opacity: 0.7 }}>Avatar</div>
     </div>
   );
+};
+
+// ========================================
+// BACKGROUND RENDERER
+// ========================================
+
+interface BackgroundRendererProps {
+  scene: SceneType;
+}
+
+const BackgroundRenderer: React.FC<BackgroundRendererProps> = ({ scene }) => {
+  const { background } = scene;
+  
+  if (!background) return null;
+  
+  const fillStyles: React.CSSProperties = {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: '100%',
+    height: '100%',
+    objectFit: 'cover',
+    zIndex: -1, // Garante que fique atrás
+  };
+  
+  switch (background.type) {
+    case 'image':
+      if (background.url) {
+        return <Img src={background.url} style={fillStyles} />;
+      }
+      return null;
+      
+    case 'video':
+      if (background.url) {
+        return <Html5Video src={background.url} style={fillStyles} />;
+      }
+      return null;
+      
+    case 'solid_color':
+      return (
+        <div
+          style={{
+            ...fillStyles,
+            backgroundColor: background.color || background.url || '#000000',
+          }}
+        />
+      );
+      
+    default:
+      return null;
+  }
 };

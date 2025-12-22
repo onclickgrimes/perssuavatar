@@ -8,3 +8,4 @@ export * from './TextOverlay';
 export * from './AnimatedSvgOverlay';
 export * from './GeometricPatterns';
 export * from './WavyGrid';
+export * from './ChromaKeyMedia';

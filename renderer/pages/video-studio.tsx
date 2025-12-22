@@ -79,6 +79,9 @@ export default function VideoStudioPage() {
           emotion: seg.emotion,
           imagePrompt: seg.imagePrompt,
           imageUrl: seg.imageUrl,
+          asset_url: seg.asset_url, // ✅ Salvar asset URL
+          chroma_key: seg.chroma_key, // ✅ Salvar config chroma key
+          background: seg.background, // ✅ Salvar background
           assetType: seg.assetType,
           cameraMovement: seg.cameraMovement,
           transition: seg.transition,
@@ -126,6 +129,9 @@ export default function VideoStudioPage() {
              emotion: seg.emotion,
              imagePrompt: seg.imagePrompt,
              imageUrl: seg.imageUrl,
+             asset_url: seg.asset_url, // ✅ Carregar URL do asset (pode ser diferente de imageUrl)
+             chroma_key: seg.chroma_key, // ✅ Carregar configuração de Chroma Key
+             background: seg.background, // ✅ Carregar background
              assetType: seg.assetType,
              cameraMovement: seg.cameraMovement,
              transition: seg.transition,

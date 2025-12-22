@@ -26,6 +26,8 @@ export interface TranscriptionSegment {
   emotion?: string;
   imagePrompt?: string;
   imageUrl?: string;
+  /** URL do asset (para vídeos, pode ser diferente de imageUrl) */
+  asset_url?: string;
   assetType?: string;
   cameraMovement?: string;
   transition?: string;
@@ -42,6 +44,19 @@ export interface TranscriptionSegment {
     highlightColor?: string;
     fontWeight?: string;
   }>;
+  /** Configuração de Chroma Key (para vídeos com fundo verde/azul) */
+  chroma_key?: {
+    color: 'green' | 'blue' | 'custom';
+    customColor?: { r: number; g: number; b: number };
+    threshold?: number;
+    smoothing?: number;
+  };
+  /** Background (para composições com chromakey) */
+  background?: {
+    type: 'image' | 'video' | 'solid_color';
+    url?: string;
+    color?: string;
+  };
 }
 
 export interface ProjectState {

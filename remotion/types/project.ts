@@ -65,6 +65,7 @@ export const AssetTypeSchema = z.enum([
   'video_runway',     // Vídeo gerado pelo Runway
   'video_pika',       // Vídeo gerado pelo Pika
   'video_static',     // Vídeo estático (já existente)
+  'video_chromakey',  // Vídeo com chroma key (remoção de fundo verde/azul)
   'avatar',           // Avatar animado (Live2D, etc)
   'text_only',        // Apenas texto/tipografia
   'solid_color',      // Cor sólida de fundo
@@ -159,6 +160,25 @@ export const VisualConceptSchema = z.object({
 export type VisualConcept = z.infer<typeof VisualConceptSchema>;
 
 // ========================================
+// CHROMA KEY CONFIG
+// ========================================
+
+export const ChromaKeyConfigSchema = z.object({
+  /** Cor base para remoção (green, blue, ou custom) */
+  color: z.enum(['green', 'blue', 'custom']).default('green'),
+  /** Cor customizada em formato RGB (apenas se color === 'custom') */
+  customColor: z.object({
+    r: z.number().min(0).max(255),
+    g: z.number().min(0).max(255),
+    b: z.number().min(0).max(255),
+  }).optional(),
+  /** Limiar para detecção da cor (0-255), padrão: 100 */
+  threshold: z.number().min(0).max(255).default(100),
+  /** Suavização das bordas (0-1), padrão: 0.2 */
+  smoothing: z.number().min(0).max(1).default(0.2),
+}).optional();
+
+// ========================================
 // AUDIO CONFIG
 // ========================================
 
@@ -178,6 +198,20 @@ export const AudioConfigSchema = z.object({
 }).optional();
 
 export type AudioConfig = z.infer<typeof AudioConfigSchema>;
+
+export type ChromaKeyConfig = z.infer<typeof ChromaKeyConfigSchema>;
+
+// ========================================
+// BACKGROUND CONFIG
+// ========================================
+
+export const BackgroundConfigSchema = z.object({
+  type: z.enum(['image', 'video', 'solid_color']),
+  url: z.string().optional(),
+  color: z.string().optional(),
+}).optional();
+
+export type BackgroundConfig = z.infer<typeof BackgroundConfigSchema>;
 
 // ========================================
 // SCENE
@@ -226,6 +260,11 @@ export const SceneSchema = z.object({
   /** Configuração de áudio específica da cena */
   audio: AudioConfigSchema,
 
+  /** Configuração de chroma key (para vídeos com fundo verde/azul) */
+  chroma_key: ChromaKeyConfigSchema,
+
+  /** Configuração de background (opcional) */
+  background: BackgroundConfigSchema,
   
   /** Metadados extras */
   metadata: z.record(z.string(), z.unknown()).optional(),
