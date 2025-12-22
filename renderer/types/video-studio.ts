@@ -57,6 +57,14 @@ export interface TranscriptionSegment {
     url?: string;
     color?: string;
   };
+  timeline_config?: {
+    items: Array<{
+        id: string;
+        year: string;
+        label: string;
+        image?: string;
+    }>;
+  };
 }
 
 export interface ProjectState {

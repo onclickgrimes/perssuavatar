@@ -94,6 +94,9 @@ export function PreviewStep({
         ...(seg.background && {
           background: seg.background,
         }),
+        ...(seg.timeline_config && {
+          timeline_config: seg.timeline_config,
+        }),
       })),
       schema_version: '1.0',
     };

@@ -13,6 +13,7 @@ import { HighlightWordComponent } from './HighlightWord';
 import { AnimatedSvgOverlay } from './AnimatedSvgOverlay';
 import { GeometricPatterns } from './GeometricPatterns';
 import { WavyGrid } from './WavyGrid';
+import { Timeline3D } from './Timeline3D';
 import { ChromaKeyMedia, greenScreenPreset, blueScreenPreset } from './ChromaKeyMedia';
 import { useProjectConfig } from '../contexts/ProjectConfigContext';
 
@@ -323,6 +324,14 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
     // Grade Ondulada 3D
     case 'wavy_grid':
       return <WavyGrid />;
+    
+    // Timeline 3D
+    case 'timeline_3d':
+       if (scene.timeline_config) {
+            return <Timeline3D items={scene.timeline_config.items} />;
+       }
+       // Fallback mock data if allowed or just placeholder
+       return <PlaceholderImage description="Timeline 3D (Sem configuração)" />;
     
     // Apenas texto
     case 'text_only':

@@ -15,6 +15,7 @@ import {
 import { TrailPrintingDemo } from './compositions/TrailPrintingDemo';
 import { TrailPrintingVisualGuide } from './compositions/TrailPrintingVisualGuide';
 import { WaveEffectDemo } from './compositions/WaveEffectDemo';
+import { Timeline3D, timeline3DSchema } from './components/Timeline3D';
 import { calculateProjectFrames } from './types/project';
 
 export const RemotionRoot: React.FC = () => {
@@ -134,6 +135,42 @@ export const RemotionRoot: React.FC = () => {
           defaultProps={{}}
         />
       */}
+      {/* 
+        =========================================
+        TIMELINE 3D - Historical Visuals
+        =========================================
+      */}
+      <Composition
+        id="Timeline3D"
+        component={Timeline3D}
+        durationInFrames={300}
+        fps={30}
+        width={1920}
+        height={1080}
+        schema={timeline3DSchema}
+        defaultProps={{
+          items: [
+            {
+              id: '1',
+              year: '470 BC',
+              label: 'Socrates',
+              image: '/generic_historical_figure.png', 
+            },
+            {
+              id: '2',
+              year: '1903',
+              label: 'Marie Curie',
+              image: '/generic_historical_figure.png',
+            },
+            {
+              id: '3',
+              year: '1915',
+              label: 'Albert Einstein',
+              image: '/generic_historical_figure.png',
+            },
+          ]
+        }}
+      />
     </>
   );
 };

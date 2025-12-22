@@ -68,6 +68,14 @@ export interface VideoProjectSegment {
         threshold?: number;
         smoothing?: number;
     };
+    timeline_config?: {
+        items: Array<{
+            id: string;
+            year: string;
+            label: string;
+            image?: string;
+        }>;
+    };
     background?: {
         type: 'image' | 'video' | 'solid_color';
         url?: string;
@@ -137,6 +145,14 @@ export interface RemotionProject {
             position: string;
             style: string;
             animation: string;
+        };
+        timeline_config?: {
+            items: Array<{
+                id: string;
+                year: string;
+                label: string;
+                image?: string;
+            }>;
         };
     }>;
     schema_version: string;
@@ -969,6 +985,10 @@ Responda APENAS com um array JSON válido no formato:
                         : undefined,
                 }
             }),
+            // Timeline 3D
+            ...(seg.timeline_config && {
+                timeline_config: seg.timeline_config
+            }),
         }));
 
         console.log('🔧 Scene 1 text_overlay.words:', scenes[0]?.text_overlay?.words?.length || 0, 'words');
@@ -1116,6 +1136,7 @@ Responda APENAS com um array JSON válido no formato:
                 cameraMovement: segment.cameraMovement,
                 transition: segment.transition,
                 highlightWords: segment.highlightWords,
+                timeline_config: segment.timeline_config,
                 words: segment.words, // Words fica por último
             })),
         };

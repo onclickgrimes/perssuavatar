@@ -82,6 +82,7 @@ export default function VideoStudioPage() {
           asset_url: seg.asset_url, // ✅ Salvar asset URL
           chroma_key: seg.chroma_key, // ✅ Salvar config chroma key
           background: seg.background, // ✅ Salvar background
+          timeline_config: seg.timeline_config, // ✅ Salvar config da timeline
           assetType: seg.assetType,
           cameraMovement: seg.cameraMovement,
           transition: seg.transition,
@@ -132,6 +133,7 @@ export default function VideoStudioPage() {
              asset_url: seg.asset_url, // ✅ Carregar URL do asset (pode ser diferente de imageUrl)
              chroma_key: seg.chroma_key, // ✅ Carregar configuração de Chroma Key
              background: seg.background, // ✅ Carregar background
+             timeline_config: seg.timeline_config, // ✅ Carregar config da timeline
              assetType: seg.assetType,
              cameraMovement: seg.cameraMovement,
              transition: seg.transition,

@@ -71,9 +71,27 @@ export const AssetTypeSchema = z.enum([
   'solid_color',      // Cor sólida de fundo
   'geometric_patterns', // Padrões geométricos animados
   'wavy_grid',        // Grade ondulada 3D estilo Daniel Penin
+  'timeline_3d',      // Linha do tempo 3D histórica
 ]);
 
 export type AssetType = z.infer<typeof AssetTypeSchema>;
+
+// ========================================
+// TIMELINE CONFIG
+// ========================================
+
+export const TimelineItemSchema = z.object({
+  id: z.string(),
+  year: z.string(),
+  label: z.string(),
+  image: z.string().optional(),
+});
+
+export const TimelineConfigSchema = z.object({
+  items: z.array(TimelineItemSchema),
+});
+
+export type TimelineConfig = z.infer<typeof TimelineConfigSchema>;
 
 // ========================================
 // TEXT OVERLAY
@@ -262,6 +280,9 @@ export const SceneSchema = z.object({
 
   /** Configuração de chroma key (para vídeos com fundo verde/azul) */
   chroma_key: ChromaKeyConfigSchema,
+
+  /** Configuração da linha do tempo 3D */
+  timeline_config: TimelineConfigSchema.optional(),
 
   /** Configuração de background (opcional) */
   background: BackgroundConfigSchema,
