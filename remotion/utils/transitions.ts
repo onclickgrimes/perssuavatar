@@ -65,6 +65,9 @@ export const TRANSITION_EFFECTS: Record<Transition, { description: string }> = {
   glitch: {
     description: 'Efeito glitch digital - transição com distorção (usado para erro, falha ou estilo cyberpunk).',
   },
+  zoom_transition: {
+    description: 'Zoom dramático de transição - aproxima fortemente a cena atual e inicia a próxima (usado para impacto visual e conexão entre cenas).',
+  },
 };
 
 /**
@@ -123,6 +126,11 @@ export function applyTransition(
       
     case 'glitch':
       return glitch(progress, frame);
+      
+    case 'zoom_transition':
+      // Só aplica zoom na SAÍDA da cena (isEntering = false)
+      // Na entrada, mantém normal
+      return isEntering ? { opacity: 1 } : zoomTransitionOut(progress);
       
     default:
       return { opacity: 1 };
@@ -196,6 +204,30 @@ function glitch(progress: number, frame: number): TransitionStyles {
     opacity: progress,
     transform: `translate(${offsetX}px, ${offsetY}px)`,
     filter: progress < 0.8 ? `hue-rotate(${Math.sin(frame) * 30}deg)` : 'none',
+  };
+}
+
+function zoomTransitionOut(progress: number): TransitionStyles {
+  // Zoom dramático de saída
+  // progress vai de 1 (início) para 0 (fim saída) quando isEntering = false
+  // Inverter: quando progress = 1, zoom = 1 (normal)
+  //           quando progress = 0, zoom = 5 (máximo - muito dramático!)
+  const scale = interpolate(progress, [0, 1], [5, 1]);
+  const opacity = interpolate(progress, [0, 0.3, 1], [0, 0.8, 1]);
+  
+  // Deslocamento para terminar no CENTRO de um quadrado da grade
+  // Aproximadamente 25% de offset para não terminar nas linhas
+  const offsetX = interpolate(progress, [0, 1], [25, 0]);
+  const offsetY = interpolate(progress, [0, 1], [25, 0]);
+  
+  // Efeito bokeh (blur) no final do zoom
+  // Aumenta o blur quanto mais próximo do fim (progress -> 0)
+  const blurAmount = interpolate(progress, [0, 0.5, 1], [20, 5, 0]);
+  
+  return {
+    opacity,
+    transform: `translate(${offsetX}%, ${offsetY}%) scale(${scale})`,
+    filter: `blur(${blurAmount}px)`,
   };
 }
 

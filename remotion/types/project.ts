@@ -47,6 +47,7 @@ export const TransitionSchema = z.enum([
   'wipe_right',       // Wipe para direita
   'blur',             // Blur transition
   'glitch',           // Glitch effect
+  'zoom_transition',  // Zoom dramático de transição
 ]);
 
 export type Transition = z.infer<typeof TransitionSchema>;
