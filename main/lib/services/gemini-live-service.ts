@@ -45,7 +45,7 @@ export class GeminiLiveService extends EventEmitter {
 
             const ai = new GoogleGenAI({ apiKey });
 
-            const model = 'gemini-2.5-flash-native-audio-preview-09-2025';
+            const model = 'gemini-2.5-flash-native-audio-preview-12-2025';
             const config = {
                 responseModalities: [
                     Modality.AUDIO,

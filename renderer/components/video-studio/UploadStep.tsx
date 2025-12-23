@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { NicheModal, ChannelNiche } from './NicheModal';
 
 interface UploadStepProps {
   onUpload: (file: File) => void;
@@ -10,6 +11,8 @@ interface UploadStepProps {
   onAspectRatiosChange: (value: string[]) => void;
   useStockFootage: boolean;
   onUseStockFootageChange: (value: boolean) => void;
+  selectedNiche: ChannelNiche | null;
+  onNicheChange: (niche: ChannelNiche | null) => void;
 }
 
 const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '4:5', '3:4'];
@@ -24,8 +27,11 @@ export function UploadStep({
   onAspectRatiosChange,
   useStockFootage = false,
   onUseStockFootageChange,
+  selectedNiche,
+  onNicheChange,
 }: UploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isNicheModalOpen, setIsNicheModalOpen] = useState(false);
 
   const handleDrop = (e: React.DragEvent) => {
     e.preventDefault();
@@ -93,6 +99,52 @@ export function UploadStep({
 
       {/* Campos de Configuração */}
       <div className="w-full max-w-xl mt-8 space-y-6">
+        {/* Nicho do Canal */}
+        <div>
+          <label className="block text-white/80 font-medium mb-2">
+            Nicho do Canal
+          </label>
+          <button
+            onClick={() => setIsNicheModalOpen(true)}
+            className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+              selectedNiche
+                ? 'border-pink-500/50 bg-pink-500/10'
+                : 'border-white/10 bg-black/30 hover:border-white/30 hover:bg-white/5'
+            }`}
+          >
+            {selectedNiche ? (
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">{selectedNiche.icon || '📺'}</span>
+                <div className="flex-1">
+                  <h4 className="text-white font-medium">{selectedNiche.name}</h4>
+                  <p className="text-white/50 text-sm">{selectedNiche.description}</p>
+                </div>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/40">
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </div>
+            ) : (
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center">
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/40">
+                    <path d="M12 5v14M5 12h14" />
+                  </svg>
+                </div>
+                <div className="flex-1">
+                  <span className="text-white/60">Selecionar nicho do canal</span>
+                  <p className="text-white/40 text-sm">Personaliza o estilo de vídeo para seu nicho</p>
+                </div>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/40">
+                  <path d="M9 18l6-6-6-6" />
+                </svg>
+              </div>
+            )}
+          </button>
+          <p className="text-xs text-white/40 mt-2">
+            Define prompts, componentes e estilos específicos para o nicho
+          </p>
+        </div>
+
         {/* Proporção do Vídeo */}
         <div>
           <label className="block text-white/80 font-medium mb-2">
@@ -179,6 +231,15 @@ export function UploadStep({
           </p>
         </div>
       </div>
+
+      {/* Modal de Nichos */}
+      <NicheModal
+        isOpen={isNicheModalOpen}
+        onClose={() => setIsNicheModalOpen(false)}
+        onSelect={onNicheChange}
+        selectedNiche={selectedNiche}
+      />
     </div>
   );
 }
+

@@ -10,8 +10,7 @@ from google.genai import types
 client = genai.Client(vertexai=True, project="PROJECT_ID", location="LOCATION")
 
 # Configuration
-
-MODEL = "gemini-live-2.5-flash-preview-native-audio-09-2025"
+MODEL = "gemini-2.5-flash-native-audio-preview-12-2025"
 
 async def main():
 print(f"Connecting to the service with handle {previous_session_handle}...")

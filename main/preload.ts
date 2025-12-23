@@ -355,7 +355,7 @@ const handler = {
       ipcRenderer.invoke('video-project:transcribe', audioPath),
     
     // Analisar segmentos com IA
-    analyze: (segments: any[], options?: { editingStyle?: string; authorConclusion?: string; provider?: 'gemini' | 'openai' | 'deepseek', autoSelectFootage?: boolean }) => 
+    analyze: (segments: any[], options?: { editingStyle?: string; authorConclusion?: string; provider?: 'gemini' | 'openai' | 'deepseek', autoSelectFootage?: boolean, nichePrompt?: string }) => 
       ipcRenderer.invoke('video-project:analyze', segments, options),
     
     // Converter projeto para formato Remotion
@@ -399,6 +399,52 @@ const handler = {
       ipcRenderer.on('video-project:render-progress', subscription);
       return () => ipcRenderer.removeListener('video-project:render-progress', subscription);
     }
+  },
+  
+  // ========================================
+  // NICHE (Channel Niches) SERVICE
+  // ========================================
+  
+  niche: {
+    // Listar todos os nichos
+    list: () => ipcRenderer.invoke('niche:list'),
+    
+    // Buscar nicho por ID
+    get: (id: number) => ipcRenderer.invoke('niche:get', id),
+    
+    // Buscar nicho por nome
+    getByName: (name: string) => ipcRenderer.invoke('niche:get-by-name', name),
+    
+    // Criar novo nicho
+    create: (niche: {
+      name: string;
+      description?: string;
+      icon?: string;
+      ai_prompt: string;
+      asset_types?: string[];
+      emotions?: string[];
+      use_image_prompts?: boolean;
+      camera_movements?: string[];
+      transitions?: string[];
+      use_highlight_words?: boolean;
+      entry_animations?: string[];
+      exit_animations?: string[];
+      use_stock_footage?: boolean;
+      stock_categories?: string[];
+      stock_rules?: string;
+      default_colors?: string[];
+      default_font?: string;
+      components_allowed?: string[];
+    }) => ipcRenderer.invoke('niche:create', niche),
+    
+    // Atualizar nicho existente
+    update: (id: number, updates: any) => ipcRenderer.invoke('niche:update', id, updates),
+    
+    // Deletar nicho
+    delete: (id: number) => ipcRenderer.invoke('niche:delete', id),
+    
+    // Gerar prompt completo para um nicho
+    generatePrompt: (nicheId: number) => ipcRenderer.invoke('niche:generate-prompt', nicheId),
   }
 }
 

@@ -12,6 +12,7 @@ import React, { useState, useCallback } from 'react';
 import Head from 'next/head';
 import { WorkflowStep, ProjectState } from '../types/video-studio';
 import { UploadStep } from '../components/video-studio/UploadStep';
+import { ChannelNiche } from '../components/video-studio/NicheModal';
 import { ProcessingStep } from '../components/video-studio/ProcessingStep';
 import { KeyframesStep } from '../components/video-studio/KeyframesStep';
 import { PromptsStep } from '../components/video-studio/PromptsStep';
@@ -33,6 +34,7 @@ export default function VideoStudioPage() {
     selectedAspectRatios: ['9:16'], // Default
     useStockFootage: false,
   });
+  const [selectedNiche, setSelectedNiche] = useState<ChannelNiche | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renderProgress, setRenderProgress] = useState(0);
@@ -253,6 +255,17 @@ export default function VideoStudioPage() {
         return;
       }
 
+      // Gerar prompt do nicho se estiver selecionado
+      let nichePrompt: string | undefined;
+      if (selectedNiche?.id) {
+        try {
+          nichePrompt = await window.electron.niche.generatePrompt(selectedNiche.id);
+          console.log('🎯 Using niche prompt:', selectedNiche.name);
+        } catch (error) {
+          console.warn('Failed to generate niche prompt, using default:', error);
+        }
+      }
+
       const result = await window.electron.videoProject.analyze(
         project.segments,
         {
@@ -260,6 +273,7 @@ export default function VideoStudioPage() {
           authorConclusion: project.authorConclusion,
           provider: selectedProvider,
           autoSelectFootage: project.useStockFootage,
+          nichePrompt, // Pass the niche prompt if available
         }
       );
 
@@ -278,7 +292,7 @@ export default function VideoStudioPage() {
     } finally {
       setIsProcessing(false);
     }
-  }, [project.segments, project.editingStyle, project.authorConclusion, selectedProvider]);
+  }, [project.segments, project.editingStyle, project.authorConclusion, selectedProvider, selectedNiche, project.useStockFootage]);
 
   // Handler para atualizar emoção de um segmento
   const handleUpdateEmotion = useCallback((segmentId: number, emotion: string) => {
@@ -412,6 +426,8 @@ export default function VideoStudioPage() {
             onAspectRatiosChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: value }))}
             useStockFootage={project.useStockFootage || false}
             onUseStockFootageChange={(value) => setProject(prev => ({ ...prev, useStockFootage: value }))}
+            selectedNiche={selectedNiche}
+            onNicheChange={setSelectedNiche}
           />
         );
       

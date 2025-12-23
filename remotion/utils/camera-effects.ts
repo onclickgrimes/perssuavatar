@@ -18,64 +18,88 @@ interface CameraTransform {
   transformOrigin?: string;
 }
 
-export const CAMERA_EFFECTS: Record<CameraMovement, { description: string; apply: (params: CameraEffectParams) => CameraTransform }> = {
+export const CAMERA_EFFECTS: Record<CameraMovement, { label: string; description: string; apply: (params: CameraEffectParams) => CameraTransform }> = {
   static: {
+    label: 'Estático',
     description: 'Usado para foco total no conteúdo, clareza e estabilidade (falas diretas, explicações).',
     apply: () => ({ transform: 'scale(1) translate(0, 0)' }),
   },
   zoom_in_slow: {
+    label: 'Zoom In Lento',
     description: 'Cria aproximação gradual para aumentar atenção, tensão leve ou destaque emocional.',
     apply: (params) => zoomIn(params.frame, params.durationInFrames, 1, 1.15),
   },
   zoom_in_fast: {
+    label: 'Zoom In Rápido',
     description: 'Impacto imediato, surpresa ou ênfase forte em um momento específico.',
     apply: (params) => zoomIn(params.frame, params.durationInFrames, 1, 1.3),
   },
   zoom_out_slow: {
+    label: 'Zoom Out Lento',
     description: 'Sensação de distanciamento, reflexão ou encerramento de ideia.',
     apply: (params) => zoomOut(params.frame, params.durationInFrames, 1.15, 1),
   },
   zoom_out_fast: {
+    label: 'Zoom Out Rápido',
     description: 'Quebra de expectativa, alívio de tensão ou mudança brusca de contexto.',
     apply: (params) => zoomOut(params.frame, params.durationInFrames, 1.3, 1),
   },
   ken_burns: {
+    label: 'Ken Burns',
     description: 'Movimento suave (pan + zoom) usado em imagens estáticas para estilo documentário ou narrativo.',
     apply: (params) => kenBurns(params.frame, params.durationInFrames),
   },
   pan_left: {
+    label: 'Pan Esquerda',
     description: 'Revelação horizontal de informação, cenário ou transição entre elementos.',
     apply: (params) => panHorizontal(params.frame, params.durationInFrames, 5, -5),
   },
   pan_right: {
+    label: 'Pan Direita',
     description: 'Revelação horizontal de informação, cenário ou transição entre elementos.',
     apply: (params) => panHorizontal(params.frame, params.durationInFrames, -5, 5),
   },
   pan_up: {
+    label: 'Pan Cima',
     description: 'Revelação vertical, hierarquia visual ou dramatização de escala.',
     apply: (params) => panVertical(params.frame, params.durationInFrames, 5, -5),
   },
   pan_down: {
+    label: 'Pan Baixo',
     description: 'Revelação vertical, hierarquia visual ou dramatização de escala.',
     apply: (params) => panVertical(params.frame, params.durationInFrames, -5, 5),
   },
   shake: {
+    label: 'Tremor',
     description: 'Transmite urgência, caos, tensão extrema ou impacto emocional.',
     apply: (params) => shake(params.frame, params.fps),
   },
   rotate_cw: {
+    label: 'Rotação Horário',
     description: 'Desorientação, instabilidade emocional ou efeito estilizado/dramático.',
     apply: (params) => rotate(params.frame, params.durationInFrames, 0, 3),
   },
   rotate_ccw: {
+    label: 'Rotação Anti-Horário',
     description: 'Desorientação, instabilidade emocional ou efeito estilizado/dramático.',
     apply: (params) => rotate(params.frame, params.durationInFrames, 0, -3),
   },
   trail_printing: {
+    label: 'Trail Printing',
     description: 'Trail printing / accordion blur — deixa um rastro das frames anteriores antes de alcançar a cena atual, criando efeito de múltipla exposição.',
     apply: (params) => ({ transform: 'scale(1) translate(0, 0)' }),
   },
 };
+
+/**
+ * Array de opções para uso em componentes React (selects, botões, etc.)
+ * Gerado automaticamente a partir de CAMERA_EFFECTS
+ */
+export const CAMERA_MOVEMENTS_OPTIONS = (Object.keys(CAMERA_EFFECTS) as CameraMovement[]).map((key) => ({
+  value: key,
+  label: CAMERA_EFFECTS[key].label,
+  description: CAMERA_EFFECTS[key].description,
+}));
 
 /**
  * Aplica o efeito de câmera baseado no tipo

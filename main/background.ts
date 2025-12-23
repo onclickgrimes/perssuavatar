@@ -114,6 +114,7 @@ import { VoiceAssistant } from './lib/voice-assistant';
 import ffmpeg from 'fluent-ffmpeg';
 import { initializeDatabase, getTranscriptionSettings, setTranscriptionSettings } from './lib/database';
 import { registerDatabaseHandlers } from './lib/database-handlers';
+import { registerNicheHandlers } from './lib/handlers/niche-handlers';
 import { isProd, getUserDataPath } from './lib/app-config';
 
 // Get ffmpeg path - different for dev vs prod
@@ -148,6 +149,7 @@ if (isProd) {
   initializeDatabase();
   initializeSqliteDatabase();
   registerDatabaseHandlers();
+  registerNicheHandlers();
 
   // Permissão de Microfone
   app.on('web-contents-created', (event, contents) => {

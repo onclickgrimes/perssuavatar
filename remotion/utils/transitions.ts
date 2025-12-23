@@ -25,47 +25,61 @@ interface TransitionStyles {
 /**
  * Configuração de todas as transições disponíveis
  */
-export const TRANSITION_EFFECTS: Record<Transition, { description: string }> = {
+export const TRANSITION_EFFECTS: Record<Transition, { label: string; description: string }> = {
   none: {
+    label: 'Corte Seco',
     description: 'Corte seco - sem transição, mudança instantânea (usado para impacto imediato ou ritmo rápido).',
   },
   fade: {
+    label: 'Fade',
     description: 'Fade suave - transição gradual de opacidade (usado para mudanças naturais e fluidas).',
   },
   crossfade: {
+    label: 'Crossfade',
     description: 'Dissolve entre cenas - sobreposição gradual (usado para continuidade temporal ou temática).',
   },
   slide_left: {
+    label: 'Slide Esquerda',
     description: 'Desliza para esquerda - revela próxima cena da direita (usado para progressão ou avanço na narrativa).',
   },
   slide_right: {
+    label: 'Slide Direita',
     description: 'Desliza para direita - revela próxima cena da esquerda (usado para retrocesso ou flashback).',
   },
   slide_up: {
+    label: 'Slide Cima',
     description: 'Desliza para cima - revela próxima cena de baixo (usado para elevação ou conclusão).',
   },
   slide_down: {
+    label: 'Slide Baixo',
     description: 'Desliza para baixo - revela próxima cena de cima (usado para descida ou aprofundamento).',
   },
   zoom_in: {
+    label: 'Zoom In',
     description: 'Zoom crescente na transição - aproximação dramática (usado para foco ou intensificação).',
   },
   zoom_out: {
+    label: 'Zoom Out',
     description: 'Zoom decrescente na transição - afastamento revelador (usado para contexto ou distanciamento).',
   },
   wipe_left: {
+    label: 'Wipe Esquerda',
     description: 'Wipe para esquerda - limpa a tela horizontalmente (usado para mudança definitiva).',
   },
   wipe_right: {
+    label: 'Wipe Direita',
     description: 'Wipe para direita - limpa a tela horizontalmente (usado para mudança definitiva).',
   },
   blur: {
+    label: 'Blur',
     description: 'Desfoque entre cenas - transição suave com blur (usado para sonhos, memórias ou passagem de tempo).',
   },
   glitch: {
+    label: 'Glitch',
     description: 'Efeito glitch digital - transição com distorção (usado para erro, falha ou estilo cyberpunk).',
   },
   zoom_transition: {
+    label: 'Zoom Dramático',
     description: 'Zoom dramático de transição - aproxima fortemente a cena atual e inicia a próxima (usado para impacto visual e conexão entre cenas).',
   },
 };
@@ -237,3 +251,13 @@ function zoomTransitionOut(progress: number): TransitionStyles {
 export function transitionSecondsToFrames(seconds: number, fps: number): number {
   return Math.round(seconds * fps);
 }
+
+/**
+ * Array de opções para uso em componentes React (selects, botões, etc.)
+ * Gerado automaticamente a partir de TRANSITION_EFFECTS
+ */
+export const TRANSITION_OPTIONS = (Object.keys(TRANSITION_EFFECTS) as Transition[]).map((key) => ({
+  value: key,
+  label: TRANSITION_EFFECTS[key].label,
+  description: TRANSITION_EFFECTS[key].description,
+}));

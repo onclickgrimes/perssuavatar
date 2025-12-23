@@ -614,6 +614,7 @@ export class VideoProjectService extends EventEmitter {
             authorConclusion?: string;
             provider?: AIProvider;
             autoSelectFootage?: boolean;
+            nichePrompt?: string; // Prompt personalizado do nicho do canal
         }
     ): Promise<AnalysisResult> {
         console.log('🔍 [VideoProjectService] analyzeWithAI called with', segments.length, 'segments');
@@ -833,11 +834,50 @@ export class VideoProjectService extends EventEmitter {
 
     private buildAnalysisPrompt(
         segments: VideoProjectSegment[],
-        options?: { editingStyle?: string; authorConclusion?: string }
+        options?: { editingStyle?: string; authorConclusion?: string; nichePrompt?: string }
     ): string {
         const segmentsList = segments.map(s =>
             `ID: ${s.id}\nTexto: "${s.text}"\nTempo: ${s.start.toFixed(2)}s - ${s.end.toFixed(2)}s`
         ).join('\n\n');
+
+        // Se tiver um prompt de nicho, usa ele como base
+        if (options?.nichePrompt) {
+            return `${options.nichePrompt}
+
+${options?.editingStyle ? `\nEstilo de edição desejado: ${options.editingStyle}` : ''}
+${options?.authorConclusion ? `\nConclusão/tom do autor: ${options.authorConclusion}` : ''}
+
+SEGMENTOS PARA ANÁLISE:
+${segmentsList}
+
+Responda APENAS com um array JSON válido no formato:
+[
+  {
+    "id": 1,
+    "emotion": "emoção",
+    "imagePrompt": "detailed prompt in English...",
+    "assetType": "image_flux | video_stock | solid_color | wavy_grid | geometric_patterns",
+    "cameraMovement": "movimento de câmera",
+    "transition": "transição",
+    "highlightWords": [
+      {
+        "text": "palavra",
+        "duration": 1.5,
+        "entryAnimation": "animação de entrada",
+        "exitAnimation": "animação de saída",
+        "size": "large",
+        "position": "center",
+        "effect": "glow",
+        "color": "#FFD700",
+        "fontWeight": "bold"
+      }
+    ]
+  },
+  ...
+]`;
+        }
+
+        // Prompt padrão (original)
 
         return `Você é um diretor de vídeo criativo. Analise os seguintes segmentos de uma transcrição de áudio e sugira:
 
