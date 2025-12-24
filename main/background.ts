@@ -1024,9 +1024,8 @@ ipcMain.handle('video-project:analyze', async (
   event, 
   segments: VideoProjectSegment[], 
   options?: { 
-    editingStyle?: string; 
-    authorConclusion?: string; 
-    provider?: 'gemini' | 'openai' | 'deepseek' 
+    provider?: 'gemini' | 'openai' | 'deepseek';
+    nichePrompt?: string;
   }
 ) => {
   try {

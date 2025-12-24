@@ -355,7 +355,7 @@ const handler = {
       ipcRenderer.invoke('video-project:transcribe', audioPath),
     
     // Analisar segmentos com IA
-    analyze: (segments: any[], options?: { editingStyle?: string; authorConclusion?: string; provider?: 'gemini' | 'openai' | 'deepseek', autoSelectFootage?: boolean, nichePrompt?: string }) => 
+    analyze: (segments: any[], options?: { provider?: 'gemini' | 'openai' | 'deepseek', nichePrompt?: string }) => 
       ipcRenderer.invoke('video-project:analyze', segments, options),
     
     // Converter projeto para formato Remotion
@@ -426,10 +426,8 @@ const handler = {
       use_image_prompts?: boolean;
       camera_movements?: string[];
       transitions?: string[];
-      use_highlight_words?: boolean;
       entry_animations?: string[];
       exit_animations?: string[];
-      use_stock_footage?: boolean;
       stock_categories?: string[];
       stock_rules?: string;
       default_colors?: string[];

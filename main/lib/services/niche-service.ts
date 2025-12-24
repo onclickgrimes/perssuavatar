@@ -5,6 +5,9 @@
  */
 import { Knex } from 'knex';
 import db from '../../../db';
+import { ASSET_TYPE_OPTIONS, type AssetType } from '../../../remotion/types/project';
+import { CAMERA_EFFECTS } from '../../../remotion/utils/camera-effects';
+import { TRANSITION_EFFECTS } from '../../../remotion/utils/transitions';
 
 export interface ChannelNiche {
     id?: number;
@@ -19,12 +22,10 @@ export interface ChannelNiche {
     use_image_prompts?: boolean;
     camera_movements?: string[];
     transitions?: string[];
-    use_highlight_words?: boolean;
     entry_animations?: string[];
     exit_animations?: string[];
     
     // Stock footage
-    use_stock_footage?: boolean;
     stock_categories?: string[];
     stock_rules?: string;
     
@@ -126,9 +127,24 @@ export class NicheService {
             prompt += `\nNÃO use outros componentes além dos listados.`;
         }
 
-        // Adicionar tipos de assets
+        // Adicionar tipos de assets PERMITIDOS com descrições para a IA escolher
         if (niche.asset_types && niche.asset_types.length > 0) {
-            prompt += `\n\nTIPOS DE ASSETS PERMITIDOS:\n- ${niche.asset_types.join('\n- ')}`;
+            prompt += `\n\nTIPOS DE ASSETS PERMITIDOS (você DEVE escolher UM destes para cada cena):`;
+            for (const assetType of niche.asset_types) {
+                const assetInfo = ASSET_TYPE_OPTIONS[assetType as AssetType];
+                const desc = assetInfo?.aiDescription || assetType;
+                prompt += `\n- **${assetType}**: ${desc}`;
+            }
+            prompt += `\n\n⚠️ IMPORTANTE: Para cada cena, você DEVE escolher o "assetType" mais apropriado dentre os listados acima.`;
+            prompt += `\nNÃO use tipos que não estejam nesta lista.`;
+            
+            // Se video_stock está disponível, dar contexto adicional
+            if (niche.asset_types.includes('video_stock')) {
+                prompt += `\n\n📹 QUANDO USAR video_stock:`;
+                prompt += `\n- Use video_stock quando a cena descrever ações, pessoas, lugares ou movimentos que são facilmente encontrados em banco de vídeos stock`;
+                prompt += `\n- Escreva o imagePrompt em inglês com palavras-chave descritivas para busca semântica`;
+                prompt += `\n- Exemplo: "businessman working on laptop in modern office" ou "aerial view of ocean waves at sunset"`;
+            }
         }
 
         // Adicionar emoções preferidas
@@ -136,14 +152,30 @@ export class NicheService {
             prompt += `\n\nEMOÇÕES PREFERIDAS:\n- ${niche.emotions.join(', ')}`;
         }
 
-        // Adicionar movimentos de câmera
+        // Adicionar movimentos de câmera com descrições
         if (niche.camera_movements && niche.camera_movements.length > 0) {
-            prompt += `\n\nMOVIMENTOS DE CÂMERA PERMITIDOS:\n- ${niche.camera_movements.join(', ')}`;
+            prompt += `\n\n**cameraMovement**: Movimento de câmera sugerido (escolha UM dos permitidos):`;
+            for (const movement of niche.camera_movements) {
+                const config = CAMERA_EFFECTS[movement as keyof typeof CAMERA_EFFECTS];
+                if (config) {
+                    prompt += `\n- **${movement}**: ${config.description}`;
+                } else {
+                    prompt += `\n- **${movement}**`;
+                }
+            }
         }
 
-        // Adicionar transições
+        // Adicionar transições com descrições
         if (niche.transitions && niche.transitions.length > 0) {
-            prompt += `\n\nTRANSIÇÕES PERMITIDAS:\n- ${niche.transitions.join(', ')}`;
+            prompt += `\n\n**transition**: Transição para a próxima cena (escolha UMA das permitidas):`;
+            for (const transition of niche.transitions) {
+                const config = TRANSITION_EFFECTS[transition as keyof typeof TRANSITION_EFFECTS];
+                if (config) {
+                    prompt += `\n- **${transition}**: ${config.description}`;
+                } else {
+                    prompt += `\n- **${transition}**`;
+                }
+            }
         }
 
         // Animações
@@ -154,17 +186,116 @@ export class NicheService {
             prompt += `\n\nANIMAÇÕES DE SAÍDA:\n- ${niche.exit_animations.join(', ')}`;
         }
 
-        // Regras de highlight
-        if (!niche.use_highlight_words) {
-            prompt += `\n\nNÃO use highlight_words neste nicho.`;
+        // Regras de highlight - verificar se componente HighlightWord está permitido
+        const useHighlightWords = niche.components_allowed?.includes('HighlightWord');
+        if (useHighlightWords) {
+            prompt += `\n\n**highlightWords**: Array de palavras ou frases-chave que devem ser destacadas visualmente durante a cena.
+   Para cada palavra destacada, especifique:
+   - **text**: A palavra EXATA como aparece na transcrição (será sincronizada automaticamente com o áudio)
+   - **time**: Tempo de aparição em segundos (relativo ao início da cena, ex: 0.5)
+   - **duration**: Duração da exibição em segundos (padrão: 1.5s)
+   - **entryAnimation**: Animação de entrada
+     * **pop** - Escala rápida com bounce
+     * **bounce** - Múltiplos bounces ao aparecer
+     * **explode** - Explosão com rotação
+     * **slide_up** - Desliza de baixo para cima
+     * **zoom_in** - Zoom gradual
+     * **fade** - Fade in simples
+     * **wave** - Texto vazado que enche de baixo pra cima como onda (efeito premium!)
+   - **exitAnimation**: Animação de saída
+     * **evaporate** - Evapora subindo com partículas
+     * **fade** - Fade out simples
+     * **implode** - Implosão com rotação
+     * **slide_down** - Desliza para baixo
+     * **dissolve** - Dissolve com blur
+     * **scatter** - Dispersa com partículas
+     * **wave** - Texto esvazia de cima pra baixo como onda (efeito premium!)
+   - **size**: Tamanho (small, medium, large, huge)
+   - **position**: Posição (center, top, top-center, bottom, bottom-center, top-left, top-right, bottom-left, bottom-right, left, center-left, right, center-right)
+   - **effect**: Efeito visual (glow, shadow, outline, neon, none)
+   - **color**: Cor do texto em HEX (ex: "#FFD700" dourado, "#FF1744" vermelho, "#00E5FF" ciano, "#FFFFFF" branco)
+   - **fontWeight**: Peso da fonte (normal, bold, black)
+   
+   IMPORTANTE: 
+   - Especifique o texto EXATAMENTE como aparece na transcrição
+
+   Identifique entre zero e duas palavras-chave importantes por segmento que merecem destaque visual.
+   Escolha palavras que sejam:
+   - Conceitos-chave ou termos técnicos importantes
+   - Números ou estatísticas relevantes
+   - Palavras que expressam emoção forte
+   - Calls to action ou mensagens principais
+
+   IMPORTANTE: Sempre especifique uma **color** apropriada para o efeito escolhido.`;
         }
 
-        // Stock footage
-        if (niche.use_stock_footage && niche.stock_rules) {
+        // Stock footage rules (quando video_stock está nos asset_types)
+        if (niche.asset_types?.includes('video_stock') && niche.stock_rules) {
             prompt += `\n\nREGRAS DE STOCK FOOTAGE:\n${niche.stock_rules}`;
         }
 
+        // Gerar JSON de exemplo dinâmico baseado nas configurações
+        prompt += `\n\n${this.generateExampleJsonForNiche(niche)}`;
+
         return prompt;
+    }
+
+    /**
+     * Gera o JSON de exemplo para a IA baseado nas configurações do nicho
+     */
+    private generateExampleJsonForNiche(niche: ChannelNiche): string {
+        // Construir objeto de exemplo dinamicamente
+        const exampleSegment: Record<string, any> = {
+            id: 1,
+            emotion: niche.emotions && niche.emotions.length > 0 
+                ? niche.emotions[0] 
+                : 'emoção adequada',
+            imagePrompt: 'detailed visual prompt in English...',
+            assetType: niche.asset_types && niche.asset_types.length > 0 
+                ? niche.asset_types.join(' | ') 
+                : 'image_flux',
+        };
+
+        // Adicionar cameraMovement se configurado
+        if (niche.camera_movements && niche.camera_movements.length > 0) {
+            exampleSegment.cameraMovement = niche.camera_movements.join(' | ');
+        }
+
+        // Adicionar transition se configurado
+        if (niche.transitions && niche.transitions.length > 0) {
+            exampleSegment.transition = niche.transitions.join(' | ');
+        }
+
+        // Adicionar highlightWords APENAS se componente HighlightWord estiver em components_allowed
+        const useHighlightWords = niche.components_allowed?.includes('HighlightWord');
+        if (useHighlightWords) {
+            const highlightExample: Record<string, any> = {
+                text: 'palavra importante',
+                duration: 1.5,
+                size: 'large',
+                position: 'center',
+                effect: 'glow',
+                color: '#FFD700',
+                fontWeight: 'bold',
+            };
+
+            // Adicionar animações se configuradas
+            if (niche.entry_animations && niche.entry_animations.length > 0) {
+                highlightExample.entryAnimation = niche.entry_animations[0];
+            }
+            if (niche.exit_animations && niche.exit_animations.length > 0) {
+                highlightExample.exitAnimation = niche.exit_animations[0];
+            }
+
+            exampleSegment.highlightWords = [highlightExample];
+        }
+
+        // Formatar JSON com indentação
+        const jsonExample = JSON.stringify([exampleSegment, '...'], null, 2)
+            .replace('"..."', '...');
+
+        return `FORMATO DE RESPOSTA - Responda APENAS com um array JSON válido:
+${jsonExample}`;
     }
 
     /**

@@ -19,12 +19,10 @@ exports.up = function(knex) {
             table.boolean('use_image_prompts').defaultTo(true); // Se deve gerar prompts de imagem
             table.json('camera_movements'); // Movimentos de câmera permitidos
             table.json('transitions'); // Transições permitidas
-            table.boolean('use_highlight_words').defaultTo(true); // Se deve destacar palavras
             table.json('entry_animations'); // Animações de entrada permitidas
             table.json('exit_animations'); // Animações de saída permitidas
             
             // Configurações de stock footage (Supabase)
-            table.boolean('use_stock_footage').defaultTo(true); // Se pode usar vídeos do Supabase
             table.json('stock_categories'); // Categorias de vídeos permitidas ['natureza', 'tecnologia', etc]
             table.text('stock_rules'); // Regras adicionais para uso de stock footage
             
@@ -49,27 +47,14 @@ ESTILO VISUAL:
 - Use imagens dramáticas de ruínas, artefatos e reconstruções históricas
 - Prefira tons sérios, dourados, terrosos e escuros
 - Atmosfera cinematográfica e imersiva
-
-COMPONENTES ESPECIAIS:
-- Use Timeline3D para mostrar cronologias e períodos históricos
-- Use transições suaves como "fade" e "dissolve" para manter o tom sério
-
-EMOÇÕES PRINCIPAIS:
-- reflexão, seriedade, nostalgia, admiração, mistério
-
-REGRAS DE STOCK FOOTAGE:
-- Priorize vídeos de paisagens históricas, monumentos, artefatos
-- Evite vídeos com elementos modernos
-- Durações mais longas (5-8 segundos) para contemplação`,
+`,
                     asset_types: JSON.stringify(['image_flux', 'video_stock', 'solid_color']),
                     emotions: JSON.stringify(['reflexão', 'seriedade', 'nostalgia', 'admiração', 'mistério']),
                     use_image_prompts: true,
-                    camera_movements: JSON.stringify(['zoom_in_slow', 'pan_left', 'pan_right', 'static', 'drift']),
+                    camera_movements: JSON.stringify(['zoom_in_slow', 'pan_left', 'pan_right', 'static']),
                     transitions: JSON.stringify(['fade', 'dissolve', 'wipe_left', 'wipe_right']),
-                    use_highlight_words: true,
                     entry_animations: JSON.stringify(['fade', 'slide_up', 'zoom_in']),
                     exit_animations: JSON.stringify(['fade', 'dissolve', 'evaporate']),
-                    use_stock_footage: true,
                     stock_categories: JSON.stringify(['natureza', 'paisagem', 'histórico', 'arquitetura']),
                     stock_rules: 'Priorize vídeos sem pessoas modernas. Use duração mínima de 5 segundos.',
                     default_colors: JSON.stringify(['#D4AF37', '#8B7355', '#2C1810', '#F5E6D3']),
@@ -109,12 +94,10 @@ HIGHLIGHT WORDS:
                     asset_types: JSON.stringify(['image_flux', 'video_stock', 'wavy_grid', 'geometric_patterns']),
                     emotions: JSON.stringify(['calma', 'paz', 'reflexão', 'serenidade', 'contemplação']),
                     use_image_prompts: true,
-                    camera_movements: JSON.stringify(['static', 'drift', 'zoom_in_slow']),
+                    camera_movements: JSON.stringify(['static', 'zoom_in_slow']),
                     transitions: JSON.stringify(['fade', 'dissolve']),
-                    use_highlight_words: true,
                     entry_animations: JSON.stringify(['fade', 'wave']),
                     exit_animations: JSON.stringify(['fade', 'wave', 'evaporate']),
-                    use_stock_footage: true,
                     stock_categories: JSON.stringify(['natureza', 'água', 'céu', 'flores', 'paisagem']),
                     stock_rules: 'Apenas vídeos calmos e lentos. Duração mínima de 8 segundos. Evite vídeos com pessoas ou ação.',
                     default_colors: JSON.stringify(['#E8F4F8', '#A8D5E5', '#87CEAB', '#F0F7DA']),
@@ -154,12 +137,10 @@ HIGHLIGHT WORDS:
                     asset_types: JSON.stringify(['image_flux', 'video_stock', 'wavy_grid', 'geometric_patterns', 'solid_color']),
                     emotions: JSON.stringify(['empolgação', 'curiosidade', 'surpresa', 'urgência', 'inovação']),
                     use_image_prompts: true,
-                    camera_movements: JSON.stringify(['zoom_in_fast', 'zoom_out_fast', 'shake', 'drift', 'pan_left', 'pan_right']),
+                    camera_movements: JSON.stringify(['zoom_in_fast', 'zoom_out_fast', 'shake', 'pan_left', 'pan_right']),
                     transitions: JSON.stringify(['zoom_in', 'zoom_out', 'glitch', 'slide_left', 'slide_right', 'wipe_left']),
-                    use_highlight_words: true,
                     entry_animations: JSON.stringify(['pop', 'explode', 'bounce', 'zoom_in', 'slide_up']),
                     exit_animations: JSON.stringify(['explode', 'scatter', 'implode', 'fade']),
-                    use_stock_footage: true,
                     stock_categories: JSON.stringify(['tecnologia', 'digital', 'futurista', 'dados']),
                     stock_rules: 'Durações curtas (3-5s). Pode usar vídeos com movimento rápido e efeitos digitais.',
                     default_colors: JSON.stringify(['#00D4FF', '#7B2FFF', '#FF0080', '#0A0A0A']),

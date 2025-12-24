@@ -1,6 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { CAMERA_MOVEMENTS_OPTIONS } from '../../../remotion/utils/camera-effects';
 import { TRANSITION_OPTIONS } from '../../../remotion/utils/transitions';
+import { 
+    COMMON_ASSET_TYPES, 
+    ASSET_TYPE_OPTIONS,
+    EMOTION_LIST,
+    ENTRY_ANIMATION_LIST,
+    EXIT_ANIMATION_LIST,
+    REMOTION_COMPONENT_LIST,
+    type AssetType,
+} from '../../../remotion/types/project';
 
 // Interface para representar um nicho de canal
 export interface ChannelNiche {
@@ -16,12 +25,10 @@ export interface ChannelNiche {
     use_image_prompts?: boolean;
     camera_movements?: string[];
     transitions?: string[];
-    use_highlight_words?: boolean;
     entry_animations?: string[];
     exit_animations?: string[];
     
     // Stock footage
-    use_stock_footage?: boolean;
     stock_categories?: string[];
     stock_rules?: string;
     
@@ -34,50 +41,19 @@ export interface ChannelNiche {
     updated_at?: string;
 }
 
-// Opções disponíveis para seleção
-const ASSET_TYPES = [
-    { value: 'image_flux', label: 'Imagem (Flux)' },
-    { value: 'video_stock', label: 'Vídeo (Stock)' },
-    { value: 'video_kling', label: 'Vídeo (Kling)' },
-    { value: 'solid_color', label: 'Cor Sólida' },
-    { value: 'wavy_grid', label: 'WavyGrid' },
-    { value: 'video_chromakey', label: 'Video Chroma Key' },
-    { value: 'geometric_patterns', label: 'Padrões Geométricos' },
-];
+// Gerar lista de asset types a partir das constantes centralizadas (apenas os comuns)
+const ASSET_TYPES = COMMON_ASSET_TYPES.map((value) => ({
+    value,
+    label: ASSET_TYPE_OPTIONS[value].label,
+}));
 
-const EMOTIONS = [
-    'calma', 'paz', 'reflexão', 'serenidade', 'contemplação',
-    'empolgação', 'curiosidade', 'surpresa', 'urgência', 'inovação',
-    'seriedade', 'nostalgia', 'admiração', 'mistério', 'alegria',
-];
+// Usar EMOTION_LIST diretamente
+const EMOTIONS = EMOTION_LIST;
 
-const ENTRY_ANIMATIONS = [
-    { value: 'pop', label: 'Pop', description: 'Escala rápida com bounce.' },
-    { value: 'bounce', label: 'Bounce', description: 'Múltiplos bounces ao aparecer.' },
-    { value: 'explode', label: 'Explode', description: 'Explosão com rotação.' },
-    { value: 'slide_up', label: 'Slide Up', description: 'Desliza de baixo para cima.' },
-    { value: 'zoom_in', label: 'Zoom In', description: 'Aparece com zoom crescente.' },
-    { value: 'fade', label: 'Fade', description: 'Aparece gradualmente.' },
-    { value: 'wave', label: 'Wave', description: 'Efeito de onda na entrada.' },
-];
-
-const EXIT_ANIMATIONS = [
-    { value: 'evaporate', label: 'Evaporate', description: 'Some como vapor para cima.' },
-    { value: 'fade', label: 'Fade', description: 'Desaparece gradualmente.' },
-    { value: 'implode', label: 'Implode', description: 'Colapsa para o centro.' },
-    { value: 'slide_down', label: 'Slide Down', description: 'Desliza de cima para baixo.' },
-    { value: 'dissolve', label: 'Dissolve', description: 'Dissolução gradual.' },
-    { value: 'scatter', label: 'Scatter', description: 'Dispersa em pedaços.' },
-    { value: 'wave', label: 'Wave', description: 'Efeito de onda na saída.' },
-];
-
-const REMOTION_COMPONENTS = [
-    { value: 'Timeline3D', label: 'Timeline 3D', description: 'Linha do tempo 3D para história.' },
-    { value: 'WavyGrid', label: 'Wavy Grid', description: 'Grade ondulada futurista.' },
-    { value: 'GeometricPatterns', label: 'Padrões Geométricos', description: 'Background abstrato animado.' },
-    { value: 'HighlightWord', label: 'Highlight Word', description: 'Palavras em destaque animadas.' },
-    { value: 'ChromaKeyMedia', label: 'Chroma Key', description: 'Vídeo com fundo verde removido.' },
-];
+// Usar listas centralizadas
+const ENTRY_ANIMATIONS = ENTRY_ANIMATION_LIST;
+const EXIT_ANIMATIONS = EXIT_ANIMATION_LIST;
+const REMOTION_COMPONENTS = REMOTION_COMPONENT_LIST;
 
 interface NicheModalProps {
     isOpen: boolean;
@@ -104,10 +80,8 @@ export function NicheModal({ isOpen, onClose, onSelect, selectedNiche }: NicheMo
         use_image_prompts: true,
         camera_movements: [],
         transitions: [],
-        use_highlight_words: true,
         entry_animations: [],
         exit_animations: [],
-        use_stock_footage: true,
         stock_categories: [],
         stock_rules: '',
         default_colors: [],
@@ -155,10 +129,8 @@ export function NicheModal({ isOpen, onClose, onSelect, selectedNiche }: NicheMo
             use_image_prompts: true,
             camera_movements: [],
             transitions: [],
-            use_highlight_words: true,
             entry_animations: [],
             exit_animations: [],
-            use_stock_footage: true,
             stock_categories: [],
             stock_rules: '',
             default_colors: [],
@@ -425,7 +397,7 @@ export function NicheModal({ isOpen, onClose, onSelect, selectedNiche }: NicheMo
                                             onClick={() => toggleArrayItem('asset_types', asset.value)}
                                             className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
                                                 formData.asset_types?.includes(asset.value)
-                                                    ? 'bg-pink-500 text-white'
+                                                    ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30'
                                                     : 'bg-white/10 text-white/60 hover:bg-white/20'
                                             }`}
                                         >
@@ -530,7 +502,7 @@ export function NicheModal({ isOpen, onClose, onSelect, selectedNiche }: NicheMo
                                                 title={anim.description}
                                                 className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
                                                     formData.entry_animations?.includes(anim.value)
-                                                        ? 'bg-cyan-500 text-black'
+                                                       ? 'bg-orange-500 text-black'
                                                         : 'bg-white/10 text-white/60 hover:bg-white/20'
                                                 }`}
                                             >
@@ -571,28 +543,10 @@ export function NicheModal({ isOpen, onClose, onSelect, selectedNiche }: NicheMo
                                     />
                                     <span className="text-white/80 text-sm">Gerar Image Prompts</span>
                                 </label>
-                                <label className="flex items-center gap-3 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.use_highlight_words ?? true}
-                                        onChange={(e) => setFormData({ ...formData, use_highlight_words: e.target.checked })}
-                                        className="w-5 h-5 rounded bg-black/30 border-white/20 text-pink-500 focus:ring-pink-500"
-                                    />
-                                    <span className="text-white/80 text-sm">Usar Highlight Words</span>
-                                </label>
-                                <label className="flex items-center gap-3 cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={formData.use_stock_footage ?? true}
-                                        onChange={(e) => setFormData({ ...formData, use_stock_footage: e.target.checked })}
-                                        className="w-5 h-5 rounded bg-black/30 border-white/20 text-pink-500 focus:ring-pink-500"
-                                    />
-                                    <span className="text-white/80 text-sm">Usar Stock Footage</span>
-                                </label>
                             </div>
 
-                            {/* Regras de Stock */}
-                            {formData.use_stock_footage && (
+                            {/* Regras de Stock (mostra quando video_stock está em asset_types) */}
+                            {formData.asset_types?.includes('video_stock') && (
                                 <div>
                                     <label className="block text-white/80 text-sm font-medium mb-2">Regras de Stock Footage</label>
                                     <textarea

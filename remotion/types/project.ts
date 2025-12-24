@@ -61,6 +61,7 @@ export const AssetTypeSchema = z.enum([
   'image_dalle',      // Imagem gerada pelo DALL-E
   'image_midjourney', // Imagem gerada pelo Midjourney
   'image_static',     // Imagem estática (já existente)
+  'video_stock',      // Vídeo de stock (banco de dados local/Supabase)
   'video_kling',      // Vídeo gerado pelo Kling
   'video_runway',     // Vídeo gerado pelo Runway
   'video_pika',       // Vídeo gerado pelo Pika
@@ -75,6 +76,150 @@ export const AssetTypeSchema = z.enum([
 ]);
 
 export type AssetType = z.infer<typeof AssetTypeSchema>;
+
+/**
+ * Opções de Asset Types com labels, descrições, ícones e cores
+ * Fonte única de verdade para todo o sistema
+ */
+export const ASSET_TYPE_OPTIONS: Record<AssetType, {
+  label: string;
+  description: string;
+  icon: string;
+  badgeColor: string; // Cor para badges/tags (tailwind classes)
+  aiDescription: string; // Descrição para a IA
+}> = {
+  image_flux: {
+    label: 'Imagem (Flux)',
+    description: 'Imagem estática gerada por IA Flux',
+    icon: '🖼️',
+    badgeColor: 'bg-blue-500/20 text-blue-300',
+    aiDescription: 'Imagem estática gerada por IA (ideal para cenas conceituais, abstratas ou quando precisar de controle visual total)',
+  },
+  image_dalle: {
+    label: 'Imagem (DALL-E)',
+    description: 'Imagem gerada pelo DALL-E da OpenAI',
+    icon: '🎨',
+    badgeColor: 'bg-emerald-500/20 text-emerald-300',
+    aiDescription: 'Imagem gerada pelo DALL-E (estilo OpenAI, bom para ilustrações e conceitos)',
+  },
+  image_midjourney: {
+    label: 'Imagem (Midjourney)',
+    description: 'Imagem gerada pelo Midjourney',
+    icon: '✨',
+    badgeColor: 'bg-violet-500/20 text-violet-300',
+    aiDescription: 'Imagem gerada pelo Midjourney (alta qualidade artística)',
+  },
+  image_static: {
+    label: 'Imagem Estática',
+    description: 'Imagem já existente (upload ou URL)',
+    icon: '📷',
+    badgeColor: 'bg-slate-500/20 text-slate-300',
+    aiDescription: 'Imagem estática já existente',
+  },
+  video_stock: {
+    label: 'Vídeo (Stock)',
+    description: 'Vídeo de stock do banco de dados',
+    icon: '📹',
+    badgeColor: 'bg-green-500/20 text-green-300',
+    aiDescription: 'Vídeo de stock do banco de dados (buscado semanticamente pelo prompt). Use para cenas que precisam de movimento real, pessoas, natureza, ações.',
+  },
+  video_kling: {
+    label: 'Vídeo (Kling)',
+    description: 'Vídeo gerado pela IA Kling',
+    icon: '🎬',
+    badgeColor: 'bg-purple-500/20 text-purple-300',
+    aiDescription: 'Vídeo gerado por IA Kling (para ações humanas complexas ou cenas impossíveis de encontrar em stock)',
+  },
+  video_runway: {
+    label: 'Vídeo (Runway)',
+    description: 'Vídeo gerado pelo Runway Gen-2',
+    icon: '🎥',
+    badgeColor: 'bg-rose-500/20 text-rose-300',
+    aiDescription: 'Vídeo gerado pelo Runway (alta qualidade, movimentos complexos)',
+  },
+  video_pika: {
+    label: 'Vídeo (Pika)',
+    description: 'Vídeo gerado pelo Pika Labs',
+    icon: '🎞️',
+    badgeColor: 'bg-pink-500/20 text-pink-300',
+    aiDescription: 'Vídeo gerado pelo Pika Labs (estilo estilizado)',
+  },
+  video_static: {
+    label: 'Vídeo Estático',
+    description: 'Vídeo já existente (upload ou URL)',
+    icon: '📼',
+    badgeColor: 'bg-slate-500/20 text-slate-300',
+    aiDescription: 'Vídeo estático já existente',
+  },
+  video_chromakey: {
+    label: 'Vídeo Chroma Key',
+    description: 'Vídeo com fundo verde/azul para composição',
+    icon: '🟢',
+    badgeColor: 'bg-lime-500/20 text-lime-300',
+    aiDescription: 'Vídeo com fundo verde/azul para composição (avatar, apresentador virtual)',
+  },
+  avatar: {
+    label: 'Avatar',
+    description: 'Avatar animado (Live2D, etc)',
+    icon: '👤',
+    badgeColor: 'bg-teal-500/20 text-teal-300',
+    aiDescription: 'Avatar animado para apresentação',
+  },
+  text_only: {
+    label: 'Apenas Texto',
+    description: 'Tela com apenas texto/tipografia',
+    icon: '📝',
+    badgeColor: 'bg-gray-500/20 text-gray-300',
+    aiDescription: 'Apenas texto/tipografia na tela',
+  },
+  solid_color: {
+    label: 'Cor Sólida',
+    description: 'Fundo de cor sólida',
+    icon: '🎨',
+    badgeColor: 'bg-gray-500/20 text-gray-300',
+    aiDescription: 'Fundo de cor sólida (use para transições, ênfase em texto, ou quando o foco for totalmente no áudio)',
+  },
+  geometric_patterns: {
+    label: 'Padrões Geométricos',
+    description: 'Background abstrato com padrões geométricos animados',
+    icon: '🔷',
+    badgeColor: 'bg-cyan-500/20 text-cyan-300',
+    aiDescription: 'Background abstrato com padrões geométricos animados (ideal para temas tecnológicos, futuristas, infográficos)',
+  },
+  wavy_grid: {
+    label: 'Wavy Grid',
+    description: 'Grade ondulada 3D estilo Daniel Penin',
+    icon: '🌊',
+    badgeColor: 'bg-indigo-500/20 text-indigo-300',
+    aiDescription: 'Background futurista com grade 3D ondulada estilo Daniel Penin (ideal para tech, inovação, conteúdo digital)',
+  },
+  timeline_3d: {
+    label: 'Timeline 3D',
+    description: 'Linha do tempo 3D para história',
+    icon: '📊',
+    badgeColor: 'bg-amber-500/20 text-amber-300',
+    aiDescription: 'Linha do tempo 3D histórica (ideal para documentários, história, cronologias)',
+  },
+};
+
+/** Lista de asset types para seleção em UI (array simples) */
+export const ASSET_TYPE_LIST = Object.entries(ASSET_TYPE_OPTIONS).map(([value, opt]) => ({
+  value: value as AssetType,
+  label: opt.label,
+  description: opt.description,
+  icon: opt.icon,
+}));
+
+/** Asset types mais comuns para seleção rápida em nichos */
+export const COMMON_ASSET_TYPES: AssetType[] = [
+  'image_flux',
+  'video_stock',
+  'video_kling',
+  'solid_color',
+  'geometric_patterns',
+  'wavy_grid',
+  'video_chromakey',
+];
 
 // ========================================
 // TIMELINE CONFIG
@@ -162,6 +307,109 @@ export const HighlightWordSchema = z.object({
 });
 
 export type HighlightWord = z.infer<typeof HighlightWordSchema>;
+
+// ========================================
+// ENTRY ANIMATIONS (Animações de Entrada)
+// ========================================
+
+export const ENTRY_ANIMATION_OPTIONS = {
+  pop: { label: 'Pop', description: 'Escala rápida com bounce.' },
+  bounce: { label: 'Bounce', description: 'Múltiplos bounces ao aparecer.' },
+  explode: { label: 'Explode', description: 'Explosão com rotação.' },
+  slide_up: { label: 'Slide Up', description: 'Desliza de baixo para cima.' },
+  zoom_in: { label: 'Zoom In', description: 'Aparece com zoom crescente.' },
+  fade: { label: 'Fade', description: 'Aparece gradualmente.' },
+  wave: { label: 'Wave', description: 'Efeito de onda na entrada (texto preenche de baixo pra cima).' },
+  none: { label: 'Nenhum', description: 'Sem animação de entrada.' },
+} as const;
+
+export type EntryAnimation = keyof typeof ENTRY_ANIMATION_OPTIONS;
+
+export const ENTRY_ANIMATION_LIST = Object.entries(ENTRY_ANIMATION_OPTIONS).map(([value, opt]) => ({
+  value: value as EntryAnimation,
+  label: opt.label,
+  description: opt.description,
+}));
+
+// ========================================
+// EXIT ANIMATIONS (Animações de Saída)
+// ========================================
+
+export const EXIT_ANIMATION_OPTIONS = {
+  evaporate: { label: 'Evaporate', description: 'Some como vapor para cima.' },
+  fade: { label: 'Fade', description: 'Desaparece gradualmente.' },
+  implode: { label: 'Implode', description: 'Colapsa para o centro.' },
+  slide_down: { label: 'Slide Down', description: 'Desliza de cima para baixo.' },
+  dissolve: { label: 'Dissolve', description: 'Dissolução gradual com blur.' },
+  scatter: { label: 'Scatter', description: 'Dispersa em pedaços.' },
+  wave: { label: 'Wave', description: 'Efeito de onda na saída (texto esvazia de cima pra baixo).' },
+  none: { label: 'Nenhum', description: 'Sem animação de saída.' },
+} as const;
+
+export type ExitAnimation = keyof typeof EXIT_ANIMATION_OPTIONS;
+
+export const EXIT_ANIMATION_LIST = Object.entries(EXIT_ANIMATION_OPTIONS).map(([value, opt]) => ({
+  value: value as ExitAnimation,
+  label: opt.label,
+  description: opt.description,
+}));
+
+// ========================================
+// EMOTIONS (Emoções para Cenas)
+// ========================================
+
+export const EMOTION_OPTIONS = {
+  // Calma e Paz
+  calma: { label: 'Calma', category: 'peaceful' },
+  paz: { label: 'Paz', category: 'peaceful' },
+  serenidade: { label: 'Serenidade', category: 'peaceful' },
+  contemplação: { label: 'Contemplação', category: 'peaceful' },
+  reflexão: { label: 'Reflexão', category: 'thoughtful' },
+  
+  // Energia e Movimento
+  empolgação: { label: 'Empolgação', category: 'energetic' },
+  curiosidade: { label: 'Curiosidade', category: 'energetic' },
+  surpresa: { label: 'Surpresa', category: 'energetic' },
+  urgência: { label: 'Urgência', category: 'energetic' },
+  inovação: { label: 'Inovação', category: 'energetic' },
+  
+  // Profunda e Séria
+  seriedade: { label: 'Seriedade', category: 'serious' },
+  nostalgia: { label: 'Nostalgia', category: 'serious' },
+  admiração: { label: 'Admiração', category: 'serious' },
+  mistério: { label: 'Mistério', category: 'serious' },
+  
+  // Positive
+  alegria: { label: 'Alegria', category: 'positive' },
+  
+  // Neutral
+  neutro: { label: 'Neutro', category: 'neutral' },
+} as const;
+
+export type Emotion = keyof typeof EMOTION_OPTIONS;
+
+export const EMOTION_LIST = Object.keys(EMOTION_OPTIONS) as Emotion[];
+
+// ========================================
+// REMOTION COMPONENTS (Componentes Permitidos)
+// ========================================
+
+export const REMOTION_COMPONENT_OPTIONS = {
+  Timeline3D: { label: 'Timeline 3D', description: 'Linha do tempo 3D para história.' },
+  WavyGrid: { label: 'Wavy Grid', description: 'Grade ondulada futurista.' },
+  GeometricPatterns: { label: 'Padrões Geométricos', description: 'Background abstrato animado.' },
+  HighlightWord: { label: 'Highlight Word', description: 'Palavras em destaque animadas.' },
+  ChromaKeyMedia: { label: 'Chroma Key', description: 'Vídeo com fundo verde removido.' },
+} as const;
+
+export type RemotionComponent = keyof typeof REMOTION_COMPONENT_OPTIONS;
+
+export const REMOTION_COMPONENT_LIST = Object.entries(REMOTION_COMPONENT_OPTIONS).map(([value, opt]) => ({
+  value: value as RemotionComponent,
+  label: opt.label,
+  description: opt.description,
+}));
+
 
 // ========================================
 // VISUAL CONCEPT

@@ -75,8 +75,5 @@ export interface ProjectState {
   audioPath?: string; // Caminho do arquivo de áudio no disco
   duration: number;
   segments: TranscriptionSegment[];
-  authorConclusion: string;
-  editingStyle: string;
   selectedAspectRatios?: string[];
-  useStockFootage?: boolean;
 }

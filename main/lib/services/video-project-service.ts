@@ -90,11 +90,8 @@ export interface VideoProjectData {
     duration: number;
     audioPath?: string;
     segments: VideoProjectSegment[];
-    editingStyle?: string;
-    authorConclusion?: string;
     subtitleMode?: 'paragraph' | 'word-by-word';
     selectedAspectRatios?: string[];
-    useStockFootage?: boolean;
     config?: {
         width?: number;
         height?: number;
@@ -610,10 +607,7 @@ export class VideoProjectService extends EventEmitter {
     public async analyzeWithAI(
         segments: VideoProjectSegment[],
         options?: {
-            editingStyle?: string;
-            authorConclusion?: string;
             provider?: AIProvider;
-            autoSelectFootage?: boolean;
             nichePrompt?: string; // Prompt personalizado do nicho do canal
         }
     ): Promise<AnalysisResult> {
@@ -627,7 +621,10 @@ export class VideoProjectService extends EventEmitter {
 
         try {
             const prompt = this.buildAnalysisPrompt(segments, options);
+            console.log("###################################################################");
             console.log('📝 [VideoProject] Prompt built');
+            console.log(prompt);
+            console.log("###################################################################");
 
             let analyzedSegments: Array<{
                 id: number;
@@ -682,6 +679,7 @@ export class VideoProjectService extends EventEmitter {
             }
 
             console.log('✅ [VideoProject] AI Analysis received');
+            console.log('📝 [VideoProject] AI Analysis:', analyzedSegments);
 
             // Robust validation/unwrapping
             let segmentsArray = analyzedSegments;
@@ -703,8 +701,8 @@ export class VideoProjectService extends EventEmitter {
                 throw new Error('AI response is not an array even after unwrap attempt');
             }
 
-            // AUTO SELECT FOOTAGE LOGIC
-            const searchService = options?.autoSelectFootage ? getVideoSearchService() : null;
+            // Inicializar searchService para buscar vídeos quando a IA escolher video_stock
+            const searchService = getVideoSearchService();
 
             // Mesclar resultados com segmentos originais
             const updatedSegments = await Promise.all(segments.map(async seg => {
@@ -729,10 +727,10 @@ export class VideoProjectService extends EventEmitter {
                         );
                     }
 
-                    // Se a busca automática estiver ativada
-                    if (searchService && merged.imagePrompt) {
+                    // Se a IA escolheu video_stock, buscar vídeo automaticamente
+                    if (merged.assetType === 'video_stock' && merged.imagePrompt && searchService) {
                         try {
-                            console.log(`🔍 [AutoSearch] Buscando mídia para segmento ${seg.id}...`);
+                            console.log(`🔍 [AutoSearch] Buscando vídeo stock para segmento ${seg.id}...`);
                             // Buscar semanticamente usando o prompt da IA
                             const results = await searchService.semanticSearch(merged.imagePrompt, 1, 0.4); // 0.4 de threshold
                             
@@ -743,13 +741,12 @@ export class VideoProjectService extends EventEmitter {
                                 // Se tiver file_path válido
                                 if (video.file_path && fs.existsSync(video.file_path)) {
                                     merged.imageUrl = video.file_path; // URL absoluta, convertToHttpUrl lida com isso depois
-                                    merged.assetType = 'video_stock'; // Marcar como stock video
                                 }
                             } else {
-                                console.log(`❌ [AutoSearch] Nada encontrado para segmento ${seg.id}`);
+                                console.log(`❌ [AutoSearch] Nenhum vídeo encontrado para segmento ${seg.id}, mantendo assetType video_stock sem URL`);
                             }
                         } catch (err) {
-                            console.error(`❌ [AutoSearch] Erro ao buscar mídia:`, err);
+                            console.error(`❌ [AutoSearch] Erro ao buscar vídeo:`, err);
                         }
                     }
 
@@ -834,47 +831,18 @@ export class VideoProjectService extends EventEmitter {
 
     private buildAnalysisPrompt(
         segments: VideoProjectSegment[],
-        options?: { editingStyle?: string; authorConclusion?: string; nichePrompt?: string }
+        options?: { nichePrompt?: string }
     ): string {
         const segmentsList = segments.map(s =>
             `ID: ${s.id}\nTexto: "${s.text}"\nTempo: ${s.start.toFixed(2)}s - ${s.end.toFixed(2)}s`
         ).join('\n\n');
 
-        // Se tiver um prompt de nicho, usa ele como base
+        // Se tiver um prompt de nicho, usa ele como base (já inclui JSON de exemplo dinâmico)
         if (options?.nichePrompt) {
             return `${options.nichePrompt}
 
-${options?.editingStyle ? `\nEstilo de edição desejado: ${options.editingStyle}` : ''}
-${options?.authorConclusion ? `\nConclusão/tom do autor: ${options.authorConclusion}` : ''}
-
 SEGMENTOS PARA ANÁLISE:
-${segmentsList}
-
-Responda APENAS com um array JSON válido no formato:
-[
-  {
-    "id": 1,
-    "emotion": "emoção",
-    "imagePrompt": "detailed prompt in English...",
-    "assetType": "image_flux | video_stock | solid_color | wavy_grid | geometric_patterns",
-    "cameraMovement": "movimento de câmera",
-    "transition": "transição",
-    "highlightWords": [
-      {
-        "text": "palavra",
-        "duration": 1.5,
-        "entryAnimation": "animação de entrada",
-        "exitAnimation": "animação de saída",
-        "size": "large",
-        "position": "center",
-        "effect": "glow",
-        "color": "#FFD700",
-        "fontWeight": "bold"
-      }
-    ]
-  },
-  ...
-]`;
+${segmentsList}`;
         }
 
         // Prompt padrão (original)
@@ -937,9 +905,6 @@ ${Object.entries(TRANSITION_EFFECTS).map(([key, config]) => `- **${key}**\n  ${c
 
    IMPORTANTE: Sempre especifique uma **color** apropriada para o efeito escolhido.
    
-${options?.editingStyle ? `\nEstilo de edição desejado: ${options.editingStyle}` : ''}
-${options?.authorConclusion ? `\nConclusão/tom do autor: ${options.authorConclusion}` : ''}
-
 SEGMENTOS:
 ${segmentsList}
 
@@ -1135,10 +1100,7 @@ Responda APENAS com um array JSON válido no formato:
             description: project.description,
             duration: project.duration,
             audioPath: project.audioPath,
-            editingStyle: project.editingStyle || '',
-            authorConclusion: project.authorConclusion || '',
             selectedAspectRatios: project.selectedAspectRatios, // Salvar as proporções
-            useStockFootage: project.useStockFootage, // Salvar configuração de busca automática
             subtitleMode: project.subtitleMode,
             renderConfigs: project.selectedAspectRatios?.reduce((acc, ratio) => {
                 let w = 1080, h = 1920;

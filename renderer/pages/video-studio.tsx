@@ -29,10 +29,7 @@ export default function VideoStudioPage() {
     title: '',
     duration: 0,
     segments: [],
-    authorConclusion: '',
-    editingStyle: '',
     selectedAspectRatios: ['9:16'], // Default
-    useStockFootage: false,
   });
   const [selectedNiche, setSelectedNiche] = useState<ChannelNiche | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -90,10 +87,7 @@ export default function VideoStudioPage() {
           transition: seg.transition,
           highlightWords: seg.highlightWords, // ✅ Salvar highlight words
         })),
-        editingStyle: project.editingStyle,
-        authorConclusion: project.authorConclusion,
         selectedAspectRatios: project.selectedAspectRatios,
-        useStockFootage: project.useStockFootage,
       };
 
       const result = await window.electron.videoProject.save(projectData);
@@ -141,10 +135,7 @@ export default function VideoStudioPage() {
              transition: seg.transition,
              highlightWords: seg.highlightWords, // ✅ Carregar highlight words
           })),
-          authorConclusion: loadedProject.authorConclusion || '',
-          editingStyle: loadedProject.editingStyle || '',
           selectedAspectRatios: loadedProject.selectedAspectRatios || ['9:16'],
-          useStockFootage: loadedProject.useStockFootage || false,
         });
         
         // Determinar em qual passo estamos baseado nos dados
@@ -269,10 +260,7 @@ export default function VideoStudioPage() {
       const result = await window.electron.videoProject.analyze(
         project.segments,
         {
-          editingStyle: project.editingStyle,
-          authorConclusion: project.authorConclusion,
           provider: selectedProvider,
-          autoSelectFootage: project.useStockFootage,
           nichePrompt, // Pass the niche prompt if available
         }
       );
@@ -292,7 +280,7 @@ export default function VideoStudioPage() {
     } finally {
       setIsProcessing(false);
     }
-  }, [project.segments, project.editingStyle, project.authorConclusion, selectedProvider, selectedNiche, project.useStockFootage]);
+  }, [project.segments, selectedProvider, selectedNiche]);
 
   // Handler para atualizar emoção de um segmento
   const handleUpdateEmotion = useCallback((segmentId: number, emotion: string) => {
@@ -375,8 +363,6 @@ export default function VideoStudioPage() {
           duration: project.duration,
           audioPath: project.audioPath, // Incluir caminho do áudio
           segments: project.segments,
-          editingStyle: project.editingStyle,
-          authorConclusion: project.authorConclusion,
           subtitleMode: subtitleMode, // ✅ Modo de legenda para renderização
           config: {
             width: dims.width,
@@ -418,14 +404,8 @@ export default function VideoStudioPage() {
         return (
           <UploadStep 
             onUpload={handleAudioUpload}
-            editingStyle={project.editingStyle}
-            onEditingStyleChange={(value) => setProject(prev => ({ ...prev, editingStyle: value }))}
-            authorConclusion={project.authorConclusion}
-            onAuthorConclusionChange={(value) => setProject(prev => ({ ...prev, authorConclusion: value }))}
             selectedAspectRatios={project.selectedAspectRatios || []}
             onAspectRatiosChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: value }))}
-            useStockFootage={project.useStockFootage || false}
-            onUseStockFootageChange={(value) => setProject(prev => ({ ...prev, useStockFootage: value }))}
             selectedNiche={selectedNiche}
             onNicheChange={setSelectedNiche}
           />
@@ -457,7 +437,6 @@ export default function VideoStudioPage() {
             onUpdateImage={handleUpdateImage}
             onContinue={() => setCurrentStep('images')}
             onBack={() => setCurrentStep('keyframes')}
-            useStockFootage={project.useStockFootage || false}
           />
         );
       
@@ -497,8 +476,6 @@ export default function VideoStudioPage() {
                 title: '',
                 duration: 0,
                 segments: [],
-                authorConclusion: '',
-                editingStyle: '',
               });
             }} 
           />
