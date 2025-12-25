@@ -6,6 +6,7 @@
 
 import { ipcMain, dialog, BrowserWindow } from 'electron';
 import { getKnowledgeService, KnowledgeSource } from './services/knowledge-service';
+import { getUserSettings } from './database';
 
 /**
  * Obtém a janela principal da aplicação
@@ -21,6 +22,24 @@ function getMainWindow(): BrowserWindow | null {
 export function registerKnowledgeHandlers(): void {
   const knowledgeService = getKnowledgeService();
 
+  // ============================================
+  // CARREGAR CONFIGURAÇÕES SALVAS
+  // ============================================
+  
+  // Carregar configurações de embedding do banco de dados
+  try {
+    const userSettings = getUserSettings();
+    if (userSettings?.embeddingProvider) {
+      console.log(`🧠 [INIT] Carregando provider de embedding salvo: ${userSettings.embeddingProvider}`);
+      knowledgeService.setEmbeddingProvider(userSettings.embeddingProvider);
+    }
+    if (userSettings?.ollamaEmbeddingModel) {
+      console.log(`🦙 [INIT] Carregando modelo Ollama salvo: ${userSettings.ollamaEmbeddingModel}`);
+      knowledgeService.setOllamaModel(userSettings.ollamaEmbeddingModel);
+    }
+  } catch (e) {
+    console.warn('⚠️ Erro ao carregar configurações de embedding:', e);
+  }
   // ============================================
   // CRUD - KNOWLEDGE SOURCES
   // ============================================

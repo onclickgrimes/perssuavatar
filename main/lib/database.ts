@@ -14,6 +14,9 @@ interface DatabaseSchema {
     aiProvider?: 'openai' | 'gemini' | 'deepseek';
     voiceModel?: 'polly' | 'elevenlabs';
     continuousRecordingEnabled?: boolean;
+    // Configurações de Embedding para Base de Conhecimento
+    embeddingProvider?: 'openai' | 'ollama';
+    ollamaEmbeddingModel?: string;
   };
 
   // Histórico de conversas
