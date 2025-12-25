@@ -31,7 +31,7 @@ export function GeometricPatterns() {
       style={{
         width,
         height,
-        background: "linear-gradient(45deg, #0f172a, #1e293b)",
+        background: "black", //preto
         overflow: "hidden",
       }}
     >
@@ -46,7 +46,7 @@ export function GeometricPatterns() {
             height: "100%",
             transform: `translate(-50%, -50%) rotate(${rotation}deg) scale(${scale})`,
             border: "2px solid rgba(255,255,255,0.1)",
-            borderRadius: `${ index * 5 }% `,
+            borderRadius: `${ index * 5 }%`,
           }}
         />
       ))}

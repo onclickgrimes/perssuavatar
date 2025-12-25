@@ -18,6 +18,7 @@ import { GeminiService } from './gemini-service';
 import { OpenAIService } from './openai-service';
 import { DeepSeekService } from './deepseek-service';
 import { getVideoSearchService } from './video-search-service';
+import { getPexelsService } from '../assets';
 import { CAMERA_EFFECTS } from '../../../remotion/utils/camera-effects';
 import { TRANSITION_EFFECTS } from '../../../remotion/utils/transitions';
 
@@ -747,6 +748,76 @@ export class VideoProjectService extends EventEmitter {
                             }
                         } catch (err) {
                             console.error(`❌ [AutoSearch] Erro ao buscar vídeo:`, err);
+                        }
+                    }
+
+                    // Se a IA escolheu video_pexels ou image_pexels, buscar mídia no Pexels
+                    if ((merged.assetType === 'video_pexels' || merged.assetType === 'image_pexels') && merged.imagePrompt) {
+                        try {
+                            const pexelsService = getPexelsService();
+                            const isVideo = merged.assetType === 'video_pexels';
+                            
+                            console.log(`🔍 [Pexels] Buscando ${isVideo ? 'vídeo' : 'foto'} para segmento ${seg.id}...`);
+                            console.log(`🔍 [Pexels] Prompt: "${merged.imagePrompt}"`);
+                            
+                            // Calcular duração da cena para filtrar vídeos adequados
+                            const sceneDuration = seg.end - seg.start;
+                            
+                            // Buscar mídia no Pexels - usar métodos específicos para garantir o tipo correto
+                            let results;
+                            if (isVideo) {
+                                // Buscar APENAS vídeos para evitar misturar tipos
+                                const videoResponse = await pexelsService.searchVideos({
+                                    query: merged.imagePrompt,
+                                    orientation: 'landscape',
+                                    perPage: 5,
+                                });
+                                
+                                // Filtrar por duração adequada
+                                results = videoResponse.results.filter(v => {
+                                    if (!v.duration) return true;
+                                    const minDur = Math.max(3, Math.floor(sceneDuration * 0.5));
+                                    const maxDur = Math.ceil(sceneDuration * 3);
+                                    return v.duration >= minDur && v.duration <= maxDur;
+                                }).slice(0, 1);
+                                
+                                // Se não encontrar vídeos, usar qualquer um
+                                if (results.length === 0 && videoResponse.results.length > 0) {
+                                    results = [videoResponse.results[0]];
+                                }
+                            } else {
+                                // Buscar APENAS fotos
+                                const photoResponse = await pexelsService.searchPhotos({
+                                    query: merged.imagePrompt,
+                                    orientation: 'landscape',
+                                    perPage: 1,
+                                });
+                                results = photoResponse.results;
+                            }
+                            
+                            if (results.length > 0) {
+                                const media = results[0];
+                                console.log(`✅ [Pexels] Encontrado: ${media.type} ID ${media.id} (${media.author.name})`);
+                                
+                                // Usar URL direta do Pexels (já é HTTPS, funciona direto)
+                                merged.imageUrl = media.directUrl;
+                                
+                                // IMPORTANTE: Ajustar o assetType baseado no tipo REAL retornado
+                                // Isso evita o erro de tentar renderizar imagem como vídeo
+                                if (media.type === 'photo') {
+                                    merged.assetType = 'image_pexels';
+                                } else if (media.type === 'video') {
+                                    merged.assetType = 'video_pexels';
+                                }
+                                
+                                // Log de atribuição (importante para compliance com Pexels)
+                                console.log(`📸 [Pexels] Atribuição: ${pexelsService.getAttribution(media)}`);
+                            } else {
+                                console.log(`❌ [Pexels] Nenhuma mídia encontrada para segmento ${seg.id}`);
+                            }
+                        } catch (err: any) {
+                            console.error(`❌ [Pexels] Erro ao buscar mídia:`, err.message || err);
+                            // Se falhar, não quebra o fluxo - apenas não terá mídia
                         }
                     }
 

@@ -267,6 +267,7 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
     case 'image_flux':
     case 'image_dalle':
     case 'image_midjourney':
+    case 'image_pexels':    // ✅ Pexels Photos
     case 'image_static':
       if (asset_url) {
         return <Img src={asset_url} style={fillStyles} />;
@@ -278,6 +279,7 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
     case 'video_kling':
     case 'video_runway':
     case 'video_pika':
+    case 'video_pexels':    // ✅ Pexels Videos
     case 'video_static':
       if (asset_url) {
         return <Video src={asset_url} style={fillStyles} />;

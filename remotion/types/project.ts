@@ -60,8 +60,10 @@ export const AssetTypeSchema = z.enum([
   'image_flux',       // Imagem gerada pelo Flux
   'image_dalle',      // Imagem gerada pelo DALL-E
   'image_midjourney', // Imagem gerada pelo Midjourney
+  'image_pexels',     // Imagem do Pexels (stock gratuito)
   'image_static',     // Imagem estática (já existente)
   'video_stock',      // Vídeo de stock (banco de dados local/Supabase)
+  'video_pexels',     // Vídeo do Pexels (stock gratuito)
   'video_kling',      // Vídeo gerado pelo Kling
   'video_runway',     // Vídeo gerado pelo Runway
   'video_pika',       // Vídeo gerado pelo Pika
@@ -109,6 +111,13 @@ export const ASSET_TYPE_OPTIONS: Record<AssetType, {
     badgeColor: 'bg-violet-500/20 text-violet-300',
     aiDescription: 'Imagem gerada pelo Midjourney (alta qualidade artística)',
   },
+  image_pexels: {
+    label: 'Imagem (Pexels)',
+    description: 'Foto gratuita de alta qualidade do Pexels',
+    icon: '📸',
+    badgeColor: 'bg-teal-500/20 text-teal-300',
+    aiDescription: 'Foto de stock gratuita do Pexels (ideal para cenas realistas, natureza, pessoas, locais, objetos). Busca automática por prompt.',
+  },
   image_static: {
     label: 'Imagem Estática',
     description: 'Imagem já existente (upload ou URL)',
@@ -118,10 +127,17 @@ export const ASSET_TYPE_OPTIONS: Record<AssetType, {
   },
   video_stock: {
     label: 'Vídeo (Stock)',
-    description: 'Vídeo de stock do banco de dados',
+    description: 'Vídeo de stock do banco de dados local',
     icon: '📹',
     badgeColor: 'bg-green-500/20 text-green-300',
-    aiDescription: 'Vídeo de stock do banco de dados (buscado semanticamente pelo prompt). Use para cenas que precisam de movimento real, pessoas, natureza, ações.',
+    aiDescription: 'Vídeo de stock do banco de dados local (buscado semanticamente pelo prompt). Use para cenas que precisam de movimento real, pessoas, natureza, ações.',
+  },
+  video_pexels: {
+    label: 'Vídeo (Pexels)',
+    description: 'Vídeo gratuito de alta qualidade do Pexels',
+    icon: '🎬',
+    badgeColor: 'bg-teal-500/20 text-teal-300',
+    aiDescription: 'Vídeo de stock gratuito do Pexels (ideal para cenas com movimento real, natureza, pessoas, cidades, ações cotidianas). Busca automática por prompt.',
   },
   video_kling: {
     label: 'Vídeo (Kling)',
