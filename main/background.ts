@@ -107,7 +107,7 @@ if (process.platform === 'win32') {
 }
 
 import path from 'path'
-import { app, ipcMain, BrowserWindow, screen, desktopCapturer, clipboard } from 'electron'
+import { app, ipcMain, BrowserWindow, screen, desktopCapturer, clipboard, shell } from 'electron'
 import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import { VoiceAssistant } from './lib/voice-assistant';
@@ -115,7 +115,11 @@ import ffmpeg from 'fluent-ffmpeg';
 import { initializeDatabase, getTranscriptionSettings, setTranscriptionSettings } from './lib/database';
 import { registerDatabaseHandlers } from './lib/database-handlers';
 import { registerNicheHandlers } from './lib/handlers/niche-handlers';
+import { registerKnowledgeHandlers } from './lib/knowledge-handlers';
 import { isProd, getUserDataPath } from './lib/app-config';
+import { promisify } from 'util';
+import { exec as execCallback } from 'child_process';
+const execAsync = promisify(execCallback);
 
 // Get ffmpeg path - different for dev vs prod
 let ffmpegPath: string;
@@ -150,6 +154,7 @@ if (isProd) {
   initializeSqliteDatabase();
   registerDatabaseHandlers();
   registerNicheHandlers();
+  registerKnowledgeHandlers();
 
   // Permissão de Microfone
   app.on('web-contents-created', (event, contents) => {
@@ -891,6 +896,76 @@ ipcMain.handle('is-transcription-window-open', () => {
   const isOpen = transcriptionWindow && !transcriptionWindow.isDestroyed();
   const isVisible = isOpen && transcriptionWindow.isVisible();
   return { isOpen, isVisible };
+});
+
+// ========================================
+// KNOWLEDGE RESULTS WINDOW
+// ========================================
+
+let knowledgeResultsWindow: BrowserWindow | null = null;
+
+async function openKnowledgeResultsWindow() {
+  if (knowledgeResultsWindow && !knowledgeResultsWindow.isDestroyed()) {
+    knowledgeResultsWindow.focus();
+    return;
+  }
+
+  // Get primary display bounds
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  // Window size
+  const windowWidth = 450;
+  const windowHeight = 500;
+
+  // Position at bottom-right corner
+  const margin = 20;
+  const x = screenWidth - windowWidth - margin;
+  const y = screenHeight - windowHeight - margin;
+
+  knowledgeResultsWindow = createWindow('knowledge-results', {
+    width: windowWidth,
+    height: windowHeight,
+    x,
+    y,
+    minWidth: 350,
+    minHeight: 300,
+    maxWidth: 600,
+    maxHeight: 700,
+    frame: false,
+    transparent: true,
+    resizable: true,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  if (isProd) {
+    await knowledgeResultsWindow.loadURL('app://./knowledge-results');
+  } else {
+    const port = process.argv[2];
+    await knowledgeResultsWindow.loadURL(`http://localhost:${port}/knowledge-results`);
+  }
+
+  knowledgeResultsWindow.on('closed', () => {
+    console.log('📚 Knowledge results window closed');
+    knowledgeResultsWindow = null;
+  });
+
+  console.log('📚 Knowledge results window opened');
+}
+
+// Handler IPC para fechar a janela de resultados
+ipcMain.on('close-knowledge-results-window', () => {
+  if (knowledgeResultsWindow && !knowledgeResultsWindow.isDestroyed()) {
+    knowledgeResultsWindow.close();
+    knowledgeResultsWindow = null;
+    console.log('📚 Knowledge results window closed via IPC');
+  }
 });
 
 // ========================================
@@ -1696,6 +1771,138 @@ assistant.on('clear-gallery', () => {
   // Também limpar variáveis locais de screenshots
   currentSessionScreenshots = [];
   pendingScreenshots = [];
+});
+
+// Enviar resultados de conhecimento para a janela dedicada
+assistant.on('knowledge-results', async (results: any[]) => {
+  console.log(`📚 Knowledge results found: ${results.length} items`);
+  
+  // Abrir ou focar a janela de resultados
+  await openKnowledgeResultsWindow();
+  
+  // Aguardar janela estar pronta e enviar resultados
+  setTimeout(() => {
+    if (knowledgeResultsWindow && !knowledgeResultsWindow.isDestroyed()) {
+      knowledgeResultsWindow.webContents.send('knowledge-results', results);
+    }
+  }, 300);
+});
+
+
+// ========================================
+// DETECÇÃO AUTOMÁTICA DE EDITORES/IDEs
+// ========================================
+
+// Configuração dos Editores Suportados
+// 'processName': Nome do executável na lista de tarefas (Task Manager/Activity Monitor)
+// 'cmd': Comando para chamar via terminal
+// 'args': Como passar o arquivo e linha. {path} e {line} são placeholders.
+const SUPPORTED_EDITORS = [
+  { 
+    id: 'antigravity', 
+    processName: process.platform === 'win32' ? 'Antigravity.exe' : 'Antigravity', 
+    cmd: 'antigravity', 
+    args: '--goto "{path}:{line}"' 
+  },
+  { 
+    id: 'trae', 
+    processName: process.platform === 'win32' ? 'Trae.exe' : 'Trae', 
+    cmd: 'trae', 
+    args: '--goto "{path}:{line}"' 
+  },
+  { 
+    id: 'cursor', 
+    processName: process.platform === 'win32' ? 'Cursor.exe' : 'Cursor', 
+    cmd: 'cursor', 
+    args: '--goto "{path}:{line}"' 
+  },
+  { 
+    id: 'vscode', 
+    processName: process.platform === 'win32' ? 'Code.exe' : 'Electron',
+    cmd: 'code', 
+    args: '--goto "{path}:{line}"' 
+  },
+  { 
+    id: 'windsurf', 
+    processName: process.platform === 'win32' ? 'Windsurf.exe' : 'Windsurf', 
+    cmd: 'windsurf', 
+    args: '--goto "{path}:{line}"' 
+  },
+];
+
+// Função para verificar se um processo está rodando
+async function isEditorRunning(processName: string): Promise<boolean> {
+  try {
+    const command = process.platform === 'win32' 
+      ? `tasklist /FI "IMAGENAME eq ${processName}"` 
+      : `ps -A | grep -v grep | grep "${processName}"`;
+      
+    const { stdout } = await execAsync(command);
+    return stdout.toLowerCase().includes(processName.toLowerCase());
+  } catch (e) {
+    return false;
+  }
+}
+
+// Função para verificar se o comando existe no PATH (instalado)
+async function isCommandAvailable(cmd: string): Promise<boolean> {
+  try {
+    const checkCmd = process.platform === 'win32' ? `where ${cmd}` : `which ${cmd}`;
+    await execAsync(checkCmd);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+// Abrir arquivo no editor detectado automaticamente
+ipcMain.handle('open-file-in-editor', async (_event, filePath: string, line?: number) => {
+  try {
+    const fs = require('fs');
+    
+    if (!fs.existsSync(filePath)) {
+      return { success: false, error: 'File not found' };
+    }
+
+    // Estratégia 1: Procurar um editor que JÁ esteja rodando (Prioridade Máxima)
+    for (const editor of SUPPORTED_EDITORS) {
+      if (await isEditorRunning(editor.processName)) {
+        if (await isCommandAvailable(editor.cmd)) {
+          console.log(`✅ Detectado ${editor.id} rodando. Abrindo nele...`);
+          const cmdArgs = line 
+            ? editor.args.replace('{path}', filePath).replace('{line}', line.toString())
+            : `"${filePath}"`;
+          
+          await execAsync(`${editor.cmd} ${cmdArgs}`);
+          return { success: true, openedWith: editor.id };
+        }
+      }
+    }
+
+    // Estratégia 2: Se nenhum estiver rodando, procurar o primeiro instalado da lista
+    for (const editor of SUPPORTED_EDITORS) {
+      if (await isCommandAvailable(editor.cmd)) {
+        console.log(`📥 Nenhum editor rodando. Encontrado ${editor.id} instalado.`);
+        const cmdArgs = line 
+            ? editor.args.replace('{path}', filePath).replace('{line}', line.toString())
+            : `"${filePath}"`;
+            
+        await execAsync(`${editor.cmd} ${cmdArgs}`);
+        return { success: true, openedWith: editor.id };
+      }
+    }
+
+    // Estratégia 3: Fallback para o padrão do SO
+    console.log('⚠️ Nenhum editor compatível encontrado. Usando padrão do sistema.');
+    await shell.openPath(filePath);
+    return { success: true, openedWith: 'system-default' };
+
+  } catch (error: any) {
+    console.error('Error opening file:', error);
+    // Fallback de emergência
+    shell.openPath(filePath);
+    return { success: false, error: error.message };
+  }
 });
 
 // Helper para localizar o arquivo .model3.json

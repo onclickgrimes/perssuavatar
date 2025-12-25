@@ -443,6 +443,92 @@ const handler = {
     
     // Gerar prompt completo para um nicho
     generatePrompt: (nicheId: number) => ipcRenderer.invoke('niche:generate-prompt', nicheId),
+  },
+  
+  // ========================================
+  // KNOWLEDGE (Base de Conhecimento) SERVICE
+  // ========================================
+  
+  knowledge: {
+    // Listar fontes de conhecimento de um assistente
+    listSources: (assistantId: string) => ipcRenderer.invoke('knowledge:list-sources', assistantId),
+    
+    // Obter uma fonte de conhecimento
+    getSource: (sourceId: number) => ipcRenderer.invoke('knowledge:get-source', sourceId),
+    
+    // Criar nova fonte de conhecimento
+    createSource: (source: {
+      assistant_id: string;
+      name: string;
+      path: string;
+      type?: 'folder' | 'file';
+      extensions?: string[];
+      excludes?: string[];
+      use_gitignore?: boolean;
+    }) => ipcRenderer.invoke('knowledge:create-source', source),
+    
+    // Atualizar fonte de conhecimento
+    updateSource: (sourceId: number, updates: any) => ipcRenderer.invoke('knowledge:update-source', sourceId, updates),
+    
+    // Deletar fonte de conhecimento
+    deleteSource: (sourceId: number) => ipcRenderer.invoke('knowledge:delete-source', sourceId),
+    
+    // Sincronizar fonte (indexar arquivos)
+    syncSource: (sourceId: number) => ipcRenderer.invoke('knowledge:sync-source', sourceId),
+    
+    // Buscar conhecimento relevante
+    search: (assistantId: string, query: string, limit?: number) => 
+      ipcRenderer.invoke('knowledge:search', assistantId, query, limit),
+    
+    // Obter contexto de conhecimento formatado
+    getContext: (assistantId: string, query: string, maxTokens?: number) => 
+      ipcRenderer.invoke('knowledge:get-context', assistantId, query, maxTokens),
+    
+    // Obter estatísticas
+    getStats: (assistantId: string) => ipcRenderer.invoke('knowledge:get-stats', assistantId),
+    
+    // Selecionar pasta via diálogo do sistema
+    selectFolder: () => ipcRenderer.invoke('knowledge:select-folder'),
+    
+    // Selecionar arquivos via diálogo do sistema
+    selectFiles: () => ipcRenderer.invoke('knowledge:select-files'),
+    
+    // Listener para progresso de sincronização
+    onSyncProgress: (callback: (data: { 
+      sourceId: number; 
+      total: number; 
+      current: number; 
+      currentFile: string; 
+      stage: 'scanning' | 'reading' | 'chunking' | 'embedding' | 'saving' | 'done';
+    }) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('knowledge:sync-progress', subscription);
+      return () => ipcRenderer.removeListener('knowledge:sync-progress', subscription);
+    },
+
+    // Listener para resultados de busca de conhecimento (popup)
+    onKnowledgeResults: (callback: (results: Array<{
+      id: number;
+      file_path: string;
+      file_name: string;
+      start_line: number;
+      end_line: number;
+      content: string;
+      language: string;
+      similarity: number;
+    }>) => void) => {
+      const subscription = (_: any, results: any) => callback(results);
+      ipcRenderer.on('knowledge-results', subscription);
+      return () => ipcRenderer.removeListener('knowledge-results', subscription);
+    },
+
+    // Abrir arquivo no editor padrão (com suporte a linha)
+    openFileInEditor: (filePath: string, line?: number) => 
+      ipcRenderer.invoke('open-file-in-editor', filePath, line),
+
+    // Fechar janela de resultados de conhecimento
+    closeKnowledgeResultsWindow: () => 
+      ipcRenderer.send('close-knowledge-results-window'),
   }
 }
 

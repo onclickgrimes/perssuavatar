@@ -97,6 +97,19 @@ export const UNIFIED_TOOLS: UnifiedTool[] = [
       required: ["platforms"],
     },
   },
+  {
+    name: "search_knowledge",
+    description: "Search the assistant's knowledge base for relevant information about code, documentation, or any indexed content. Use this when the user asks questions about the codebase, files, functions, components, how something works, 'how does X work?', 'what is X?', 'show me the code for X', 'explain X in the code', 'where is X implemented?', or any question that might be answered by the indexed project files. This searches through indexed source code, documentation, and text files using semantic similarity.",
+    parameters: {
+      properties: {
+        query: {
+          type: "string",
+          description: "The search query to find relevant information. Be specific about what you're looking for. Examples: 'handleSubmit function', 'user authentication', 'database connection', 'how the avatar animations work'.",
+        },
+      },
+      required: ["query"],
+    },
+  },
 ];
 
 /**
@@ -162,6 +175,19 @@ export const UNIFIED_LIVE_TOOLS: UnifiedTool[] = [
         },
       },
       required: ["platforms"],
+    },
+  },
+  {
+    name: "search_knowledge",
+    description: "Search the assistant's knowledge base for relevant information about code, documentation, or any indexed content. Use this when the user asks questions about the codebase, files, functions, components, how something works, 'how does X work?', 'what is X?', 'show me the code for X', 'explain X in the code', 'where is X implemented?', or any question that might be answered by the indexed project files. This searches through indexed source code, documentation, and text files using semantic similarity.",
+    parameters: {
+      properties: {
+        query: {
+          type: "string",
+          description: "The search query to find relevant information. Be specific about what you're looking for. Examples: 'handleSubmit function', 'user authentication', 'database connection', 'how the avatar animations work'.",
+        },
+      },
+      required: ["query"],
     },
   },
 ];

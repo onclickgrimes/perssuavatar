@@ -11,6 +11,7 @@ import { GeminiLiveService } from './services/gemini-live-service';
 import { DeepSeekService } from './services/deepseek-service';
 import { TTSService } from './services/tts-service';
 import { ScreenshotShareService } from './screenshot-share-service';
+import { getKnowledgeService } from './services/knowledge-service';
 import { Readable } from 'stream';
 
 interface AIResponse {
@@ -300,6 +301,71 @@ export class VoiceAssistant extends EventEmitter {
                     this.emit('clear-gallery');
                 }
             }
+        } else if (toolCall.name === 'search_knowledge') {
+            const query = toolCall.args?.query;
+            console.log(`[VoiceAssistant][Live] Search knowledge: "${query}"`);
+
+            if (!query) {
+                result = {
+                    success: false,
+                    message: 'No query provided. Please specify what you want to search for.'
+                };
+            } else {
+                try {
+                    // Get the currently selected assistant ID
+                    const settings = getUserSettings();
+                    const assistantId = settings.selectedAssistant || 'general';
+                    
+                    console.log(`[VoiceAssistant][Live] Searching knowledge for assistant: "${assistantId}"`);
+                    
+                    const knowledgeService = getKnowledgeService();
+                    
+                    // First, let's check how many sources this assistant has
+                    const sources = await knowledgeService.listSources(assistantId);
+                    console.log(`[VoiceAssistant][Live] Assistant "${assistantId}" has ${sources.length} knowledge sources`);
+                    
+                    const chunks = await knowledgeService.search(assistantId, query, 5);
+
+                    if (chunks.length === 0) {
+                        result = {
+                            success: true,
+                            found: false,
+                            message: 'No relevant information found in the knowledge base for this query. The knowledge base might not have content indexed related to this topic, or no folders were synced yet.'
+                        };
+                    } else {
+                        // Emit event to show popup in frontend
+                        this.emit('knowledge-results', chunks.map((chunk: any) => ({
+                            id: chunk.id,
+                            file_path: chunk.file_path,
+                            file_name: chunk.file_name,
+                            start_line: chunk.start_line,
+                            end_line: chunk.end_line,
+                            content: chunk.content,
+                            language: chunk.metadata?.language || 'text',
+                            similarity: chunk.similarity
+                        })));
+
+                        // Format chunks for the assistant
+                        const formattedResults = chunks.map((chunk: any, index: number) => 
+                            `[Result ${index + 1}] File: ${chunk.file_name} (lines ${chunk.start_line}-${chunk.end_line})\n\`\`\`${chunk.metadata?.language || ''}\n${chunk.content}\n\`\`\``
+                        ).join('\n\n');
+
+                        result = {
+                            success: true,
+                            found: true,
+                            resultCount: chunks.length,
+                            results: formattedResults,
+                            message: `Found ${chunks.length} relevant code snippets. Use this information to answer the user's question accurately.`
+                        };
+                    }
+                } catch (error: any) {
+                    console.error('[VoiceAssistant][Live] Knowledge search error:', error);
+                    result = {
+                        success: false,
+                        message: `Error searching knowledge base: ${error.message}`
+                    };
+                }
+            }
         }
 
         await this.geminiLiveService.sendToolResponse(toolCall.id, result);
@@ -481,6 +547,7 @@ export class VoiceAssistant extends EventEmitter {
     - save_screen_recording: A tela é gravada CONTINUAMENTE em segundo plano. Use essa função quando o usuário pedir para "gravar/salvar os últimos X segundos/minutos", "salvar o que aconteceu", etc. Informe o parâmetro duration_seconds (ex: 30, 60, 300).
     - take_screenshot: Use quando o usuário pedir para tirar print da tela.
     - share_screenshot: Use para compartilhar o screenshot mais recente para WhatsApp, Email ou Google Drive.
+    - search_knowledge: Use para buscar informações na BASE DE CONHECIMENTO indexada do projeto. Quando o usuário perguntar sobre código, funções, componentes, "como funciona X?", "o que é X?", "onde está implementado X?", use essa função para pesquisar nos arquivos indexados e responder com acurácia.
 
     **REGRA CRÍTICA DE FUNCTION CALLING:**
     NUNCA confirme que executou uma ação ANTES de receber a resposta da função.
@@ -497,6 +564,7 @@ export class VoiceAssistant extends EventEmitter {
     - save_screen_recording: A tela é gravada CONTINUAMENTE em segundo plano. Use essa função quando o usuário pedir para "gravar/salvar os últimos X segundos/minutos", "salvar o que aconteceu", etc. Informe o parâmetro duration_seconds (ex: 30, 60, 300).
     - take_screenshot: Use quando o usuário pedir para tirar print da tela ou olhar algo específico na tela.
     - share_screenshot: Use para compartilhar o screenshot mais recente para WhatsApp, Email ou Google Drive.
+    - search_knowledge: Use para buscar informações na BASE DE CONHECIMENTO indexada do projeto. Quando o usuário perguntar sobre código, funções, componentes, "como funciona X?", "o que é X?", "onde está implementado X?", use essa função para pesquisar nos arquivos indexados e responder com acurácia.
 
     **REGRA CRÍTICA DE FUNCTION CALLING:**
     NUNCA confirme que executou uma ação ANTES de receber a resposta da função.
@@ -925,6 +993,69 @@ export class VoiceAssistant extends EventEmitter {
                                 shouldSuppressAudio = false; // Let AI confirm the action
                             } else {
                                 shouldSuppressAudio = false; // Let AI explain the error
+                            }
+                        }
+                    } else if (fnName === 'search_knowledge') {
+                        const args = JSON.parse((toolCall as any).function.arguments);
+                        const query = args.query;
+                        console.log(`Tool Call: search_knowledge QUERY="${query}"`);
+
+                        if (!query) {
+                            this.conversationHistory.push({
+                                role: "tool",
+                                tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
+                                content: `Search failed: No query provided. Please specify what to search for.`
+                            });
+                            shouldSuppressAudio = false;
+                        } else {
+                            try {
+                                // Get the currently selected assistant ID
+                                const settings = getUserSettings();
+                                const assistantId = settings.selectedAssistant || 'general';
+                                
+                                const knowledgeService = getKnowledgeService();
+                                const chunks = await knowledgeService.search(assistantId, query, 5);
+
+                                if (chunks.length === 0) {
+                                    this.conversationHistory.push({
+                                        role: "tool",
+                                        tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
+                                        content: `Knowledge search completed. No relevant information found for "${query}". The knowledge base might not have content indexed related to this topic.`
+                                    });
+                                } else {
+                                    // Emit event to show popup in frontend
+                                    this.emit('knowledge-results', chunks.map((chunk: any) => ({
+                                        id: chunk.id,
+                                        file_path: chunk.file_path,
+                                        file_name: chunk.file_name,
+                                        start_line: chunk.start_line,
+                                        end_line: chunk.end_line,
+                                        content: chunk.content,
+                                        language: chunk.metadata?.language || 'text',
+                                        similarity: chunk.similarity
+                                    })));
+
+                                    // Format chunks for the assistant
+                                    const formattedResults = chunks.map((chunk: any, index: number) => 
+                                        `[Result ${index + 1}] File: ${chunk.file_name} (lines ${chunk.start_line}-${chunk.end_line})\n\`\`\`${chunk.metadata?.language || ''}\n${chunk.content}\n\`\`\``
+                                    ).join('\n\n');
+
+                                    this.conversationHistory.push({
+                                        role: "tool",
+                                        tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
+                                        content: `Knowledge search completed. Found ${chunks.length} relevant code snippets:\n\n${formattedResults}\n\nUse this information to answer the user's question accurately.`
+                                    });
+                                }
+
+                                shouldSuppressAudio = false; // Let AI explain the results
+                            } catch (error: any) {
+                                console.error('[VoiceAssistant][Classic] Knowledge search error:', error);
+                                this.conversationHistory.push({
+                                    role: "tool",
+                                    tool_call_id: this.aiProvider === 'gemini' ? fnName : (toolCall.id || fnName),
+                                    content: `Knowledge search failed: ${error.message}`
+                                });
+                                shouldSuppressAudio = false;
                             }
                         }
                     }

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import KnowledgeTab from './KnowledgeTab';
 
 interface AssistantManagerProps {
   isOpen: boolean;
@@ -801,11 +802,7 @@ export default function AssistantManager({ isOpen, onClose }: AssistantManagerPr
 
               {/* ABA CONHECIMENTO */}
               {activeTab === 'conhecimento' && (
-                <div className="flex flex-col items-center justify-center h-full text-center">
-                  <div className="text-6xl mb-4">🚧</div>
-                  <h3 className="text-xl font-semibold text-white mb-2">Em Desenvolvimento</h3>
-                  <p className="text-gray-400 text-sm">Esta seção estará disponível em breve.</p>
-                </div>
+                <KnowledgeTab assistantId={selectedAssistant?.id || ''} />
               )}
 
             </div>
