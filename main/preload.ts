@@ -529,6 +529,37 @@ const handler = {
     // Fechar janela de resultados de conhecimento
     closeKnowledgeResultsWindow: () => 
       ipcRenderer.send('close-knowledge-results-window'),
+    
+    // ========================================
+    // OLLAMA (Local Embeddings)
+    // ========================================
+    
+    // Verificar se Ollama está instalado no sistema
+    checkOllamaInstalled: () => ipcRenderer.invoke('check-ollama-installed'),
+    
+    // Baixar modelo via 'ollama pull'
+    pullModel: (modelName: string) => ipcRenderer.invoke('ollama-pull-model', modelName),
+    
+    // Listar modelos instalados no Ollama
+    listOllamaModels: () => ipcRenderer.invoke('ollama-list-models'),
+    
+    // Configurar provider de embedding
+    setEmbeddingProvider: (provider: 'openai' | 'ollama') => 
+      ipcRenderer.invoke('set-embedding-provider', provider),
+    
+    // Configurar modelo Ollama para embeddings  
+    setOllamaEmbeddingModel: (model: string) => 
+      ipcRenderer.invoke('set-ollama-embedding-model', model),
+    
+    // Obter provider atual
+    getEmbeddingProvider: () => ipcRenderer.invoke('get-embedding-provider'),
+    
+    // Listener para progresso de download de modelo
+    onOllamaPullProgress: (callback: (data: { model: string; progress: string }) => void) => {
+      const subscription = (_: any, data: { model: string; progress: string }) => callback(data);
+      ipcRenderer.on('ollama-pull-progress', subscription);
+      return () => { ipcRenderer.removeListener('ollama-pull-progress', subscription); };
+    },
   }
 }
 

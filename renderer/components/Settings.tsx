@@ -14,7 +14,7 @@ interface SettingsProps {
   onClose?: () => void;
 }
 
-type TabId = 'api' | 'audio' | 'avatar' | 'features' | 'shortcuts' | 'help';
+type TabId = 'api' | 'audio' | 'avatar' | 'features' | 'shortcuts' | 'embeddings' | 'help';
 
 export default function Settings({ 
   onSizeChange, 
@@ -44,6 +44,14 @@ export default function Settings({
   const [voiceModel, setVoiceModel] = useState<'polly' | 'elevenlabs'>('polly'); // Modelo de voz para modo classic
   const [continuousRecordingEnabled, setContinuousRecordingEnabled] = useState(true); // Gravação contínua ativada
   const [dbStats, setDbStats] = useState<any>(null);
+
+  // Embedding settings
+  const [embeddingProvider, setEmbeddingProvider] = useState<'openai' | 'ollama'>('openai');
+  const [ollamaStatus, setOllamaStatus] = useState<'checking' | 'running' | 'stopped' | 'error'>('checking');
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [selectedOllamaModel, setSelectedOllamaModel] = useState('nomic-embed-text');
+  const [isDownloadingModel, setIsDownloadingModel] = useState(false);
+  const [downloadProgress, setDownloadProgress] = useState('');
   
   // Continuous recorder & Screen Share
   const { isRecording, startRecording, stopRecording, saveLastSeconds, getBufferInfo } = useContinuousRecorder({ maxBufferSeconds: 600 });
@@ -137,6 +145,14 @@ export default function Settings({
           
           if (settings.selectedModel) {
             onModelChange(settings.selectedModel);
+          }
+
+          // Carregar configurações de embedding
+          if (settings.embeddingProvider) {
+            setEmbeddingProvider(settings.embeddingProvider);
+          }
+          if (settings.ollamaEmbeddingModel) {
+            setSelectedOllamaModel(settings.ollamaEmbeddingModel);
           }
         }
       } catch (error) {
@@ -320,6 +336,140 @@ export default function Settings({
     }
   };
 
+  // ================================================
+  // FUNÇÕES DE EMBEDDING
+  // ================================================
+
+  // Estado para saber se Ollama está instalado
+  const [ollamaInstalled, setOllamaInstalled] = useState<boolean | null>(null);
+
+  // Verificar se Ollama está instalado e seus status
+  const checkOllamaStatus = async () => {
+    setOllamaStatus('checking');
+    
+    try {
+      // 1. Verificar se Ollama está instalado
+      const installResult = await window.electron.knowledge.checkOllamaInstalled();
+      if (!installResult.installed) {
+        setOllamaInstalled(false);
+        setOllamaStatus('stopped');
+        console.log('⚠️ Ollama não está instalado');
+        return;
+      }
+      setOllamaInstalled(true);
+
+      // 2. Tentar conectar à API para ver se está rodando
+      const response = await fetch('http://localhost:11434/api/tags', {
+        method: 'GET',
+        signal: AbortSignal.timeout(3000)
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        const models = data.models?.map((m: any) => m.name) || [];
+        setOllamaModels(models);
+        setOllamaStatus('running');
+        console.log('✅ Ollama conectado. Modelos:', models);
+      } else {
+        // Instalado mas não rodando - buscar modelos via CLI
+        const listResult = await window.electron.knowledge.listOllamaModels();
+        if (listResult.success && listResult.data) {
+          setOllamaModels(listResult.data);
+        }
+        setOllamaStatus('stopped');
+      }
+    } catch (error) {
+      console.log('⚠️ Ollama não está rodando ou não instalado');
+      // Tentar buscar modelos via CLI mesmo assim
+      try {
+        const listResult = await window.electron.knowledge.listOllamaModels();
+        if (listResult.success && listResult.data) {
+          setOllamaModels(listResult.data);
+          setOllamaInstalled(true);
+        }
+      } catch {}
+      setOllamaStatus('stopped');
+    }
+  };
+
+  // Baixar modelo do Ollama via 'ollama pull'
+  const handleDownloadOllamaModel = async (modelName: string) => {
+    setIsDownloadingModel(true);
+    setDownloadProgress('Iniciando download...');
+    
+    try {
+      // Usar IPC para executar 'ollama pull'
+      const result = await window.electron.knowledge.pullModel(modelName);
+      
+      if (result.success) {
+        setDownloadProgress('Download concluído! ✅');
+        // Atualizar lista de modelos
+        setTimeout(async () => {
+          await checkOllamaStatus();
+          setDownloadProgress('');
+          setIsDownloadingModel(false);
+        }, 2000);
+      } else {
+        setDownloadProgress(`Erro: ${result.error || 'Falha ao baixar'}`);
+        setTimeout(() => {
+          setDownloadProgress('');
+          setIsDownloadingModel(false);
+        }, 3000);
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao baixar modelo:', error);
+      setDownloadProgress(`Erro: ${error.message}`);
+      setTimeout(() => {
+        setDownloadProgress('');
+        setIsDownloadingModel(false);
+      }, 3000);
+    }
+  };
+
+  // Listener para progresso de download
+  useEffect(() => {
+    const unsubscribe = window.electron.knowledge.onOllamaPullProgress((data) => {
+      if (data.progress) {
+        setDownloadProgress(data.progress);
+      }
+    });
+    return () => unsubscribe();
+  }, []);
+
+  // Salvar configuração de embedding
+  const handleEmbeddingProviderChange = async (provider: 'openai' | 'ollama') => {
+    setEmbeddingProvider(provider);
+    try {
+      await window.electron.db.setUserSettings({ embeddingProvider: provider });
+      console.log('💾 Provider de embedding salvo:', provider);
+      
+      // Notificar o backend
+      await window.electron.knowledge.setEmbeddingProvider(provider);
+    } catch (error) {
+      console.error('❌ Erro ao salvar provider de embedding:', error);
+    }
+  };
+
+  const handleOllamaModelChange = async (model: string) => {
+    setSelectedOllamaModel(model);
+    try {
+      await window.electron.db.setUserSettings({ ollamaEmbeddingModel: model });
+      console.log('💾 Modelo Ollama salvo:', model);
+      
+      // Notificar o backend
+      await window.electron.knowledge.setOllamaEmbeddingModel(model);
+    } catch (error) {
+      console.error('❌ Erro ao salvar modelo Ollama:', error);
+    }
+  };
+
+  // Verificar Ollama ao abrir a aba
+  useEffect(() => {
+    if (activeTab === 'embeddings') {
+      checkOllamaStatus();
+    }
+  }, [activeTab]);
+
   if (!showSettings && isControlled) return null;
 
   // Render Helpers
@@ -386,6 +536,7 @@ export default function Settings({
                    {renderSidebarItem('audio', 'Áudio e Tela', '🎤')}
                    {renderSidebarItem('avatar', 'Avatar', '👤')}
                    {renderSidebarItem('features', 'Recursos', '⚡')}
+                   {renderSidebarItem('embeddings', 'Embeddings', '🧠')}
                    {renderSidebarItem('shortcuts', 'Atalhos', '⌨')}
                    {renderSidebarItem('help', 'Ajuda', '❓')}
                 </nav>
@@ -739,6 +890,267 @@ export default function Settings({
                             <div className="flex gap-1"><kbd className="bg-[#333] px-2 py-1 rounded text-xs text-white border border-[#444]">Ctrl</kbd> <kbd className="bg-[#333] px-2 py-1 rounded text-xs text-white border border-[#444]">Shift</kbd> <kbd className="bg-[#333] px-2 py-1 rounded text-xs text-white border border-[#444]">M</kbd></div>
                          </div>
                       </div>
+                   </div>
+                )}
+
+                {/* --- Embeddings --- */}
+                {activeTab === 'embeddings' && (
+                   <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      <div>
+                         <h3 className="text-xl font-medium text-white mb-1">Provider de Embeddings</h3>
+                         <p className="text-sm text-gray-500 mb-6">Escolha como gerar embeddings para a base de conhecimento.</p>
+                         
+                         <div className="flex gap-4 mb-8">
+                            <button 
+                              onClick={() => handleEmbeddingProviderChange('openai')}
+                              className={`flex-1 py-4 border-2 rounded-xl flex flex-col items-center justify-center gap-2 transition-all ${
+                                embeddingProvider === 'openai' 
+                                  ? 'border-green-600 bg-green-900/10 text-white' 
+                                  : 'border-[#333] bg-[#111] hover:bg-[#1a1a1a] text-gray-400 hover:text-white opacity-60'
+                              }`}
+                            >
+                               <span className="text-2xl">☁️</span>
+                               <span className="font-semibold">OpenAI</span>
+                               <span className="text-xs text-gray-500">Via API (requer chave)</span>
+                               {embeddingProvider === 'openai' && <span className="text-xs bg-green-600 px-2 py-0.5 rounded-full">Ativo</span>}
+                            </button>
+                            <button 
+                              onClick={() => handleEmbeddingProviderChange('ollama')}
+                              className={`flex-1 py-4 border-2 rounded-xl flex flex-col items-center justify-center gap-2 transition-all ${
+                                embeddingProvider === 'ollama' 
+                                  ? 'border-purple-600 bg-purple-900/10 text-white' 
+                                  : 'border-[#333] bg-[#111] hover:bg-[#1a1a1a] text-gray-400 hover:text-white opacity-60'
+                              }`}
+                            >
+                               <span className="text-2xl">🦙</span>
+                               <span className="font-semibold">Ollama (Local)</span>
+                               <span className="text-xs text-gray-500">Gratuito, usa GPU</span>
+                               {embeddingProvider === 'ollama' && <span className="text-xs bg-purple-600 px-2 py-0.5 rounded-full">Ativo</span>}
+                            </button>
+                         </div>
+                      </div>
+
+                      {/* Configurações do Ollama */}
+                      {embeddingProvider === 'ollama' && (
+                         <div className="space-y-4">
+                            <h3 className="text-sm uppercase tracking-wider text-gray-500 font-semibold border-b border-[#222] pb-2">Configuração do Ollama</h3>
+                            
+                            {/* Status do Ollama */}
+                            <div className="bg-gradient-to-r from-purple-900/20 to-pink-900/20 p-4 rounded-xl border border-purple-500/20">
+                               <div className="flex items-center justify-between mb-3">
+                                  <div className="flex items-center gap-3">
+                                     <span className="text-2xl">🦙</span>
+                                     <div>
+                                        <h4 className="font-semibold text-white">Status do Ollama</h4>
+                                        <p className="text-xs text-gray-400">Servidor local para modelos de IA</p>
+                                     </div>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                     {ollamaStatus === 'checking' && (
+                                        <span className="flex items-center gap-2 text-gray-400 text-sm">
+                                           <span className="animate-spin">⟳</span> Verificando...
+                                        </span>
+                                     )}
+                                     {ollamaStatus === 'running' && (
+                                        <span className="flex items-center gap-2 text-green-400 text-sm">
+                                           <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span> Conectado
+                                        </span>
+                                     )}
+                                     {ollamaStatus === 'stopped' && (
+                                        <span className="flex items-center gap-2 text-red-400 text-sm">
+                                           <span className="w-2 h-2 bg-red-500 rounded-full"></span> Não conectado
+                                        </span>
+                                     )}
+                                     <button 
+                                        onClick={checkOllamaStatus}
+                                        className="p-1.5 hover:bg-white/10 rounded-lg transition-colors"
+                                        title="Atualizar status"
+                                     >
+                                        🔄
+                                     </button>
+                                  </div>
+                               </div>
+
+                               {ollamaStatus === 'stopped' && (
+                                  <div className="mt-3">
+                                    {ollamaInstalled === false ? (
+                                      /* Ollama NÃO está instalado */
+                                      <div className="bg-red-900/20 border border-red-500/30 rounded-lg p-3">
+                                        <p className="text-xs text-red-300 mb-2">
+                                          ⚠️ Ollama não está instalado. Para usar embeddings locais:
+                                        </p>
+                                        <ol className="text-xs text-red-200/70 list-decimal list-inside space-y-1">
+                                          <li>Baixe e instale o Ollama em <a href="https://ollama.ai" target="_blank" className="text-blue-400 underline">ollama.ai</a></li>
+                                          <li>Após instalar, clique em 🔄 para verificar novamente</li>
+                                        </ol>
+                                      </div>
+                                    ) : (
+                                      /* Ollama ESTÁ instalado mas parado */
+                                      <div className="bg-amber-900/20 border border-amber-500/30 rounded-lg p-3 space-y-3">
+                                        <p className="text-xs text-amber-300">
+                                          🦙 Ollama está instalado mas o servidor não está rodando.
+                                        </p>
+                                        
+                                        {/* Baixar modelo mesmo com servidor parado */}
+                                        <div className="bg-[#111] rounded-lg p-3 border border-[#333]">
+                                          <label className="block text-xs font-medium text-gray-300 mb-2">Baixar modelo de embedding:</label>
+                                          <div className="flex gap-2">
+                                            <select 
+                                              value={selectedOllamaModel}
+                                              onChange={(e) => setSelectedOllamaModel(e.target.value)}
+                                              className="flex-1 bg-[#0a0a0a] text-white rounded-lg p-2 border border-[#444] text-sm focus:ring-1 focus:ring-purple-500 outline-none"
+                                            >
+                                              <option value="nomic-embed-text">nomic-embed-text (Recomendado)</option>
+                                              <option value="all-minilm">all-minilm (Mais leve)</option>
+                                              <option value="mxbai-embed-large">mxbai-embed-large (Maior qualidade)</option>
+                                            </select>
+                                            <button
+                                              onClick={() => handleDownloadOllamaModel(selectedOllamaModel)}
+                                              disabled={isDownloadingModel}
+                                              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                            >
+                                              {isDownloadingModel ? (
+                                                <>
+                                                  <span className="animate-spin">⟳</span>
+                                                  Baixando...
+                                                </>
+                                              ) : (
+                                                <>⬇️ Baixar</>
+                                              )}
+                                            </button>
+                                          </div>
+                                          
+                                          {downloadProgress && (
+                                            <div className="mt-2 pt-2 border-t border-[#333]">
+                                              <p className="text-xs text-purple-300">{downloadProgress}</p>
+                                            </div>
+                                          )}
+                                          
+                                          {/* Modelos já baixados */}
+                                          {ollamaModels.length > 0 && (
+                                            <div className="mt-2 pt-2 border-t border-[#333]">
+                                              <p className="text-xs text-gray-400 mb-1">Modelos instalados:</p>
+                                              <div className="flex flex-wrap gap-1">
+                                                {ollamaModels.map(m => (
+                                                  <span key={m} className="px-2 py-0.5 bg-green-900/30 text-green-400 rounded text-xs">
+                                                    ✅ {m}
+                                                  </span>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                        
+                                        <p className="text-xs text-gray-500">
+                                          💡 Os modelos serão baixados automaticamente. Depois de baixar, execute <code className="bg-black/30 px-1 rounded">ollama serve</code> no terminal para ativar o servidor.
+                                        </p>
+                                      </div>
+                                    )}
+                                  </div>
+                               )}
+                            </div>
+
+                            {/* Modelos de Embedding */}
+                            {ollamaStatus === 'running' && (
+                               <div className="space-y-4">
+                                  {/* Seleção de modelo */}
+                                  <div>
+                                     <label className="block text-sm font-medium text-gray-300 mb-2">Modelo de Embedding</label>
+                                     <select 
+                                       value={selectedOllamaModel}
+                                       onChange={(e) => handleOllamaModelChange(e.target.value)}
+                                       className="w-full bg-[#111] text-white rounded-lg p-3 border border-[#333] text-sm focus:ring-1 focus:ring-purple-500 outline-none hover:border-gray-500 transition-colors"
+                                     >
+                                       <option value="nomic-embed-text">nomic-embed-text (Recomendado)</option>
+                                       <option value="all-minilm">all-minilm (Mais leve)</option>
+                                       <option value="mxbai-embed-large">mxbai-embed-large (Maior qualidade)</option>
+                                       {ollamaModels.filter(m => !['nomic-embed-text', 'all-minilm', 'mxbai-embed-large'].includes(m.split(':')[0])).map(model => (
+                                         <option key={model} value={model}>{model}</option>
+                                       ))}
+                                     </select>
+                                  </div>
+
+                                  {/* Status do modelo selecionado */}
+                                  <div className="bg-[#111] border border-[#222] rounded-xl p-4">
+                                     <div className="flex items-center justify-between">
+                                        <div>
+                                           <h4 className="font-medium text-white">{selectedOllamaModel}</h4>
+                                           <p className="text-xs text-gray-500 mt-1">
+                                              {ollamaModels.some(m => m.startsWith(selectedOllamaModel.split(':')[0])) 
+                                                 ? '✅ Modelo instalado' 
+                                                 : '⬇️ Modelo não instalado'}
+                                           </p>
+                                        </div>
+                                        
+                                        {!ollamaModels.some(m => m.startsWith(selectedOllamaModel.split(':')[0])) && (
+                                           <button
+                                              onClick={() => handleDownloadOllamaModel(selectedOllamaModel)}
+                                              disabled={isDownloadingModel}
+                                              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 disabled:bg-purple-600/50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                                           >
+                                              {isDownloadingModel ? (
+                                                 <>
+                                                    <span className="animate-spin">⟳</span>
+                                                    Baixando...
+                                                 </>
+                                              ) : (
+                                                 <>
+                                                    <span>⬇️</span>
+                                                    Baixar Modelo
+                                                 </>
+                                              )}
+                                           </button>
+                                        )}
+                                     </div>
+
+                                     {downloadProgress && (
+                                        <div className="mt-3 pt-3 border-t border-[#222]">
+                                           <p className="text-xs text-purple-300">{downloadProgress}</p>
+                                        </div>
+                                     )}
+                                  </div>
+
+                                  {/* Modelos instalados */}
+                                  {ollamaModels.length > 0 && (
+                                     <div>
+                                        <h4 className="text-sm font-medium text-gray-300 mb-2">Modelos Instalados</h4>
+                                        <div className="flex flex-wrap gap-2">
+                                           {ollamaModels.map(model => (
+                                              <span 
+                                                 key={model} 
+                                                 className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-colors ${
+                                                    selectedOllamaModel === model || selectedOllamaModel.split(':')[0] === model.split(':')[0]
+                                                       ? 'bg-purple-600 text-white'
+                                                       : 'bg-[#222] text-gray-400 hover:bg-[#333]'
+                                                 }`}
+                                                 onClick={() => handleOllamaModelChange(model)}
+                                              >
+                                                 🦙 {model}
+                                              </span>
+                                           ))}
+                                        </div>
+                                     </div>
+                                  )}
+                               </div>
+                            )}
+                         </div>
+                      )}
+
+                      {/* Info sobre OpenAI */}
+                      {embeddingProvider === 'openai' && (
+                         <div className="bg-green-900/10 border border-green-500/20 rounded-xl p-4">
+                            <div className="flex items-start gap-3">
+                               <span className="text-xl">ℹ️</span>
+                               <div>
+                                  <h4 className="text-sm font-semibold text-green-300 mb-1">OpenAI Embeddings</h4>
+                                  <p className="text-xs text-green-200/70">
+                                     Usando o modelo <strong>text-embedding-3-small</strong>. 
+                                     Certifique-se de ter a variável <code className="bg-black/30 px-1 rounded">OPENAI_API_KEY</code> configurada no arquivo .env.
+                                  </p>
+                               </div>
+                            </div>
+                         </div>
+                      )}
                    </div>
                 )}
 

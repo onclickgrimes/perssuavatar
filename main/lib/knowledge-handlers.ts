@@ -218,6 +218,150 @@ export function registerKnowledgeHandlers(): void {
     }
   });
 
+  // ============================================
+  // CONFIGURAÇÃO DE EMBEDDING
+  // ============================================
+
+  /**
+   * Configurar provider de embeddings
+   */
+  ipcMain.handle('set-embedding-provider', async (_event, provider: 'openai' | 'ollama') => {
+    try {
+      knowledgeService.setEmbeddingProvider(provider);
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ Erro ao configurar provider de embedding:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Configurar modelo Ollama para embeddings
+   */
+  ipcMain.handle('set-ollama-embedding-model', async (_event, model: string) => {
+    try {
+      knowledgeService.setOllamaModel(model);
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ Erro ao configurar modelo Ollama:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Obter provider de embedding atual
+   */
+  ipcMain.handle('get-embedding-provider', async () => {
+    try {
+      const provider = knowledgeService.getEmbeddingProvider();
+      return { success: true, data: provider };
+    } catch (error: any) {
+      return { success: false, error: error.message };
+    }
+  });
+
+  /**
+   * Verificar se Ollama está instalado no sistema
+   */
+  ipcMain.handle('check-ollama-installed', async () => {
+    const { exec } = require('child_process');
+    return new Promise((resolve) => {
+      exec('ollama --version', (error: any) => {
+        if (error) {
+          resolve({ success: true, installed: false });
+        } else {
+          resolve({ success: true, installed: true });
+        }
+      });
+    });
+  });
+
+  /**
+   * Baixar modelo do Ollama via comando 'ollama pull'
+   */
+  ipcMain.handle('ollama-pull-model', async (event, modelName: string) => {
+    const { spawn } = require('child_process');
+    
+    return new Promise((resolve) => {
+      console.log(`🦙 Iniciando download do modelo: ${modelName}`);
+      
+      const ollama = spawn('ollama', ['pull', modelName], {
+        shell: true
+      });
+
+      let lastProgress = '';
+
+      ollama.stdout.on('data', (data: Buffer) => {
+        const output = data.toString().trim();
+        if (output && output !== lastProgress) {
+          lastProgress = output;
+          // Enviar progresso para o renderer
+          const mainWindow = getMainWindow();
+          if (mainWindow) {
+            mainWindow.webContents.send('ollama-pull-progress', {
+              model: modelName,
+              progress: output
+            });
+          }
+        }
+      });
+
+      ollama.stderr.on('data', (data: Buffer) => {
+        const output = data.toString().trim();
+        if (output && output !== lastProgress) {
+          lastProgress = output;
+          // Ollama usa stderr para progresso também
+          const mainWindow = getMainWindow();
+          if (mainWindow) {
+            mainWindow.webContents.send('ollama-pull-progress', {
+              model: modelName,
+              progress: output
+            });
+          }
+        }
+      });
+
+      ollama.on('close', (code: number) => {
+        if (code === 0) {
+          console.log(`✅ Modelo ${modelName} baixado com sucesso!`);
+          resolve({ success: true, model: modelName });
+        } else {
+          console.error(`❌ Erro ao baixar modelo (código: ${code})`);
+          resolve({ success: false, error: `Erro ao baixar modelo (código: ${code})` });
+        }
+      });
+
+      ollama.on('error', (err: any) => {
+        console.error('❌ Erro ao executar ollama:', err);
+        resolve({ success: false, error: err.message });
+      });
+    });
+  });
+
+  /**
+   * Listar modelos instalados no Ollama
+   */
+  ipcMain.handle('ollama-list-models', async () => {
+    const { exec } = require('child_process');
+    return new Promise((resolve) => {
+      exec('ollama list', (error: any, stdout: string) => {
+        if (error) {
+          resolve({ success: false, error: error.message });
+          return;
+        }
+        
+        // Parse da saída (formato: NAME ID SIZE MODIFIED)
+        const lines = stdout.trim().split('\n').slice(1); // Pula header
+        const models = lines.map((line: string) => {
+          const parts = line.split(/\s+/);
+          return parts[0]; // Nome do modelo
+        }).filter((m: string) => m);
+        
+        resolve({ success: true, data: models });
+      });
+    });
+  });
+
   console.log('✅ Knowledge handlers registrados');
 }
 

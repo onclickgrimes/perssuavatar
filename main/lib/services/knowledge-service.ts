@@ -119,13 +119,16 @@ const DEFAULT_EXCLUDES = [
   '.cache', '.tmp', 'tmp',
 ];
 
-// ============================================
+// ===========================================
 // CLASSE PRINCIPAL
-// ============================================
+// ===========================================
 
 class KnowledgeService {
   private openai: OpenAI | null = null;
   private progressCallback: ((progress: SyncProgress) => void) | null = null;
+  private embeddingProvider: 'openai' | 'ollama' = 'openai';
+  private ollamaModel: string = 'nomic-embed-text';
+  private ollamaBaseUrl: string = 'http://localhost:11434';
 
   constructor() {
     this.initOpenAI();
@@ -147,6 +150,45 @@ class KnowledgeService {
       this.openai = new OpenAI({ apiKey });
     }
     return this.openai;
+  }
+
+  // ============================================
+  // CONFIGURAÇÃO DE PROVIDER
+  // ============================================
+
+  /**
+   * Define o provider de embeddings (openai ou ollama)
+   */
+  setEmbeddingProvider(provider: 'openai' | 'ollama'): void {
+    const oldProvider = this.embeddingProvider;
+    this.embeddingProvider = provider;
+    console.log('\n🧠 ========================================');
+    console.log(`🧠 PROVIDER DE EMBEDDING ALTERADO`);
+    console.log(`🧠 De: ${oldProvider.toUpperCase()} → Para: ${provider.toUpperCase()}`);
+    if (provider === 'ollama') {
+      console.log(`🦙 Modelo atual: ${this.ollamaModel}`);
+      console.log(`🦙 URL: ${this.ollamaBaseUrl}`);
+    }
+    console.log('🧠 ========================================\n');
+  }
+
+  /**
+   * Define o modelo do Ollama para embeddings
+   */
+  setOllamaModel(model: string): void {
+    const oldModel = this.ollamaModel;
+    this.ollamaModel = model;
+    console.log('\n🦙 ========================================');
+    console.log(`🦙 MODELO OLLAMA ALTERADO`);
+    console.log(`🦙 De: ${oldModel} → Para: ${model}`);
+    console.log('🦙 ========================================\n');
+  }
+
+  /**
+   * Retorna o provider atual
+   */
+  getEmbeddingProvider(): 'openai' | 'ollama' {
+    return this.embeddingProvider;
   }
 
   // ============================================
@@ -763,8 +805,31 @@ class KnowledgeService {
 
   /**
    * Gera embeddings para uma lista de chunks
+   * Usa o provider configurado (OpenAI ou Ollama)
    */
   private async generateEmbeddings(
+    chunks: Omit<KnowledgeChunk, 'id' | 'source_id' | 'created_at' | 'updated_at'>[]
+  ): Promise<Omit<KnowledgeChunk, 'id' | 'source_id' | 'created_at' | 'updated_at'>[]> {
+    console.log('\n🧠 ========================================');
+    console.log('🧠 GERANDO EMBEDDINGS');
+    console.log(`🧠 Provider configurado: ${this.embeddingProvider.toUpperCase()}`);
+    console.log(`🧠 Total de chunks: ${chunks.length}`);
+    console.log('🧠 ========================================\n');
+    
+    if (this.embeddingProvider === 'ollama') {
+      console.log('🦙 Usando OLLAMA (local) para embeddings...');
+      console.log(`🦙 Modelo: ${this.ollamaModel}`);
+      console.log(`🦙 URL: ${this.ollamaBaseUrl}`);
+      return this.generateEmbeddingsOllama(chunks);
+    }
+    console.log('☁️ Usando OPENAI (API) para embeddings...');
+    return this.generateEmbeddingsOpenAI(chunks);
+  }
+
+  /**
+   * Gera embeddings via OpenAI
+   */
+  private async generateEmbeddingsOpenAI(
     chunks: Omit<KnowledgeChunk, 'id' | 'source_id' | 'created_at' | 'updated_at'>[]
   ): Promise<Omit<KnowledgeChunk, 'id' | 'source_id' | 'created_at' | 'updated_at'>[]> {
     const openai = this.ensureOpenAI();
@@ -793,13 +858,118 @@ class KnowledgeService {
           });
         }
       } catch (error) {
-        console.error('❌ Erro ao gerar embeddings:', error);
+        console.error('❌ Erro ao gerar embeddings (OpenAI):', error);
         // Adicionar chunks sem embedding em caso de erro
         result.push(...batch);
       }
     }
 
     return result;
+  }
+
+  /**
+   * Gera embeddings via Ollama (local)
+   */
+  private async generateEmbeddingsOllama(
+    chunks: Omit<KnowledgeChunk, 'id' | 'source_id' | 'created_at' | 'updated_at'>[]
+  ): Promise<Omit<KnowledgeChunk, 'id' | 'source_id' | 'created_at' | 'updated_at'>[]> {
+    const result: typeof chunks = [];
+    console.log(`🦙 [OLLAMA] Processando ${chunks.length} chunks localmente...`);
+    let successCount = 0;
+    let errorCount = 0;
+
+    // Ollama processa um por vez (mas usa GPU)
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const text = `Arquivo: ${chunk.file_name}\nLinguagem: ${chunk.metadata?.language || 'unknown'}\n\n${chunk.content}`;
+
+      try {
+        console.log(`🦙 [OLLAMA] [${i + 1}/${chunks.length}] Gerando embedding para: ${chunk.file_name}`);
+        const startTime = Date.now();
+        
+        const response = await fetch(`${this.ollamaBaseUrl}/api/embeddings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: this.ollamaModel,
+            prompt: text
+          }),
+          signal: AbortSignal.timeout(30000) // 30s timeout
+        });
+
+        if (!response.ok) {
+          throw new Error(`Ollama retornou ${response.status}`);
+        }
+
+        const data = await response.json();
+        const elapsed = Date.now() - startTime;
+        console.log(`🦙 [OLLAMA] ✅ Embedding gerado em ${elapsed}ms (tamanho: ${data.embedding?.length || 0} dimensões)`);
+        
+        result.push({
+          ...chunk,
+          embedding: data.embedding,
+        });
+        successCount++;
+      } catch (error: any) {
+        console.error(`🦙 [OLLAMA] ❌ Erro ao gerar embedding para ${chunk.file_name}:`, error.message);
+        errorCount++;
+        // Adicionar chunk sem embedding em caso de erro
+        result.push(chunk);
+      }
+    }
+
+    console.log(`\n🦙 [OLLAMA] ========================================`);
+    console.log(`🦙 [OLLAMA] RESUMO: ${successCount} sucesso, ${errorCount} erros`);
+    console.log(`🦙 [OLLAMA] ========================================\n`);
+
+    return result;
+  }
+
+  /**
+   * Gera embedding para uma única query (para busca)
+   */
+  private async generateQueryEmbedding(query: string): Promise<number[]> {
+    console.log('\n🔍 ========================================');
+    console.log('🔍 GERANDO EMBEDDING PARA BUSCA');
+    console.log(`🔍 Provider: ${this.embeddingProvider.toUpperCase()}`);
+    console.log(`🔍 Query: "${query.substring(0, 50)}..."`);
+    console.log('🔍 ========================================');
+    
+    if (this.embeddingProvider === 'ollama') {
+      try {
+        console.log(`🦙 [OLLAMA] Gerando embedding da query com modelo: ${this.ollamaModel}`);
+        const startTime = Date.now();
+        
+        const response = await fetch(`${this.ollamaBaseUrl}/api/embeddings`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model: this.ollamaModel,
+            prompt: query
+          }),
+          signal: AbortSignal.timeout(10000)
+        });
+
+        if (!response.ok) throw new Error(`Ollama retornou ${response.status}`);
+
+        const data = await response.json();
+        const elapsed = Date.now() - startTime;
+        console.log(`🦙 [OLLAMA] ✅ Embedding da query gerado em ${elapsed}ms (${data.embedding?.length} dimensões)\n`);
+        return data.embedding;
+      } catch (error: any) {
+        console.error('🦙 [OLLAMA] ❌ Erro, tentando fallback para OpenAI...', error.message);
+        // Fallback para OpenAI
+      }
+    }
+
+    // OpenAI
+    const openai = this.ensureOpenAI();
+    const response = await openai.embeddings.create({
+      model: EMBEDDING_MODEL,
+      input: query,
+      encoding_format: 'float',
+    });
+    return response.data[0].embedding;
   }
 
   // ============================================
@@ -810,15 +980,8 @@ class KnowledgeService {
    * Busca chunks relevantes para uma query
    */
   async search(assistantId: string, query: string, limit: number = 5): Promise<KnowledgeChunk[]> {
-    const openai = this.ensureOpenAI();
-
-    // Gerar embedding da query
-    const response = await openai.embeddings.create({
-      model: EMBEDDING_MODEL,
-      input: query,
-      encoding_format: 'float',
-    });
-    const queryEmbedding = response.data[0].embedding;
+    // Gerar embedding da query usando o provider configurado
+    const queryEmbedding = await this.generateQueryEmbedding(query);
 
     // Buscar todas as fontes do assistente
     const sources = await this.listSources(assistantId);
