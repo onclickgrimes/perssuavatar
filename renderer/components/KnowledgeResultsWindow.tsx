@@ -50,7 +50,7 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
           tokens.push(...highlightCodePart(beforeComment));
         }
         tokens.push(
-          <span key={getUniqueKey('comment')} className="text-emerald-600 italic">{comment}</span>
+          <span key={getUniqueKey('comment')} className="text-[#6A9955]">{comment}</span>
         );
         if (afterComment) {
           tokens.push(...highlightCodePart(afterComment));
@@ -71,7 +71,7 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
       const stringMatch = remaining.match(/^(['"`])(?:(?!\1)[^\\]|\\.)*?\1/);
       if (stringMatch) {
         tokens.push(
-          <span key={getUniqueKey('str')} className="text-green-400">{stringMatch[0]}</span>
+          <span key={getUniqueKey('str')} className="text-[#CE9178]">{stringMatch[0]}</span>
         );
         remaining = remaining.slice(stringMatch[0].length);
         continue;
@@ -81,7 +81,7 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
       const keywordMatch = remaining.match(/^(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|static|public|private|protected|interface|type|enum|implements|abstract|readonly|void|null|undefined|true|false|this|super|constructor|get|set|of|in|typeof|instanceof|as|is|def|self|elif|pass|lambda|yield|with|assert|raise|except|print|None|True|False)\b/);
       if (keywordMatch) {
         tokens.push(
-          <span key={getUniqueKey('kw')} className="text-purple-400">{keywordMatch[0]}</span>
+          <span key={getUniqueKey('kw')} className="text-[#C586C0]">{keywordMatch[0]}</span>
         );
         remaining = remaining.slice(keywordMatch[0].length);
         continue;
@@ -91,7 +91,7 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
       const funcMatch = remaining.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/);
       if (funcMatch) {
         tokens.push(
-          <span key={getUniqueKey('fn')} className="text-blue-400">{funcMatch[0]}</span>
+          <span key={getUniqueKey('fn')} className="text-[#DCDCAA]">{funcMatch[0]}</span>
         );
         remaining = remaining.slice(funcMatch[0].length);
         continue;
@@ -101,7 +101,7 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
       const numMatch = remaining.match(/^(\d+\.?\d*|0x[a-fA-F0-9]+)\b/);
       if (numMatch) {
         tokens.push(
-          <span key={getUniqueKey('num')} className="text-yellow-400">{numMatch[0]}</span>
+          <span key={getUniqueKey('num')} className="text-[#B5CEA8]">{numMatch[0]}</span>
         );
         remaining = remaining.slice(numMatch[0].length);
         continue;
@@ -111,10 +111,10 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
       const propMatch = remaining.match(/^\.([a-zA-Z_][a-zA-Z0-9_]*)/);
       if (propMatch) {
         tokens.push(
-          <span key={getUniqueKey('dot')} className="text-gray-300">.</span>
+          <span key={getUniqueKey('dot')} className="text-white">.</span>
         );
         tokens.push(
-          <span key={getUniqueKey('prop')} className="text-orange-300">{propMatch[1]}</span>
+          <span key={getUniqueKey('prop')} className="text-[#9CDCFE]">{propMatch[1]}</span>
         );
         remaining = remaining.slice(propMatch[0].length);
         continue;
@@ -124,17 +124,17 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
       const opMatch = remaining.match(/^([{}()\[\];:,=+\-*/<>!&|?]+)/);
       if (opMatch) {
         tokens.push(
-          <span key={getUniqueKey('op')} className="text-gray-300">{opMatch[0]}</span>
+          <span key={getUniqueKey('op')} className="text-white">{opMatch[0]}</span>
         );
         remaining = remaining.slice(opMatch[0].length);
         continue;
       }
 
-      // Identificadores e outros caracteres
+      // Identificadores e outros caracteres (variáveis)
       const identMatch = remaining.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
       if (identMatch) {
         tokens.push(
-          <span key={getUniqueKey('id')} className="text-white">{identMatch[0]}</span>
+          <span key={getUniqueKey('id')} className="text-[#9CDCFE]">{identMatch[0]}</span>
         );
         remaining = remaining.slice(identMatch[0].length);
         continue;
