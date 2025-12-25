@@ -38,94 +38,121 @@ export default function KnowledgeResultsWindow() {
   };
 
   return (
-    <div className="w-full h-full bg-[#0a0a0a] text-white font-['Inter',sans-serif] flex flex-col overflow-hidden">
-      {/* Header - Draggable */}
-      <div 
-        className="flex items-center justify-between px-4 py-3 bg-gradient-to-r from-purple-600/30 to-blue-600/30 border-b border-[#333]"
-        style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-      >
-        <div className="flex items-center gap-2">
-          <span className="text-lg">📚</span>
-          <h1 className="text-white font-semibold text-sm">Conhecimento Encontrado</h1>
-          <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 text-xs rounded-full">
-            {results.length} {results.length === 1 ? 'resultado' : 'resultados'}
+    <div className="w-full h-screen flex flex-col p-2">
+      {/* Main Container */}
+      <div className="flex-1 bg-[#0a0a0a] rounded-xl shadow-2xl border border-[#222] flex flex-col overflow-hidden relative font-['Inter',sans-serif]">
+        
+        {/* Header */}
+        <div 
+          className="h-14 bg-[#0f0f0f] flex items-center justify-between px-3 gap-3 flex-shrink-0 border-b border-[#222]"
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        >
+          {/* Title Section */}
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500/20 to-blue-500/20 flex items-center justify-center border border-purple-500/30">
+              <span className="text-base">📚</span>
+            </div>
+            <div className="flex flex-col min-w-0">
+              <h1 className="text-white font-semibold text-sm truncate">Conhecimento</h1>
+              <span className="text-[10px] text-gray-500">
+                {results.length} {results.length === 1 ? 'resultado' : 'resultados'}
+              </span>
+            </div>
+          </div>
+
+          {/* Controls */}
+          <div 
+            className="flex items-center gap-1.5 bg-[#1a1a1a] rounded-lg px-1.5 py-1 border border-[#2a2a2a] flex-shrink-0"
+            style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+          >
+            <button 
+              onClick={handleClose}
+              className="w-6 h-6 flex items-center justify-center rounded hover:bg-[#252525] bg-red-600/10 text-red-500 hover:text-red-400 transition-colors"
+              title="Fechar"
+            >
+              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Results List */}
+        <div 
+          className="flex-1 overflow-y-auto px-3 py-2 bg-black" 
+          style={{ 
+            scrollbarWidth: 'thin', 
+            scrollbarColor: '#1a1a1a #0a0a0a' 
+          }}
+        >
+          {results.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-500">
+              <div className="w-16 h-16 rounded-2xl bg-[#1a1a1a] border border-[#2a2a2a] flex items-center justify-center mb-4">
+                <span className="text-3xl">🔍</span>
+              </div>
+              <p className="text-sm font-medium text-gray-400">Aguardando resultados...</p>
+              <p className="text-xs mt-1 text-gray-600">Pergunte ao avatar sobre o código</p>
+            </div>
+          ) : (
+            <div className="space-y-2">
+              {results.map((result, index) => (
+                <div 
+                  key={result.id || index}
+                  className="group bg-[#0f0f0f] rounded-lg border border-[#1a1a1a] hover:border-[#2a2a2a] hover:bg-[#111] transition-all cursor-pointer"
+                  onClick={() => handleOpenFile(result)}
+                >
+                  <div className="p-3">
+                    {/* File Info */}
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded bg-[#1a1a1a] flex items-center justify-center text-sm">
+                          {getFileIcon(result.language)}
+                        </div>
+                        <span className="text-white font-medium text-sm truncate">
+                          {result.file_name}
+                        </span>
+                        <span className="px-1.5 py-0.5 bg-[#1a1a1a] text-gray-500 text-[10px] rounded">
+                          L{result.start_line}-{result.end_line}
+                        </span>
+                      </div>
+                      <button 
+                        className="opacity-0 group-hover:opacity-100 px-2.5 py-1 bg-[#1a1a1a] hover:bg-[#252525] text-gray-300 hover:text-white text-xs rounded border border-[#2a2a2a] transition-all"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleOpenFile(result);
+                        }}
+                      >
+                        Abrir
+                      </button>
+                    </div>
+
+                    {/* Code Preview */}
+                    <div className="bg-[#0d0d0d] rounded-lg p-2 overflow-hidden border border-[#1a1a1a]">
+                      <pre className="text-xs text-gray-400 font-mono whitespace-pre-wrap break-words overflow-hidden leading-relaxed" style={{ maxHeight: '100px' }}>
+                        {result.content.slice(0, 400)}{result.content.length > 400 ? '...' : ''}
+                      </pre>
+                    </div>
+
+                    {/* File Path */}
+                    <div className="mt-2 text-[10px] text-gray-600 truncate flex items-center gap-1" title={result.file_path}>
+                      <span className="text-gray-500">📁</span>
+                      <span className="truncate">{result.file_path}</span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div className="px-3 py-2 bg-[#0f0f0f] border-t border-[#1a1a1a] text-[10px] text-gray-600 flex items-center justify-between">
+          <span className="flex items-center gap-1">
+            <span>💡</span>
+            <span>Clique em um resultado para abrir no editor</span>
           </span>
         </div>
-        <button 
-          onClick={handleClose}
-          className="p-1.5 rounded hover:bg-white/10 text-gray-400 hover:text-white transition-colors"
-          style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        >
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <line x1="18" y1="6" x2="6" y2="18" />
-            <line x1="6" y1="6" x2="18" y2="18" />
-          </svg>
-        </button>
-      </div>
-
-      {/* Results List */}
-      <div className="flex-1 overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#333 #0a0a0a' }}>
-        {results.length === 0 ? (
-          <div className="flex flex-col items-center justify-center h-full text-gray-500">
-            <span className="text-4xl mb-3">🔍</span>
-            <p className="text-sm">Aguardando resultados de busca...</p>
-            <p className="text-xs mt-1">Pergunte ao avatar sobre o código</p>
-          </div>
-        ) : (
-          results.map((result, index) => (
-            <div 
-              key={result.id || index}
-              className="group border-b border-[#222] last:border-0 hover:bg-white/5 transition-colors cursor-pointer"
-              onClick={() => handleOpenFile(result)}
-            >
-              <div className="p-3">
-                {/* File Info */}
-                <div className="flex items-center justify-between mb-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <span className="text-blue-400">
-                      {getFileIcon(result.language)}
-                    </span>
-                    <span className="text-white font-medium text-sm truncate">
-                      {result.file_name}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <span className="text-xs text-gray-500">
-                      Linhas {result.start_line}-{result.end_line}
-                    </span>
-                    <button 
-                      className="opacity-0 group-hover:opacity-100 px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs rounded transition-all"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleOpenFile(result);
-                      }}
-                    >
-                      Abrir
-                    </button>
-                  </div>
-                </div>
-
-                {/* Code Preview */}
-                <div className="bg-[#1a1a1a] rounded-lg p-2 overflow-hidden">
-                  <pre className="text-xs text-gray-300 font-mono whitespace-pre-wrap break-words overflow-hidden" style={{ maxHeight: '100px' }}>
-                    {result.content.slice(0, 400)}{result.content.length > 400 ? '...' : ''}
-                  </pre>
-                </div>
-
-                {/* File Path */}
-                <div className="mt-2 text-xs text-gray-500 truncate" title={result.file_path}>
-                  📁 {result.file_path}
-                </div>
-              </div>
-            </div>
-          ))
-        )}
-      </div>
-
-      {/* Footer */}
-      <div className="px-4 py-2 bg-[#0f0f0f] border-t border-[#222] text-xs text-gray-500 flex items-center justify-between">
-        <span>💡 Clique em um resultado para abrir no editor</span>
-        <span className="text-gray-600">VS Code detectado automaticamente</span>
       </div>
     </div>
   );
