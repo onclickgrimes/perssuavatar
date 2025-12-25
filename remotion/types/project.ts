@@ -210,17 +210,6 @@ export const ASSET_TYPE_LIST = Object.entries(ASSET_TYPE_OPTIONS).map(([value, o
   icon: opt.icon,
 }));
 
-/** Asset types mais comuns para seleção rápida em nichos */
-export const COMMON_ASSET_TYPES: AssetType[] = [
-  'image_flux',
-  'video_stock',
-  'video_kling',
-  'solid_color',
-  'geometric_patterns',
-  'wavy_grid',
-  'video_chromakey',
-];
-
 // ========================================
 // TIMELINE CONFIG
 // ========================================
@@ -395,11 +384,7 @@ export const EMOTION_LIST = Object.keys(EMOTION_OPTIONS) as Emotion[];
 // ========================================
 
 export const REMOTION_COMPONENT_OPTIONS = {
-  Timeline3D: { label: 'Timeline 3D', description: 'Linha do tempo 3D para história.' },
-  WavyGrid: { label: 'Wavy Grid', description: 'Grade ondulada futurista.' },
-  GeometricPatterns: { label: 'Padrões Geométricos', description: 'Background abstrato animado.' },
-  HighlightWord: { label: 'Highlight Word', description: 'Palavras em destaque animadas.' },
-  ChromaKeyMedia: { label: 'Chroma Key', description: 'Vídeo com fundo verde removido.' },
+  HighlightWord: { label: 'Highlight Word', description: 'Palavras em destaque animadas.' }
 } as const;
 
 export type RemotionComponent = keyof typeof REMOTION_COMPONENT_OPTIONS;

@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { CAMERA_MOVEMENTS_OPTIONS } from '../../../remotion/utils/camera-effects';
 import { TRANSITION_OPTIONS } from '../../../remotion/utils/transitions';
 import { 
-    COMMON_ASSET_TYPES, 
     ASSET_TYPE_OPTIONS,
     EMOTION_LIST,
     ENTRY_ANIMATION_LIST,
@@ -41,10 +40,13 @@ export interface ChannelNiche {
     updated_at?: string;
 }
 
-// Gerar lista de asset types a partir das constantes centralizadas (apenas os comuns)
-const ASSET_TYPES = COMMON_ASSET_TYPES.map((value) => ({
+// Gerar lista de asset types a partir de TODAS as opções disponíveis
+const ASSET_TYPES = (Object.keys(ASSET_TYPE_OPTIONS) as AssetType[]).map((value) => ({
     value,
     label: ASSET_TYPE_OPTIONS[value].label,
+    icon: ASSET_TYPE_OPTIONS[value].icon,
+    description: ASSET_TYPE_OPTIONS[value].description,
+    badgeColor: ASSET_TYPE_OPTIONS[value].badgeColor,
 }));
 
 // Usar EMOTION_LIST diretamente
@@ -395,12 +397,14 @@ export function NicheModal({ isOpen, onClose, onSelect, selectedNiche }: NicheMo
                                         <button
                                             key={asset.value}
                                             onClick={() => toggleArrayItem('asset_types', asset.value)}
+                                            title={asset.description}
                                             className={`px-3 py-1.5 rounded-lg text-sm transition-all ${
                                                 formData.asset_types?.includes(asset.value)
                                                     ? 'bg-gradient-to-r from-pink-500 to-rose-500 text-white shadow-lg shadow-pink-500/30'
                                                     : 'bg-white/10 text-white/60 hover:bg-white/20'
                                             }`}
                                         >
+                                            <span className="mr-1">{asset.icon}</span>
                                             {asset.label}
                                         </button>
                                     ))}

@@ -377,11 +377,11 @@ const PlaceholderImage: React.FC<{ description: string }> = ({ description }) =>
         textAlign: 'center',
       }}
     >
-      {/* <div style={{ fontSize: 48, marginBottom: 20 }}>🖼️</div> */}
-      {/* <div style={{ fontSize: 18, opacity: 0.7 }}>Imagem Placeholder</div> */}
-      {/* <div style={{ fontSize: 14, opacity: 0.5, marginTop: 10, maxWidth: 600 }}>
+      <div style={{ fontSize: 48, marginBottom: 20 }}>🖼️</div>
+      <div style={{ fontSize: 18, opacity: 0.7 }}>Imagem Placeholder</div>
+      <div style={{ fontSize: 14, opacity: 0.5, marginTop: 10, maxWidth: 600 }}>
         {description}
-      </div> */}
+      </div>
     </div>
   );
 };
