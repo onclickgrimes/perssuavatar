@@ -302,8 +302,83 @@ export class VoiceAssistant extends EventEmitter {
                 }
             }
         } else if (toolCall.name === 'search_knowledge') {
-            const query = toolCall.args?.query;
-            console.log(`[VoiceAssistant][Live] Search knowledge: "${query}"`);
+            let query = toolCall.args?.query;
+            console.log(`[VoiceAssistant][Live] Search knowledge (raw): "${query}"`);
+
+            // ============================================
+            // CORREÇÃO DE TERMOS TÉCNICOS MAL TRANSCRITOS
+            // A transcrição de voz frequentemente erra termos técnicos
+            // ============================================
+            const techTermCorrections: Record<string, string> = {
+                // LLM/AI tools
+                'lhama': 'Ollama',
+                'olhama': 'Ollama',
+                'o lhama': 'Ollama',
+                'oh lhama': 'Ollama',
+                'alama': 'Ollama',
+                'llama': 'Ollama', // Pode ser intencional mas geralmente é Ollama
+                // Frameworks
+                'remotion': 'Remotion',
+                'remoção': 'Remotion',
+                'remotin': 'Remotion',
+                'react': 'React',
+                'next': 'Next.js',
+                'nextjs': 'Next.js',
+                'next.js': 'Next.js',
+                'vite': 'Vite',
+                // Electron
+                'electron': 'Electron',
+                'eletron': 'Electron',
+                'elétron': 'Electron',
+                // Gemini
+                'gemini': 'Gemini',
+                'gêmini': 'Gemini',
+                'gêmeos': 'Gemini',
+                // OpenAI
+                'openai': 'OpenAI',
+                'open ai': 'OpenAI',
+                'open a i': 'OpenAI',
+                // DeepSeek
+                'deepseek': 'DeepSeek',
+                'deep seek': 'DeepSeek',
+                'dipsique': 'DeepSeek',
+                // Whisper
+                'whisper': 'Whisper',
+                'uísper': 'Whisper',
+                // TTS
+                'tts': 'TTS',
+                'elevenlabs': 'ElevenLabs',
+                'eleven labs': 'ElevenLabs',
+                // Databases
+                'sqlite': 'SQLite',
+                // Video
+                'ffmpeg': 'FFmpeg',
+                'pexels': 'Pexels',
+            };
+
+            if (query) {
+                const queryLower = query.toLowerCase().trim();
+                
+                // Verifica correspondência exata primeiro
+                if (techTermCorrections[queryLower]) {
+                    const corrected = techTermCorrections[queryLower];
+                    console.log(`[VoiceAssistant][Live] 🔧 Correção de termo: "${query}" → "${corrected}"`);
+                    query = corrected;
+                } else {
+                    // Verifica se algum termo está contido na query (para queries mais longas)
+                    for (const [wrong, correct] of Object.entries(techTermCorrections)) {
+                        const regex = new RegExp(`\\b${wrong}\\b`, 'gi');
+                        if (regex.test(query)) {
+                            const correctedQuery = query.replace(regex, correct);
+                            console.log(`[VoiceAssistant][Live] 🔧 Correção parcial: "${query}" → "${correctedQuery}"`);
+                            query = correctedQuery;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            console.log(`[VoiceAssistant][Live] Search knowledge (final): "${query}"`);
 
             if (!query) {
                 result = {

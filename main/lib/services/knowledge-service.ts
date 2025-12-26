@@ -996,21 +996,118 @@ class KnowledgeService {
       .whereIn('source_id', sourceIds as number[])
       .select('*');
 
-    // Calcular similaridade de cosseno
+    console.log(`\n🔎 [SEARCH] Total de chunks no banco: ${chunks.length}`);
+    console.log(`🔎 [SEARCH] Query: "${query}"`);
+    console.log(`🔎 [SEARCH] Query embedding dimensões: ${queryEmbedding.length}`);
+    
+    // ============================================
+    // DEBUG: Verificar se existem chunks com o termo literal
+    // ============================================
+    const queryLower = query.toLowerCase();
+    const chunksWithLiteralMatch = chunks.filter((chunk: any) => 
+      chunk.content?.toLowerCase().includes(queryLower) ||
+      chunk.file_name?.toLowerCase().includes(queryLower)
+    );
+    
+    if (chunksWithLiteralMatch.length > 0) {
+      console.log(`\n🔍 [DEBUG] Encontrados ${chunksWithLiteralMatch.length} chunks que contêm "${query}" literalmente:`);
+      chunksWithLiteralMatch.slice(0, 5).forEach((chunk: any, i: number) => {
+        console.log(`   [${i+1}] ${chunk.file_name} (linhas ${chunk.start_line}-${chunk.end_line})`);
+      });
+    } else {
+      console.warn(`⚠️ [DEBUG] NENHUM chunk contém "${query}" literalmente!`);
+      console.warn(`   Isso pode significar que os arquivos com esse termo não foram indexados.`);
+    }
+    
+    let dimensionMismatchCount = 0;
+    
+    // ============================================
+    // BUSCA HÍBRIDA: Semântica + Keyword Boost
+    // ============================================
+    // O modelo de embedding pode não capturar bem termos técnicos específicos.
+    // Damos um boost de 25% para chunks que contêm o termo literalmente.
+    const LITERAL_MATCH_BOOST = 0.25;
+    
     const chunksWithSimilarity = chunks
       .filter((chunk: any) => chunk.embedding)
       .map((chunk: any) => {
         const embedding = JSON.parse(chunk.embedding) as number[];
-        const similarity = this.cosineSimilarity(queryEmbedding, embedding);
+        
+        // Log de diagnóstico para incompatibilidade de dimensões
+        if (embedding.length !== queryEmbedding.length) {
+          dimensionMismatchCount++;
+          if (dimensionMismatchCount === 1) {
+            console.warn(`⚠️ [SEARCH] INCOMPATIBILIDADE DE DIMENSÕES DETECTADA!`);
+            console.warn(`   Query embedding: ${queryEmbedding.length} dimensões`);
+            console.warn(`   Chunk embedding: ${embedding.length} dimensões`);
+            console.warn(`   Chunk file: ${chunk.file_name}`);
+            console.warn(`   Isso acontece quando você indexou com um provider (ex: OpenAI) e busca com outro (ex: Ollama).`);
+            console.warn(`   SOLUÇÃO: Re-sincronize as fontes de conhecimento usando o mesmo provider.`);
+          }
+        }
+        
+        const semanticSimilarity = this.cosineSimilarity(queryEmbedding, embedding);
+        
+        // Verificar match literal (termo exato no conteúdo ou nome do arquivo)
+        const hasLiteralMatch = chunk.content?.toLowerCase().includes(queryLower) || 
+                               chunk.file_name?.toLowerCase().includes(queryLower);
+        
+        // Score híbrido: similaridade semântica + boost para match literal
+        const hybridScore = hasLiteralMatch 
+          ? Math.min(1, semanticSimilarity + LITERAL_MATCH_BOOST)  // Cap em 1.0
+          : semanticSimilarity;
+        
         return {
           ...chunk,
           embedding: undefined, // Remover embedding da resposta
           metadata: chunk.metadata ? JSON.parse(chunk.metadata) : {},
-          similarity,
+          similarity: hybridScore,  // Usar score híbrido
+          semanticSimilarity,       // Guardar original para debug
+          hasLiteralMatch,
         };
       })
       .sort((a: any, b: any) => b.similarity - a.similarity)
       .slice(0, limit);
+    
+    if (dimensionMismatchCount > 0) {
+      console.warn(`⚠️ [SEARCH] Total de ${dimensionMismatchCount} chunks com dimensões incompatíveis!`);
+      console.warn(`   Os resultados podem ser ALEATÓRIOS porque a similaridade é 0 para todos.`);
+    } else {
+      const topResult = chunksWithSimilarity[0];
+      console.log(`✅ [SEARCH] Busca híbrida completa. Top resultado:`);
+      console.log(`   📄 ${topResult?.file_name} (${topResult?.start_line}-${topResult?.end_line})`);
+      console.log(`   📊 Score híbrido: ${topResult?.similarity?.toFixed(4)} (semântico: ${topResult?.semanticSimilarity?.toFixed(4)}, literal: ${topResult?.hasLiteralMatch ? 'SIM +0.25' : 'NÃO'})`);
+    }
+    
+    // ============================================
+    // DEBUG: Comparar resultados semânticos vs literais
+    // ============================================
+    const literalMatchesInResults = chunksWithSimilarity.filter((c: any) => c.hasLiteralMatch);
+    if (literalMatchesInResults.length > 0) {
+      console.log(`\n✅ [HÍBRIDO] ${literalMatchesInResults.length}/${limit} resultados contêm "${query}" literalmente (boost aplicado)`);
+    } else if (chunksWithLiteralMatch.length > 0) {
+      console.warn(`\n⚠️ [DEBUG] PROBLEMA: Existem ${chunksWithLiteralMatch.length} chunks com "${query}" literal, mas NENHUM apareceu nos top ${limit} resultados!`);
+      
+      // Calcular similaridade dos chunks literais para debug
+      console.log(`   Calculando similaridade dos chunks com match literal...`);
+      const literalChunksWithSim = chunks
+        .filter((chunk: any) => 
+          chunk.embedding && 
+          (chunk.content?.toLowerCase().includes(queryLower) || chunk.file_name?.toLowerCase().includes(queryLower))
+        )
+        .map((chunk: any) => {
+          const embedding = JSON.parse(chunk.embedding) as number[];
+          const sim = this.cosineSimilarity(queryEmbedding, embedding);
+          return { file_name: chunk.file_name, start_line: chunk.start_line, end_line: chunk.end_line, similarity: sim };
+        })
+        .sort((a: any, b: any) => b.similarity - a.similarity);
+      
+      literalChunksWithSim.slice(0, 3).forEach((c: any, i: number) => {
+        console.log(`   [${i+1}] ${c.file_name} (${c.start_line}-${c.end_line}): similaridade = ${c.similarity.toFixed(4)}`);
+      });
+      
+      console.log(`   Top resultado semântico: ${chunksWithSimilarity[0]?.file_name} = ${chunksWithSimilarity[0]?.similarity?.toFixed(4)}`);
+    }
 
     return chunksWithSimilarity;
   }
