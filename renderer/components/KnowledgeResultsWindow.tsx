@@ -6,6 +6,7 @@ interface KnowledgeResult {
   file_name: string;
   start_line: number;
   end_line: number;
+  match_line: number;  // Linha exata onde o termo aparece
   content: string;
   language: string;
   similarity: number;
@@ -19,10 +20,12 @@ interface CodePreviewProps {
   content: string;
   language: string;
   startLine: number;
+  matchLine?: number;  // Linha exata onde o termo aparece
   maxLines?: number;
+  onSymbolClick?: (symbol: string) => void;  // Callback para clique em símbolo
 }
 
-const CodePreview = React.memo(function CodePreview({ content, language, startLine, maxLines = 8 }: CodePreviewProps) {
+const CodePreview = React.memo(function CodePreview({ content, language, startLine, matchLine, maxLines = 8, onSymbolClick }: CodePreviewProps) {
   // Contador de keys para garantir unicidade
   const keyCounter = useRef(0);
   const getUniqueKey = (prefix: string) => `${prefix}-${keyCounter.current++}`;
@@ -77,7 +80,7 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
         continue;
       }
 
-      // Palavras-chave
+      // Palavras-chave (não clicáveis)
       const keywordMatch = remaining.match(/^(const|let|var|function|return|if|else|for|while|do|switch|case|break|continue|try|catch|finally|throw|new|class|extends|import|export|from|default|async|await|static|public|private|protected|interface|type|enum|implements|abstract|readonly|void|null|undefined|true|false|this|super|constructor|get|set|of|in|typeof|instanceof|as|is|def|self|elif|pass|lambda|yield|with|assert|raise|except|print|None|True|False)\b/);
       if (keywordMatch) {
         tokens.push(
@@ -87,11 +90,22 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
         continue;
       }
 
-      // Funções (nome seguido de parênteses)
+      // Funções (nome seguido de parênteses) - CLICÁVEIS
       const funcMatch = remaining.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*(?=\()/);
       if (funcMatch) {
+        const funcName = funcMatch[1]; // nome sem espaços
         tokens.push(
-          <span key={getUniqueKey('fn')} className="text-[#DCDCAA]">{funcMatch[0]}</span>
+          <span 
+            key={getUniqueKey('fn')} 
+            className="text-[#DCDCAA] cursor-pointer hover:underline hover:text-yellow-300 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSymbolClick?.(funcName);
+            }}
+            title={`Ctrl+Click: Buscar "${funcName}"`}
+          >
+            {funcMatch[0]}
+          </span>
         );
         remaining = remaining.slice(funcMatch[0].length);
         continue;
@@ -107,14 +121,25 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
         continue;
       }
 
-      // Propriedades (após ponto)
+      // Propriedades (após ponto) - CLICÁVEIS
       const propMatch = remaining.match(/^\.([a-zA-Z_][a-zA-Z0-9_]*)/);
       if (propMatch) {
+        const propName = propMatch[1];
         tokens.push(
           <span key={getUniqueKey('dot')} className="text-white">.</span>
         );
         tokens.push(
-          <span key={getUniqueKey('prop')} className="text-[#9CDCFE]">{propMatch[1]}</span>
+          <span 
+            key={getUniqueKey('prop')} 
+            className="text-[#9CDCFE] cursor-pointer hover:underline hover:text-blue-300 transition-colors"
+            onClick={(e) => {
+              e.stopPropagation();
+              onSymbolClick?.(propName);
+            }}
+            title={`Buscar "${propName}"`}
+          >
+            {propName}
+          </span>
         );
         remaining = remaining.slice(propMatch[0].length);
         continue;
@@ -130,12 +155,30 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
         continue;
       }
 
-      // Identificadores e outros caracteres (variáveis)
+      // Identificadores significativos (variáveis, classes) - CLICÁVEIS se tiver mais de 2 caracteres
       const identMatch = remaining.match(/^([a-zA-Z_][a-zA-Z0-9_]*)/);
       if (identMatch) {
-        tokens.push(
-          <span key={getUniqueKey('id')} className="text-[#9CDCFE]">{identMatch[0]}</span>
-        );
+        const identName = identMatch[0];
+        // Só tornar clicável se tiver mais de 2 caracteres (evitar "i", "x", etc)
+        if (identName.length > 2) {
+          tokens.push(
+            <span 
+              key={getUniqueKey('id')} 
+              className="text-[#9CDCFE] cursor-pointer hover:underline hover:text-blue-300 transition-colors"
+              onClick={(e) => {
+                e.stopPropagation();
+                onSymbolClick?.(identName);
+              }}
+              title={`Buscar "${identName}"`}
+            >
+              {identName}
+            </span>
+          );
+        } else {
+          tokens.push(
+            <span key={getUniqueKey('id')} className="text-[#9CDCFE]">{identName}</span>
+          );
+        }
         remaining = remaining.slice(identMatch[0].length);
         continue;
       }
@@ -150,31 +193,79 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
     return tokens;
   };
 
-  // Dividir conteúdo em linhas e limitar
-  const lines = content.split('\n').slice(0, maxLines);
-  const hasMore = content.split('\n').length > maxLines;
+  // Dividir conteúdo em todas as linhas
+  const allLines = content.split('\n');
+  const totalLines = allLines.length;
+  
+  // Calcular offset para centralizar na linha do match
+  let displayStartOffset = 0;
+  
+  if (matchLine && matchLine > startLine) {
+    // Índice da linha do match dentro do chunk (0-based)
+    const matchIndex = matchLine - startLine;
+    
+    // Centralizar: mostrar algumas linhas antes e depois do match
+    const linesBefore = Math.floor(maxLines / 3); // 1/3 das linhas antes
+    displayStartOffset = Math.max(0, matchIndex - linesBefore);
+    
+    // Garantir que não passe do final
+    if (displayStartOffset + maxLines > totalLines) {
+      displayStartOffset = Math.max(0, totalLines - maxLines);
+    }
+  }
+  
+  // Aplicar offset e limitar linhas
+  const lines = allLines.slice(displayStartOffset, displayStartOffset + maxLines);
+  const hasMore = totalLines > displayStartOffset + maxLines;
+  const hasBefore = displayStartOffset > 0;
 
   return (
     <div className="overflow-x-auto text-white">
       <table className="w-full">
         <tbody>
-          {lines.map((codeLine, lineIdx) => (
-            <tr key={lineIdx} className="hover:bg-[#1a1a1a]">
-              <td className="px-2 py-0.5 text-[10px] text-gray-500 select-none text-right border-r border-[#333] w-8 font-mono">
-                {startLine + lineIdx}
+          {/* Indicador de linhas anteriores omitidas */}
+          {hasBefore && (
+            <tr>
+              <td className="px-2 py-0.5 text-[10px] text-gray-500 select-none text-right border-r border-[#333] w-8">
+                ...
               </td>
-              <td className="px-2 py-0.5 text-xs font-mono whitespace-pre">
-                {highlightCode(codeLine)}
+              <td className="px-2 py-0.5 text-xs text-gray-400 italic">
+                {displayStartOffset} linhas acima...
               </td>
             </tr>
-          ))}
+          )}
+          
+          {lines.map((codeLine, lineIdx) => {
+            const actualLineNumber = startLine + displayStartOffset + lineIdx;
+            const isMatchLine = matchLine && actualLineNumber === matchLine;
+            
+            return (
+              <tr 
+                key={lineIdx} 
+                className={isMatchLine 
+                  ? "bg-yellow-900/30 border-l-2 border-yellow-500" 
+                  : "hover:bg-[#1a1a1a]"
+                }
+              >
+                <td className={`px-2 py-0.5 text-[10px] select-none text-right border-r border-[#333] w-8 font-mono ${
+                  isMatchLine ? "text-yellow-400 font-bold" : "text-gray-500"
+                }`}>
+                  {actualLineNumber}
+                </td>
+                <td className="px-2 py-0.5 text-xs font-mono whitespace-pre">
+                  {highlightCode(codeLine)}
+                </td>
+              </tr>
+            );
+          })}
+          
           {hasMore && (
             <tr>
               <td className="px-2 py-0.5 text-[10px] text-gray-500 select-none text-right border-r border-[#333] w-8">
                 ...
               </td>
               <td className="px-2 py-0.5 text-xs text-gray-400 italic">
-                ... mais {content.split('\n').length - maxLines} linhas
+                ... mais {totalLines - (displayStartOffset + maxLines)} linhas
               </td>
             </tr>
           )}
@@ -186,6 +277,7 @@ const CodePreview = React.memo(function CodePreview({ content, language, startLi
 
 export default function KnowledgeResultsWindow() {
   const [results, setResults] = useState<KnowledgeResult[]>([]);
+  const [loadingReferences, setLoadingReferences] = useState<number | null>(null);
 
   useEffect(() => {
     const unsubscribe = window.electron.knowledge.onKnowledgeResults((newResults) => {
@@ -202,11 +294,65 @@ export default function KnowledgeResultsWindow() {
     window.electron.knowledge.closeKnowledgeResultsWindow?.();
   };
 
+  // Apenas abre o arquivo no editor
   const handleOpenFile = async (result: KnowledgeResult) => {
     try {
-      await window.electron.knowledge.openFileInEditor(result.file_path, result.start_line);
+      await window.electron.knowledge.openFileInEditor(result.file_path, result.match_line || result.start_line);
     } catch (error) {
       console.error('Error opening file:', error);
+    }
+  };
+
+  // Busca referências de um símbolo específico (como Ctrl+Click do VSCode)
+  const handleSymbolClick = async (symbol: string, result: KnowledgeResult) => {
+    try {
+      // Mostrar indicador de loading
+      setLoadingReferences(result.id);
+      
+      console.log(`🔍 Buscando definição/referências de "${symbol}"...`);
+      
+      // Extrair o diretório base do projeto (ir até a raiz my-app)
+      const pathParts = result.file_path.split(/[\\\/]/);
+      const myAppIndex = pathParts.findIndex(p => p === 'my-app');
+      const basePath = myAppIndex >= 0 
+        ? pathParts.slice(0, myAppIndex + 1).join('/') 
+        : pathParts.slice(0, -1).join('/');
+      
+      // Buscar referências do símbolo específico clicado
+      const refsResult = await window.electron.knowledge.findReferences({
+        filePath: result.file_path,
+        content: result.content,
+        basePath: basePath,
+        maxDepth: 3,
+        targetSymbol: symbol  // Símbolo específico clicado pelo usuário
+      });
+      
+      if (refsResult.success && refsResult.data) {
+        console.log(`✅ Referências de "${symbol}" encontradas: ${refsResult.data.references?.length || 0}`);
+        
+        // Enviar contexto do símbolo para o Avatar/LLM
+        const contextResult = await window.electron.sendCodeContext({
+          originalCode: result.content,
+          fileName: result.file_name,
+          referencesContext: refsResult.data.context || '',
+          userInstruction: `O usuário clicou no símbolo "${symbol}" dentro do arquivo "${result.file_name}". 
+Analise este símbolo - o que ele faz, onde está definido, onde é usado, e como se conecta com o resto do código.
+Responda de forma concisa explicando o propósito deste símbolo.`
+        });
+        
+        if (contextResult.sent) {
+          console.log('✅ Contexto do símbolo enviado para o Avatar');
+        } else {
+          console.warn('⚠️ Contexto não enviado:', contextResult.reason);
+        }
+      } else {
+        console.warn('⚠️ Não foi possível buscar referências:', refsResult.error);
+      }
+      
+    } catch (error) {
+      console.error('Error searching symbol:', error);
+    } finally {
+      setLoadingReferences(null);
     }
   };
 
@@ -272,9 +418,18 @@ export default function KnowledgeResultsWindow() {
               {results.map((result, index) => (
                 <div 
                   key={result.id || index}
-                  className="group bg-[#0f0f0f] rounded-lg border border-[#1a1a1a] hover:border-[#2a2a2a] hover:bg-[#111] transition-all cursor-pointer"
-                  onClick={() => handleOpenFile(result)}
+                  className={`group bg-[#0f0f0f] rounded-lg border border-[#1a1a1a] hover:border-[#2a2a2a] hover:bg-[#111] transition-all relative ${loadingReferences === result.id ? 'opacity-60' : ''}`}
                 >
+                  {/* Loading Overlay - aparece quando busca referências de símbolo */}
+                  {loadingReferences === result.id && (
+                    <div className="absolute inset-0 bg-black/50 rounded-lg flex items-center justify-center z-10">
+                      <div className="flex items-center gap-2 bg-[#1a1a1a] px-3 py-2 rounded-lg border border-purple-500/30">
+                        <div className="w-4 h-4 border-2 border-purple-500 border-t-transparent rounded-full animate-spin" />
+                        <span className="text-xs text-purple-300">Buscando referências...</span>
+                      </div>
+                    </div>
+                  )}
+                  
                   <div className="p-3">
                     {/* File Info */}
                     <div className="flex items-center justify-between mb-2">
@@ -285,12 +440,25 @@ export default function KnowledgeResultsWindow() {
                         <span className="text-white font-medium text-sm truncate">
                           {result.file_name}
                         </span>
-                        <span className="px-1.5 py-0.5 bg-[#1a1a1a] text-gray-500 text-[10px] rounded">
-                          L{result.start_line}-{result.end_line}
-                        </span>
+                        {/* Linha exata do match destacada */}
+                        {result.match_line && result.match_line !== result.start_line ? (
+                          <>
+                            <span className="px-1.5 py-0.5 bg-green-900/50 text-green-300 text-[10px] rounded border border-green-500/30" title="Linha exata do termo">
+                              L{result.match_line}
+                            </span>
+                            <span className="px-1.5 py-0.5 bg-[#1a1a1a] text-gray-600 text-[10px] rounded">
+                              ({result.start_line}-{result.end_line})
+                            </span>
+                          </>
+                        ) : (
+                          <span className="px-1.5 py-0.5 bg-[#1a1a1a] text-gray-500 text-[10px] rounded">
+                            L{result.start_line}-{result.end_line}
+                          </span>
+                        )}
                       </div>
                       <button 
-                        className="opacity-0 group-hover:opacity-100 px-2.5 py-1 bg-[#1a1a1a] hover:bg-[#252525] text-gray-300 hover:text-white text-xs rounded border border-[#2a2a2a] transition-all"
+                        className="opacity-0 group-hover:opacity-100 px-2.5 py-1 bg-[#1a1a1a] hover:bg-[#252525] text-gray-300 hover:text-white text-xs rounded border border-[#2a2a2a] transition-all disabled:opacity-50"
+                        disabled={loadingReferences !== null}
                         onClick={(e) => {
                           e.stopPropagation();
                           handleOpenFile(result);
@@ -300,13 +468,15 @@ export default function KnowledgeResultsWindow() {
                       </button>
                     </div>
 
-                    {/* Code Preview */}
+                    {/* Code Preview - clique em símbolos para buscar */}
                     <div className="bg-[#0d0d0d] rounded-lg overflow-hidden border border-[#1a1a1a]">
                       <CodePreview 
                         content={result.content}
                         language={result.language}
                         startLine={result.start_line}
+                        matchLine={result.match_line}
                         maxLines={6}
+                        onSymbolClick={(symbol) => handleSymbolClick(symbol, result)}
                       />
                     </div>
 
@@ -326,7 +496,7 @@ export default function KnowledgeResultsWindow() {
         <div className="px-3 py-2 bg-[#0f0f0f] border-t border-[#1a1a1a] text-[10px] text-gray-600 flex items-center justify-between">
           <span className="flex items-center gap-1">
             <span>💡</span>
-            <span>Clique em um resultado para abrir no editor</span>
+            <span>Clique em uma função ou variável para buscar referências</span>
           </span>
         </div>
       </div>

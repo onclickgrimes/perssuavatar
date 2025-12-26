@@ -415,6 +415,7 @@ export class VoiceAssistant extends EventEmitter {
                             file_name: chunk.file_name,
                             start_line: chunk.start_line,
                             end_line: chunk.end_line,
+                            match_line: chunk.match_line || chunk.start_line, // Linha exata do match
                             content: chunk.content,
                             language: chunk.metadata?.language || 'text',
                             similarity: chunk.similarity
@@ -888,6 +889,38 @@ export class VoiceAssistant extends EventEmitter {
         return result;
     }
 
+    /**
+     * Envia contexto de código para análise pelo Gemini Live
+     * O código fica disponível para perguntas do usuário (turnComplete=false)
+     * @param fileName Nome do arquivo
+     * @param code Código fonte
+     * @param referencesContext Contexto de referências (onde o código é usado)
+     * @param instruction Instrução opcional para o modelo
+     * @returns true se enviado com sucesso, false caso contrário
+     */
+    public async sendCodeContext(
+        fileName: string,
+        code: string,
+        referencesContext: string,
+        instruction?: string
+    ): Promise<boolean> {
+        if (this.mode !== 'live') {
+            console.log('[VoiceAssistant] ⚠️ sendCodeContext só funciona no modo live (modo atual:', this.mode, ')');
+            return false;
+        }
+        
+        console.log(`[VoiceAssistant] 💻 Enviando contexto de código para Gemini Live...`);
+        const result = await this.geminiLiveService.sendCodeContext(fileName, code, referencesContext, instruction);
+        
+        if (result) {
+            console.log(`[VoiceAssistant] ✅ Contexto de código enviado com sucesso!`);
+        } else {
+            console.error(`[VoiceAssistant] ❌ Falha ao enviar contexto de código`);
+        }
+        
+        return result;
+    }
+
     // ========================================
     // SHARED PUBLIC METHODS - RECORDING PATH
     // ========================================
@@ -1105,6 +1138,7 @@ export class VoiceAssistant extends EventEmitter {
                                         file_name: chunk.file_name,
                                         start_line: chunk.start_line,
                                         end_line: chunk.end_line,
+                                        match_line: chunk.match_line || chunk.start_line, // Linha exata do match
                                         content: chunk.content,
                                         language: chunk.metadata?.language || 'text',
                                         similarity: chunk.similarity

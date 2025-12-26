@@ -331,6 +331,14 @@ const handler = {
     summary?: string;
   }) => ipcRenderer.invoke('send-conversation-context', data),
   
+  // Enviar contexto de código expandido para o LLM/Avatar
+  sendCodeContext: (data: {
+    originalCode: string;
+    fileName: string;
+    referencesContext: string;
+    userInstruction?: string;
+  }) => ipcRenderer.invoke('send-code-context', data),
+  
   // Resetar sessão Gemini Live (limpar histórico)
   resetLiveSession: () => ipcRenderer.invoke('reset-live-session'),
   
@@ -513,6 +521,7 @@ const handler = {
       file_name: string;
       start_line: number;
       end_line: number;
+      match_line: number;  // Linha exata onde o termo aparece
       content: string;
       language: string;
       similarity: number;
@@ -525,6 +534,15 @@ const handler = {
     // Abrir arquivo no editor padrão (com suporte a linha)
     openFileInEditor: (filePath: string, line?: number) => 
       ipcRenderer.invoke('open-file-in-editor', filePath, line),
+
+    // Buscar referências de código (onde funções/classes são usadas)
+    findReferences: (options: {
+      filePath: string;
+      content: string;
+      basePath: string;
+      maxDepth?: number;
+      targetSymbol?: string;  // Símbolo específico clicado pelo usuário
+    }) => ipcRenderer.invoke('knowledge:find-references', options),
 
     // Fechar janela de resultados de conhecimento
     closeKnowledgeResultsWindow: () => 

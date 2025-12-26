@@ -610,6 +610,77 @@ export class GeminiLiveService extends EventEmitter {
             return false;
         }
     }
+
+    /**
+     * Envia contexto de código para análise sem esperar resposta imediata
+     * O código fica disponível para perguntas posteriores do usuário
+     * @param fileName Nome do arquivo
+     * @param code Código fonte
+     * @param referencesContext Contexto de referências (onde o código é usado)
+     * @param instruction Instrução opcional para o modelo
+     * @returns true se enviado com sucesso, false caso contrário
+     */
+    public async sendCodeContext(
+        fileName: string,
+        code: string,
+        referencesContext: string,
+        instruction?: string
+    ): Promise<boolean> {
+        // Verificar conexão
+        if (!this.session || !this.isConnected) {
+            console.error('[GeminiLive][Code] ❌ Não está conectado');
+            return false;
+        }
+
+        try {
+            // ========================================
+            // FORMATAR CONTEXTO DE CÓDIGO
+            // ========================================
+            const defaultInstruction = `O usuário está analisando o código do arquivo "${fileName}". 
+Você agora tem acesso ao código e às referências de onde ele é usado no projeto.
+Quando o usuário perguntar sobre esse código, use esse contexto para responder.
+NÃO responda imediatamente - aguarde o usuário fazer perguntas ou comentários.`;
+
+            let codeContext = `=== ANÁLISE DE CÓDIGO ===\n\n`;
+            codeContext += `${instruction || defaultInstruction}\n\n`;
+            codeContext += `📄 ARQUIVO: ${fileName}\n\n`;
+            codeContext += `\`\`\`\n${code}\n\`\`\`\n\n`;
+            
+            if (referencesContext && referencesContext.trim()) {
+                codeContext += referencesContext;
+            }
+            
+            codeContext += `\n=== FIM DA ANÁLISE DE CÓDIGO ===`;
+            
+            console.log(`\n💻 [GeminiLive][Code] Enviando contexto de código...`);
+            console.log(`   📄 Arquivo: ${fileName}`);
+            console.log(`   📝 Código: ${code.length} caracteres`);
+            console.log(`   🔗 Referências: ${referencesContext.length} caracteres`);
+            console.log(`   📦 Total: ${codeContext.length} caracteres`);
+            console.log(`   📝 Contexto: ${codeContext}`);
+            // ========================================
+            // ENVIAR COM turnComplete=false
+            // ========================================
+            // turnComplete=false significa que o modelo NÃO vai responder automaticamente
+            // O conteúdo fica no contexto para quando o usuário perguntar
+            
+            this.session.sendClientContent({
+                turns: [{
+                    role: 'user',
+                    parts: [{ text: codeContext }]
+                }],
+                turnComplete: false // NÃO responder automaticamente - aguardar usuário
+            } as any);
+            
+            console.log(`✅ [GeminiLive][Code] Contexto enviado (turnComplete=false)`);
+            
+            return true;
+            
+        } catch (error) {
+            console.error('[GeminiLive][Code] ❌ Erro ao enviar contexto de código:', error);
+            return false;
+        }
+    }
 }
 
 // Helper Functions

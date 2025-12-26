@@ -1375,6 +1375,40 @@ ipcMain.handle('send-conversation-context', async (event, data: {
   }
 });
 
+// Handler para enviar contexto de código expandido ao LLM/Avatar
+ipcMain.handle('send-code-context', async (event, data: {
+  originalCode: string;
+  fileName: string;
+  referencesContext: string;
+  userInstruction?: string;
+}) => {
+  try {
+    console.log(`\n💻 [IPC] Enviando contexto de código ao Avatar`);
+    console.log(`   📄 Arquivo: ${data.fileName}`);
+    console.log(`   📝 Código: ${data.originalCode.length} caracteres`);
+    console.log(`   🔗 Referências: ${data.referencesContext.length} caracteres`);
+    
+    // Usar a nova função dedicada para contexto de código (turnComplete=false)
+    const sent = await assistant.sendCodeContext(
+      data.fileName,
+      data.originalCode,
+      data.referencesContext,
+      data.userInstruction
+    );
+    
+    if (sent) {
+      console.log(`✅ [IPC] Contexto de código enviado com sucesso!`);
+      return { success: true, sent: true };
+    } else {
+      console.warn(`⚠️ [IPC] Contexto de código NÃO foi enviado`);
+      return { success: true, sent: false, reason: 'Verifique se o Gemini Live está ativo' };
+    }
+  } catch (error: any) {
+    console.error('❌ [IPC] Erro ao enviar contexto de código:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Handler para encerrar a aplicação
 ipcMain.on('quit-app', () => {
   console.log('👋 Encerrando aplicação...');

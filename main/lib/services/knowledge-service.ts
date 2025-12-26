@@ -1158,6 +1158,31 @@ class KnowledgeService {
         const literalBoost = weightRatio * MAX_LITERAL_BOOST;
         const hybridScore = Math.min(1, semanticSimilarity + literalBoost);
         
+        // ============================================
+        // CALCULAR LINHA EXATA DO MATCH
+        // ============================================
+        // Encontra a linha exata onde a palavra mais específica aparece
+        let matchLine = chunk.start_line; // Default: início do chunk
+        
+        if (hasLiteralMatch && matchedWords.length > 0) {
+          const content = chunk.content || '';
+          const lines = content.split('\n');
+          
+          // Priorizar palavras mais longas (mais específicas)
+          const sortedWords = [...matchedWords].sort((a, b) => b.length - a.length);
+          
+          for (const word of sortedWords) {
+            const wordLower = word.toLowerCase();
+            for (let i = 0; i < lines.length; i++) {
+              if (lines[i].toLowerCase().includes(wordLower)) {
+                matchLine = chunk.start_line + i;
+                break;
+              }
+            }
+            if (matchLine !== chunk.start_line) break; // Encontrou, parar
+          }
+        }
+        
         return {
           ...chunk,
           embedding: undefined, // Remover embedding da resposta
@@ -1169,6 +1194,7 @@ class KnowledgeService {
           matchedWords,                 // Quais palavras foram encontradas
           matchedWeight,                // Peso das palavras encontradas
           weightRatio,                  // Proporção do peso encontrado
+          match_line: matchLine,        // Linha exata onde o termo aparece
         };
       })
       .sort((a: any, b: any) => b.similarity - a.similarity)

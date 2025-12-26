@@ -381,7 +381,323 @@ export function registerKnowledgeHandlers(): void {
     });
   });
 
+  /**
+   * Buscar referências de código - Encontra onde funções/classes são usadas
+   * @param filePath - Caminho do arquivo fonte
+   * @param content - Conteúdo do código para extrair símbolos
+   * @param basePath - Diretório base para busca
+   * @param maxDepth - Profundidade máxima de busca (níveis de referência)
+   * @param targetSymbol - Símbolo específico clicado pelo usuário (opcional)
+   */
+  ipcMain.handle('knowledge:find-references', async (_event, options: {
+    filePath: string;
+    content: string;
+    basePath: string;
+    maxDepth?: number;
+    targetSymbol?: string;  // Símbolo específico clicado pelo usuário
+  }) => {
+    const { exec } = require('child_process');
+    const path = require('path');
+    const fs = require('fs');
+    
+    const { filePath, content, basePath, maxDepth = 3, targetSymbol } = options;
+    
+    try {
+      console.log(`\n🔍 [REFERENCES] Buscando referências para: ${path.basename(filePath)}`);
+      console.log(`   Profundidade máxima: ${maxDepth} níveis`);
+      
+      // Se tiver um símbolo específico clicado, usar esse
+      // Caso contrário, extrair símbolos do código
+      let symbols: string[];
+      
+      if (targetSymbol && targetSymbol.length > 2) {
+        // Usuário clicou em um símbolo específico - buscar definição e usos
+        symbols = [targetSymbol];
+        console.log(`   🎯 Símbolo alvo (clicado): "${targetSymbol}"`);
+      } else {
+        // Extrair símbolos do código (funções, classes, variáveis exportadas)
+        symbols = extractSymbols(content);
+        console.log(`   Símbolos extraídos: ${symbols.join(', ')}`);
+      }
+      
+      if (symbols.length === 0) {
+        return { success: true, data: { symbols: [], references: [], context: '' } };
+      }
+      
+      // 2. Buscar referências para cada símbolo
+      const allReferences: Array<{
+        symbol: string;
+        level: number;
+        filePath: string;
+        lineNumber: number;
+        lineContent: string;
+        isDefinition?: boolean;  // Marca se é a definição do símbolo
+      }> = [];
+      
+      const visitedFiles = new Set<string>();
+      visitedFiles.add(path.normalize(filePath)); // Não incluir o arquivo original
+      
+      // Função para buscar referências de um símbolo
+      const findRefsForSymbol = (symbol: string, currentLevel: number): Promise<void> => {
+        return new Promise((resolve) => {
+          if (currentLevel > maxDepth) {
+            resolve();
+            return;
+          }
+          
+          // Converter basePath para formato Windows se necessário
+          const winBasePath = basePath.replace(/\//g, '\\');
+          
+          // Comando de busca - findstr é mais rápido que PowerShell no Windows
+          const grepCommand = process.platform === 'win32'
+            ? `findstr /S /N /C:"${symbol}" "${winBasePath}\\main\\*.ts" "${winBasePath}\\main\\*.tsx" "${winBasePath}\\renderer\\*.ts" "${winBasePath}\\renderer\\*.tsx" 2>nul`
+            : `grep -rn "${symbol}" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" "${basePath}"`;
+          
+          
+          exec(grepCommand, { maxBuffer: 1024 * 1024 * 10, timeout: 30000 }, (error: any, stdout: string, stderr: string) => {
+            if (error && !stdout) {
+              resolve();
+              return;
+            }
+            
+            // No Windows, linhas podem ter \r no final
+            const lines = stdout.split('\n').map(l => l.replace(/\r$/, '').trim()).filter(l => l);
+            console.log(`   [GREP] "${symbol}": ${lines.length} ocorrências encontradas`);
+            
+            const newFilesToSearch: string[] = [];
+            
+            for (const line of lines.slice(0, 30)) { // Limitar a 30 resultados por símbolo
+              // Parse formato Windows: C:\path\file.ts:123: content
+              // Parse formato Linux: /path/file.ts:123:content
+              // Note: Windows paths have "C:" which contains a colon
+              let match;
+              
+              if (process.platform === 'win32') {
+                // Windows: procurar padrão drive:path:numero:content
+                match = line.match(/^([A-Za-z]:\\[^:]+):(\d+):(.*)$/);
+              } else {
+                // Linux: /path:numero:content
+                match = line.match(/^([^:]+):(\d+):(.*)$/);
+              }
+              
+              if (!match) continue;
+              
+              const [, refPath, lineNum, lineContent] = match;
+              const normalizedPath = path.normalize(refPath);
+              
+              // Ignorar node_modules, .git, e arquivos já visitados
+              if (normalizedPath.includes('node_modules') || 
+                  normalizedPath.includes('.git') ||
+                  normalizedPath.includes('dist') ||
+                  normalizedPath.includes('.next')) {
+                continue;
+              }
+              
+              // Verificar se a linha é uma definição do símbolo
+              // Padrões para detectar definição: func name, name =, name:, etc
+              const defPatterns = [
+                `function\\s+${symbol}\\b`,           // function openExplanationWindow
+                `class\\s+${symbol}\\b`,               // class MyClass  
+                `const\\s+${symbol}\\s*[=:]`,          // const openExplanationWindow =
+                `let\\s+${symbol}\\s*[=:]`,            // let var =
+                `${symbol}\\s*:\\s*\\(`,               // openExplanationWindow: (  
+                `${symbol}\\s*:\\s*async`,             // name: async
+                `${symbol}\\s*:\\s*\\{`,               // tilt_head_right: { (propriedade de objeto)
+                `${symbol}\\s*=\\s*\\(`,               // name = (
+                `${symbol}\\s*=\\s*async`,             // name = async
+                `${symbol}\\s*=\\s*function`,          // name = function
+                `${symbol}\\s*=\\s*\\{`,               // name = { (objeto)
+                `'${symbol}'\\s*:`,                    // 'name':
+                `"${symbol}"\\s*:`,                    // "name":
+              ];
+              
+              const defRegex = new RegExp(`(${defPatterns.join('|')})`, 'i');
+              const isDefinition = defRegex.test(lineContent);
+              
+              // Se é targetSymbol (símbolo clicado), INCLUIR a definição (é o que queremos!)
+              // Se não é targetSymbol, pular definições (queremos só usos)
+              if (isDefinition && !targetSymbol) {
+                continue;
+              }
+              
+              // Log apenas definições encontradas (útil para debug)
+              if (isDefinition) {
+                console.log(`   ✅ [DEF] ${path.basename(normalizedPath)}:${lineNum} - definição encontrada`);
+              }
+              
+              
+              allReferences.push({
+                symbol,
+                level: currentLevel,
+                filePath: normalizedPath,
+                lineNumber: parseInt(lineNum),
+                lineContent: lineContent.trim().substring(0, 300), // Limitar tamanho
+                isDefinition
+              });
+              
+              // Se ainda não visitamos este arquivo, adicionar para próximo nível
+              if (!visitedFiles.has(normalizedPath) && currentLevel < maxDepth) {
+                visitedFiles.add(normalizedPath);
+                newFilesToSearch.push(normalizedPath);
+              }
+            }
+            
+            // Buscar recursivamente nos novos arquivos encontrados
+            // MAS: Se targetSymbol está definido, NÃO fazer busca em cascata
+            // (queremos apenas as referências do símbolo clicado, não de outros símbolos)
+            if (!targetSymbol && currentLevel < maxDepth && newFilesToSearch.length > 0) {
+              // Para o próximo nível, extrair símbolos dos arquivos que referenciam
+              const promises = newFilesToSearch.slice(0, 5).map(async (newFile) => {
+                try {
+                  const newContent = await fs.promises.readFile(newFile, 'utf-8');
+                  const newSymbols = extractSymbols(newContent);
+                  for (const newSymbol of newSymbols.slice(0, 3)) {
+                    await findRefsForSymbol(newSymbol, currentLevel + 1);
+                  }
+                } catch (e) {
+                  // Ignorar erros de leitura
+                }
+              });
+              Promise.all(promises).then(() => resolve());
+            } else {
+              resolve();
+            }
+          });
+        });
+      };
+      
+      // Buscar referências para cada símbolo principal
+      for (const symbol of symbols.slice(0, 5)) { // Limitar a 5 símbolos principais
+        await findRefsForSymbol(symbol, 1);
+      }
+      
+      // 3. Formatar contexto para o LLM
+      let context = `\n=== REFERÊNCIAS DE CÓDIGO (${allReferences.length} encontradas) ===\n\n`;
+      context += `📄 Arquivo original: ${path.basename(filePath)}\n`;
+      context += `🔗 Símbolos analisados: ${symbols.slice(0, 5).join(', ')}\n\n`;
+      
+      // Se é um símbolo clicado, mostrar primeiro a DEFINIÇÃO
+      if (targetSymbol) {
+        const definitions = allReferences.filter(r => r.isDefinition);
+        if (definitions.length > 0) {
+          context += `🎯 === DEFINIÇÃO DE "${targetSymbol}" ===\n`;
+          for (const def of definitions.slice(0, 3)) {
+            context += `📁 ${path.basename(def.filePath)} (linha ${def.lineNumber}):\n`;
+            context += `   ${def.lineContent}\n\n`;
+          }
+        } else {
+          context += `⚠️ Definição de "${targetSymbol}" não encontrada no projeto.\n\n`;
+        }
+        
+        // Mostrar também onde é usado
+        const usages = allReferences.filter(r => !r.isDefinition);
+        if (usages.length > 0) {
+          context += `📍 === ONDE "${targetSymbol}" É USADO ===\n`;
+          const byFile = new Map<string, typeof usages>();
+          for (const ref of usages) {
+            const existing = byFile.get(ref.filePath) || [];
+            existing.push(ref);
+            byFile.set(ref.filePath, existing);
+          }
+          
+          for (const [file, refs] of byFile) {
+            context += `📁 ${path.basename(file)}:\n`;
+            for (const ref of refs.slice(0, 5)) {
+              context += `   L${ref.lineNumber}: ${ref.lineContent}\n`;
+            }
+            context += '\n';
+          }
+        }
+      } else {
+        // Agrupar por nível (modo tradicional)
+        for (let level = 1; level <= maxDepth; level++) {
+          const levelRefs = allReferences.filter(r => r.level === level);
+          if (levelRefs.length === 0) continue;
+          
+          context += `--- Nível ${level}: Onde o código é usado ---\n`;
+          
+          // Agrupar por arquivo
+          const byFile = new Map<string, typeof levelRefs>();
+          for (const ref of levelRefs) {
+            const existing = byFile.get(ref.filePath) || [];
+            existing.push(ref);
+            byFile.set(ref.filePath, existing);
+          }
+          
+          for (const [file, refs] of byFile) {
+            context += `\n📁 ${path.basename(file)}:\n`;
+            for (const ref of refs.slice(0, 5)) {
+              context += `   L${ref.lineNumber}: ${ref.lineContent}\n`;
+            }
+          }
+          context += '\n';
+        }
+      }
+      
+      context += `=== FIM DAS REFERÊNCIAS ===\n`;
+      
+      console.log(`✅ [REFERENCES] Encontradas ${allReferences.length} referências em ${visitedFiles.size} arquivos`);
+      
+      return { 
+        success: true, 
+        data: { 
+          symbols, 
+          references: allReferences.slice(0, 50), // Limitar resposta
+          context,
+          filesVisited: visitedFiles.size
+        } 
+      };
+    } catch (error: any) {
+      console.error('❌ Erro ao buscar referências:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   console.log('✅ Knowledge handlers registrados');
+}
+
+/**
+ * Extrai símbolos exportados de código TypeScript/JavaScript
+ */
+function extractSymbols(content: string): string[] {
+  const symbols: string[] = [];
+  
+  // Funções exportadas: export function name, export async function name
+  const exportFuncRegex = /export\s+(async\s+)?function\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
+  let match;
+  while ((match = exportFuncRegex.exec(content)) !== null) {
+    symbols.push(match[2]);
+  }
+  
+  // Classes exportadas: export class Name
+  const exportClassRegex = /export\s+(default\s+)?class\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
+  while ((match = exportClassRegex.exec(content)) !== null) {
+    symbols.push(match[2]);
+  }
+  
+  // Constantes/variáveis exportadas: export const name
+  const exportConstRegex = /export\s+const\s+([a-zA-Z_][a-zA-Z0-9_]*)/g;
+  while ((match = exportConstRegex.exec(content)) !== null) {
+    symbols.push(match[1]);
+  }
+  
+  // Métodos públicos de classe: public methodName(
+  const publicMethodRegex = /public\s+(async\s+)?([a-zA-Z_][a-zA-Z0-9_]*)\s*\(/g;
+  while ((match = publicMethodRegex.exec(content)) !== null) {
+    if (!['constructor'].includes(match[2])) {
+      symbols.push(match[2]);
+    }
+  }
+  
+  // Funções arrow exportadas: export const name = () =>
+  const arrowExportRegex = /export\s+const\s+([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(async\s*)?\([^)]*\)\s*(:\s*[^=]+)?\s*=>/g;
+  while ((match = arrowExportRegex.exec(content)) !== null) {
+    if (!symbols.includes(match[1])) {
+      symbols.push(match[1]);
+    }
+  }
+  
+  return [...new Set(symbols)]; // Remover duplicatas
 }
 
 export default registerKnowledgeHandlers;
