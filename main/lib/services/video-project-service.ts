@@ -909,12 +909,7 @@ export class VideoProjectService extends EventEmitter {
         ).join('\n\n');
 
         // Se tiver um prompt de nicho, usa ele como base (já inclui JSON de exemplo dinâmico)
-        if (options?.nichePrompt) {
-            return `${options.nichePrompt}
-
-SEGMENTOS PARA ANÁLISE:
-${segmentsList}`;
-        }
+        if (options?.nichePrompt) { return `${options.nichePrompt} \n\nSEGMENTOS PARA ANÁLISE:\n\n${segmentsList}`;}
 
         // Prompt padrão (original)
 
