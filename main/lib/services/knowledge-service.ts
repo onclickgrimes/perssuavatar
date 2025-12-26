@@ -999,34 +999,129 @@ class KnowledgeService {
     console.log(`\n🔎 [SEARCH] Total de chunks no banco: ${chunks.length}`);
     console.log(`🔎 [SEARCH] Query: "${query}"`);
     console.log(`🔎 [SEARCH] Query embedding dimensões: ${queryEmbedding.length}`);
-    
     // ============================================
-    // DEBUG: Verificar se existem chunks com o termo literal
+    // BUSCA LITERAL MELHORADA: Peso por Especificidade
     // ============================================
+    // O problema: "function" aparece em milhares de chunks, mas "openExplanationWindow" é único.
+    // Solução: Dar peso maior para palavras longas (mais específicas) e ignorar palavras muito genéricas.
     const queryLower = query.toLowerCase();
-    const chunksWithLiteralMatch = chunks.filter((chunk: any) => 
-      chunk.content?.toLowerCase().includes(queryLower) ||
-      chunk.file_name?.toLowerCase().includes(queryLower)
-    );
     
-    if (chunksWithLiteralMatch.length > 0) {
-      console.log(`\n🔍 [DEBUG] Encontrados ${chunksWithLiteralMatch.length} chunks que contêm "${query}" literalmente:`);
-      chunksWithLiteralMatch.slice(0, 5).forEach((chunk: any, i: number) => {
-        console.log(`   [${i+1}] ${chunk.file_name} (linhas ${chunk.start_line}-${chunk.end_line})`);
-      });
-    } else {
-      console.warn(`⚠️ [DEBUG] NENHUM chunk contém "${query}" literalmente!`);
-      console.warn(`   Isso pode significar que os arquivos com esse termo não foram indexados.`);
+    // Lista de palavras genéricas de programação que aparecem em quase todo código
+    // Estas não ajudam a diferenciar chunks, então são ignoradas
+    const GENERIC_PROGRAMMING_WORDS = new Set([
+      'function', 'const', 'let', 'var', 'class', 'interface', 'type', 'export', 'import',
+      'return', 'async', 'await', 'new', 'this', 'that', 'null', 'undefined', 'true', 'false',
+      'promise', 'string', 'number', 'boolean', 'object', 'array', 'void', 'any',
+      'public', 'private', 'protected', 'static', 'readonly', 'abstract',
+      'extends', 'implements', 'declare', 'default', 'module',
+      'try', 'catch', 'throw', 'finally', 'error', 'log', 'console',
+      'for', 'while', 'foreach', 'map', 'filter', 'reduce', 'find',
+      'get', 'set', 'push', 'pop', 'shift', 'length', 'index',
+      'callback', 'handler', 'listener', 'event', 'data', 'value', 'result', 'response',
+      'props', 'state', 'use', 'react', 'component', 'render',
+    ]);
+    
+    // Extrair palavras significativas da query
+    const MIN_WORD_LENGTH = 3;
+    const allQueryWords = queryLower
+      .split(/[\s\-_.,;:!?()[\]{}'"]+/)  // Split em espaços e pontuação
+      .filter(word => word.length >= MIN_WORD_LENGTH);
+    
+    // Separar palavras específicas (úteis) das genéricas
+    const specificWords = allQueryWords.filter(w => !GENERIC_PROGRAMMING_WORDS.has(w));
+    const genericWords = allQueryWords.filter(w => GENERIC_PROGRAMMING_WORDS.has(w));
+    
+    console.log(`\n🔍 [LITERAL] Análise da query:`);
+    console.log(`   📌 Palavras específicas: [${specificWords.join(', ')}] (peso total)`);
+    if (genericWords.length > 0) {
+      console.log(`   ⚪ Palavras genéricas (ignoradas): [${genericWords.join(', ')}]`);
     }
     
+    // Se não há palavras específicas, usar as genéricas mesmo (melhor que nada)
+    const queryWords = specificWords.length > 0 ? specificWords : allQueryWords;
+    
+    // Função de peso baseada no comprimento da palavra
+    // Palavras longas são mais específicas e recebem mais peso
+    const getWordWeight = (word: string): number => {
+      const len = word.length;
+      if (len >= 15) return 3.0;  // Muito específico (ex: openExplanationWindow)
+      if (len >= 10) return 2.0;  // Específico
+      if (len >= 7) return 1.5;   // Moderado
+      return 1.0;                  // Curto
+    };
+    
+    // Calcular peso total das palavras da query
+    const totalQueryWeight = queryWords.reduce((sum, w) => sum + getWordWeight(w), 0);
+    
+    // Função para calcular score de match ponderado por especificidade
+    const calculateWeightedMatch = (text: string): { 
+      matchedWeight: number; 
+      matchedWords: string[];
+      totalWeight: number;
+    } => {
+      const textLower = text.toLowerCase();
+      const matchedWords: string[] = [];
+      let matchedWeight = 0;
+      
+      for (const word of queryWords) {
+        if (textLower.includes(word)) {
+          matchedWords.push(word);
+          matchedWeight += getWordWeight(word);
+        }
+      }
+      
+      return { matchedWeight, matchedWords, totalWeight: totalQueryWeight };
+    };
+    
+    // Para compatibilidade com código existente
+    const countMatchingWords = (text: string): { count: number; matched: string[] } => {
+      const result = calculateWeightedMatch(text);
+      return { count: result.matchedWords.length, matched: result.matchedWords };
+    };
+    
+    // Encontrar chunks que contêm palavras ESPECÍFICAS da query
+    const chunksWithLiteralMatch = chunks.filter((chunk: any) => {
+      const { matchedWords } = calculateWeightedMatch((chunk.content || '') + ' ' + (chunk.file_name || ''));
+      // Só conta como match se encontrar alguma palavra específica
+      return matchedWords.some(w => specificWords.includes(w) || specificWords.length === 0);
+    });
+    
+    if (chunksWithLiteralMatch.length > 0) {
+      console.log(`🔍 [LITERAL] Encontrados ${chunksWithLiteralMatch.length} chunks com palavras específicas:`);
+      
+      // Mostrar os melhores matches (ordenados por peso ponderado)
+      const sortedByWeight = chunksWithLiteralMatch
+        .map((chunk: any) => {
+          const { matchedWeight, matchedWords, totalWeight } = calculateWeightedMatch(
+            (chunk.content || '') + ' ' + (chunk.file_name || '')
+          );
+          return { 
+            chunk, 
+            matchedWeight, 
+            matchedWords,
+            weightRatio: totalWeight > 0 ? matchedWeight / totalWeight : 0
+          };
+        })
+        .sort((a, b) => b.matchedWeight - a.matchedWeight)
+        .slice(0, 5);
+      
+      sortedByWeight.forEach((item: any, i: number) => {
+        console.log(`   [${i+1}] ${item.chunk.file_name} (${item.chunk.start_line}-${item.chunk.end_line}) - peso: ${item.matchedWeight.toFixed(1)}/${totalQueryWeight.toFixed(1)} [${item.matchedWords.join(', ')}]`);
+      });
+    } else {
+      console.warn(`⚠️ [LITERAL] NENHUM chunk contém as palavras específicas: [${queryWords.join(', ')}]`);
+      console.warn(`   Isso pode significar que os arquivos com esses termos não foram indexados.`);
+    }
     let dimensionMismatchCount = 0;
     
     // ============================================
-    // BUSCA HÍBRIDA: Semântica + Keyword Boost
+    // BUSCA HÍBRIDA: Semântica + Keyword Boost Ponderado
     // ============================================
     // O modelo de embedding pode não capturar bem termos técnicos específicos.
-    // Damos um boost de 25% para chunks que contêm o termo literalmente.
-    const LITERAL_MATCH_BOOST = 0.25;
+    // Damos um boost proporcional ao PESO das palavras específicas encontradas.
+    // Palavras longas/raras têm mais peso. Palavras genéricas (function, const) são ignoradas.
+    // Boost máximo de 35% quando TODAS as palavras específicas são encontradas.
+    const MAX_LITERAL_BOOST = 0.35;
     
     const chunksWithSimilarity = chunks
       .filter((chunk: any) => chunk.embedding)
@@ -1048,22 +1143,32 @@ class KnowledgeService {
         
         const semanticSimilarity = this.cosineSimilarity(queryEmbedding, embedding);
         
-        // Verificar match literal (termo exato no conteúdo ou nome do arquivo)
-        const hasLiteralMatch = chunk.content?.toLowerCase().includes(queryLower) || 
-                               chunk.file_name?.toLowerCase().includes(queryLower);
+        // Verificar match literal por PALAVRAS PONDERADAS
+        const { matchedWeight, matchedWords, totalWeight } = calculateWeightedMatch(
+          (chunk.content || '') + ' ' + (chunk.file_name || '')
+        );
         
-        // Score híbrido: similaridade semântica + boost para match literal
-        const hybridScore = hasLiteralMatch 
-          ? Math.min(1, semanticSimilarity + LITERAL_MATCH_BOOST)  // Cap em 1.0
-          : semanticSimilarity;
+        // Calcular weight ratio (proporção do peso encontrado vs peso total)
+        const weightRatio = totalWeight > 0 ? matchedWeight / totalWeight : 0;
+        const hasLiteralMatch = matchedWords.length > 0;
+        
+        // Score híbrido: similaridade semântica + boost proporcional ao peso
+        // Se encontrou palavra de peso 3.0 de total 3.0 = 100% do boost
+        // Se encontrou palavra de peso 1.0 de total 3.0 = 33% do boost
+        const literalBoost = weightRatio * MAX_LITERAL_BOOST;
+        const hybridScore = Math.min(1, semanticSimilarity + literalBoost);
         
         return {
           ...chunk,
           embedding: undefined, // Remover embedding da resposta
           metadata: chunk.metadata ? JSON.parse(chunk.metadata) : {},
-          similarity: hybridScore,  // Usar score híbrido
-          semanticSimilarity,       // Guardar original para debug
+          similarity: hybridScore,      // Usar score híbrido
+          semanticSimilarity,           // Guardar original para debug
           hasLiteralMatch,
+          wordMatchCount: matchedWords.length,
+          matchedWords,                 // Quais palavras foram encontradas
+          matchedWeight,                // Peso das palavras encontradas
+          weightRatio,                  // Proporção do peso encontrado
         };
       })
       .sort((a: any, b: any) => b.similarity - a.similarity)
@@ -1076,7 +1181,13 @@ class KnowledgeService {
       const topResult = chunksWithSimilarity[0];
       console.log(`✅ [SEARCH] Busca híbrida completa. Top resultado:`);
       console.log(`   📄 ${topResult?.file_name} (${topResult?.start_line}-${topResult?.end_line})`);
-      console.log(`   📊 Score híbrido: ${topResult?.similarity?.toFixed(4)} (semântico: ${topResult?.semanticSimilarity?.toFixed(4)}, literal: ${topResult?.hasLiteralMatch ? 'SIM +0.25' : 'NÃO'})`);
+      const boostInfo = topResult?.hasLiteralMatch 
+        ? `SIM peso ${topResult.matchedWeight?.toFixed(1)}/${totalQueryWeight.toFixed(1)} +${(topResult.weightRatio * MAX_LITERAL_BOOST).toFixed(2)}`
+        : 'NÃO';
+      console.log(`   📊 Score híbrido: ${topResult?.similarity?.toFixed(4)} (semântico: ${topResult?.semanticSimilarity?.toFixed(4)}, literal: ${boostInfo})`);
+      if (topResult?.matchedWords?.length > 0) {
+        console.log(`   🔤 Palavras específicas encontradas: [${topResult.matchedWords.join(', ')}]`);
+      }
     }
     
     // ============================================
@@ -1084,26 +1195,28 @@ class KnowledgeService {
     // ============================================
     const literalMatchesInResults = chunksWithSimilarity.filter((c: any) => c.hasLiteralMatch);
     if (literalMatchesInResults.length > 0) {
-      console.log(`\n✅ [HÍBRIDO] ${literalMatchesInResults.length}/${limit} resultados contêm "${query}" literalmente (boost aplicado)`);
+      console.log(`\n✅ [HÍBRIDO] ${literalMatchesInResults.length}/${limit} resultados contêm palavras da query (boost proporcional aplicado)`);
     } else if (chunksWithLiteralMatch.length > 0) {
-      console.warn(`\n⚠️ [DEBUG] PROBLEMA: Existem ${chunksWithLiteralMatch.length} chunks com "${query}" literal, mas NENHUM apareceu nos top ${limit} resultados!`);
+      console.warn(`\n⚠️ [DEBUG] PROBLEMA: Existem ${chunksWithLiteralMatch.length} chunks com palavras da query, mas NENHUM apareceu nos top ${limit} resultados!`);
       
       // Calcular similaridade dos chunks literais para debug
       console.log(`   Calculando similaridade dos chunks com match literal...`);
       const literalChunksWithSim = chunks
-        .filter((chunk: any) => 
-          chunk.embedding && 
-          (chunk.content?.toLowerCase().includes(queryLower) || chunk.file_name?.toLowerCase().includes(queryLower))
-        )
+        .filter((chunk: any) => {
+          if (!chunk.embedding) return false;
+          const { count } = countMatchingWords((chunk.content || '') + ' ' + (chunk.file_name || ''));
+          return count > 0;
+        })
         .map((chunk: any) => {
           const embedding = JSON.parse(chunk.embedding) as number[];
           const sim = this.cosineSimilarity(queryEmbedding, embedding);
-          return { file_name: chunk.file_name, start_line: chunk.start_line, end_line: chunk.end_line, similarity: sim };
+          const { count, matched } = countMatchingWords((chunk.content || '') + ' ' + (chunk.file_name || ''));
+          return { file_name: chunk.file_name, start_line: chunk.start_line, end_line: chunk.end_line, similarity: sim, wordCount: count, matched };
         })
         .sort((a: any, b: any) => b.similarity - a.similarity);
       
       literalChunksWithSim.slice(0, 3).forEach((c: any, i: number) => {
-        console.log(`   [${i+1}] ${c.file_name} (${c.start_line}-${c.end_line}): similaridade = ${c.similarity.toFixed(4)}`);
+        console.log(`   [${i+1}] ${c.file_name} (${c.start_line}-${c.end_line}): similaridade = ${c.similarity.toFixed(4)}, palavras: ${c.wordCount}/${queryWords.length} [${c.matched.join(', ')}]`);
       });
       
       console.log(`   Top resultado semântico: ${chunksWithSimilarity[0]?.file_name} = ${chunksWithSimilarity[0]?.similarity?.toFixed(4)}`);
