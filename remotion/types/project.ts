@@ -56,16 +56,14 @@ export type { Transition };
 // Importar e re-exportar definições da SSoT em assets
 import { 
   ASSET_DEFINITIONS, 
-  AssetTypeSchema, 
-  ASSET_TYPE_LIST 
+  AssetTypeSchema
 } from '../assets/definitions';
 
 import type { AssetType } from '../assets/definitions';
 
 export { 
   ASSET_DEFINITIONS, 
-  AssetTypeSchema, 
-  ASSET_TYPE_LIST 
+  AssetTypeSchema
 };
 
 export type { AssetType };

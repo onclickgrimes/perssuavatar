@@ -10,23 +10,6 @@
 import { z } from 'zod';
 
 // ========================================
-// TIPOS DE METADADOS
-// ========================================
-
-export interface AssetMetadata {
-  /** Label exibido na UI */
-  label: string;
-  /** Descrição curta do tipo de asset */
-  description: string;
-  /** Emoji/ícone para identificação rápida */
-  icon: string;
-  /** Classes CSS para badge colorido */
-  badgeColor: string;
-  /** Descrição para a IA (ajuda na escolha do asset) */
-  aiDescription: string;
-}
-
-// ========================================
 // ASSET DEFINITIONS - ÚNICA FONTE DA VERDADE (Metadados)
 // ========================================
 
@@ -177,25 +160,10 @@ export const ASSET_DEFINITIONS = {
 /** Tipo union de todos os asset_types (derivado automaticamente) */
 export type AssetType = keyof typeof ASSET_DEFINITIONS;
 
-/** Lista de todos os asset_types como array */
-export const ASSET_TYPE_KEYS = Object.keys(ASSET_DEFINITIONS) as AssetType[];
+/** Lista de todos os asset_types como array (interno) */
+const ASSET_TYPE_KEYS = Object.keys(ASSET_DEFINITIONS) as AssetType[];
 
 /** Schema Zod para validação (derivado automaticamente) */
 export const AssetTypeSchema = z.enum(
   ASSET_TYPE_KEYS as [AssetType, ...AssetType[]]
 );
-
-/** Lista formatada para uso em selects/dropdowns */
-export const ASSET_TYPE_LIST = Object.entries(ASSET_DEFINITIONS).map(([value, def]) => ({
-  value: value as AssetType,
-  label: def.label,
-  description: def.description,
-  icon: def.icon,
-}));
-
-/**
- * Obtém os metadados de um asset_type.
- */
-export const getAssetMetadata = (assetType: AssetType): AssetMetadata | undefined => {
-  return ASSET_DEFINITIONS[assetType];
-};

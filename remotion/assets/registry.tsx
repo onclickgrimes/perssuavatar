@@ -261,12 +261,5 @@ export const getVideoFallbackComponent = (): AssetComponent => {
   return VideoAsset;
 };
 
-/**
- * Obtém o componente de imagem genérico
- */
-export const getImageComponent = (): AssetComponent => {
-  return ImageAsset;
-};
-
 // Re-exportar tipos e funções do definitions para conveniência
 export { ASSET_DEFINITIONS, type AssetType } from './definitions';
