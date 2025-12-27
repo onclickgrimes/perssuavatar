@@ -5,8 +5,8 @@
  */
 
 import { ipcMain, dialog, BrowserWindow } from 'electron';
-import { getKnowledgeService, KnowledgeSource } from './services/knowledge-service';
-import { getUserSettings } from './database';
+import { getKnowledgeService, KnowledgeSource } from '../services/knowledge-service';
+import { getUserSettings } from '../database';
 
 /**
  * Obtém a janela principal da aplicação

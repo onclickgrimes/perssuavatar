@@ -1,6 +1,12 @@
 import React from 'react';
 import { ProjectState } from '../../types/video-studio';
 import { VideoPreviewPlayer } from './VideoPreviewPlayer';
+import type { ChannelNiche } from './NicheModal';
+import { 
+  toRemotionFormat, 
+  audioPathToUrl, 
+  ASPECT_RATIO_DIMENSIONS 
+} from '../../shared/utils/project-converter';
 
 interface PreviewStepProps {
   project: ProjectState;
@@ -9,6 +15,7 @@ interface PreviewStepProps {
   onContinue: () => void;
   onBack: () => void;
   onAspectRatiosChange: (ratios: string[]) => void;
+  selectedNiche: ChannelNiche | null;
 }
 
 export function PreviewStep({
@@ -18,6 +25,7 @@ export function PreviewStep({
   onContinue,
   onBack,
   onAspectRatiosChange,
+  selectedNiche,
 }: PreviewStepProps) {
   // Estado para proporção selecionada no preview
   const [selectedRatio, setSelectedRatio] = React.useState<string>(() => {
@@ -26,81 +34,22 @@ export function PreviewStep({
 
   const [showRatioMenu, setShowRatioMenu] = React.useState(false);
 
-  const ASPECT_RATIO_DIMENSIONS: Record<string, { width: number; height: number }> = {
-    '16:9': { width: 1920, height: 1080 },
-    '9:16': { width: 1080, height: 1920 },
-    '1:1': { width: 1080, height: 1080 },
-    '4:3': { width: 1440, height: 1080 },
-    '4:5': { width: 1080, height: 1350 },
-    '3:4': { width: 1080, height: 1440 },
-  };
-
   const AVAILABLE_RATIOS = Object.keys(ASPECT_RATIO_DIMENSIONS);
   const currentRatios = project.selectedAspectRatios || ['9:16'];
 
-  // Converter ProjectState para formato do Remotion
+  // ✅ Usar conversor centralizado - adicionar propriedades em project-converter.ts
   const remotionProject = React.useMemo(() => {
-    // ... (mesmo código de antes)
-    const fps = 30;
     const dims = ASPECT_RATIO_DIMENSIONS[selectedRatio] || { width: 1080, height: 1920 };
     
-    return {
-      project_title: project.title,
-      description: project.description,
-      config: {
-        width: dims.width,
-        height: dims.height,
-        fps,
-        backgroundColor: '#0a0a0a',
-        subtitleMode, // ✅ Modo de legenda
-        backgroundMusic: project.audioPath ? {
-          src: project.audioPath.startsWith('http') 
-            ? project.audioPath 
-            : `http://localhost:9999/${project.audioPath.split(/[\\/]/).pop()}`,
-          volume: 1.0,
-        } : undefined,
-      },
-      scenes: project.segments.map(seg => ({
-        id: seg.id,
-        start_time: seg.start,
-        end_time: seg.end,
-        transcript_segment: seg.text,
-        visual_concept: {
-          description: seg.text,
-          art_style: 'photorealistic',
-          emotion: seg.emotion || 'neutro',
-        },
-        asset_type: seg.assetType || 'image_static',
-        asset_url: seg.asset_url || seg.imageUrl || '',
-        prompt_suggestion: seg.imagePrompt || '',
-        camera_movement: seg.cameraMovement || 'static',
-        transition: seg.transition || 'fade',
-        transition_duration: 0.5,
-        text_overlay: {
-          text: seg.text,
-          position: 'bottom',
-          style: 'subtitle',
-          animation: 'fade',
-          words: seg.words, 
-        },
-        // Configuração de Chroma Key (para vídeos com fundo verde/azul)
-        ...(seg.chroma_key && {
-          chroma_key: seg.chroma_key,
-        }),
-        ...(seg.highlightWords && seg.highlightWords.length > 0 && {
-          highlight_words: seg.highlightWords,
-        }),
-        // Background
-        ...(seg.background && {
-          background: seg.background,
-        }),
-        ...(seg.timeline_config && {
-          timeline_config: seg.timeline_config,
-        }),
-      })),
-      schema_version: '1.0',
-    };
-  }, [project, subtitleMode, selectedRatio]);
+    return toRemotionFormat(project as any, {
+      subtitleMode,
+      width: dims.width,
+      height: dims.height,
+      fps: 30,
+      componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed,
+      audioUrl: audioPathToUrl(project.audioPath),
+    });
+  }, [project, subtitleMode, selectedRatio, selectedNiche]);
   
   // Efeito para garantir que selectedRatio seja válido se as opções mudarem
   React.useEffect(() => {

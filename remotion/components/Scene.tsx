@@ -30,6 +30,10 @@ export const Scene: React.FC<SceneProps> = ({
 }) => {
   const { fps } = useVideoConfig();
   const currentFrame = useCurrentFrame(); // Chamar hook no nível do componente
+  const projectConfig = useProjectConfig();
+  
+  // Verificar se AnimatedSvgOverlay está habilitado
+  const isAnimatedSvgEnabled = projectConfig.componentsAllowed?.includes('AnimatedSvgOverlay') ?? false;
   
   // Calcular o frame de início da cena
   const sceneStartFrame = currentFrame - relativeFrame;
@@ -78,7 +82,7 @@ export const Scene: React.FC<SceneProps> = ({
         ))}
         
         {/* SVGs animados baseados nas palavras das legendas */}
-        {scene.text_overlay?.words && (
+        {isAnimatedSvgEnabled && scene.text_overlay?.words && (
           <AnimatedSvgOverlay
             words={scene.text_overlay.words}
             sceneStartTime={scene.start_time}
@@ -136,7 +140,7 @@ export const Scene: React.FC<SceneProps> = ({
       ))}
       
       {/* SVGs animados baseados nas palavras das legendas */}
-      {scene.text_overlay?.words && (
+      {isAnimatedSvgEnabled && scene.text_overlay?.words && (
         <AnimatedSvgOverlay
           words={scene.text_overlay.words}
           sceneStartTime={scene.start_time}

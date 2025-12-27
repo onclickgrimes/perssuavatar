@@ -20,6 +20,7 @@ import { ImagesStep } from '../components/video-studio/ImagesStep';
 import { PreviewStep } from '../components/video-studio/PreviewStep';
 import { RenderingStep } from '../components/video-studio/RenderingStep';
 import { CompleteStep } from '../components/video-studio/CompleteStep';
+import { toSaveFormat, fromSaveFormat } from '../shared/utils/project-converter';
 
 export default function VideoStudioPage() {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
@@ -62,33 +63,8 @@ export default function VideoStudioPage() {
     if (!project.title) return;
     
     try {
-      // Converter para formato esperado pelo backend (VideoProjectData)
-      const projectData = {
-        title: project.title,
-        description: project.description,
-        duration: project.duration,
-        audioPath: project.audioPath,
-        segments: project.segments.map(seg => ({
-          id: seg.id,
-          text: seg.text,
-          start: seg.start,
-          end: seg.end,
-          speaker: seg.speaker,
-          words: seg.words, // ✅ Salvar words do Deepgram
-          emotion: seg.emotion,
-          imagePrompt: seg.imagePrompt,
-          imageUrl: seg.imageUrl,
-          asset_url: seg.asset_url, // ✅ Salvar asset URL
-          chroma_key: seg.chroma_key, // ✅ Salvar config chroma key
-          background: seg.background, // ✅ Salvar background
-          timeline_config: seg.timeline_config, // ✅ Salvar config da timeline
-          assetType: seg.assetType,
-          cameraMovement: seg.cameraMovement,
-          transition: seg.transition,
-          highlightWords: seg.highlightWords, // ✅ Salvar highlight words
-        })),
-        selectedAspectRatios: project.selectedAspectRatios,
-      };
+      // ✅ Usar conversor centralizado - adicionar propriedades em project-converter.ts
+      const projectData = toSaveFormat(project as any, selectedNiche || undefined);
 
       const result = await window.electron.videoProject.save(projectData);
       
@@ -109,34 +85,10 @@ export default function VideoStudioPage() {
       const result = await window.electron.videoProject.load(filePath);
       
       if (result.success && result.project) {
-        const loadedProject = result.project;
+        // ✅ Usar conversor centralizado - adicionar propriedades em project-converter.ts
+        const loadedProject = fromSaveFormat(result.project);
         
-        setProject({
-          title: loadedProject.title,
-          description: loadedProject.description,
-          duration: loadedProject.duration,
-          audioPath: loadedProject.audioPath,
-          segments: loadedProject.segments.map((seg: any) => ({
-             id: seg.id,
-             text: seg.text,
-             start: seg.start,
-             end: seg.end,
-             speaker: seg.speaker,
-             words: seg.words, // ✅ Carregar words do Deepgram
-             emotion: seg.emotion,
-             imagePrompt: seg.imagePrompt,
-             imageUrl: seg.imageUrl,
-             asset_url: seg.asset_url, // ✅ Carregar URL do asset (pode ser diferente de imageUrl)
-             chroma_key: seg.chroma_key, // ✅ Carregar configuração de Chroma Key
-             background: seg.background, // ✅ Carregar background
-             timeline_config: seg.timeline_config, // ✅ Carregar config da timeline
-             assetType: seg.assetType,
-             cameraMovement: seg.cameraMovement,
-             transition: seg.transition,
-             highlightWords: seg.highlightWords, // ✅ Carregar highlight words
-          })),
-          selectedAspectRatios: loadedProject.selectedAspectRatios || ['9:16'],
-        });
+        setProject(loadedProject as ProjectState);
         
         // Determinar em qual passo estamos baseado nos dados
         if (loadedProject.segments.some((s: any) => s.imageUrl)) {
@@ -364,6 +316,7 @@ export default function VideoStudioPage() {
           audioPath: project.audioPath, // Incluir caminho do áudio
           segments: project.segments,
           subtitleMode: subtitleMode, // ✅ Modo de legenda para renderização
+          componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed, // ✅ Componentes permitidos (nicho ou projeto salvo)
           config: {
             width: dims.width,
             height: dims.height,
@@ -394,7 +347,7 @@ export default function VideoStudioPage() {
       setError(err instanceof Error ? err.message : 'Erro ao renderizar');
       setCurrentStep('images'); // Voltar para step anterior
     }
-  }, [project, subtitleMode]);
+  }, [project, subtitleMode, selectedNiche]);
 
 
   // Renderizar conteúdo baseado no step atual
@@ -459,6 +412,7 @@ export default function VideoStudioPage() {
             onContinue={handleStartRender}
             onBack={() => setCurrentStep('images')}
             onAspectRatiosChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: value }))}
+            selectedNiche={selectedNiche}
           />
         );
       

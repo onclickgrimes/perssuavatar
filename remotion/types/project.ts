@@ -242,7 +242,8 @@ export const EMOTION_LIST = Object.keys(EMOTION_OPTIONS) as Emotion[];
 // ========================================
 
 export const REMOTION_COMPONENT_OPTIONS = {
-  HighlightWord: { label: 'Highlight Word', description: 'Palavras em destaque animadas.' }
+  HighlightWord: { label: 'Highlight Word', description: 'Palavras em destaque animadas.' },
+  AnimatedSvgOverlay: { label: 'Animated SVG Overlay', description: 'SVGs animados que aparecem quando palavras-chave são faladas.' },
 } as const;
 
 export type RemotionComponent = keyof typeof REMOTION_COMPONENT_OPTIONS;
@@ -438,6 +439,9 @@ export const ProjectConfigSchema = z.object({
 
   /** Base URL para assets servidos localmente (ex: http://localhost:9999) */
   assetsBaseUrl: z.string().optional(),
+
+  /** Componentes Remotion permitidos (ex: ['HighlightWord', 'AnimatedSvgOverlay']) */
+  componentsAllowed: z.array(z.string()).optional(),
 });
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

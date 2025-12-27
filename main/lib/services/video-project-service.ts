@@ -32,6 +32,9 @@ export type AIProvider = 'gemini' | 'openai' | 'deepseek';
 // ========================================
 // TYPES
 // ========================================
+// NOTA: Estes tipos espelham os definidos em renderer/shared/utils/project-converter.ts
+// O backend não pode importar do renderer, então mantemos cópias sincronizadas.
+// Ao adicionar/modificar propriedades, atualizar ambos os arquivos.
 
 export interface VideoProjectSegment {
     id: number;
@@ -98,6 +101,7 @@ export interface VideoProjectData {
     segments: VideoProjectSegment[];
     subtitleMode?: 'paragraph' | 'word-by-word';
     selectedAspectRatios?: string[];
+    componentsAllowed?: string[]; // Componentes Remotion permitidos (ex: ['HighlightWord', 'AnimatedSvgOverlay'])
     config?: {
         width?: number;
         height?: number;
@@ -121,6 +125,7 @@ export interface RemotionProject {
         fps: number;
         backgroundColor: string;
         subtitleMode?: 'paragraph' | 'word-by-word';
+        componentsAllowed?: string[]; // Componentes Remotion permitidos
         backgroundMusic?: {
             src: string;
             volume?: number;
@@ -1087,6 +1092,7 @@ Responda APENAS com um array JSON válido no formato:
                 fps: project.config?.fps || 30,
                 backgroundColor: project.config?.backgroundColor || '#0a0a0a',
                 subtitleMode: project.subtitleMode, // ✅ Modo de legenda
+                componentsAllowed: project.componentsAllowed, // ✅ Componentes permitidos pelo nicho
                 assetsBaseUrl: `http://localhost:${this.imageServerPort}`, // ✅ URL base dinâmica
                 // Incluir áudio da narração/transcrição
                 ...(project.audioPath && {
@@ -1182,6 +1188,7 @@ Responda APENAS com um array JSON válido no formato:
             audioPath: project.audioPath,
             selectedAspectRatios: project.selectedAspectRatios, // Salvar as proporções
             subtitleMode: project.subtitleMode,
+            componentsAllowed: project.componentsAllowed, // ✅ Salvar componentes permitidos
             renderConfigs: project.selectedAspectRatios?.reduce((acc, ratio) => {
                 let w = 1080, h = 1920;
                 switch (ratio) {

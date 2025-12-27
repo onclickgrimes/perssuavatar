@@ -1,79 +1,47 @@
+/**
+ * Video Studio Types
+ * 
+ * Tipos específicos do frontend.
+ * Os tipos de projeto/segmento estão em shared/utils/project-converter.ts (SSoT)
+ */
+
+// Re-exportar tipos do conversor (Single Source of Truth)
+export type { 
+  VideoSegment,
+  VideoProject,
+  WordTiming,
+  HighlightWordConfig,
+  ChromaKeyConfig,
+  BackgroundConfig,
+  TimelineConfig,
+} from '../shared/utils/project-converter';
+
+// ========================================
+// WORKFLOW (específico do frontend)
+// ========================================
+
 export type WorkflowStep = 
-  | 'upload'        // Upload de áudio
-  | 'transcribing'  // Transcrevendo...
-  | 'analyzing'     // IA analisando transcrição
-  | 'keyframes'     // Revisão de keyframes/emoções
-  | 'prompts'       // Geração/edição de prompts
-  | 'images'        // Geração/aprovação de imagens
-  | 'preview'       // Preview do vídeo antes de renderizar
-  | 'rendering'     // Renderizando vídeo
-  | 'complete';     // Vídeo pronto
+  | 'upload'
+  | 'transcribing'
+  | 'analyzing'
+  | 'keyframes'
+  | 'prompts'
+  | 'images'
+  | 'preview'
+  | 'rendering'
+  | 'complete';
 
-export interface TranscriptionSegment {
-  id: number;
-  text: string;
-  start: number;
-  end: number;
-  speaker: number;
-  words?: Array<{
-    word: string;
-    start: number;
-    end: number;
-    confidence: number;
-    speaker: number;
-    punctuatedWord: string;
-  }>;
-  emotion?: string;
-  imagePrompt?: string;
-  imageUrl?: string;
-  /** URL do asset (para vídeos, pode ser diferente de imageUrl) */
-  asset_url?: string;
-  assetType?: string;
-  cameraMovement?: string;
-  transition?: string;
-  highlightWords?: Array<{
-    text: string;
-    time: number;
-    duration?: number;
-    entryAnimation?: string;
-    exitAnimation?: string;
-    size?: string | number;
-    position?: string;
-    effect?: string;
-    color?: string;
-    highlightColor?: string;
-    fontWeight?: string;
-  }>;
-  /** Configuração de Chroma Key (para vídeos com fundo verde/azul) */
-  chroma_key?: {
-    color: 'green' | 'blue' | 'custom';
-    customColor?: { r: number; g: number; b: number };
-    threshold?: number;
-    smoothing?: number;
-  };
-  /** Background (para composições com chromakey) */
-  background?: {
-    type: 'image' | 'video' | 'solid_color';
-    url?: string;
-    color?: string;
-  };
-  timeline_config?: {
-    items: Array<{
-        id: string;
-        year: string;
-        label: string;
-        image?: string;
-    }>;
-  };
-}
+// ========================================
+// ALIASES (compatibilidade)
+// ========================================
 
-export interface ProjectState {
-  title: string;
-  description?: string;
-  audioFile?: File;
+import type { VideoSegment, VideoProject } from '../shared/utils/project-converter';
+
+/** @deprecated Use VideoSegment */
+export type TranscriptionSegment = VideoSegment;
+
+/** Estado do projeto no frontend (estende VideoProject com props específicas de UI) */
+export interface ProjectState extends VideoProject {
+  audioFile?: File; // Específico do frontend (objeto File do browser)
   audioUrl?: string;
-  audioPath?: string; // Caminho do arquivo de áudio no disco
-  duration: number;
-  segments: TranscriptionSegment[];
-  selectedAspectRatios?: string[];
 }

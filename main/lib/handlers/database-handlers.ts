@@ -1,6 +1,6 @@
 import { ipcMain, BrowserWindow } from 'electron';
-import * as db from './database';
-import { getSummaryService } from './services/summary-service';
+import * as db from '../database';
+import { getSummaryService } from '../services/summary-service';
 
 /**
  * Registra todos os handlers IPC relacionados ao banco de dados
