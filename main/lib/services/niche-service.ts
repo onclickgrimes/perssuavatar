@@ -5,9 +5,12 @@
  */
 import { Knex } from 'knex';
 import db from '../../../db';
-import { ASSET_TYPE_OPTIONS, type AssetType } from '../../../remotion/types/project';
-import { CAMERA_EFFECTS } from '../../../remotion/utils/camera-effects';
-import { TRANSITION_EFFECTS } from '../../../remotion/utils/transitions';
+import { 
+    ASSET_TYPE_OPTIONS, 
+    type AssetType,
+    CAMERA_MOVEMENTS,
+    TRANSITIONS
+} from '../../../remotion/types/project';
 
 export interface ChannelNiche {
     id?: number;
@@ -156,7 +159,7 @@ export class NicheService {
         if (niche.camera_movements && niche.camera_movements.length > 0) {
             prompt += `\n\n**cameraMovement**: Movimento de câmera sugerido (escolha UM dos permitidos):`;
             for (const movement of niche.camera_movements) {
-                const config = CAMERA_EFFECTS[movement as keyof typeof CAMERA_EFFECTS];
+                const config = CAMERA_MOVEMENTS[movement as keyof typeof CAMERA_MOVEMENTS];
                 if (config) {
                     prompt += `\n- **${movement}**: ${config.description}`;
                 } else {
@@ -169,7 +172,7 @@ export class NicheService {
         if (niche.transitions && niche.transitions.length > 0) {
             prompt += `\n\n**transition**: Transição para a próxima cena (escolha UMA das permitidas):`;
             for (const transition of niche.transitions) {
-                const config = TRANSITION_EFFECTS[transition as keyof typeof TRANSITION_EFFECTS];
+                const config = TRANSITIONS[transition as keyof typeof TRANSITIONS];
                 if (config) {
                     prompt += `\n- **${transition}**: ${config.description}`;
                 } else {

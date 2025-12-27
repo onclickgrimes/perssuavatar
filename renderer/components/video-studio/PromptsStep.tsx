@@ -1,6 +1,13 @@
 import React from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
-import { ASSET_TYPE_OPTIONS, type AssetType } from '../../../remotion/types/project';
+import { 
+  ASSET_TYPE_OPTIONS, 
+  type AssetType,
+  CAMERA_MOVEMENTS,
+  TRANSITIONS,
+  type CameraMovement,
+  type Transition
+} from '../../../remotion/types/project';
 
 interface PromptsStepProps {
   segments: TranscriptionSegment[];
@@ -76,6 +83,15 @@ export function PromptsStep({
       <div className="space-y-4">
         {segments.map((segment) => {
           const assetInfo = getAssetTypeInfo(segment.assetType || 'image_flux');
+          
+          // Buscar labels human-readable da SSoT
+          const cameraLabel = segment.cameraMovement 
+            ? CAMERA_MOVEMENTS[segment.cameraMovement as CameraMovement]?.label || segment.cameraMovement
+            : '';
+            
+          const transitionLabel = segment.transition
+            ? TRANSITIONS[segment.transition as Transition]?.label || segment.transition
+            : '';
 
           return (
             <div
@@ -99,12 +115,12 @@ export function PromptsStep({
                 )}
                 {segment.cameraMovement && segment.cameraMovement !== 'static' && (
                   <span className="px-2 py-1 bg-orange-500/20 text-orange-300 rounded text-xs">
-                    🎥 {segment.cameraMovement}
+                    🎥 {cameraLabel}
                   </span>
                 )}
                 {segment.transition && segment.transition !== 'fade' && (
                   <span className="px-2 py-1 bg-violet-500/20 text-violet-300 rounded text-xs">
-                    ✨ {segment.transition}
+                    ✨ {transitionLabel}
                   </span>
                 )}
               </div>

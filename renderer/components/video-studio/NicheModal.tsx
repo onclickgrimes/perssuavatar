@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { CAMERA_MOVEMENTS_OPTIONS } from '../../../remotion/utils/camera-effects';
-import { TRANSITION_OPTIONS } from '../../../remotion/utils/transitions';
 import { 
     ASSET_TYPE_OPTIONS,
+    CAMERA_MOVEMENT_LIST,
+    TRANSITION_LIST,
     EMOTION_LIST,
     ENTRY_ANIMATION_LIST,
     EXIT_ANIMATION_LIST,
@@ -456,7 +456,7 @@ export function NicheModal({ isOpen, onClose, onSelect, selectedNiche }: NicheMo
                             <div>
                                 <label className="block text-white/80 text-sm font-medium mb-2">Movimentos de Câmera</label>
                                 <div className="flex flex-wrap gap-2">
-                                    {CAMERA_MOVEMENTS_OPTIONS.map((cam) => (
+                                    {CAMERA_MOVEMENT_LIST.map((cam) => (
                                         <button
                                             key={cam.value}
                                             onClick={() => toggleArrayItem('camera_movements', cam.value)}
@@ -477,7 +477,7 @@ export function NicheModal({ isOpen, onClose, onSelect, selectedNiche }: NicheMo
                             <div>
                                 <label className="block text-white/80 text-sm font-medium mb-2">Transições</label>
                                 <div className="flex flex-wrap gap-2">
-                                    {TRANSITION_OPTIONS.map((trans) => (
+                                    {TRANSITION_LIST.map((trans) => (
                                         <button
                                             key={trans.value}
                                             onClick={() => toggleArrayItem('transitions', trans.value)}

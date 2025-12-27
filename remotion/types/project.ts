@@ -10,86 +10,54 @@ import { z } from 'zod';
 // CAMERA MOVEMENTS
 // ========================================
 
-export const CameraMovementSchema = z.enum([
-  'static',           // Sem movimento
-  'zoom_in_slow',     // Zoom in lento
-  'zoom_in_fast',     // Zoom in rápido
-  'zoom_out_slow',    // Zoom out lento
-  'zoom_out_fast',    // Zoom out rápido
-  'pan_left',         // Pan para esquerda
-  'pan_right',        // Pan para direita
-  'pan_up',           // Pan para cima
-  'pan_down',         // Pan para baixo
-  'ken_burns',        // Ken Burns effect (zoom + pan suave)
-  'shake',            // Shake/tremor
-  'rotate_cw',        // Rotação horária
-  'rotate_ccw',       // Rotação anti-horária
-  'trail_printing',   // Accordion blur / trail printing effect
-]);
+// Importar e re-exportar definições da SSoT em utils/camera-effects
+import { 
+  CAMERA_MOVEMENTS, 
+  CameraMovementSchema, 
+  CAMERA_MOVEMENT_LIST 
+} from '../utils/camera-effects';
 
-export type CameraMovement = z.infer<typeof CameraMovementSchema>;
+import type { CameraMovement } from '../utils/camera-effects';
+
+export { 
+  CAMERA_MOVEMENTS, 
+  CameraMovementSchema, 
+  CAMERA_MOVEMENT_LIST 
+};
+
+export type { CameraMovement };
+
 
 // ========================================
 // TRANSITIONS
 // ========================================
 
-export const TransitionSchema = z.enum([
-  'none',             // Sem transição (corte seco)
-  'fade',             // Fade in/out
-  'crossfade',        // Crossfade com próxima cena
-  'slide_left',       // Slide para esquerda
-  'slide_right',      // Slide para direita
-  'slide_up',         // Slide para cima
-  'slide_down',       // Slide para baixo
-  'zoom_in',          // Zoom in transition
-  'zoom_out',         // Zoom out transition
-  'wipe_left',        // Wipe para esquerda
-  'wipe_right',       // Wipe para direita
-  'blur',             // Blur transition
-  'glitch',           // Glitch effect
-  'zoom_transition',  // Zoom dramático de transição
-]);
+// Importar e re-exportar definições da SSoT em utils/transitions
+import { 
+  TRANSITIONS, 
+  TransitionSchema, 
+  TRANSITION_LIST 
+} from '../utils/transitions';
 
-export type Transition = z.infer<typeof TransitionSchema>;
+import type { Transition } from '../utils/transitions';
+
+export { 
+  TRANSITIONS, 
+  TransitionSchema, 
+  TRANSITION_LIST 
+};
+
+export type { Transition };
 
 // ========================================
 // ASSET TYPES (Gerador de mídia)
 // ========================================
 
-export const AssetTypeSchema = z.enum([
-  'image_flux',       // Imagem gerada pelo Flux
-  'image_dalle',      // Imagem gerada pelo DALL-E
-  'image_midjourney', // Imagem gerada pelo Midjourney
-  'image_pexels',     // Imagem do Pexels (stock gratuito)
-  'image_static',     // Imagem estática (já existente)
-  'video_stock',      // Vídeo de stock (banco de dados local/Supabase)
-  'video_pexels',     // Vídeo do Pexels (stock gratuito)
-  'video_kling',      // Vídeo gerado pelo Kling
-  'video_runway',     // Vídeo gerado pelo Runway
-  'video_pika',       // Vídeo gerado pelo Pika
-  'video_static',     // Vídeo estático (já existente)
-  'video_chromakey',  // Vídeo com chroma key (remoção de fundo verde/azul)
-  'avatar',           // Avatar animado (Live2D, etc)
-  'text_only',        // Apenas texto/tipografia
-  'solid_color',      // Cor sólida de fundo
-  'geometric_patterns', // Padrões geométricos animados
-  'wavy_grid',        // Grade ondulada 3D estilo Daniel Penin
-  'timeline_3d',      // Linha do tempo 3D histórica
-]);
-
-export type AssetType = z.infer<typeof AssetTypeSchema>;
-
 /**
  * Opções de Asset Types com labels, descrições, ícones e cores
  * Fonte única de verdade para todo o sistema
  */
-export const ASSET_TYPE_OPTIONS: Record<AssetType, {
-  label: string;
-  description: string;
-  icon: string;
-  badgeColor: string; // Cor para badges/tags (tailwind classes)
-  aiDescription: string; // Descrição para a IA
-}> = {
+export const ASSET_TYPE_OPTIONS = {
   image_flux: {
     label: 'Imagem (Flux)',
     description: 'Imagem estática gerada por IA Flux',
@@ -216,9 +184,14 @@ export const ASSET_TYPE_OPTIONS: Record<AssetType, {
     badgeColor: 'bg-amber-500/20 text-amber-300',
     aiDescription: 'Linha do tempo 3D histórica (ideal para documentários, história, cronologias)',
   },
-};
+} as const;
 
-/** Lista de asset types para seleção em UI (array simples) */
+export type AssetType = keyof typeof ASSET_TYPE_OPTIONS;
+
+export const AssetTypeSchema = z.enum(
+  Object.keys(ASSET_TYPE_OPTIONS) as [AssetType, ...AssetType[]]
+);
+
 export const ASSET_TYPE_LIST = Object.entries(ASSET_TYPE_OPTIONS).map(([value, opt]) => ({
   value: value as AssetType,
   label: opt.label,

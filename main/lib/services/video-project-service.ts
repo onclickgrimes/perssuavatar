@@ -19,8 +19,13 @@ import { OpenAIService } from './openai-service';
 import { DeepSeekService } from './deepseek-service';
 import { getVideoSearchService } from './video-search-service';
 import { getPexelsService } from '../assets';
-import { CAMERA_EFFECTS } from '../../../remotion/utils/camera-effects';
-import { TRANSITION_EFFECTS } from '../../../remotion/utils/transitions';
+import { 
+    CAMERA_MOVEMENTS, 
+    TRANSITIONS, 
+    ASSET_TYPE_OPTIONS,
+    ENTRY_ANIMATION_OPTIONS,
+    EXIT_ANIMATION_OPTIONS
+} from '../../../remotion/types/project';
 
 export type AIProvider = 'gemini' | 'openai' | 'deepseek';
 
@@ -911,7 +916,32 @@ export class VideoProjectService extends EventEmitter {
         // Se tiver um prompt de nicho, usa ele como base (já inclui JSON de exemplo dinâmico)
         if (options?.nichePrompt) { return `${options.nichePrompt} \n\nSEGMENTOS PARA ANÁLISE:\n\n${segmentsList}`;}
 
-        // Prompt padrão (original)
+        // Prompt padrão (original) - Agora construído dinamicamente a partir da SSoT (project.ts)
+
+        // Gerar lista de Assets com AI Description
+        const assetInstructions = Object.entries(ASSET_TYPE_OPTIONS)
+            .map(([key, config]) => `   - "${key}": ${config.aiDescription}`)
+            .join('\n');
+
+        // Gerar lista de Movimentos de Câmera
+        const cameraInstructions = Object.entries(CAMERA_MOVEMENTS)
+            .map(([key, config]) => `- **${key}**\n  ${config.description}`)
+            .join('\n');
+
+        // Gerar lista de Transições
+        const transitionInstructions = Object.entries(TRANSITIONS)
+            .map(([key, config]) => `- **${key}**\n  ${config.description}`)
+            .join('\n');
+
+        // Gerar lista de Animações de Entrada
+        const entryAnimInstructions = Object.entries(ENTRY_ANIMATION_OPTIONS)
+            .map(([key, config]) => `     * **${key}** - ${config.description}`)
+            .join('\n');
+
+        // Gerar lista de Animações de Saída
+        const exitAnimInstructions = Object.entries(EXIT_ANIMATION_OPTIONS)
+            .map(([key, config]) => `     * **${key}** - ${config.description}`)
+            .join('\n');
 
         return `Você é um diretor de vídeo criativo. Analise os seguintes segmentos de uma transcrição de áudio e sugira:
 
@@ -920,17 +950,13 @@ export class VideoProjectService extends EventEmitter {
 2. **imagePrompt**: Um texto detalhado em inglês que represente visualmente o segmento. Seja específico sobre estilo, composição, iluminação e cores.
 
 3. **assetType**: O tipo de asset recomendado:
-   - "image_flux" para cenas estáticas ou conceituais
-   - "video_kling" para cenas com ação humana complexa
-   - "solid_color" para transições ou ênfase em texto
-   - "geometric_patterns" para background abstrato com padrões geométricos animados
-   - "wavy_grid" para background futurista com grade 3D ondulada (estilo Daniel Penin)
+${assetInstructions}
 
 4. **cameraMovement**: Movimento de câmera sugerido:
-${Object.entries(CAMERA_EFFECTS).map(([key, config]) => `- **${key}**\n  ${config.description}`).join('\n')}
+${cameraInstructions}
 
 5. **transition**: Transição para a próxima cena:
-${Object.entries(TRANSITION_EFFECTS).map(([key, config]) => `- **${key}**\n  ${config.description}`).join('\n')}
+${transitionInstructions}
 
 6. **highlightWords**: Array de palavras ou frases-chave que devem ser destacadas visualmente durante a cena.
    Para cada palavra destacada, especifique:
@@ -938,21 +964,9 @@ ${Object.entries(TRANSITION_EFFECTS).map(([key, config]) => `- **${key}**\n  ${c
    - **time**: Tempo de aparição em segundos (relativo ao início da cena, ex: 0.5)
    - **duration**: Duração da exibição em segundos (padrão: 1.5s)
    - **entryAnimation**: Animação de entrada
-     * **pop** - Escala rápida com bounce
-     * **bounce** - Múltiplos bounces ao aparecer
-     * **explode** - Explosão com rotação
-     * **slide_up** - Desliza de baixo para cima
-     * **zoom_in** - Zoom gradual
-     * **fade** - Fade in simples
-     * **wave** - Texto vazado que enche de baixo pra cima como onda (efeito premium!)
+${entryAnimInstructions}
    - **exitAnimation**: Animação de saída
-     * **evaporate** - Evapora subindo com partículas
-     * **fade** - Fade out simples
-     * **implode** - Implosão com rotação
-     * **slide_down** - Desliza para baixo
-     * **dissolve** - Dissolve com blur
-     * **scatter** - Dispersa com partículas
-     * **wave** - Texto esvazia de cima pra baixo como onda (efeito premium!)
+${exitAnimInstructions}
    - **size**: Tamanho (small, medium, large, huge)
    - **position**: Posição (center, top, top-center, bottom, bottom-center, top-left, top-right, bottom-left, bottom-right, left, center-left, right, center-right)
    - **effect**: Efeito visual (glow, shadow, outline, neon, none)
