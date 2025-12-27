@@ -36,24 +36,9 @@ export const TextOverlayComponent: React.FC<TextOverlayProps> = ({
   // Verificar se temos words e qual modo usar
   const hasWords = config.words && config.words.length > 0;
   const subtitleMode = projectConfig.subtitleMode || 'paragraph';
-  
-  // Debug - verificar apenas uma vez por cena
-  if (relativeFrame === 0) {
-    console.log('🎤 TextOverlay Debug:', {
-      subtitleMode,
-      hasWords,
-      wordsCount: config.words?.length,
-      projectConfig,
-      configWords: config.words,
-      sceneStartTime,
-    });
-  }
-  
+
   // Se estiver em modo word-by-word E tiver words, renderizar palavra por palavra
   if (subtitleMode === 'word-by-word' && hasWords) {
-    if (relativeFrame === 0) {
-      console.log('✅ Rendering WORD-BY-WORD mode');
-    }
     
     // Calcular tempo ABSOLUTO (desde o início do áudio)
     const currentTimeInSeconds = sceneStartTime + (relativeFrame / fps);
@@ -98,11 +83,6 @@ export const TextOverlayComponent: React.FC<TextOverlayProps> = ({
         {activeWord.punctuatedWord || activeWord.word}
       </div>
     );
-  }
-  
-  // Modo parágrafo tradicional
-  if (relativeFrame === 0) {
-    console.log('❌ Rendering PARAGRAPH mode (fallback)');
   }
   
   return (

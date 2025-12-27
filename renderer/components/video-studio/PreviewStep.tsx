@@ -124,21 +124,6 @@ export function PreviewStep({
     onAspectRatiosChange(newRatios);
   };
 
-  // ... (Debug effect e calculo de duração mantidos)
-
-  // Debug: verificar se highlight_words está presente
-  React.useEffect(() => {
-    console.log('🎬 RemotionProject:', remotionProject);
-    remotionProject.scenes.forEach((scene: any, i: number) => {
-      if (scene.highlight_words && scene.highlight_words.length > 0) {
-        console.log(`✨ Scene ${i + 1} has ${scene.highlight_words.length} highlight words:`, scene.highlight_words);
-      }
-      if (scene.text_overlay) {
-        console.log(`📝 Scene ${i + 1} text_overlay words:`, scene.text_overlay.words?.length || 0, 'words');
-      }
-    });
-  }, [remotionProject]);
-
   // Calcular duração
   const lastScene = project.segments[project.segments.length - 1];
   const durationInSeconds = lastScene ? lastScene.end : 10;
