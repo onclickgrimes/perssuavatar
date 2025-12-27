@@ -5,17 +5,14 @@
  * Suporta diferentes tipos de assets e aplica efeitos de câmera.
  */
 import React from 'react';
-import { AbsoluteFill, Html5Video, Img, Video, useCurrentFrame, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Html5Video, Img, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { Scene as SceneType, CameraMovement } from '../types/project';
 import { applyCameraEffect } from '../utils/camera-effects';
 import { TextOverlayComponent } from './TextOverlay';
 import { HighlightWordComponent } from './HighlightWord';
 import { AnimatedSvgOverlay } from './AnimatedSvgOverlay';
-import { GeometricPatterns } from './GeometricPatterns';
-import { WavyGrid } from './WavyGrid';
-import { Timeline3D } from './Timeline3D';
-import { ChromaKeyMedia, greenScreenPreset, blueScreenPreset } from './ChromaKeyMedia';
 import { useProjectConfig } from '../contexts/ProjectConfigContext';
+import { getAssetComponent, getVideoFallbackComponent, type AssetType } from '../assets/registry';
 
 
 interface SceneProps {
@@ -237,7 +234,7 @@ interface AssetRendererProps {
 }
 
 const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
-  const { asset_type, asset_url, visual_concept } = scene;
+  const { asset_type, asset_url } = scene;
   
   // Helper para detectar se é vídeo pela extensão do arquivo
   const isVideoUrl = (url: string | undefined): boolean => {
@@ -246,191 +243,26 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
     return videoExtensions.some(ext => url.toLowerCase().endsWith(ext));
   };
   
-  // Estilos base para preencher o container
-  const fillStyles: React.CSSProperties = {
-    width: '100%',
-    height: '100%',
-    objectFit: 'cover',
-  };
+  // Obter componente do registry
+  let Component = getAssetComponent(asset_type as AssetType);
   
-  // Se tiver URL, verificar se é vídeo automaticamente
-  // Mas se for video_chromakey, deixar o switch tratar
-  if (asset_url && asset_type !== 'video_chromakey') {
-    if (isVideoUrl(asset_url)) {
-      // É um vídeo - renderizar com componente Video
-      return <Html5Video src={asset_url} style={fillStyles} />;
-    }
+  // Lógica de compatibilidade: Se tiver URL de vídeo, força renderização como vídeo
+  // a menos que seja chroma_key (que tem tratamento próprio)
+  if (asset_url && asset_type !== 'video_chromakey' && isVideoUrl(asset_url)) {
+    Component = getVideoFallbackComponent();
+  }
+
+  if (Component) {
+    return <Component scene={scene} />;
   }
   
-  switch (asset_type) {
-    // Imagens
-    case 'image_flux':
-    case 'image_dalle':
-    case 'image_midjourney':
-    case 'image_pexels':    // ✅ Pexels Photos
-    case 'image_static':
-      if (asset_url) {
-        return <Img src={asset_url} style={fillStyles} />;
-      }
-      // Placeholder se não houver URL
-      return <PlaceholderImage description={visual_concept.description} />;
-    
-    // Vídeos
-    case 'video_kling':
-    case 'video_runway':
-    case 'video_pika':
-    case 'video_pexels':    // ✅ Pexels Videos
-    case 'video_static':
-      if (asset_url) {
-        return <Video src={asset_url} style={fillStyles} />;
-      }
-      return <PlaceholderVideo description={visual_concept.description} />;
-    
-    // Vídeo com Chroma Key
-    case 'video_chromakey':
-      if (asset_url) {
-        // Usar configuração de chroma key da cena ou preset padrão
-        const chromaKeyConfig = scene.chroma_key || greenScreenPreset;
-        
-        return (
-          <ChromaKeyMedia
-            src={asset_url}
-            type="video"
-            chromaKey={{
-              color: chromaKeyConfig.color || 'green',
-              customColor: chromaKeyConfig.customColor,
-              threshold: chromaKeyConfig.threshold ?? 100,
-              smoothing: chromaKeyConfig.smoothing ?? 0.2,
-            }}
-          />
-        );
-      }
-      return <PlaceholderVideo description={`Chroma Key: ${visual_concept.description}`} />;
-    
-    // Cor sólida
-    case 'solid_color':
-      const bgColor = visual_concept.color_palette?.[0] || '#000000';
-      return (
-        <div
-          style={{
-            ...fillStyles,
-            backgroundColor: bgColor,
-          }}
-        />
-      );
-    
-    // Padrões Geométricos
-    case 'geometric_patterns':
-      return <GeometricPatterns />;
-    
-    // Grade Ondulada 3D
-    case 'wavy_grid':
-      return <WavyGrid />;
-    
-    // Timeline 3D
-    case 'timeline_3d':
-       if (scene.timeline_config) {
-            return <Timeline3D items={scene.timeline_config.items} />;
-       }
-       // Fallback mock data if allowed or just placeholder
-       return <PlaceholderImage description="Timeline 3D (Sem configuração)" />;
-    
-    // Apenas texto
-    case 'text_only':
-      return (
-        <div
-          style={{
-            ...fillStyles,
-            backgroundColor: '#0a0a0a',
-            display: 'flex',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        />
-      );
-    
-    // Avatar (placeholder por enquanto)
-    case 'avatar':
-      return <PlaceholderAvatar />;
-    
-    default:
-      return <PlaceholderImage description="Cena sem asset definido" />;
-  }
-};
-
-// ========================================
-// PLACEHOLDERS
-// ========================================
-
-const PlaceholderImage: React.FC<{ description: string }> = ({ description }) => {
+  // Fallback se não encontrar o componente
   return (
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#1a1a2e',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        color: '#666',
-        fontFamily: 'inherit',
-        padding: '40px',
-        textAlign: 'center',
-      }}
-    >
-      <div style={{ fontSize: 48, marginBottom: 20 }}>🖼️</div>
-      <div style={{ fontSize: 18, opacity: 0.7 }}>Imagem Placeholder</div>
-      <div style={{ fontSize: 14, opacity: 0.5, marginTop: 10, maxWidth: 600 }}>
-        {description}
-      </div>
-    </div>
-  );
-};
-
-const PlaceholderVideo: React.FC<{ description: string }> = ({ description }) => {
-  return (
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#1a1a2e',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        color: '#666',
-        fontFamily: 'inherit',
-        padding: '40px',
-        textAlign: 'center',
-      }}
-    >
-      <div style={{ fontSize: 48, marginBottom: 20 }}>🎬</div>
-      <div style={{ fontSize: 18, opacity: 0.7 }}>Vídeo Placeholder</div>
-      <div style={{ fontSize: 14, opacity: 0.5, marginTop: 10, maxWidth: 600 }}>
-        {description}
-      </div>
-    </div>
-  );
-};
-
-const PlaceholderAvatar: React.FC = () => {
-  return (
-    <div
-      style={{
-        width: '100%',
-        height: '100%',
-        backgroundColor: '#16213e',
-        display: 'flex',
-        flexDirection: 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        color: '#666',
-        fontFamily: 'inherit',
-      }}
-    >
-      <div style={{ fontSize: 80, marginBottom: 20 }}>🤖</div>
-      <div style={{ fontSize: 18, opacity: 0.7 }}>Avatar</div>
+    <div style={{
+      width: '100%', height: '100%', backgroundColor: '#1a1a2e',
+      display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#666'
+    }}>
+      Asset tipo "{asset_type}" não encontrado no registro.
     </div>
   );
 };

@@ -1,7 +1,7 @@
 import React from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
 import { 
-  ASSET_TYPE_OPTIONS, 
+  ASSET_DEFINITIONS, 
   type AssetType,
   CAMERA_MOVEMENTS,
   TRANSITIONS,
@@ -19,7 +19,7 @@ interface PromptsStepProps {
 
 // Função helper para obter info do asset type
 const getAssetTypeInfo = (assetType: string) => {
-  const info = ASSET_TYPE_OPTIONS[assetType as AssetType];
+  const info = ASSET_DEFINITIONS[assetType as AssetType];
   if (info) {
     return {
       label: info.label,

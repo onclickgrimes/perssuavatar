@@ -22,7 +22,7 @@ import { getPexelsService } from '../assets';
 import { 
     CAMERA_MOVEMENTS, 
     TRANSITIONS, 
-    ASSET_TYPE_OPTIONS,
+    ASSET_DEFINITIONS,
     ENTRY_ANIMATION_OPTIONS,
     EXIT_ANIMATION_OPTIONS
 } from '../../../remotion/types/project';
@@ -919,7 +919,7 @@ export class VideoProjectService extends EventEmitter {
         // Prompt padrão (original) - Agora construído dinamicamente a partir da SSoT (project.ts)
 
         // Gerar lista de Assets com AI Description
-        const assetInstructions = Object.entries(ASSET_TYPE_OPTIONS)
+        const assetInstructions = Object.entries(ASSET_DEFINITIONS)
             .map(([key, config]) => `   - "${key}": ${config.aiDescription}`)
             .join('\n');
 

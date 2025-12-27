@@ -53,151 +53,22 @@ export type { Transition };
 // ASSET TYPES (Gerador de mídia)
 // ========================================
 
-/**
- * Opções de Asset Types com labels, descrições, ícones e cores
- * Fonte única de verdade para todo o sistema
- */
-export const ASSET_TYPE_OPTIONS = {
-  image_flux: {
-    label: 'Imagem (Flux)',
-    description: 'Imagem estática gerada por IA Flux',
-    icon: '🖼️',
-    badgeColor: 'bg-blue-500/20 text-blue-300',
-    aiDescription: 'Imagem estática gerada por IA (ideal para cenas conceituais, abstratas ou quando precisar de controle visual total)',
-  },
-  image_dalle: {
-    label: 'Imagem (DALL-E)',
-    description: 'Imagem gerada pelo DALL-E da OpenAI',
-    icon: '🎨',
-    badgeColor: 'bg-emerald-500/20 text-emerald-300',
-    aiDescription: 'Imagem gerada pelo DALL-E (estilo OpenAI, bom para ilustrações e conceitos)',
-  },
-  image_midjourney: {
-    label: 'Imagem (Midjourney)',
-    description: 'Imagem gerada pelo Midjourney',
-    icon: '✨',
-    badgeColor: 'bg-violet-500/20 text-violet-300',
-    aiDescription: 'Imagem gerada pelo Midjourney (alta qualidade artística)',
-  },
-  image_pexels: {
-    label: 'Imagem (Pexels)',
-    description: 'Foto gratuita de alta qualidade do Pexels',
-    icon: '📸',
-    badgeColor: 'bg-teal-500/20 text-teal-300',
-    aiDescription: 'Foto de stock gratuita do Pexels (ideal para cenas realistas, natureza, pessoas, locais, objetos). Busca automática por prompt.',
-  },
-  image_static: {
-    label: 'Imagem Estática',
-    description: 'Imagem já existente (upload ou URL)',
-    icon: '📷',
-    badgeColor: 'bg-slate-500/20 text-slate-300',
-    aiDescription: 'Imagem estática já existente',
-  },
-  video_stock: {
-    label: 'Vídeo (Stock)',
-    description: 'Vídeo de stock do banco de dados local',
-    icon: '📹',
-    badgeColor: 'bg-green-500/20 text-green-300',
-    aiDescription: 'Vídeo de stock do banco de dados local (buscado semanticamente pelo prompt). Use para cenas que precisam de movimento real, pessoas, natureza, ações.',
-  },
-  video_pexels: {
-    label: 'Vídeo (Pexels)',
-    description: 'Vídeo gratuito de alta qualidade do Pexels',
-    icon: '🎬',
-    badgeColor: 'bg-teal-500/20 text-teal-300',
-    aiDescription: 'Vídeo de stock gratuito do Pexels (ideal para cenas com movimento real, natureza, pessoas, cidades, ações cotidianas). Busca automática por prompt.',
-  },
-  video_kling: {
-    label: 'Vídeo (Kling)',
-    description: 'Vídeo gerado pela IA Kling',
-    icon: '🎬',
-    badgeColor: 'bg-purple-500/20 text-purple-300',
-    aiDescription: 'Vídeo gerado por IA Kling (para ações humanas complexas ou cenas impossíveis de encontrar em stock)',
-  },
-  video_runway: {
-    label: 'Vídeo (Runway)',
-    description: 'Vídeo gerado pelo Runway Gen-2',
-    icon: '🎥',
-    badgeColor: 'bg-rose-500/20 text-rose-300',
-    aiDescription: 'Vídeo gerado pelo Runway (alta qualidade, movimentos complexos)',
-  },
-  video_pika: {
-    label: 'Vídeo (Pika)',
-    description: 'Vídeo gerado pelo Pika Labs',
-    icon: '🎞️',
-    badgeColor: 'bg-pink-500/20 text-pink-300',
-    aiDescription: 'Vídeo gerado pelo Pika Labs (estilo estilizado)',
-  },
-  video_static: {
-    label: 'Vídeo Estático',
-    description: 'Vídeo já existente (upload ou URL)',
-    icon: '📼',
-    badgeColor: 'bg-slate-500/20 text-slate-300',
-    aiDescription: 'Vídeo estático já existente',
-  },
-  video_chromakey: {
-    label: 'Vídeo Chroma Key',
-    description: 'Vídeo com fundo verde/azul para composição',
-    icon: '🟢',
-    badgeColor: 'bg-lime-500/20 text-lime-300',
-    aiDescription: 'Vídeo com fundo verde/azul para composição (avatar, apresentador virtual)',
-  },
-  avatar: {
-    label: 'Avatar',
-    description: 'Avatar animado (Live2D, etc)',
-    icon: '👤',
-    badgeColor: 'bg-teal-500/20 text-teal-300',
-    aiDescription: 'Avatar animado para apresentação',
-  },
-  text_only: {
-    label: 'Apenas Texto',
-    description: 'Tela com apenas texto/tipografia',
-    icon: '📝',
-    badgeColor: 'bg-gray-500/20 text-gray-300',
-    aiDescription: 'Apenas texto/tipografia na tela',
-  },
-  solid_color: {
-    label: 'Cor Sólida',
-    description: 'Fundo de cor sólida',
-    icon: '🎨',
-    badgeColor: 'bg-gray-500/20 text-gray-300',
-    aiDescription: 'Fundo de cor sólida (use para transições, ênfase em texto, ou quando o foco for totalmente no áudio)',
-  },
-  geometric_patterns: {
-    label: 'Padrões Geométricos',
-    description: 'Background abstrato com padrões geométricos animados',
-    icon: '🔷',
-    badgeColor: 'bg-cyan-500/20 text-cyan-300',
-    aiDescription: 'Background abstrato com padrões geométricos animados (ideal para temas tecnológicos, futuristas, infográficos)',
-  },
-  wavy_grid: {
-    label: 'Wavy Grid',
-    description: 'Grade ondulada 3D estilo Daniel Penin',
-    icon: '🌊',
-    badgeColor: 'bg-indigo-500/20 text-indigo-300',
-    aiDescription: 'Background futurista com grade 3D ondulada estilo Daniel Penin (ideal para tech, inovação, conteúdo digital)',
-  },
-  timeline_3d: {
-    label: 'Timeline 3D',
-    description: 'Linha do tempo 3D para história',
-    icon: '📊',
-    badgeColor: 'bg-amber-500/20 text-amber-300',
-    aiDescription: 'Linha do tempo 3D histórica (ideal para documentários, história, cronologias)',
-  },
-} as const;
+// Importar e re-exportar definições da SSoT em assets
+import { 
+  ASSET_DEFINITIONS, 
+  AssetTypeSchema, 
+  ASSET_TYPE_LIST 
+} from '../assets/definitions';
 
-export type AssetType = keyof typeof ASSET_TYPE_OPTIONS;
+import type { AssetType } from '../assets/definitions';
 
-export const AssetTypeSchema = z.enum(
-  Object.keys(ASSET_TYPE_OPTIONS) as [AssetType, ...AssetType[]]
-);
+export { 
+  ASSET_DEFINITIONS, 
+  AssetTypeSchema, 
+  ASSET_TYPE_LIST 
+};
 
-export const ASSET_TYPE_LIST = Object.entries(ASSET_TYPE_OPTIONS).map(([value, opt]) => ({
-  value: value as AssetType,
-  label: opt.label,
-  description: opt.description,
-  icon: opt.icon,
-}));
+export type { AssetType };
 
 // ========================================
 // TIMELINE CONFIG

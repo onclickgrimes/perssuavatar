@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { 
-    ASSET_TYPE_OPTIONS,
+    ASSET_DEFINITIONS,
     CAMERA_MOVEMENT_LIST,
     TRANSITION_LIST,
     EMOTION_LIST,
@@ -41,12 +41,12 @@ export interface ChannelNiche {
 }
 
 // Gerar lista de asset types a partir de TODAS as opções disponíveis
-const ASSET_TYPES = (Object.keys(ASSET_TYPE_OPTIONS) as AssetType[]).map((value) => ({
+const ASSET_TYPES = (Object.keys(ASSET_DEFINITIONS) as AssetType[]).map((value) => ({
     value,
-    label: ASSET_TYPE_OPTIONS[value].label,
-    icon: ASSET_TYPE_OPTIONS[value].icon,
-    description: ASSET_TYPE_OPTIONS[value].description,
-    badgeColor: ASSET_TYPE_OPTIONS[value].badgeColor,
+    label: ASSET_DEFINITIONS[value].label,
+    icon: ASSET_DEFINITIONS[value].icon,
+    description: ASSET_DEFINITIONS[value].description,
+    badgeColor: ASSET_DEFINITIONS[value].badgeColor,
 }));
 
 // Usar EMOTION_LIST diretamente

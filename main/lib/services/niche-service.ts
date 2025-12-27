@@ -6,7 +6,7 @@
 import { Knex } from 'knex';
 import db from '../../../db';
 import { 
-    ASSET_TYPE_OPTIONS, 
+    ASSET_DEFINITIONS, 
     type AssetType,
     CAMERA_MOVEMENTS,
     TRANSITIONS
@@ -134,7 +134,7 @@ export class NicheService {
         if (niche.asset_types && niche.asset_types.length > 0) {
             prompt += `\n\nTIPOS DE ASSETS PERMITIDOS (você DEVE escolher UM destes para cada cena):`;
             for (const assetType of niche.asset_types) {
-                const assetInfo = ASSET_TYPE_OPTIONS[assetType as AssetType];
+                const assetInfo = ASSET_DEFINITIONS[assetType as AssetType];
                 const desc = assetInfo?.aiDescription || assetType;
                 prompt += `\n- **${assetType}**: ${desc}`;
             }
