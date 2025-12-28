@@ -210,10 +210,10 @@ export default function VideoStudioPage() {
       }
 
       const result = await window.electron.videoProject.analyze(
-        project.segments,
+        project,
         {
           provider: selectedProvider,
-          nichePrompt, // Pass the niche prompt if available
+          nichePrompt,
         }
       );
 

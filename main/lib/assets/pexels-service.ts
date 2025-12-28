@@ -186,7 +186,7 @@ export class PexelsService implements MediaSearchService {
       query.set('locale', params.locale);
     } else {
       // Default para português brasileiro
-      query.set('locale', 'pt-BR');
+      query.set('locale', 'en-US');
     }
     
     if (params.page) {

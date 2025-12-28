@@ -362,9 +362,9 @@ const handler = {
     transcribe: (audioPath: string) => 
       ipcRenderer.invoke('video-project:transcribe', audioPath),
     
-    // Analisar segmentos com IA
-    analyze: (segments: any[], options?: { provider?: 'gemini' | 'openai' | 'deepseek', nichePrompt?: string }) => 
-      ipcRenderer.invoke('video-project:analyze', segments, options),
+    // Analisar segmentos com IA (aceita projeto completo ou array de segments)
+    analyze: (projectOrSegments: any, options?: { provider?: 'gemini' | 'openai' | 'deepseek', nichePrompt?: string }) => 
+      ipcRenderer.invoke('video-project:analyze', projectOrSegments, options),
     
     // Converter projeto para formato Remotion
     convertToRemotion: (project: any) => 

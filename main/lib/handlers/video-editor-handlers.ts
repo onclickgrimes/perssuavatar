@@ -121,7 +121,7 @@ export function registerVideoEditorHandlers(): void {
   // Handler para analisar segmentos com IA
   ipcMain.handle('video-project:analyze', async (
     event, 
-    segments: VideoProjectSegment[], 
+    projectOrSegments: VideoProjectData | VideoProjectSegment[], 
     options?: { 
       provider?: 'gemini' | 'openai' | 'deepseek';
       nichePrompt?: string;
@@ -129,11 +129,15 @@ export function registerVideoEditorHandlers(): void {
   ) => {
     try {
       if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
-      console.log('🤖 [VideoProject] Analyzing segments with AI...');
-      const result = await videoProjectService.analyzeWithAI(segments, options);
+      const segmentCount = Array.isArray(projectOrSegments) 
+        ? projectOrSegments.length 
+        : projectOrSegments.segments.length;
+      console.log(`🤖 [VideoProject] Analyzing ${segmentCount} segments with AI...`);
+      const result = await videoProjectService.analyzeWithAI(projectOrSegments, options);
       return result;
     } catch (error: any) {
       console.error('❌ [VideoProject] Analysis error:', error);
+      const segments = Array.isArray(projectOrSegments) ? projectOrSegments : projectOrSegments.segments;
       return { success: false, error: error.message, segments };
     }
   });

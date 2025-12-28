@@ -19,9 +19,9 @@ import { OpenAIService } from './openai-service';
 import { DeepSeekService } from './deepseek-service';
 import { getVideoSearchService } from './video-search-service';
 import { getPexelsService } from '../assets';
-import { 
-    CAMERA_MOVEMENTS, 
-    TRANSITIONS, 
+import {
+    CAMERA_MOVEMENTS,
+    TRANSITIONS,
     ASSET_DEFINITIONS,
     ENTRY_ANIMATION_OPTIONS,
     EXIT_ANIMATION_OPTIONS
@@ -294,7 +294,7 @@ export class VideoProjectService extends EventEmitter {
                         try {
                             const { getSupabaseService } = require('./supabase-service');
                             const supabase = getSupabaseService();
-                            
+
                             // ✨ OTIMIZAÇÃO: Buscar apenas este vídeo específico (não listar todos)
                             const { data, error } = await supabase.client
                                 .from('stock_videos')
@@ -302,13 +302,13 @@ export class VideoProjectService extends EventEmitter {
                                 .eq('filename', decodedFilename)
                                 .limit(1)
                                 .single();
-                            
+
                             if (error && error.code !== 'PGRST116') {
                                 // PGRST116 = not found, outros erros devem logar
                                 console.warn(`⚠️ Erro ao consultar Supabase:`, error.code);
                                 throw error;
                             }
-                            
+
                             const video = data;
 
                             // Verificar cache (file_path)
@@ -328,7 +328,7 @@ export class VideoProjectService extends EventEmitter {
                                     if (fs.existsSync(testPath)) {
                                         foundPath = testPath;
                                         if (cat !== category) console.log(`📂 Categoria: ${cat} (≠ ${category})`);
-                                        
+
                                         // Atualizar cache no Supabase
                                         if (video?.id) {
                                             supabase.updateVideo(video.id, { file_path: testPath } as any)
@@ -345,7 +345,7 @@ export class VideoProjectService extends EventEmitter {
                                     if (caseInsensitivePath) {
                                         foundPath = caseInsensitivePath;
                                         console.log(`🔤 Case-insensitive: ${path.basename(caseInsensitivePath)} (${cat})`);
-                                        
+
                                         // Atualizar cache no Supabase
                                         if (video?.id) {
                                             supabase.updateVideo(video.id, { file_path: caseInsensitivePath } as any)
@@ -358,16 +358,16 @@ export class VideoProjectService extends EventEmitter {
                             }
                         } catch (err) {
                             console.warn(`⚠️ Erro Supabase, fallback direto:`, err);
-                            
+
                             // Fallback: busca direta sem Supabase
                             for (const cat of uniqueCategories) {
                                 const testPath = path.join('L:\\Video-Maker', cat, decodedFilename);
-                                
+
                                 if (fs.existsSync(testPath)) {
                                     foundPath = testPath;
                                     break;
                                 }
-                                
+
                                 // Case-insensitive fallback
                                 const dirPath = path.join('L:\\Video-Maker', cat);
                                 const caseInsensitivePath = this.findFileCaseInsensitive(dirPath, decodedFilename);
@@ -523,12 +523,12 @@ export class VideoProjectService extends EventEmitter {
         // Normalizar barras para comparação
         const normalizedPath = filePath.replace(/\\/g, '/');
         if (normalizedPath.includes('Video-Maker/')) {
-             // Extrair parte após Video-Maker/
-             // L:/Video-Maker/Category/File.mp4 -> /videos/Category/File.mp4
-             const parts = normalizedPath.split('Video-Maker/');
-             if (parts.length > 1) {
-                 return `http://localhost:${this.imageServerPort}/videos/${encodeURIComponent(parts[1])}`;
-             }
+            // Extrair parte após Video-Maker/
+            // L:/Video-Maker/Category/File.mp4 -> /videos/Category/File.mp4
+            const parts = normalizedPath.split('Video-Maker/');
+            if (parts.length > 1) {
+                return `http://localhost:${this.imageServerPort}/videos/${encodeURIComponent(parts[1])}`;
+            }
         }
 
         // Se é um caminho de arquivo, converter para URL do servidor local
@@ -614,14 +614,20 @@ export class VideoProjectService extends EventEmitter {
 
     /**
      * Analisa segmentos com IA para sugerir emoções e prompts de imagem
+     * @param project Projeto completo (ou apenas segments para compatibilidade)
+     * @param options Opções de análise
      */
     public async analyzeWithAI(
-        segments: VideoProjectSegment[],
+        projectOrSegments: VideoProjectData | VideoProjectSegment[],
         options?: {
             provider?: AIProvider;
-            nichePrompt?: string; // Prompt personalizado do nicho do canal
+            nichePrompt?: string;
         }
     ): Promise<AnalysisResult> {
+        // Suportar tanto projeto completo quanto array de segments (compatibilidade)
+        const isFullProject = !Array.isArray(projectOrSegments);
+        const segments = isFullProject ? projectOrSegments.segments : projectOrSegments;
+        const selectedAspectRatios = isFullProject ? projectOrSegments.selectedAspectRatios : undefined;
         console.log('🔍 [VideoProjectService] analyzeWithAI called with', segments.length, 'segments');
         console.log('🔍 [VideoProjectService] options:', options);
 
@@ -712,9 +718,6 @@ export class VideoProjectService extends EventEmitter {
                 throw new Error('AI response is not an array even after unwrap attempt');
             }
 
-            // Inicializar searchService para buscar vídeos quando a IA escolher video_stock
-            const searchService = getVideoSearchService();
-
             // Mesclar resultados com segmentos originais
             const updatedSegments = await Promise.all(segments.map(async seg => {
                 const analysis = segmentsArray.find((a: any) => a.id === seg.id);
@@ -739,16 +742,18 @@ export class VideoProjectService extends EventEmitter {
                     }
 
                     // Se a IA escolheu video_stock, buscar vídeo automaticamente
-                    if (merged.assetType === 'video_stock' && merged.imagePrompt && searchService) {
+                    if (merged.assetType === 'video_stock' && merged.imagePrompt) {
+                        // Inicializar searchService para buscar vídeos quando a IA escolher video_stock
+                        const searchService = getVideoSearchService();
                         try {
                             console.log(`🔍 [AutoSearch] Buscando vídeo stock para segmento ${seg.id}...`);
                             // Buscar semanticamente usando o prompt da IA
                             const results = await searchService.semanticSearch(merged.imagePrompt, 1, 0.4); // 0.4 de threshold
-                            
+
                             if (results.length > 0) {
                                 const video = results[0];
                                 console.log(`✅ [AutoSearch] Encontrado: ${video.name} (${video.similarity.toFixed(2)})`);
-                                
+
                                 // Se tiver file_path válido
                                 if (video.file_path && fs.existsSync(video.file_path)) {
                                     merged.imageUrl = video.file_path; // URL absoluta, convertToHttpUrl lida com isso depois
@@ -766,23 +771,35 @@ export class VideoProjectService extends EventEmitter {
                         try {
                             const pexelsService = getPexelsService();
                             const isVideo = merged.assetType === 'video_pexels';
-                            
+
+                            // Determinar orientação baseada em selectedAspectRatios
+                            let pexelsOrientation: 'landscape' | 'portrait' | 'square' = 'landscape';
+                            if (selectedAspectRatios && selectedAspectRatios.length > 0) {
+                                const ratio = selectedAspectRatios[0];
+                                if (ratio === '9:16' || ratio === '3:4' || ratio === '4:5') {
+                                    pexelsOrientation = 'portrait';
+                                } else if (ratio === '1:1') {
+                                    pexelsOrientation = 'square';
+                                }
+                                // 16:9, 4:3 = landscape (default)
+                            }
+
                             console.log(`🔍 [Pexels] Buscando ${isVideo ? 'vídeo' : 'foto'} para segmento ${seg.id}...`);
-                            console.log(`🔍 [Pexels] Prompt: "${merged.imagePrompt}"`);
-                            
+                            console.log(`🔍 [Pexels] Prompt: "${merged.imagePrompt}" | Orientação: ${pexelsOrientation}`);
+
                             // Calcular duração da cena para filtrar vídeos adequados
                             const sceneDuration = seg.end - seg.start;
-                            
+
                             // Buscar mídia no Pexels - usar métodos específicos para garantir o tipo correto
                             let results;
                             if (isVideo) {
                                 // Buscar APENAS vídeos para evitar misturar tipos
                                 const videoResponse = await pexelsService.searchVideos({
                                     query: merged.imagePrompt,
-                                    orientation: 'landscape',
+                                    orientation: pexelsOrientation,
                                     perPage: 5,
                                 });
-                                
+
                                 // Filtrar por duração adequada
                                 results = videoResponse.results.filter(v => {
                                     if (!v.duration) return true;
@@ -790,7 +807,7 @@ export class VideoProjectService extends EventEmitter {
                                     const maxDur = Math.ceil(sceneDuration * 3);
                                     return v.duration >= minDur && v.duration <= maxDur;
                                 }).slice(0, 1);
-                                
+
                                 // Se não encontrar vídeos, usar qualquer um
                                 if (results.length === 0 && videoResponse.results.length > 0) {
                                     results = [videoResponse.results[0]];
@@ -799,19 +816,19 @@ export class VideoProjectService extends EventEmitter {
                                 // Buscar APENAS fotos
                                 const photoResponse = await pexelsService.searchPhotos({
                                     query: merged.imagePrompt,
-                                    orientation: 'landscape',
+                                    orientation: pexelsOrientation,
                                     perPage: 1,
                                 });
                                 results = photoResponse.results;
                             }
-                            
+
                             if (results.length > 0) {
                                 const media = results[0];
                                 console.log(`✅ [Pexels] Encontrado: ${media.type} ID ${media.id} (${media.author.name})`);
-                                
+
                                 // Usar URL direta do Pexels (já é HTTPS, funciona direto)
                                 merged.imageUrl = media.directUrl;
-                                
+
                                 // IMPORTANTE: Ajustar o assetType baseado no tipo REAL retornado
                                 // Isso evita o erro de tentar renderizar imagem como vídeo
                                 if (media.type === 'photo') {
@@ -819,7 +836,7 @@ export class VideoProjectService extends EventEmitter {
                                 } else if (media.type === 'video') {
                                     merged.assetType = 'video_pexels';
                                 }
-                                
+
                                 // Log de atribuição (importante para compliance com Pexels)
                                 console.log(`📸 [Pexels] Atribuição: ${pexelsService.getAttribution(media)}`);
                             } else {
@@ -919,7 +936,7 @@ export class VideoProjectService extends EventEmitter {
         ).join('\n\n');
 
         // Se tiver um prompt de nicho, usa ele como base (já inclui JSON de exemplo dinâmico)
-        if (options?.nichePrompt) { return `${options.nichePrompt} \n\nSEGMENTOS PARA ANÁLISE:\n\n${segmentsList}`;}
+        if (options?.nichePrompt) { return `${options.nichePrompt} \n\nSEGMENTOS PARA ANÁLISE:\n\n${segmentsList}`; }
 
         // Prompt padrão (original) - Agora construído dinamicamente a partir da SSoT (project.ts)
 
@@ -1066,12 +1083,12 @@ Responda APENAS com um array JSON válido no formato:
                 background: {
                     type: seg.background.type,
                     // Se for solid_color, usa color OU url como cor. Se não, usa color original.
-                    color: seg.background.type === 'solid_color' 
-                        ? (seg.background.color || seg.background.url) 
+                    color: seg.background.type === 'solid_color'
+                        ? (seg.background.color || seg.background.url)
                         : seg.background.color,
                     // Se for solid_color, URL deve ser undefined. Se não, converte URL.
-                    url: seg.background.type !== 'solid_color' 
-                        ? this.convertToHttpUrl(seg.background.url) 
+                    url: seg.background.type !== 'solid_color'
+                        ? this.convertToHttpUrl(seg.background.url)
                         : undefined,
                 }
             }),
