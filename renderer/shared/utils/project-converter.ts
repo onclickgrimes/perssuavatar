@@ -218,6 +218,7 @@ export function toRemotionFormat(
     fps?: number;
     componentsAllowed?: string[];
     audioUrl?: string;
+    defaultFont?: string;
   }
 ): any {
   return {
@@ -230,6 +231,7 @@ export function toRemotionFormat(
       backgroundColor: '#0a0a0a',
       subtitleMode: options.subtitleMode,
       componentsAllowed: options.componentsAllowed || project.componentsAllowed,
+      defaultFont: options.defaultFont,
       ...(options.audioUrl && {
         backgroundMusic: { src: options.audioUrl, volume: 1.0 },
       }),

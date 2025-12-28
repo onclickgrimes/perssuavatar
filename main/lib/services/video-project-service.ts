@@ -102,6 +102,7 @@ export interface VideoProjectData {
     subtitleMode?: 'paragraph' | 'word-by-word';
     selectedAspectRatios?: string[];
     componentsAllowed?: string[]; // Componentes Remotion permitidos (ex: ['HighlightWord', 'AnimatedSvgOverlay'])
+    defaultFont?: string; // Fonte padrão do nicho (Google Fonts)
     config?: {
         width?: number;
         height?: number;
@@ -126,6 +127,7 @@ export interface RemotionProject {
         backgroundColor: string;
         subtitleMode?: 'paragraph' | 'word-by-word';
         componentsAllowed?: string[]; // Componentes Remotion permitidos
+        defaultFont?: string; // Fonte padrão do nicho (Google Fonts)
         backgroundMusic?: {
             src: string;
             volume?: number;
@@ -1110,6 +1112,7 @@ Responda APENAS com um array JSON válido no formato:
                 backgroundColor: project.config?.backgroundColor || '#0a0a0a',
                 subtitleMode: project.subtitleMode, // ✅ Modo de legenda
                 componentsAllowed: project.componentsAllowed, // ✅ Componentes permitidos pelo nicho
+                defaultFont: project.defaultFont, // ✅ Fonte padrão do nicho
                 assetsBaseUrl: `http://localhost:${this.imageServerPort}`, // ✅ URL base dinâmica
                 // Incluir áudio da narração/transcrição
                 ...(project.audioPath && {

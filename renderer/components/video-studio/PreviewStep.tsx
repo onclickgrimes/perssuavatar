@@ -48,6 +48,7 @@ export function PreviewStep({
       fps: 30,
       componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed,
       audioUrl: audioPathToUrl(project.audioPath),
+      defaultFont: selectedNiche?.default_font,
     });
   }, [project, subtitleMode, selectedRatio, selectedNiche]);
   

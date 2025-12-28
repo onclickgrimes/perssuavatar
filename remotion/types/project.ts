@@ -442,6 +442,9 @@ export const ProjectConfigSchema = z.object({
 
   /** Componentes Remotion permitidos (ex: ['HighlightWord', 'AnimatedSvgOverlay']) */
   componentsAllowed: z.array(z.string()).optional(),
+
+  /** Fonte padrão do projeto (Google Fonts) */
+  defaultFont: z.string().optional(),
 });
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

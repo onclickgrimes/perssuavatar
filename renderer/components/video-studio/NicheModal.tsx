@@ -57,6 +57,48 @@ const ENTRY_ANIMATIONS = ENTRY_ANIMATION_LIST;
 const EXIT_ANIMATIONS = EXIT_ANIMATION_LIST;
 const REMOTION_COMPONENTS = REMOTION_COMPONENT_LIST;
 
+// Lista de fontes populares para vídeos
+const FONT_OPTIONS = [
+    // Sans-Serif - Modernas e limpas
+    { value: 'Inter', label: 'Inter', category: 'Sans-Serif', description: 'Fonte moderna e versátil' },
+    { value: 'Roboto', label: 'Roboto', category: 'Sans-Serif', description: 'Fonte Google popular e legível' },
+    { value: 'Poppins', label: 'Poppins', category: 'Sans-Serif', description: 'Geométrica e amigável' },
+    { value: 'Montserrat', label: 'Montserrat', category: 'Sans-Serif', description: 'Elegante e profissional' },
+    { value: 'Open Sans', label: 'Open Sans', category: 'Sans-Serif', description: 'Humanista e clara' },
+    { value: 'Lato', label: 'Lato', category: 'Sans-Serif', description: 'Semi-arredondada e equilibrada' },
+    { value: 'Nunito', label: 'Nunito', category: 'Sans-Serif', description: 'Arredondada e amigável' },
+    { value: 'Outfit', label: 'Outfit', category: 'Sans-Serif', description: 'Moderna e geométrica' },
+    { value: 'DM Sans', label: 'DM Sans', category: 'Sans-Serif', description: 'Minimalista e clean' },
+    { value: 'Space Grotesk', label: 'Space Grotesk', category: 'Sans-Serif', description: 'Futurista e tecnológica' },
+    
+    // Serif - Clássicas e elegantes
+    { value: 'Playfair Display', label: 'Playfair Display', category: 'Serif', description: 'Clássica e sofisticada' },
+    { value: 'Merriweather', label: 'Merriweather', category: 'Serif', description: 'Legível e tradicional' },
+    { value: 'Lora', label: 'Lora', category: 'Serif', description: 'Contemporânea e equilibrada' },
+    { value: 'Crimson Text', label: 'Crimson Text', category: 'Serif', description: 'Elegante para textos longos' },
+    { value: 'Libre Baskerville', label: 'Libre Baskerville', category: 'Serif', description: 'Clássica otimizada para web' },
+    
+    // Display - Impactantes para títulos
+    { value: 'Bebas Neue', label: 'Bebas Neue', category: 'Display', description: 'Bold e impactante' },
+    { value: 'Oswald', label: 'Oswald', category: 'Display', description: 'Condensada e moderna' },
+    { value: 'Raleway', label: 'Raleway', category: 'Display', description: 'Elegante e fina' },
+    { value: 'Anton', label: 'Anton', category: 'Display', description: 'Poderosa para títulos' },
+    { value: 'Righteous', label: 'Righteous', category: 'Display', description: 'Retro e divertida' },
+    { value: 'Bangers', label: 'Bangers', category: 'Display', description: 'Estilo quadrinhos' },
+    { value: 'Permanent Marker', label: 'Permanent Marker', category: 'Display', description: 'Estilo marcador' },
+    
+    // Handwriting - Manuscritas
+    { value: 'Dancing Script', label: 'Dancing Script', category: 'Handwriting', description: 'Cursiva elegante' },
+    { value: 'Pacifico', label: 'Pacifico', category: 'Handwriting', description: 'Surfista e descontraída' },
+    { value: 'Caveat', label: 'Caveat', category: 'Handwriting', description: 'Natural e espontânea' },
+    { value: 'Great Vibes', label: 'Great Vibes', category: 'Handwriting', description: 'Caligráfica luxuosa' },
+    
+    // Monospace - Código/Tech
+    { value: 'Fira Code', label: 'Fira Code', category: 'Monospace', description: 'Código com ligaduras' },
+    { value: 'JetBrains Mono', label: 'JetBrains Mono', category: 'Monospace', description: 'Ideal para programação' },
+    { value: 'Source Code Pro', label: 'Source Code Pro', category: 'Monospace', description: 'Limpa e legível' },
+];
+
 interface NicheModalProps {
     isOpen: boolean;
     onClose: () => void;
@@ -562,7 +604,99 @@ export function NicheModal({ isOpen, onClose, onSelect, selectedNiche }: NicheMo
                                 </div>
                             )}
 
-                            {/* Botões de Ação */}
+                            {/* Fonte Padrão */}
+                            <div>
+                                <label className="block text-white/80 text-sm font-medium mb-2">
+                                    Fonte Padrão <span className="text-white/40">(Google Fonts)</span>
+                                </label>
+                                <div className="space-y-3">
+                                    {/* Dropdown de seleção */}
+                                    <select
+                                        value={formData.default_font || ''}
+                                        onChange={(e) => setFormData({ ...formData, default_font: e.target.value })}
+                                        className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white focus:border-pink-500 focus:outline-none appearance-none cursor-pointer"
+                                        style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='white'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 0.75rem center', backgroundSize: '1.5em 1.5em' }}
+                                    >
+                                        <option value="">Selecione uma fonte...</option>
+                                        {/* Sans-Serif */}
+                                        <optgroup label="Sans-Serif - Modernas e Limpas">
+                                            {FONT_OPTIONS.filter(f => f.category === 'Sans-Serif').map(font => (
+                                                <option key={font.value} value={font.value}>
+                                                    {font.label}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                        {/* Serif */}
+                                        <optgroup label="Serif - Clássicas e Elegantes">
+                                            {FONT_OPTIONS.filter(f => f.category === 'Serif').map(font => (
+                                                <option key={font.value} value={font.value}>
+                                                    {font.label}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                        {/* Display */}
+                                        <optgroup label="Display - Para Títulos">
+                                            {FONT_OPTIONS.filter(f => f.category === 'Display').map(font => (
+                                                <option key={font.value} value={font.value}>
+                                                    {font.label}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                        {/* Handwriting */}
+                                        <optgroup label="Handwriting - Manuscritas">
+                                            {FONT_OPTIONS.filter(f => f.category === 'Handwriting').map(font => (
+                                                <option key={font.value} value={font.value}>
+                                                    {font.label}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                        {/* Monospace */}
+                                        <optgroup label="Monospace - Código/Tech">
+                                            {FONT_OPTIONS.filter(f => f.category === 'Monospace').map(font => (
+                                                <option key={font.value} value={font.value}>
+                                                    {font.label}
+                                                </option>
+                                            ))}
+                                        </optgroup>
+                                    </select>
+                                    
+                                    {/* Preview da fonte selecionada */}
+                                    {formData.default_font && (
+                                        <div className="p-4 bg-black/20 border border-white/10 rounded-lg">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-white/60 text-xs uppercase tracking-wider">Preview</span>
+                                                <button
+                                                    onClick={() => setFormData({ ...formData, default_font: '' })}
+                                                    className="text-red-400 text-xs hover:text-red-300 transition-colors"
+                                                >
+                                                    Limpar
+                                                </button>
+                                            </div>
+                                            <link 
+                                                href={`https://fonts.googleapis.com/css2?family=${formData.default_font.replace(/ /g, '+')}&display=swap`} 
+                                                rel="stylesheet" 
+                                            />
+                                            <p 
+                                                style={{ fontFamily: `"${formData.default_font}", sans-serif` }}
+                                                className="text-2xl text-white"
+                                            >
+                                                {formData.default_font}
+                                            </p>
+                                            <p 
+                                                style={{ fontFamily: `"${formData.default_font}", sans-serif` }}
+                                                className="text-sm text-white/60 mt-1"
+                                            >
+                                                ABCDEFGHIJKLM abcdefghijklm 0123456789
+                                            </p>
+                                            <p className="text-xs text-white/40 mt-2">
+                                                {FONT_OPTIONS.find(f => f.value === formData.default_font)?.description}
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+
                             <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
                                 <button
                                     onClick={() => { setActiveTab('select'); setEditingNiche(null); setIsCreating(false); }}

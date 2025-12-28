@@ -7,6 +7,7 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, useCurrentFrame, useVideoConfig } from 'remotion';
 import type { HighlightWord } from '../types/project';
+import { useProjectConfig } from '../contexts/ProjectConfigContext';
 
 interface HighlightWordComponentProps {
   highlight: HighlightWord;
@@ -21,6 +22,12 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
 }) => {
   const frame = useCurrentFrame();
   const { fps, height, width } = useVideoConfig();
+  const projectConfig = useProjectConfig();
+  
+  // Fonte do projeto (do nicho) ou fallback para Pricedown
+  const fontFamily = projectConfig.defaultFont 
+    ? `"${projectConfig.defaultFont}", sans-serif` 
+    : 'Pricedown, sans-serif';
   
   // Calcular frames relativos à cena
   const relativeFrame = frame - sceneStartFrame;
@@ -395,6 +402,7 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
             fontSize={fontSize}
             fontWeight={weight === 'black' ? 900 : weight === 'bold' ? 700 : 400}
             color={textColor}
+            fontFamily={fontFamily}
             fillProgress={(() => {
               const isEntry = highlight.entryAnimation === 'wave' && frameInHighlight < entryDuration;
               const isExit = highlight.exitAnimation === 'wave' && frameInHighlight > exitStart;
@@ -421,7 +429,7 @@ export const HighlightWordComponent: React.FC<HighlightWordComponentProps> = ({
           borderRadius: highlight.highlightColor ? `${15 * fontSizeScale}px` : undefined,
           whiteSpace: 'normal',
           wordBreak: 'normal',
-          fontFamily: 'Pricedown',
+          fontFamily,
           letterSpacing: '0.05em',
           textAlign: 'center',
         }}
@@ -502,6 +510,7 @@ interface WaveTextProps {
   fontSize: number;
   fontWeight: number;
   color: string;
+  fontFamily: string;
   fillProgress: number; // 0 = vazio, 1 = cheio
   frame: number;
 }
@@ -511,6 +520,7 @@ const WaveText: React.FC<WaveTextProps> = ({
   fontSize, 
   fontWeight, 
   color, 
+  fontFamily,
   fillProgress,
   frame 
 }) => {
@@ -547,7 +557,7 @@ const WaveText: React.FC<WaveTextProps> = ({
           WebkitTextStroke: `${3 * fontSizeScale}px ${color}`,
           whiteSpace: 'normal',
           wordBreak: 'normal',
-          fontFamily: 'Pricedown',
+          fontFamily,
           letterSpacing: '0.05em',
           textAlign: 'center',
         }}
@@ -620,7 +630,7 @@ const WaveText: React.FC<WaveTextProps> = ({
           color,
           whiteSpace: 'normal',
           wordBreak: 'break-word',
-          fontFamily: 'Pricedown',
+          fontFamily,
           letterSpacing: '0.05em',
           textAlign: 'center',
           clipPath: `url(#${clipId})`,
@@ -643,7 +653,7 @@ const WaveText: React.FC<WaveTextProps> = ({
             color,
             whiteSpace: 'normal',
             wordBreak: 'normal',
-            fontFamily: 'Pricedown',
+            fontFamily,
             letterSpacing: '0.05em',
             textAlign: 'center',
             opacity: 0.4,

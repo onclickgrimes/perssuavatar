@@ -317,6 +317,7 @@ export default function VideoStudioPage() {
           segments: project.segments,
           subtitleMode: subtitleMode, // ✅ Modo de legenda para renderização
           componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed, // ✅ Componentes permitidos (nicho ou projeto salvo)
+          defaultFont: selectedNiche?.default_font, // ✅ Fonte padrão do nicho
           config: {
             width: dims.width,
             height: dims.height,
