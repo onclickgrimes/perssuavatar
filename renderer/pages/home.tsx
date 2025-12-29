@@ -71,6 +71,11 @@ export default function HomePage() {
     window.electron.openVideoStudioWindow?.();
   };
 
+  const handleOpenSocialMedia = () => {
+    console.log('📱 Abrindo Social Media');
+    window.electron.openSocialMediaWindow?.();
+  };
+
   // When UI is open (ActionBar or Settings), disable click-through to allow interaction
   useEffect(() => {
     const uiOpen = showActionBar || isSettingsOpen;
@@ -159,6 +164,7 @@ export default function HomePage() {
         onStartListening={handleStartListening}
         onAsk={handleAsk}
         onOpenVideoStudio={handleOpenVideoStudio}
+        onOpenSocialMedia={handleOpenSocialMedia}
       />
       <Settings 
         onSizeChange={handleSizeChange}

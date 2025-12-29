@@ -121,6 +121,11 @@ import {
   initializeVideoProjectService, 
   destroyVideoProjectService 
 } from './lib/handlers/video-editor-handlers';
+import { 
+  registerSocialMediaHandlers, 
+  initializeSocialMediaService, 
+  destroySocialMediaService 
+} from './lib/handlers/social-media-handlers';
 import { isProd, getUserDataPath } from './lib/app-config';
 import { promisify } from 'util';
 import { exec as execCallback } from 'child_process';
@@ -161,6 +166,7 @@ if (isProd) {
   registerNicheHandlers();
   registerKnowledgeHandlers();
   registerVideoEditorHandlers();
+  registerSocialMediaHandlers();
 
   // Permissão de Microfone
   app.on('web-contents-created', (event, contents) => {
@@ -1028,6 +1034,59 @@ ipcMain.handle('open-video-studio-window', async () => {
   return { success: true };
 });
 
+// ========================================
+// SOCIAL MEDIA WINDOW
+// ========================================
+
+let socialMediaWindow: BrowserWindow | null = null;
+
+async function openSocialMediaWindow() {
+  if (socialMediaWindow && !socialMediaWindow.isDestroyed()) {
+    socialMediaWindow.focus();
+    return;
+  }
+
+  // Inicializar serviço via módulo de handlers
+  initializeSocialMediaService(() => socialMediaWindow);
+
+  const primaryDisplay = screen.getPrimaryDisplay();
+  const { width: screenWidth, height: screenHeight } = primaryDisplay.workAreaSize;
+
+  socialMediaWindow = createWindow('social-media', {
+    width: Math.min(1400, screenWidth - 100),
+    height: Math.min(900, screenHeight - 100),
+    minWidth: 1000,
+    minHeight: 700,
+    frame: true,
+    transparent: false,
+    resizable: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true,
+    },
+  });
+
+  if (isProd) {
+    await socialMediaWindow.loadURL('app://./social-media');
+  } else {
+    const port = process.argv[2];
+    await socialMediaWindow.loadURL(`http://localhost:${port}/social-media`);
+  }
+
+  socialMediaWindow.on('closed', () => {
+    socialMediaWindow = null;
+    // Encerrar o serviço via módulo de handlers
+    destroySocialMediaService();
+  });
+
+  console.log('📱 Social Media window opened');
+}
+
+ipcMain.handle('open-social-media-window', async () => {
+  await openSocialMediaWindow();
+  return { success: true };
+});
 
 // Register global shortcut for transcription window
 app.whenReady().then(() => {

@@ -345,6 +345,9 @@ const handler = {
   // Abrir janela do Video Studio
   openVideoStudioWindow: () => ipcRenderer.invoke('open-video-studio-window'),
   
+  // Abrir janela do Social Media
+  openSocialMediaWindow: () => ipcRenderer.invoke('open-social-media-window'),
+  
   // ========================================
   // VIDEO PROJECT SERVICE
   // ========================================
