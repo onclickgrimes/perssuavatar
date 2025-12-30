@@ -173,7 +173,7 @@ export const Sidebar = ({
           <span style={{ fontSize: '11px', fontWeight: 600, color: '#52525b', paddingLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Gerenciamento</span>
         </div>
         <SidebarItem icon={Folder} label="Ativos / Mídia" isActive={currentView === 'assets'} onClick={() => setView('assets')} />
-        <SidebarItem icon={LinkIcon} label="Canais Conectados" isActive={currentView === 'channels'} onClick={() => setView('channels')} />
+        <SidebarItem icon={LinkIcon} label="Contas Conectadas" isActive={currentView === 'channels'} onClick={() => setView('channels')} />
         
         <div style={{ padding: '20px 12px 8px', marginBottom: '8px' }}>
           <span style={{ fontSize: '11px', fontWeight: 600, color: '#52525b', paddingLeft: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Configuração</span>

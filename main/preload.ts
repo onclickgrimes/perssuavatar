@@ -581,6 +581,52 @@ const handler = {
       ipcRenderer.on('ollama-pull-progress', subscription);
       return () => { ipcRenderer.removeListener('ollama-pull-progress', subscription); };
     },
+  },
+
+  // ========================================
+  // SOCIAL MEDIA SERVICE (Puppeteer)
+  // ========================================
+  
+  socialMedia: {
+    // Conectar a uma plataforma (abre Puppeteer)
+    connectPlatform: (workspaceId: string, platform: 'instagram' | 'tiktok' | 'youtube') =>
+      ipcRenderer.invoke('social-media:connect-platform', workspaceId, platform),
+    
+    // Cancelar conexão em andamento
+    cancelConnection: (workspaceId: string, platform: 'instagram' | 'tiktok' | 'youtube') =>
+      ipcRenderer.invoke('social-media:cancel-connection', workspaceId, platform),
+    
+    // Verificar se tem credenciais salvas
+    hasCredentials: (workspaceId: string, platform: 'instagram' | 'tiktok' | 'youtube') =>
+      ipcRenderer.invoke('social-media:has-credentials', workspaceId, platform),
+    
+    // Remover credenciais salvas
+    removeCredentials: (workspaceId: string, platform: 'instagram' | 'tiktok' | 'youtube') =>
+      ipcRenderer.invoke('social-media:remove-credentials', workspaceId, platform),
+    
+    // Obter status do serviço
+    getStatus: () => ipcRenderer.invoke('social-media:get-status'),
+    
+    // Listener: Status de conexão
+    onConnectionStatus: (callback: (data: { workspaceId: string; platform: string; status: string }) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('social-media:connection-status', subscription);
+      return () => { ipcRenderer.removeListener('social-media:connection-status', subscription); };
+    },
+    
+    // Listener: Conexão bem-sucedida
+    onConnectionSuccess: (callback: (data: { workspaceId: string; platform: string; username: string }) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('social-media:connection-success', subscription);
+      return () => { ipcRenderer.removeListener('social-media:connection-success', subscription); };
+    },
+    
+    // Listener: Erro de conexão
+    onConnectionError: (callback: (data: { workspaceId: string; platform: string; error: string }) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('social-media:connection-error', subscription);
+      return () => { ipcRenderer.removeListener('social-media:connection-error', subscription); };
+    },
   }
 }
 

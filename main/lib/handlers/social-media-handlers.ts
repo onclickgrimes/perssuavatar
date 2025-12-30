@@ -2,14 +2,15 @@
  * Social Media Handlers
  * 
  * Handlers IPC para a janela Social Media.
- * Gerencia comunicação entre o renderer e o serviço Social Media.
+ * Gerencia comunicação entre o renderer e o serviço Social Media (Puppeteer).
  */
 
 import { ipcMain, BrowserWindow } from 'electron';
 import { 
   SocialMediaService, 
   getSocialMediaService, 
-  destroySocialMediaServiceInstance 
+  destroySocialMediaServiceInstance,
+  SocialPlatform
 } from '../services/social-media-service';
 
 // ========================================
@@ -58,6 +59,17 @@ export function destroySocialMediaService(): void {
 }
 
 // ========================================
+// HELPER: Enviar eventos para o frontend
+// ========================================
+
+function sendToRenderer(channel: string, ...args: any[]): void {
+  const window = getWindowFn?.();
+  if (window && !window.isDestroyed()) {
+    window.webContents.send(channel, ...args);
+  }
+}
+
+// ========================================
 // HANDLERS
 // ========================================
 
@@ -65,7 +77,8 @@ export function destroySocialMediaService(): void {
  * Registra todos os handlers IPC do Social Media
  */
 export function registerSocialMediaHandlers(): void {
-  // Handler de exemplo - adicione mais conforme necessário
+  
+  // Handler: Verificar status do serviço
   ipcMain.handle('social-media:get-status', async () => {
     try {
       if (!socialMediaService) {
@@ -78,6 +91,85 @@ export function registerSocialMediaHandlers(): void {
       };
     } catch (error: any) {
       console.error('❌ [SocialMedia] Status error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler: Conectar a uma plataforma (abre Puppeteer)
+  ipcMain.handle('social-media:connect-platform', async (event, workspaceId: string, platform: SocialPlatform) => {
+    try {
+      if (!socialMediaService) {
+        return { success: false, error: 'Serviço Social Media não inicializado' };
+      }
+
+      console.log(`🔌 [SocialMedia] Conectando ${platform} para workspace ${workspaceId}...`);
+
+      // Inicia conexão com callbacks
+      await socialMediaService.connectPlatform(
+        workspaceId,
+        platform,
+        // onStatusChange
+        (status) => {
+          sendToRenderer('social-media:connection-status', { workspaceId, platform, status });
+        },
+        // onSuccess
+        (username) => {
+          sendToRenderer('social-media:connection-success', { workspaceId, platform, username });
+        },
+        // onError
+        (error) => {
+          sendToRenderer('social-media:connection-error', { workspaceId, platform, error });
+        }
+      );
+
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Connect error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler: Cancelar conexão em andamento
+  ipcMain.handle('social-media:cancel-connection', async (event, workspaceId: string, platform: SocialPlatform) => {
+    try {
+      if (!socialMediaService) {
+        return { success: false, error: 'Serviço Social Media não inicializado' };
+      }
+
+      await socialMediaService.cancelConnection(workspaceId, platform);
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Cancel error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler: Verificar se tem credenciais salvas
+  ipcMain.handle('social-media:has-credentials', async (event, workspaceId: string, platform: SocialPlatform) => {
+    try {
+      if (!socialMediaService) {
+        return { success: false, error: 'Serviço Social Media não inicializado' };
+      }
+
+      const hasCredentials = socialMediaService.hasStoredCredentials(workspaceId, platform);
+      return { success: true, hasCredentials };
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Check credentials error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler: Remover credenciais salvas
+  ipcMain.handle('social-media:remove-credentials', async (event, workspaceId: string, platform: SocialPlatform) => {
+    try {
+      if (!socialMediaService) {
+        return { success: false, error: 'Serviço Social Media não inicializado' };
+      }
+
+      socialMediaService.removeCredentials(workspaceId, platform);
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Remove credentials error:', error);
       return { success: false, error: error.message };
     }
   });
