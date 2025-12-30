@@ -41,6 +41,9 @@
     "pdf-parse": "^2.4.5",
     "pixi-live2d-display": "^0.4.0",
     "pixi.js": "^6.5.0",
+    "puppeteer": "^24.34.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "remotion": "4.0.392",
     "sqlite3": "^5.1.7",
     "zod": "^4.2.1"

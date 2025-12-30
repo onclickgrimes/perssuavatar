@@ -1064,6 +1064,7 @@ async function openSocialMediaWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      webviewTag: true, // Habilita <webview> para login em redes sociais
     },
   });
 
