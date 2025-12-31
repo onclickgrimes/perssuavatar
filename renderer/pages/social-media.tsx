@@ -5,6 +5,7 @@ import { Search, Plus, Loader2 } from 'lucide-react';
 import { Sidebar } from '../components/social-media/Sidebar';
 import { EmptyState } from '../components/social-media/EmptyState';
 import { Dashboard } from '../components/social-media/Dashboard';
+import { ConnectedAccounts } from '../components/social-media/ConnectedAccounts';
 import { Workspace, ViewState, SocialPlatform, ConnectionState, PLATFORM_CONFIG } from '../components/social-media/types';
 
 // ========================================
@@ -130,6 +131,30 @@ export default function SocialMediaPage() {
     setConnectionStatus('');
   };
 
+  const handleDisconnect = async (platform: SocialPlatform) => {
+    if (typeof window === 'undefined' || !window.electron?.socialMedia) return;
+
+    try {
+      // Remove credenciais no backend
+      await window.electron.socialMedia.removeCredentials(selectedWorkspaceId, platform);
+      
+      // Remove canal do workspace
+      setWorkspaces(prev => prev.map(ws => {
+        if (ws.id === selectedWorkspaceId) {
+          return {
+            ...ws,
+            channels: ws.channels.filter(c => c.platform !== platform)
+          };
+        }
+        return ws;
+      }));
+      
+      console.log(`✅ ${platform} desconectado com sucesso`);
+    } catch (error) {
+      console.error(`❌ Erro ao desconectar ${platform}:`, error);
+    }
+  };
+
   // Renderiza status de conexão enquanto Puppeteer está aberto
   const renderConnectionStatus = () => {
     if (!connectingPlatform) return null;
@@ -214,6 +239,18 @@ export default function SocialMediaPage() {
     // Se está conectando, mostra status
     if (connectionState === 'connecting' && connectingPlatform) {
       return renderConnectionStatus();
+    }
+
+    // Se está na view de channels, mostra ConnectedAccounts
+    if (currentView === 'channels') {
+      return (
+        <ConnectedAccounts
+          channels={currentWorkspace.channels}
+          onConnect={handleSelectPlatform}
+          onDisconnect={handleDisconnect}
+          connectingPlatform={connectingPlatform}
+        />
+      );
     }
     
     // Se tem canais, mostra dashboard

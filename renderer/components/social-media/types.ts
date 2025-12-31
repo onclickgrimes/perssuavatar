@@ -24,7 +24,7 @@ export interface Channel {
 // URLs de login para cada plataforma
 export const PLATFORM_LOGIN_URLS: Record<SocialPlatform, string> = {
   instagram: 'https://www.instagram.com/accounts/login/',
-  tiktok: 'https://www.tiktok.com/login',
+  tiktok: 'https://www.tiktok.com/tiktokstudio/upload?from=webapp',
   youtube: 'https://accounts.google.com/ServiceLogin?service=youtube'
 };
 

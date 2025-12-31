@@ -11,6 +11,7 @@ import { Browser, Page } from 'puppeteer';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
+import { extractTikTokUsernameFromHTML } from '../libs/TikTok';
 
 // Adiciona o plugin stealth para evitar detecção
 puppeteerExtra.use(StealthPlugin());
@@ -33,7 +34,7 @@ export interface WorkspaceConnection {
 // URLs de login para cada plataforma
 const PLATFORM_LOGIN_URLS: Record<SocialPlatform, string> = {
   instagram: 'https://www.instagram.com/accounts/login/',
-  tiktok: 'https://www.tiktok.com/login',
+  tiktok: 'https://www.tiktok.com/tiktokstudio/upload?from=webapp',
   youtube: 'https://accounts.google.com/ServiceLogin?service=youtube'
 };
 
@@ -95,9 +96,13 @@ export class SocialMediaService {
   }
 
   /**
-   * Retorna o diretório de dados do usuário para um workspace
+   * Retorna o diretório de dados do usuário para um workspace e plataforma
+   * Cada plataforma tem seu próprio perfil para permitir desconexão individual
    */
-  private getUserDataDir(workspaceId: string): string {
+  private getUserDataDir(workspaceId: string, platform?: SocialPlatform): string {
+    if (platform) {
+      return path.join(this.cookiesDir, 'profiles', workspaceId, platform);
+    }
     return path.join(this.cookiesDir, 'profiles', workspaceId);
   }
 
@@ -126,7 +131,7 @@ export class SocialMediaService {
 
       // Tenta usar o Chrome instalado no sistema
       const chromePath = this.findChromePath();
-      const userDataDir = this.getUserDataDir(workspaceId);
+      const userDataDir = this.getUserDataDir(workspaceId, platform);
 
       // Garante que o diretório de perfil existe
       if (!fs.existsSync(userDataDir)) {
@@ -235,6 +240,12 @@ export class SocialMediaService {
     // Verifica a URL periodicamente para detectar login
     checkInterval = setInterval(async () => {
       try {
+        // Se já completou, não faz nada
+        if (isComplete) {
+          cleanup();
+          return;
+        }
+
         if (page.isClosed()) {
           cleanup();
           return;
@@ -273,10 +284,39 @@ export class SocialMediaService {
         }
 
         if (platform === 'tiktok') {
-          if (currentUrl.includes('tiktok.com/foryou') || 
-              (currentUrl.includes('tiktok.com/@') && !currentUrl.includes('/login'))) {
-            loggedIn = true;
-            username = '@tiktok_user';
+          // TikTok: Se redirecionou para /login, não está logado (aguarda)
+          // Se está no tiktokstudio, está logado e extrai username
+          
+          if (currentUrl.includes('tiktok.com/login')) {
+            // Ainda não logado, aguarda usuário fazer login
+            // não faz nada, continua monitorando
+          } else if (currentUrl.includes('tiktok.com/tiktokstudio')) {
+            // Está no TikTok Studio - extrai o username
+            console.log('📍 [SocialMedia] TikTok Studio detectado, extraindo username...');
+            
+            // Aguarda um pouco para garantir que a página carregou
+            await new Promise(r => setTimeout(r, 3000));
+            
+            try {
+              // Pega o HTML da página
+              const pageContent = await page.content();
+              
+              // Usa a função do TikTok.ts para extrair o username
+              username = extractTikTokUsernameFromHTML(pageContent);
+              
+              if (username) {
+                console.log(`✅ [SocialMedia] TikTok username extraído: ${username}`);
+                loggedIn = true;
+              } else {
+                console.warn('⚠️ [SocialMedia] Não foi possível extrair username, usando fallback');
+                loggedIn = true;
+                username = '@tiktok_user';
+              }
+            } catch (e: any) {
+              console.warn('⚠️ [SocialMedia] Erro ao extrair username do TikTok:', e?.message || e);
+              loggedIn = true;
+              username = '@tiktok_user';
+            }
           }
         }
 
@@ -335,22 +375,21 @@ export class SocialMediaService {
   }
 
   /**
-   * Verifica se um workspace tem cookies salvos para uma plataforma
+   * Verifica se um workspace tem credenciais salvas para uma plataforma
    */
   hasStoredCredentials(workspaceId: string, platform: SocialPlatform): boolean {
-    // Com userDataDir, as credenciais ficam no perfil
-    const userDataDir = this.getUserDataDir(workspaceId);
+    const userDataDir = this.getUserDataDir(workspaceId, platform);
     return fs.existsSync(userDataDir);
   }
 
   /**
-   * Remove cookies salvos de uma plataforma
+   * Remove credenciais salvas de uma plataforma específica
    */
   removeCredentials(workspaceId: string, platform: SocialPlatform): void {
-    const userDataDir = this.getUserDataDir(workspaceId);
+    const userDataDir = this.getUserDataDir(workspaceId, platform);
     if (fs.existsSync(userDataDir)) {
       fs.rmSync(userDataDir, { recursive: true, force: true });
-      console.log(`🗑️ [SocialMedia] Perfil removido para ${workspaceId}`);
+      console.log(`🗑️ [SocialMedia] Perfil removido para ${workspaceId}-${platform}`);
     }
   }
 
