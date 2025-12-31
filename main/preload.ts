@@ -604,6 +604,10 @@ const handler = {
     removeCredentials: (workspaceId: string, platform: 'instagram' | 'tiktok' | 'youtube') =>
       ipcRenderer.invoke('social-media:remove-credentials', workspaceId, platform),
     
+    // Abrir navegador para ver a conta
+    openBrowser: (workspaceId: string, platform: 'instagram' | 'tiktok' | 'youtube') =>
+      ipcRenderer.invoke('social-media:open-browser', workspaceId, platform),
+    
     // Obter status do serviço
     getStatus: () => ipcRenderer.invoke('social-media:get-status'),
     

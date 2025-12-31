@@ -174,5 +174,20 @@ export function registerSocialMediaHandlers(): void {
     }
   });
 
+  // Handler: Abrir navegador para ver a conta
+  ipcMain.handle('social-media:open-browser', async (event, workspaceId: string, platform: SocialPlatform) => {
+    try {
+      if (!socialMediaService) {
+        return { success: false, error: 'Serviço Social Media não inicializado' };
+      }
+
+      await socialMediaService.openBrowser(workspaceId, platform);
+      return { success: true };
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Open browser error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   console.log('✅ [SocialMedia] Handlers registered');
 }

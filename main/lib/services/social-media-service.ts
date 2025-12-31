@@ -35,7 +35,7 @@ export interface WorkspaceConnection {
 const PLATFORM_LOGIN_URLS: Record<SocialPlatform, string> = {
   instagram: 'https://www.instagram.com/accounts/login/',
   tiktok: 'https://www.tiktok.com/tiktokstudio/upload?from=webapp',
-  youtube: 'https://accounts.google.com/ServiceLogin?service=youtube'
+  youtube: 'https://studio.youtube.com/'
 };
 
 export class SocialMediaService {
@@ -159,7 +159,6 @@ export class SocialMediaService {
           '--start-maximized',
         ],
         ignoreDefaultArgs: ['--enable-automation'],
-        defaultViewport: null,
       };
 
       // Usa o Chrome do sistema se disponível
@@ -238,11 +237,12 @@ export class SocialMediaService {
     });
 
     // Verifica a URL periodicamente para detectar login
+    let isProcessing = false;
     checkInterval = setInterval(async () => {
       try {
-        // Se já completou, não faz nada
-        if (isComplete) {
-          cleanup();
+        // Se já completou ou está processando, não faz nada
+        if (isComplete || isProcessing) {
+          if (isComplete) cleanup();
           return;
         }
 
@@ -250,6 +250,8 @@ export class SocialMediaService {
           cleanup();
           return;
         }
+
+        isProcessing = true; // Marca como processando
 
         const currentUrl = page.url();
 
@@ -321,11 +323,76 @@ export class SocialMediaService {
         }
 
         if (platform === 'youtube') {
-          if (currentUrl === 'https://www.youtube.com/' || 
-              currentUrl.includes('youtube.com/feed') ||
-              (currentUrl.includes('youtube.com') && !currentUrl.includes('accounts.google.com'))) {
-            loggedIn = true;
-            username = 'YouTube Channel';
+          // Se não está no Studio, navega para lá
+          if (!currentUrl.includes('studio.youtube.com') && 
+              (currentUrl === 'https://www.youtube.com/' || 
+               currentUrl.includes('youtube.com/feed') ||
+               (currentUrl.includes('youtube.com') && !currentUrl.includes('accounts.google.com')))) {
+            
+            console.log('� [SocialMedia] Navegando para YouTube Studio...');
+            try {
+              await page.goto('https://studio.youtube.com/', { 
+                waitUntil: 'networkidle2',
+                timeout: 30000 
+              });
+              // Sai desta iteração para processar na próxima
+              isProcessing = false;
+              return;
+            } catch (e) {
+              console.warn('⚠️ [SocialMedia] Erro ao navegar para YouTube Studio:', e);
+              isProcessing = false;
+            }
+          }
+          
+          if (currentUrl.includes('studio.youtube.com')) {
+            console.log('📍 [SocialMedia] YouTube Studio detectado, extraindo dados do canal...');
+            
+            // Aguarda um pouco para garantir que a página carregou
+            await new Promise(r => setTimeout(r, 3000));
+            
+            try {
+              // Tenta extrair o nome e avatar do canal da página
+              const pageContent = await page.content();
+              
+              // Busca pela imagem do thumbnail na navigation-drawer
+              // <img class="thumbnail image-thumbnail style-scope ytcp-navigation-drawer" alt="Anarchy IA" src="https://...">
+              const thumbnailMatch = pageContent.match(/<img[^>]*class="[^"]*thumbnail[^"]*image-thumbnail[^"]*ytcp-navigation-drawer[^"]*"[^>]*alt="([^"]+)"[^>]*src="([^"]+)"[^>]*>/);
+              
+              if (thumbnailMatch && thumbnailMatch[1]) {
+                username = thumbnailMatch[1]; // Nome do canal (alt)
+                const avatarUrl = thumbnailMatch[2]; // URL do avatar (src)
+                console.log(`✅ [SocialMedia] YouTube canal: ${username}`);
+                console.log(`🖼️ [SocialMedia] YouTube avatar: ${avatarUrl}`);
+              }
+              
+              // Fallback: tenta outra ordem de atributos (src antes de alt)
+              if (!username) {
+                const altMatch = pageContent.match(/<img[^>]*class="[^"]*thumbnail[^"]*image-thumbnail[^"]*"[^>]*alt="([^"]+)"[^>]*>/);
+                if (altMatch && altMatch[1]) {
+                  username = altMatch[1];
+                  console.log(`✅ [SocialMedia] YouTube canal via alt: ${username}`);
+                }
+              }
+              
+              // Fallback: busca pelo channel name em JSON
+              if (!username) {
+                const channelMatch = pageContent.match(/"channelName"\s*:\s*"([^"]+)"/);
+                if (channelMatch && channelMatch[1]) {
+                  username = channelMatch[1];
+                  console.log(`✅ [SocialMedia] YouTube canal via JSON: ${username}`);
+                }
+              }
+              
+              if (!username) {
+                username = 'YouTube Channel';
+              }
+              
+              loggedIn = true;
+            } catch (e: any) {
+              console.warn('⚠️ [SocialMedia] Erro ao extrair dados do YouTube:', e?.message || e);
+              loggedIn = true;
+              username = 'YouTube Channel';
+            }
           }
         }
 
@@ -342,7 +409,10 @@ export class SocialMediaService {
 
           onSuccess?.(username);
         }
+        
+        isProcessing = false; // Libera para próxima iteração
       } catch (error) {
+        isProcessing = false; // Libera mesmo em caso de erro
         // Ignora erros durante verificação
       }
     }, 2000);
@@ -413,6 +483,65 @@ export class SocialMediaService {
     
     this.isInitialized = false;
     console.log('🛑 [SocialMedia] Service destroyed');
+  }
+
+  /**
+   * Abre o navegador para ver a conta conectada
+   */
+  async openBrowser(workspaceId: string, platform: SocialPlatform): Promise<void> {
+    // Verifica se tem credenciais
+    if (!this.hasStoredCredentials(workspaceId, platform)) {
+      throw new Error('Nenhuma conta conectada para esta plataforma');
+    }
+
+    console.log(`🌐 [SocialMedia] Abrindo navegador para ${platform}...`);
+
+    const chromePath = this.findChromePath();
+    const userDataDir = this.getUserDataDir(workspaceId, platform);
+
+    // URLs para abrir cada plataforma
+    const platformUrls: Record<SocialPlatform, string> = {
+      instagram: 'https://www.instagram.com/',
+      tiktok: 'https://www.tiktok.com/tiktokstudio',
+      youtube: 'https://studio.youtube.com/'
+    };
+
+    const launchOptions: any = {
+      headless: false,
+      userDataDir,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--lang=pt-BR',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-infobars',
+      ],
+      ignoreDefaultArgs: ['--enable-automation'],
+    };
+
+    if (chromePath) {
+      launchOptions.executablePath = chromePath;
+    }
+
+    const browser = await puppeteerExtra.launch(launchOptions);
+    const pages = await browser.pages();
+    const page = pages[0] || await browser.newPage();
+
+    // Remove webdriver property
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
+    });
+
+    // Navega para a plataforma
+    await page.goto(platformUrls[platform], { 
+      waitUntil: 'networkidle2',
+      timeout: 30000 
+    });
+
+    console.log(`✅ [SocialMedia] Navegador aberto para ${platform}`);
   }
 
   /**

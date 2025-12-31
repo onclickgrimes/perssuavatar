@@ -1,7 +1,7 @@
 
 import { LucideIcon } from 'lucide-react';
 
-export type ViewState = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'assets' | 'channels' | 'settings';
+export type ViewState = 'overview' | 'inbox' | 'calendar' | 'analytics' | 'assets' | 'channels' | 'settings' | 'new-post';
 export type SocialPlatform = 'instagram' | 'tiktok' | 'youtube';
 
 // Estado de conexão de uma plataforma

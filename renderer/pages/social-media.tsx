@@ -6,6 +6,7 @@ import { Sidebar } from '../components/social-media/Sidebar';
 import { EmptyState } from '../components/social-media/EmptyState';
 import { Dashboard } from '../components/social-media/Dashboard';
 import { ConnectedAccounts } from '../components/social-media/ConnectedAccounts';
+import { NewPost } from '../components/social-media/NewPost';
 import { Workspace, ViewState, SocialPlatform, ConnectionState, PLATFORM_CONFIG } from '../components/social-media/types';
 
 // ========================================
@@ -155,6 +156,18 @@ export default function SocialMediaPage() {
     }
   };
 
+  const handleOpenBrowser = async (platform: SocialPlatform) => {
+    if (typeof window === 'undefined' || !window.electron?.socialMedia) return;
+
+    try {
+      // Abre o navegador para ver a conta
+      await window.electron.socialMedia.openBrowser(selectedWorkspaceId, platform);
+      console.log(`🌐 Abrindo navegador para ${platform}...`);
+    } catch (error) {
+      console.error(`❌ Erro ao abrir navegador para ${platform}:`, error);
+    }
+  };
+
   // Renderiza status de conexão enquanto Puppeteer está aberto
   const renderConnectionStatus = () => {
     if (!connectingPlatform) return null;
@@ -248,7 +261,18 @@ export default function SocialMediaPage() {
           channels={currentWorkspace.channels}
           onConnect={handleSelectPlatform}
           onDisconnect={handleDisconnect}
+          onOpenBrowser={handleOpenBrowser}
           connectingPlatform={connectingPlatform}
+        />
+      );
+    }
+
+    // Se está na view de novo post
+    if (currentView === 'new-post') {
+      return (
+        <NewPost
+          channels={currentWorkspace.channels}
+          onBack={() => setCurrentView('overview')}
         />
       );
     }
@@ -318,7 +342,9 @@ export default function SocialMediaPage() {
                    />
                 </div>
 
-                <button style={{
+                <button 
+                  onClick={() => setCurrentView('new-post')}
+                  style={{
                   backgroundColor: '#6366f1',
                   color: 'white',
                   border: 'none',

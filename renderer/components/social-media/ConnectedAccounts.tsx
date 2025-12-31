@@ -1,12 +1,14 @@
 
 import React from 'react';
-import { Instagram, Youtube, Video, Check, X, Loader2, Trash2 } from 'lucide-react';
+import { Instagram, Youtube, Video, Check, X, Loader2, Trash2, ExternalLink } from 'lucide-react';
+import { TikTokIcon } from './icons/TikTokIcon';
 import { SocialPlatform, PLATFORM_CONFIG, Channel } from './types';
 
 interface ConnectedAccountsProps {
   channels: Channel[];
   onConnect: (platform: SocialPlatform) => void;
   onDisconnect: (platform: SocialPlatform) => void;
+  onOpenBrowser: (platform: SocialPlatform) => void;
   connectingPlatform: SocialPlatform | null;
 }
 
@@ -20,6 +22,7 @@ export const ConnectedAccounts = ({
   channels, 
   onConnect, 
   onDisconnect,
+  onOpenBrowser,
   connectingPlatform 
 }: ConnectedAccountsProps) => {
   
@@ -87,7 +90,11 @@ export const ConnectedAccounts = ({
                   justifyContent: 'center',
                   transition: 'all 0.2s ease'
                 }}>
-                  <Icon size={24} color={isConnected ? config.color : '#71717a'} />
+                  {platform.id === 'tiktok' ? (
+                    <TikTokIcon size={24} color={isConnected ? undefined : '#71717a'} />
+                  ) : (
+                    <Icon size={24} color={isConnected ? config.color : '#71717a'} />
+                  )}
                 </div>
 
                 <div>
@@ -149,6 +156,37 @@ export const ConnectedAccounts = ({
                   </div>
                 ) : isConnected ? (
                   <>
+                    {/* Botão Ver Conta */}
+                    <button
+                      onClick={() => onOpenBrowser(platform.id)}
+                      title="Ver conta no navegador"
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        width: '36px',
+                        height: '36px',
+                        padding: '0',
+                        backgroundColor: 'transparent',
+                        border: '1px solid #3f3f46',
+                        borderRadius: '8px',
+                        color: '#a1a1aa',
+                        cursor: 'pointer',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.borderColor = config.color;
+                        e.currentTarget.style.color = config.color;
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.borderColor = '#3f3f46';
+                        e.currentTarget.style.color = '#a1a1aa';
+                      }}
+                    >
+                      <ExternalLink size={16} />
+                    </button>
+                    
+                    {/* Botão Desconectar */}
                     <button
                       onClick={() => onDisconnect(platform.id)}
                       style={{
