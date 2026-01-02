@@ -857,7 +857,7 @@ export class SocialMediaService {
       if (platform === 'youtube') {
         const youtube = createYouTubeInstance(workspaceId, {
           userDataDir: this.getUserDataDir(workspaceId),
-          headless: false
+          headless: true
         });
         
         await youtube.init();
@@ -883,7 +883,7 @@ export class SocialMediaService {
       } else if (platform === 'tiktok') {
         const tiktok = createTikTokInstance(workspaceId, {
           userDataDir: this.getUserDataDir(workspaceId),
-          headless: false
+          headless: true
         });
         
         await tiktok.init();

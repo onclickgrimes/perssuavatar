@@ -231,7 +231,7 @@ export class TikTok {
       console.log('🌐 [TikTok] Navegando para TikTok Studio...');
       
       await this.page.goto(TikTok.STUDIO_URL, { 
-        waitUntil: 'networkidle2',
+        waitUntil: 'load',
         timeout: 30000 
       });
 

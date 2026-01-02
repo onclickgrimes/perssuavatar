@@ -260,11 +260,48 @@ export class YouTube {
       console.log('🌐 [YouTube] Navegando para YouTube Studio...');
       
       await this.page.goto(YouTube.STUDIO_URL, { 
-        waitUntil: 'networkidle2',
+        waitUntil: 'load',
         timeout: 30000 
       });
 
       await this.randomDelay(2000, 3000);
+
+      // Verifica se está na página de "navegador incompatível"
+      // Mensagem: "Melhore sua experiência" com link "PULAR PARA O YOUTUBE STUDIO"
+      const pageContent = await this.page.content();
+      if (pageContent.includes('Melhore sua experiência') || 
+          pageContent.includes('PULAR PARA O YOUTUBE STUDIO') ||
+          pageContent.includes('browser is not supported') ||
+          pageContent.includes('SKIP TO YOUTUBE STUDIO')) {
+        console.log('⚠️ [YouTube] Página de navegador incompatível detectada, pulando...');
+        
+        // Tenta clicar no link para pular
+        try {
+          // Procura pelo link "PULAR PARA O YOUTUBE STUDIO" ou "SKIP TO YOUTUBE STUDIO"
+          const skipLink = await this.page.$('a[href*="studio.youtube.com"]');
+          if (skipLink) {
+            await skipLink.click();
+            await this.randomDelay(3000, 5000);
+            console.log('✅ [YouTube] Página de incompatibilidade pulada');
+          } else {
+            // Fallback: procura por texto
+            await this.page.evaluate(() => {
+              const links = document.querySelectorAll('a');
+              for (const link of links) {
+                if (link.textContent?.includes('PULAR') || 
+                    link.textContent?.includes('SKIP') ||
+                    link.textContent?.includes('YOUTUBE STUDIO')) {
+                  link.click();
+                  break;
+                }
+              }
+            });
+            await this.randomDelay(3000, 5000);
+          }
+        } catch (error) {
+          console.warn('⚠️ [YouTube] Não foi possível pular página de incompatibilidade');
+        }
+      }
 
       // Verifica se está logado
       this._isLoggedIn = await this.checkLoginStatus();
@@ -338,7 +375,11 @@ export class YouTube {
         return true;
       }
 
+      // Debug: tira screenshot e loga URL quando status é incerto
       console.log('⚠️ [YouTube] Status de login incerto');
+      console.log(`📍 [YouTube] URL atual: ${currentUrl}`);
+      await this.takeScreenshot('youtube-login-status-debug');
+      
       this._isLoggedIn = false;
       return false;
 
@@ -553,6 +594,222 @@ export class YouTube {
     } catch (error) {
       console.error('❌ [YouTube] Erro ao obter analytics:', error);
       return null;
+    }
+  }
+
+  // ========================================
+  // MÉTODOS PÚBLICOS - UPLOAD
+  // ========================================
+
+  /**
+   * Faz upload de um vídeo para o YouTube
+   * @param videoPath Caminho do arquivo de vídeo
+   * @param title Título do vídeo
+   * @param description Descrição do vídeo (opcional)
+   * @param visibility Visibilidade do vídeo: 'PUBLIC', 'PRIVATE', 'UNLISTED' (padrão: 'PUBLIC')
+   */
+  async uploadVideo(
+    videoPath: string, 
+    title: string, 
+    description?: string,
+    visibility: 'PUBLIC' | 'PRIVATE' | 'UNLISTED' = 'PUBLIC'
+  ): Promise<boolean> {
+    if (!this._isLoggedIn || !this.page) {
+      throw new Error('Usuário não está logado no YouTube');
+    }
+
+    try {
+      console.log(`📹 [YouTube] Iniciando upload do vídeo: ${videoPath}`);
+      console.log(`📝 [YouTube] Título: ${title}`);
+
+      // Navega para a página de upload
+      console.log('🌐 [YouTube] Navegando para página de upload...');
+      await this.page.goto('https://www.youtube.com/upload', { 
+        waitUntil: 'networkidle2',
+        timeout: 60000 
+      });
+      await this.randomDelay(2000, 3000);
+
+      // Espera o input de arquivo aparecer
+      console.log('⏳ [YouTube] Aguardando campo de upload...');
+      const fileInputSelector = 'input[type="file"][name="Filedata"]';
+      await this.page.waitForSelector(fileInputSelector, { timeout: 30000 });
+
+      // Faz o upload do arquivo
+      console.log('📤 [YouTube] Fazendo upload do arquivo...');
+      const fileInput = await this.page.$(fileInputSelector);
+      if (!fileInput) {
+        throw new Error('Campo de upload não encontrado');
+      }
+      await fileInput.uploadFile(videoPath);
+      
+      // Aguarda o processamento inicial do upload
+      console.log('⏳ [YouTube] Aguardando processamento do upload...');
+      await this.randomDelay(5000, 8000);
+
+      // Preenche o título
+      console.log('📝 [YouTube] Preenchendo título...');
+      const titleSelector = '#textbox[aria-label*="título"]';
+      try {
+        await this.page.waitForSelector(titleSelector, { timeout: 15000 });
+        const titleInput = await this.page.$(titleSelector);
+        if (titleInput) {
+          // Limpa o título existente (se houver)
+          await titleInput.click({ clickCount: 3 });
+          await this.page.keyboard.press('Backspace');
+          await this.randomDelay(500, 1000);
+          // Digita o novo título
+          await this.page.keyboard.type(title, { delay: 30 });
+          await this.randomDelay(1000, 2000);
+        }
+      } catch (error) {
+        console.warn('⚠️ [YouTube] Não foi possível preencher o título:', error);
+      }
+
+      // Preenche a descrição (se fornecida)
+      if (description) {
+        console.log('📝 [YouTube] Preenchendo descrição...');
+        const descriptionSelector = '#textbox[aria-label*="Fale sobre seu vídeo"], #textbox[aria-label*="description"]';
+        try {
+          const descriptionInput = await this.page.$(descriptionSelector);
+          if (descriptionInput) {
+            await descriptionInput.click();
+            await this.randomDelay(500, 1000);
+            await this.page.keyboard.type(description, { delay: 20 });
+            await this.randomDelay(1000, 2000);
+          }
+        } catch (error) {
+          console.warn('⚠️ [YouTube] Não foi possível preencher a descrição:', error);
+        }
+      }
+
+      // Seleciona "Não é conteúdo para crianças"
+      console.log('🔞 [YouTube] Selecionando "Não é conteúdo para crianças"...');
+      try {
+        // Tenta clicar no radio button de "Não é conteúdo para crianças"
+        const notForKidsSelector = 'tp-yt-paper-radio-button[name="NOT_MADE_FOR_KIDS"], ytcp-ve:has-text("Não é conteúdo para crianças")';
+        await this.page.waitForSelector('tp-yt-paper-radio-button[name="NOT_MADE_FOR_KIDS"]', { timeout: 10000 });
+        await this.page.click('tp-yt-paper-radio-button[name="NOT_MADE_FOR_KIDS"]');
+        await this.randomDelay(1000, 2000);
+      } catch (error) {
+        console.warn('⚠️ [YouTube] Não foi possível selecionar classificação etária:', error);
+        // Tenta método alternativo
+        try {
+          await this.page.evaluate(() => {
+            const radioButtons = document.querySelectorAll('tp-yt-paper-radio-button');
+            for (const btn of radioButtons) {
+              if (btn.getAttribute('name') === 'NOT_MADE_FOR_KIDS') {
+                (btn as HTMLElement).click();
+                break;
+              }
+            }
+          });
+        } catch (e) {
+          console.warn('⚠️ [YouTube] Método alternativo também falhou');
+        }
+      }
+
+      // Clica em "Avançar" 3 vezes
+      console.log('➡️ [YouTube] Avançando etapas...');
+      for (let i = 0; i < 3; i++) {
+        await this.randomDelay(2000, 3000);
+        try {
+          // Tenta pelo aria-label
+          const nextButton = await this.page.$('button[aria-label="Avançar"], button[aria-label="Next"]');
+          if (nextButton) {
+            await nextButton.click();
+            console.log(`✅ [YouTube] Avançar ${i + 1}/3 clicado`);
+          } else {
+            // Fallback: procura pelo texto
+            await this.page.evaluate(() => {
+              const buttons = document.querySelectorAll('button');
+              for (const btn of buttons) {
+                if (btn.textContent?.includes('Avançar') || btn.textContent?.includes('Next')) {
+                  btn.click();
+                  break;
+                }
+              }
+            });
+            console.log(`✅ [YouTube] Avançar ${i + 1}/3 clicado (fallback)`);
+          }
+        } catch (error) {
+          console.warn(`⚠️ [YouTube] Erro ao clicar em Avançar ${i + 1}:`, error);
+        }
+      }
+
+      // Seleciona a visibilidade
+      console.log(`🔓 [YouTube] Selecionando visibilidade: ${visibility}...`);
+      await this.randomDelay(2000, 3000);
+      try {
+        const visibilitySelector = `tp-yt-paper-radio-button[name="${visibility}"]`;
+        await this.page.waitForSelector(visibilitySelector, { timeout: 10000 });
+        await this.page.click(visibilitySelector);
+        await this.randomDelay(1000, 2000);
+      } catch (error) {
+        console.warn('⚠️ [YouTube] Não foi possível selecionar visibilidade:', error);
+        // Tenta método alternativo
+        try {
+          await this.page.evaluate((vis) => {
+            const radioButtons = document.querySelectorAll('tp-yt-paper-radio-button');
+            for (const btn of radioButtons) {
+              if (btn.getAttribute('name') === vis) {
+                (btn as HTMLElement).click();
+                break;
+              }
+            }
+          }, visibility);
+        } catch (e) {
+          console.warn('⚠️ [YouTube] Método alternativo também falhou');
+        }
+      }
+
+      // Clica em "Publicar"
+      console.log('🚀 [YouTube] Publicando vídeo...');
+      await this.randomDelay(2000, 3000);
+      try {
+        const publishButton = await this.page.$('button[aria-label="Publicar"], button[aria-label="Publish"]');
+        if (publishButton) {
+          await publishButton.click();
+        } else {
+          // Fallback: procura pelo texto
+          await this.page.evaluate(() => {
+            const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
+              if (btn.textContent?.includes('Publicar') || btn.textContent?.includes('Publish')) {
+                btn.click();
+                break;
+              }
+            }
+          });
+        }
+        console.log('✅ [YouTube] Botão Publicar clicado');
+      } catch (error) {
+        console.error('❌ [YouTube] Erro ao clicar em Publicar:', error);
+        throw error;
+      }
+
+      // Aguarda confirmação de publicação
+      console.log('⏳ [YouTube] Aguardando confirmação de publicação...');
+      await this.randomDelay(5000, 10000);
+
+      // Verifica se houve sucesso (procura por diálogo de sucesso ou URL do vídeo)
+      const currentUrl = this.page.url();
+      const pageContent = await this.page.content();
+      
+      if (pageContent.includes('Vídeo publicado') || 
+          pageContent.includes('Video published') ||
+          pageContent.includes('processamento')) {
+        console.log('✅ [YouTube] Vídeo publicado com sucesso!');
+        return true;
+      }
+
+      console.log('✅ [YouTube] Upload concluído (verifique manualmente se foi publicado)');
+      return true;
+
+    } catch (error) {
+      console.error('❌ [YouTube] Erro ao fazer upload do vídeo:', error);
+      await this.takeScreenshot('upload-error');
+      throw error;
     }
   }
 

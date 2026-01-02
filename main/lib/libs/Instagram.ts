@@ -1286,9 +1286,9 @@ export class Instagram {
   }
 
   /**
-   * Posta uma foto
+   * Faz um post
    */
-  async postPhoto(imagePath: string, caption?: string): Promise<boolean> {
+  async makePost(imagePath: string, caption?: string): Promise<boolean> {
     if (!this.isLoggedIn || !this.page) {
       throw new Error('Usuário não está logado');
     }
