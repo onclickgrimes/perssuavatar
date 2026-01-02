@@ -382,6 +382,7 @@ export class YouTube {
 
   /**
    * Obtém informações do canal logado
+   * Extrai nome e avatar do elemento de thumbnail na navigation-drawer
    */
   async getChannelInfo(): Promise<ChannelInfo | null> {
     if (!this.page || !this._isLoggedIn) {
@@ -395,28 +396,60 @@ export class YouTube {
         await this.goToStudio();
       }
 
-      await this.randomDelay(1000, 2000);
+      // await this.randomDelay(2000, 3000);
 
-      // Tenta extrair informações do canal
-      const channelInfo = await this.page.evaluate(() => {
-        // Tenta pegar nome do canal
-        const nameElement = document.querySelector('yt-formatted-string#channel-title') ||
-                           document.querySelector('.channel-name') ||
-                           document.querySelector('[id*="channel-name"]');
-        
-        // Tenta pegar avatar
-        const avatarElement = document.querySelector('img#avatar-btn') as HTMLImageElement ||
-                             document.querySelector('img.channel-avatar') as HTMLImageElement;
-        
-        // Tenta pegar handle
-        const handleElement = document.querySelector('yt-formatted-string#channel-handle');
+      // Obtém o HTML da página
+      const pageContent = await this.page.content();
+      
+      let name: string | undefined;
+      let avatarUrl: string | undefined;
+      let handle: string | undefined;
 
-        return {
-          name: nameElement?.textContent?.trim() || 'Canal YouTube',
-          handle: handleElement?.textContent?.trim(),
-          avatarUrl: avatarElement?.src,
-        };
-      });
+      // Método 1: Busca pela imagem do thumbnail na navigation-drawer
+      // <img class="thumbnail image-thumbnail style-scope ytcp-navigation-drawer" alt="Nome do Canal" src="https://...">
+      const thumbnailMatch = pageContent.match(/<img[^>]*class="[^"]*thumbnail[^"]*image-thumbnail[^"]*ytcp-navigation-drawer[^"]*"[^>]*alt="([^"]+)"[^>]*src="([^"]+)"[^>]*>/);
+      
+      if (thumbnailMatch && thumbnailMatch[1]) {
+        name = thumbnailMatch[1];
+        avatarUrl = thumbnailMatch[2];
+        console.log(`✅ [YouTube] Canal encontrado via thumbnail: ${name}`);
+      }
+
+      // Método 2: Tenta outra ordem de atributos (src antes de alt)
+      if (!name) {
+        const altMatch = pageContent.match(/<img[^>]*class="[^"]*thumbnail[^"]*image-thumbnail[^"]*"[^>]*alt="([^"]+)"[^>]*>/);
+        if (altMatch && altMatch[1]) {
+          name = altMatch[1];
+          console.log(`✅ [YouTube] Canal encontrado via alt: ${name}`);
+        }
+      }
+
+      // Método 3: Busca pelo channel name em JSON
+      if (!name) {
+        const channelMatch = pageContent.match(/"channelName"\s*:\s*"([^"]+)"/);
+        if (channelMatch && channelMatch[1]) {
+          name = channelMatch[1];
+          console.log(`✅ [YouTube] Canal encontrado via JSON: ${name}`);
+        }
+      }
+
+      // Método 4: Busca pelo channel-handle
+      const handleMatch = pageContent.match(/id="channel-handle"[^>]*>(@[^<]+)</);
+      if (handleMatch && handleMatch[1]) {
+        handle = handleMatch[1];
+        console.log(`✅ [YouTube] Handle encontrado: ${handle}`);
+      }
+
+      // Fallback para nome
+      if (!name) {
+        name = 'YouTube Channel';
+      }
+
+      const channelInfo: ChannelInfo = {
+        name,
+        handle,
+        avatarUrl
+      };
 
       console.log('📊 [YouTube] Info do canal:', channelInfo);
       return channelInfo;

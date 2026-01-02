@@ -9,8 +9,9 @@ import os from 'os';
 puppeteerExtra.use(StealthPlugin());
 
 export interface InstagramConfig {
-  username: string;
-  password: string;
+  username?: string;
+  password?: string;
+  workspaceId?: string; // Para nova arquitetura (sem credenciais)
   headless?: boolean;
   userDataDir?: string;
   cookiesPath?: string;
@@ -53,8 +54,11 @@ export class Instagram {
       ...config
     };
 
-    this.userDataDir = this.config.userDataDir || path.join(process.cwd(), 'puppeteer-cache', this.config.username);
-    this.cookiesPath = this.config.cookiesPath || path.join(process.cwd(), 'puppeteer-cache', this.config.username, `cookies-${this.config.username}.json`);
+    // Usa workspaceId como fallback se username não for fornecido
+    const identifier = this.config.username || this.config.workspaceId || 'default';
+    
+    this.userDataDir = this.config.userDataDir || path.join(process.cwd(), 'puppeteer-cache', 'instagram', identifier);
+    this.cookiesPath = this.config.cookiesPath || path.join(this.userDataDir, `cookies-instagram.json`);
 
     // Cria diretórios se não existirem
     this.ensureDirectoriesExist();
@@ -141,8 +145,11 @@ export class Instagram {
 
       console.log('✅ Navegador inicializado com sucesso');
 
-      // Tenta fazer login
-      await this.login();
+      // Só tenta fazer login automático se houver credenciais
+      // Sem credenciais, permite login manual via goToInstagram() + waitForLogin()
+      if (this.config.username && this.config.password) {
+        await this.login();
+      }
 
     } catch (error) {
       console.error('❌ Erro ao inicializar:', error);
@@ -358,7 +365,7 @@ export class Instagram {
       const feedSelector = 'article';
       const loginSelector = 'input[name="username"]';
 
-      await new Promise(r => setTimeout(r, 2000));
+      // await new Promise(r => setTimeout(r, 2000));
 
       // Se encontrar campo de login, não está logado
       const loginField = await this.page.$(loginSelector);
@@ -375,6 +382,238 @@ export class Instagram {
     } catch (error) {
       return false;
     }
+  }
+
+  // ========================================
+  // MÉTODOS PÚBLICOS - NOVA ARQUITETURA
+  // ========================================
+
+  /**
+   * Verifica o status de login no Instagram (público)
+   */
+  async checkLoginStatus(): Promise<boolean> {
+    this.isLoggedIn = await this.isUserLoggedIn();
+    return this.isLoggedIn;
+  }
+
+  /**
+   * Navega para o Instagram e verifica login (para uso sem credenciais)
+   */
+  async goToInstagram(): Promise<boolean> {
+    if (!this.page) {
+      throw new Error('Navegador não inicializado. Chame init() primeiro.');
+    }
+
+    try {
+      console.log('🌐 [Instagram] Navegando para Instagram...');
+      
+      await this.page.goto('https://www.instagram.com/accounts/edit/', { 
+        waitUntil: 'networkidle2',
+        timeout: 30000 
+      });
+
+      // await this.randomDelay(2000, 3000);
+
+      // Verifica se está logado
+      this.isLoggedIn = await this.isUserLoggedIn();
+      
+      // Se estiver logado, extrai informações do usuário
+      if (this.isLoggedIn) {
+        await this.extractUserInfo();
+      }
+      
+      return this.isLoggedIn;
+    } catch (error) {
+      console.error('❌ [Instagram] Erro ao navegar para Instagram:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Extrai informações do usuário logado
+   * Navega para a página de edição de conta para garantir que pegamos o usuário correto
+   */
+  async extractUserInfo(): Promise<{ username: string; fullName?: string; avatarUrl?: string } | null> {
+    if (!this.page) return null;
+
+    try {
+      console.log('📍 [Instagram] Extraindo informações do usuário logado...');
+      
+      // // Navega para a página de edição de conta para garantir que é o usuário logado
+      // console.log('🔄 [Instagram] Navegando para página de conta...');
+      // await this.page.goto('https://www.instagram.com/accounts/edit/', { 
+      //   waitUntil: 'networkidle2',
+      //   timeout: 30000 
+      // });
+      
+      // await this.randomDelay(2000, 3000);
+      
+      const pageContent = await this.page.content();
+      
+      let username: string | null = null;
+      let avatarUrl: string | null = null;
+
+      // Na página de edição, o username está no campo de formulário ou na URL
+      // Também podemos extrair do header que mostra "Editar perfil do @username"
+      
+      // Método 1: Extrair username da URL atual (se redirecionou para perfil)
+      const currentUrl = this.page.url();
+      const urlUsernameMatch = currentUrl.match(/instagram\.com\/([a-zA-Z0-9._]+)\/?/);
+      if (urlUsernameMatch && urlUsernameMatch[1] && 
+          !['accounts', 'explore', 'reels', 'direct', 'p', 'stories'].includes(urlUsernameMatch[1])) {
+        username = urlUsernameMatch[1];
+        console.log(`✅ [Instagram] Username via URL: @${username}`);
+      }
+      
+      // Método 2: Busca o username no campo de formulário
+      if (!username) {
+        // Tenta encontrar o campo de username na página de edição
+        const usernameInput = await this.page.$('input[name="username"]');
+        if (usernameInput) {
+          const inputValue = await this.page.evaluate((el: HTMLInputElement) => el.value, usernameInput as any);
+          if (inputValue) {
+            username = inputValue;
+            console.log(`✅ [Instagram] Username via input: @${username}`);
+          }
+        }
+      }
+      
+      // Método 3: Busca pelo elemento "Foto do perfil de X" ou "Change profile photo" na página de edição
+      // que mostra apenas o perfil do usuário logado
+      if (!username) {
+        // Português
+        const ptMatch = pageContent.match(/alt="Foto do perfil de ([^"]+)"/);
+        if (ptMatch && ptMatch[1]) {
+          username = ptMatch[1];
+          console.log(`✅ [Instagram] Username via alt (PT): @${username}`);
+        }
+      }
+      
+      if (!username) {
+        // Inglês - na página de edição geralmente é "Change profile photo" mas vamos tentar o padrão
+        const enMatch = pageContent.match(/alt="([^"]+)'s profile picture"/);
+        if (enMatch && enMatch[1]) {
+          username = enMatch[1];
+          console.log(`✅ [Instagram] Username via alt (EN): @${username}`);
+        }
+      }
+
+      // Método 4: Busca "viewer" em JSON (geralmente contém info do usuário logado)
+      if (!username) {
+        const viewerMatch = pageContent.match(/"viewer"\s*:\s*\{[^}]*"username"\s*:\s*"([^"]+)"/);
+        if (viewerMatch && viewerMatch[1]) {
+          username = viewerMatch[1];
+          console.log(`✅ [Instagram] Username via viewer JSON: @${username}`);
+        }
+      }
+      
+      // Método 5: Busca username genérico em JSON (último fallback)
+      if (!username) {
+        const usernameMatch = pageContent.match(/"username"\s*:\s*"([^"]+)"/);
+        if (usernameMatch && usernameMatch[1]) {
+          username = usernameMatch[1];
+          console.log(`✅ [Instagram] Username via JSON: @${username}`);
+        }
+      }
+      
+      // Buscar avatar do usuário
+      if (username) {
+        // Busca a imagem de perfil específica deste username
+        const avatarRegex = new RegExp(`<img[^>]*alt="[^"]*${username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^"]*"[^>]*>`, 'i');
+        const imgMatch = pageContent.match(avatarRegex);
+        if (imgMatch) {
+          const srcMatch = imgMatch[0].match(/src="([^"]+)"/);
+          if (srcMatch && srcMatch[1]) {
+            avatarUrl = srcMatch[1].replace(/&amp;/g, '&');
+            console.log(`🖼️ [Instagram] Avatar encontrado: ${avatarUrl.substring(0, 80)}...`);
+          }
+        }
+        
+        // Fallback: profile_pic_url em JSON
+        if (!avatarUrl) {
+          const avatarMatch = pageContent.match(/"profile_pic_url"\s*:\s*"([^"]+)"/);
+          if (avatarMatch && avatarMatch[1]) {
+            avatarUrl = avatarMatch[1].replace(/\\u0026/g, '&');
+            console.log(`🖼️ [Instagram] Avatar via JSON: ${avatarUrl.substring(0, 80)}...`);
+          }
+        }
+      }
+
+      // Não precisa voltar para a página inicial pois o browser será fechado
+
+      // Salva o username no config para uso posterior
+      if (username && !this.config.username) {
+        this.config.username = username;
+        console.log(`💾 [Instagram] Username salvo no config: @${username}`);
+      }
+
+      if (username) {
+        return {
+          username,
+          avatarUrl: avatarUrl || undefined
+        };
+      }
+      
+      console.warn('⚠️ [Instagram] Não foi possível extrair informações do usuário');
+      return null;
+
+    } catch (error) {
+      console.error('❌ [Instagram] Erro ao extrair user info:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Retorna o username formatado (@handle)
+   */
+  getUsername(): string {
+    if (this.config.username) {
+      return '@' + this.config.username;
+    }
+    return '@instagram_user';
+  }
+
+  /**
+   * Aguarda o usuário fazer login manualmente
+   */
+  async waitForLogin(timeoutMs: number = 300000): Promise<boolean> {
+    if (!this.page) return false;
+
+    console.log('⏳ [Instagram] Aguardando login manual...');
+
+    const startTime = Date.now();
+    const checkInterval = 3000;
+
+    while (Date.now() - startTime < timeoutMs) {
+      const currentUrl = this.page.url();
+      
+      // Se não está mais na página de login
+      if (!currentUrl.includes('/accounts/login/') && 
+          !currentUrl.includes('/challenge/')) {
+        
+        // Verifica se realmente está logado
+        const loggedIn = await this.isUserLoggedIn();
+        if (loggedIn) {
+          console.log('✅ [Instagram] Login detectado!');
+          this.isLoggedIn = true;
+          
+          // Tenta extrair username do HTML se não tiver
+          if (!this.config.username) {
+            const userInfo = await this.extractUserInfo();
+            if (userInfo?.username) {
+              this.config.username = userInfo.username;
+            }
+          }
+          
+          return true;
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+
+    console.log('⚠️ [Instagram] Timeout aguardando login');
+    return false;
   }
 
   /**
@@ -2259,5 +2498,36 @@ export class Instagram {
     return tempPath;
   }
 
+  // ========================================
+  // MÉTODOS PÚBLICOS - ACESSO
+  // ========================================
 
+  /**
+   * Retorna a página atual
+   */
+  getPage(): Page | null {
+    return this.page;
+  }
+
+  /**
+   * Retorna o browser
+   */
+  getBrowser(): Browser | null {
+    return this.browser;
+  }
+
+}
+
+// ========================================
+// FACTORY FUNCTIONS
+// ========================================
+
+/**
+ * Cria uma instância do Instagram para um workspace específico (sem credenciais)
+ */
+export function createInstagramInstance(workspaceId: string, options?: Partial<InstagramConfig>): Instagram {
+  return new Instagram({
+    workspaceId,
+    ...options
+  });
 }

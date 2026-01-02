@@ -11,7 +11,9 @@ import { Browser, Page } from 'puppeteer';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
-import { extractTikTokUsernameFromHTML } from '../libs/TikTok';
+import { TikTok, createTikTokInstance } from '../libs/TikTok';
+import { YouTube, createYouTubeInstance } from '../libs/YouTube';
+import { Instagram, createInstagramInstance } from '../libs/Instagram';
 
 // Adiciona o plugin stealth para evitar detecção
 puppeteerExtra.use(StealthPlugin());
@@ -21,6 +23,7 @@ export type SocialPlatform = 'instagram' | 'tiktok' | 'youtube';
 export interface ConnectedChannel {
   platform: SocialPlatform;
   username: string;
+  avatarUrl?: string;
   connectedAt: number;
 }
 
@@ -29,6 +32,15 @@ export interface WorkspaceConnection {
   browser: Browser | null;
   page: Page | null;
   isConnecting: boolean;
+  platform?: SocialPlatform;
+}
+
+// Estrutura para armazenar status de login de cada plataforma
+export interface PlatformLoginStatus {
+  platform: SocialPlatform;
+  isLoggedIn: boolean;
+  username?: string;
+  avatarUrl?: string;
 }
 
 // URLs de login para cada plataforma
@@ -38,10 +50,21 @@ const PLATFORM_LOGIN_URLS: Record<SocialPlatform, string> = {
   youtube: 'https://studio.youtube.com/'
 };
 
+// URLs para verificar login
+const PLATFORM_CHECK_URLS: Record<SocialPlatform, string> = {
+  instagram: 'https://www.instagram.com/',
+  tiktok: 'https://www.tiktok.com/tiktokstudio',
+  youtube: 'https://studio.youtube.com/'
+};
+
 export class SocialMediaService {
   private isInitialized = false;
   private connections: Map<string, WorkspaceConnection> = new Map();
   private cookiesDir: string;
+  private workspaceBrowsers: Map<string, Browser> = new Map(); // Browser compartilhado por workspace
+  private youtubeInstances: Map<string, YouTube> = new Map(); // Instâncias YouTube por workspace
+  private tiktokInstances: Map<string, TikTok> = new Map(); // Instâncias TikTok por workspace
+  private instagramInstances: Map<string, Instagram> = new Map(); // Instâncias Instagram por workspace
 
   constructor() {
     this.cookiesDir = path.join(app.getPath('userData'), 'social-media-cookies');
@@ -55,8 +78,61 @@ export class SocialMediaService {
     }
   }
 
+  /**
+   * Retorna o caminho do arquivo de cookies para uma plataforma
+   * Salva dentro da pasta do workspace
+   */
   private getCookiesPath(workspaceId: string, platform: SocialPlatform): string {
-    return path.join(this.cookiesDir, `${workspaceId}-${platform}.json`);
+    return path.join(this.getUserDataDir(workspaceId), `cookies-${platform}.json`);
+  }
+
+  /**
+   * Retorna o diretório de dados do usuário para um workspace
+   * COMPARTILHADO entre todas as plataformas
+   */
+  private getUserDataDir(workspaceId: string): string {
+    return path.join(this.cookiesDir, 'profiles', workspaceId);
+  }
+
+  /**
+   * Salva cookies de uma página para uma plataforma específica
+   */
+  private async saveCookies(page: Page, workspaceId: string, platform: SocialPlatform): Promise<void> {
+    try {
+      const cookies = await page.cookies();
+      const cookiesPath = this.getCookiesPath(workspaceId, platform);
+      
+      // Garante que o diretório existe
+      const cookiesDirectory = path.dirname(cookiesPath);
+      if (!fs.existsSync(cookiesDirectory)) {
+        fs.mkdirSync(cookiesDirectory, { recursive: true });
+      }
+      
+      fs.writeFileSync(cookiesPath, JSON.stringify(cookies, null, 2));
+      console.log(`🍪 [SocialMedia] Cookies salvos para ${platform}`);
+    } catch (error) {
+      console.warn(`⚠️ [SocialMedia] Erro ao salvar cookies para ${platform}:`, error);
+    }
+  }
+
+  /**
+   * Carrega cookies salvos para uma plataforma específica
+   */
+  private async loadCookies(page: Page, workspaceId: string, platform: SocialPlatform): Promise<boolean> {
+    try {
+      const cookiesPath = this.getCookiesPath(workspaceId, platform);
+      
+      if (fs.existsSync(cookiesPath)) {
+        const cookiesStr = fs.readFileSync(cookiesPath, 'utf8');
+        const cookies = JSON.parse(cookiesStr);
+        await page.setCookie(...cookies);
+        console.log(`🍪 [SocialMedia] Cookies carregados para ${platform}`);
+        return true;
+      }
+    } catch (error) {
+      console.warn(`⚠️ [SocialMedia] Erro ao carregar cookies para ${platform}:`, error);
+    }
+    return false;
   }
 
   /**
@@ -96,16 +172,291 @@ export class SocialMediaService {
   }
 
   /**
-   * Retorna o diretório de dados do usuário para um workspace e plataforma
-   * Cada plataforma tem seu próprio perfil para permitir desconexão individual
+   * Conecta ao YouTube usando a lib YouTube.ts
    */
-  private getUserDataDir(workspaceId: string, platform?: SocialPlatform): string {
-    if (platform) {
-      return path.join(this.cookiesDir, 'profiles', workspaceId, platform);
+  private async connectYouTube(
+    workspaceId: string,
+    onStatusChange?: (status: string) => void,
+    onSuccess?: (username: string) => void,
+    onError?: (error: string) => void
+  ): Promise<void> {
+    try {
+      onStatusChange?.('launching');
+      console.log('🚀 [SocialMedia] Iniciando YouTube via lib...');
+
+      // Cria ou reutiliza instância do YouTube
+      let youtube = this.youtubeInstances.get(workspaceId);
+      
+      if (!youtube) {
+        youtube = createYouTubeInstance(workspaceId, {
+          userDataDir: this.getUserDataDir(workspaceId),
+          headless: false
+        });
+        this.youtubeInstances.set(workspaceId, youtube);
+      }
+
+      // Inicializa o navegador
+      await youtube.init();
+
+      onStatusChange?.('navigating');
+
+      // Navega para o YouTube Studio e verifica login
+      const isLoggedIn = await youtube.goToStudio();
+
+      if (isLoggedIn) {
+        console.log('✅ [SocialMedia] YouTube já está logado!');
+        
+        // Busca informações do canal
+        const channelInfo = await youtube.getChannelInfo();
+        const username = channelInfo?.name || channelInfo?.handle || 'YouTube Channel';
+        
+        onStatusChange?.('saving_cookies');
+        
+        // Salva cookies
+        const page = youtube.getPage();
+        if (page) {
+          await this.saveCookies(page, workspaceId, 'youtube');
+        }
+        
+        // Fecha o navegador
+        await youtube.close();
+        this.youtubeInstances.delete(workspaceId);
+        
+        onSuccess?.(username);
+      } else {
+        console.log('🔐 [SocialMedia] YouTube precisa de login...');
+        onStatusChange?.('waiting_login');
+        
+        // Aguarda o usuário fazer login (5 minutos de timeout)
+        const loginSuccess = await youtube.waitForLogin(300000);
+        
+        if (loginSuccess) {
+          // Busca informações do canal
+          const channelInfo = await youtube.getChannelInfo();
+          const username = channelInfo?.name || channelInfo?.handle || 'YouTube Channel';
+          
+          onStatusChange?.('saving_cookies');
+          
+          // Salva cookies
+          const page = youtube.getPage();
+          if (page) {
+            await this.saveCookies(page, workspaceId, 'youtube');
+          }
+          
+          // Fecha o navegador
+          await youtube.close();
+          this.youtubeInstances.delete(workspaceId);
+          
+          onSuccess?.(username);
+        } else {
+          await youtube.close();
+          this.youtubeInstances.delete(workspaceId);
+          onError?.('Timeout aguardando login do YouTube');
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Erro ao conectar YouTube:', error);
+      
+      // Limpa instância em caso de erro
+      const youtube = this.youtubeInstances.get(workspaceId);
+      if (youtube) {
+        await youtube.close();
+        this.youtubeInstances.delete(workspaceId);
+      }
+      
+      onError?.(error?.message || 'Erro ao conectar YouTube');
     }
-    return path.join(this.cookiesDir, 'profiles', workspaceId);
   }
 
+  /**
+   * Conecta ao TikTok usando a lib TikTok.ts
+   */
+  private async connectTikTok(
+    workspaceId: string,
+    onStatusChange?: (status: string) => void,
+    onSuccess?: (username: string) => void,
+    onError?: (error: string) => void
+  ): Promise<void> {
+    try {
+      onStatusChange?.('launching');
+      console.log('🚀 [SocialMedia] Iniciando TikTok via lib...');
+
+      // Cria ou reutiliza instância do TikTok
+      let tiktok = this.tiktokInstances.get(workspaceId);
+      
+      if (!tiktok) {
+        tiktok = createTikTokInstance(workspaceId, {
+          userDataDir: this.getUserDataDir(workspaceId),
+          headless: false
+        });
+        this.tiktokInstances.set(workspaceId, tiktok);
+      }
+
+      // Inicializa o navegador
+      await tiktok.init();
+
+      onStatusChange?.('navigating');
+
+      // Navega para o TikTok Studio e verifica login
+      const isLoggedIn = await tiktok.goToStudio();
+
+      if (isLoggedIn) {
+        console.log('✅ [SocialMedia] TikTok já está logado!');
+        
+        // Pega o username
+        const username = tiktok.getUsername();
+        
+        onStatusChange?.('saving_cookies');
+        
+        // Salva cookies
+        const page = tiktok.getPage();
+        if (page) {
+          await this.saveCookies(page, workspaceId, 'tiktok');
+        }
+        
+        // Fecha o navegador
+        await tiktok.close();
+        this.tiktokInstances.delete(workspaceId);
+        
+        onSuccess?.(username);
+      } else {
+        console.log('🔐 [SocialMedia] TikTok precisa de login...');
+        onStatusChange?.('waiting_login');
+        
+        // Aguarda o usuário fazer login (5 minutos de timeout)
+        const loginSuccess = await tiktok.waitForLogin(300000);
+        
+        if (loginSuccess) {
+          // Pega o username
+          const username = tiktok.getUsername();
+          
+          onStatusChange?.('saving_cookies');
+          
+          // Salva cookies
+          const page = tiktok.getPage();
+          if (page) {
+            await this.saveCookies(page, workspaceId, 'tiktok');
+          }
+          
+          // Fecha o navegador
+          await tiktok.close();
+          this.tiktokInstances.delete(workspaceId);
+          
+          onSuccess?.(username);
+        } else {
+          await tiktok.close();
+          this.tiktokInstances.delete(workspaceId);
+          onError?.('Timeout aguardando login do TikTok');
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Erro ao conectar TikTok:', error);
+      
+      // Limpa instância em caso de erro
+      const tiktok = this.tiktokInstances.get(workspaceId);
+      if (tiktok) {
+        await tiktok.close();
+        this.tiktokInstances.delete(workspaceId);
+      }
+      
+      onError?.(error?.message || 'Erro ao conectar TikTok');
+    }
+  }
+
+  /**
+   * Conecta ao Instagram usando a lib Instagram.ts
+   */
+  private async connectInstagram(
+    workspaceId: string,
+    onStatusChange?: (status: string) => void,
+    onSuccess?: (username: string) => void,
+    onError?: (error: string) => void
+  ): Promise<void> {
+    try {
+      onStatusChange?.('launching');
+      console.log('🚀 [SocialMedia] Iniciando Instagram via lib...');
+
+      // Cria ou reutiliza instância do Instagram
+      let instagram = this.instagramInstances.get(workspaceId);
+      
+      if (!instagram) {
+        instagram = createInstagramInstance(workspaceId, {
+          userDataDir: this.getUserDataDir(workspaceId),
+          headless: false
+        });
+        this.instagramInstances.set(workspaceId, instagram);
+      }
+
+      // Inicializa o navegador
+      await instagram.init();
+
+      onStatusChange?.('navigating');
+
+      // Navega para o Instagram e verifica login
+      const isLoggedIn = await instagram.goToInstagram();
+
+      if (isLoggedIn) {
+        console.log('✅ [SocialMedia] Instagram já está logado!');
+        
+        // Pega o username
+        const username = instagram.getUsername();
+        
+        onStatusChange?.('saving_cookies');
+        
+        // Salva cookies
+        const page = instagram.getPage();
+        if (page) {
+          await this.saveCookies(page, workspaceId, 'instagram');
+        }
+        
+        // Fecha o navegador
+        await instagram.close();
+        this.instagramInstances.delete(workspaceId);
+        
+        onSuccess?.(username);
+      } else {
+        console.log('🔐 [SocialMedia] Instagram precisa de login...');
+        onStatusChange?.('waiting_login');
+        
+        // Aguarda o usuário fazer login (5 minutos de timeout)
+        const loginSuccess = await instagram.waitForLogin(300000);
+        
+        if (loginSuccess) {
+          // Pega o username
+          const username = instagram.getUsername();
+          
+          onStatusChange?.('saving_cookies');
+          
+          // Salva cookies
+          const page = instagram.getPage();
+          if (page) {
+            await this.saveCookies(page, workspaceId, 'instagram');
+          }
+          
+          // Fecha o navegador
+          await instagram.close();
+          this.instagramInstances.delete(workspaceId);
+          
+          onSuccess?.(username);
+        } else {
+          await instagram.close();
+          this.instagramInstances.delete(workspaceId);
+          onError?.('Timeout aguardando login do Instagram');
+        }
+      }
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Erro ao conectar Instagram:', error);
+      
+      // Limpa instância em caso de erro
+      const instagram = this.instagramInstances.get(workspaceId);
+      if (instagram) {
+        await instagram.close();
+        this.instagramInstances.delete(workspaceId);
+      }
+      
+      onError?.(error?.message || 'Erro ao conectar Instagram');
+    }
+  }
   /**
    * Abre o navegador Puppeteer para login em uma plataforma
    */
@@ -125,13 +476,32 @@ export class SocialMediaService {
       return;
     }
 
+    // Para YouTube, usa a lib YouTube.ts
+    if (platform === 'youtube') {
+      await this.connectYouTube(workspaceId, onStatusChange, onSuccess, onError);
+      return;
+    }
+
+    // Para TikTok, usa a lib TikTok.ts
+    if (platform === 'tiktok') {
+      await this.connectTikTok(workspaceId, onStatusChange, onSuccess, onError);
+      return;
+    }
+
+    // Para Instagram, usa a lib Instagram.ts
+    if (platform === 'instagram') {
+      await this.connectInstagram(workspaceId, onStatusChange, onSuccess, onError);
+      return;
+    }
+
+    // Fallback para outras plataformas (não deveria chegar aqui)
     try {
       onStatusChange?.('launching');
       console.log(`🚀 [SocialMedia] Iniciando navegador para ${platform}...`);
 
       // Tenta usar o Chrome instalado no sistema
       const chromePath = this.findChromePath();
-      const userDataDir = this.getUserDataDir(workspaceId, platform);
+      const userDataDir = this.getUserDataDir(workspaceId);
 
       // Garante que o diretório de perfil existe
       if (!fs.existsSync(userDataDir)) {
@@ -196,7 +566,7 @@ export class SocialMediaService {
       onStatusChange?.('waiting_login');
 
       // Monitora navegação para detectar login bem-sucedido
-      this.monitorLogin(connectionKey, platform, page, browser, onStatusChange, onSuccess, onError);
+      this.monitorLogin(workspaceId, connectionKey, platform, page, browser, onStatusChange, onSuccess, onError);
 
     } catch (error: any) {
       console.error(`❌ [SocialMedia] Erro ao conectar ${platform}:`, error);
@@ -209,6 +579,7 @@ export class SocialMediaService {
    * Monitora a página para detectar login bem-sucedido
    */
   private monitorLogin(
+    workspaceId: string,
     connectionKey: string,
     platform: SocialPlatform,
     page: Page,
@@ -259,142 +630,14 @@ export class SocialMediaService {
         let loggedIn = false;
         let username = '';
 
-        if (platform === 'instagram') {
-          if (currentUrl === 'https://www.instagram.com/' || 
-              currentUrl.includes('instagram.com/feed') ||
-              (currentUrl.includes('instagram.com') && 
-               !currentUrl.includes('/login') && 
-               !currentUrl.includes('/accounts/login') &&
-               !currentUrl.includes('/challenge'))) {
-            loggedIn = true;
-            try {
-              username = await page.evaluate(() => {
-                const link = document.querySelector('a[href^="/"][href$="/"]');
-                if (link) {
-                  const href = link.getAttribute('href') || '';
-                  const match = href.match(/^\/([^\/]+)\/$/);
-                  if (match && !['explore', 'reels', 'direct'].includes(match[1])) {
-                    return '@' + match[1];
-                  }
-                }
-                return '@instagram_user';
-              });
-            } catch {
-              username = '@instagram_user';
-            }
-          }
-        }
+        // Nota: Instagram agora é tratado por connectInstagram() usando a lib Instagram.ts
+        // Este bloco não deve ser alcançado para Instagram
 
-        if (platform === 'tiktok') {
-          // TikTok: Se redirecionou para /login, não está logado (aguarda)
-          // Se está no tiktokstudio, está logado e extrai username
-          
-          if (currentUrl.includes('tiktok.com/login')) {
-            // Ainda não logado, aguarda usuário fazer login
-            // não faz nada, continua monitorando
-          } else if (currentUrl.includes('tiktok.com/tiktokstudio')) {
-            // Está no TikTok Studio - extrai o username
-            console.log('📍 [SocialMedia] TikTok Studio detectado, extraindo username...');
-            
-            // Aguarda um pouco para garantir que a página carregou
-            await new Promise(r => setTimeout(r, 3000));
-            
-            try {
-              // Pega o HTML da página
-              const pageContent = await page.content();
-              
-              // Usa a função do TikTok.ts para extrair o username
-              username = extractTikTokUsernameFromHTML(pageContent);
-              
-              if (username) {
-                console.log(`✅ [SocialMedia] TikTok username extraído: ${username}`);
-                loggedIn = true;
-              } else {
-                console.warn('⚠️ [SocialMedia] Não foi possível extrair username, usando fallback');
-                loggedIn = true;
-                username = '@tiktok_user';
-              }
-            } catch (e: any) {
-              console.warn('⚠️ [SocialMedia] Erro ao extrair username do TikTok:', e?.message || e);
-              loggedIn = true;
-              username = '@tiktok_user';
-            }
-          }
-        }
+        // Nota: TikTok agora é tratado por connectTikTok() usando a lib TikTok.ts
+        // Este bloco não deve ser alcançado para TikTok
 
-        if (platform === 'youtube') {
-          // Se não está no Studio, navega para lá
-          if (!currentUrl.includes('studio.youtube.com') && 
-              (currentUrl === 'https://www.youtube.com/' || 
-               currentUrl.includes('youtube.com/feed') ||
-               (currentUrl.includes('youtube.com') && !currentUrl.includes('accounts.google.com')))) {
-            
-            console.log('� [SocialMedia] Navegando para YouTube Studio...');
-            try {
-              await page.goto('https://studio.youtube.com/', { 
-                waitUntil: 'networkidle2',
-                timeout: 30000 
-              });
-              // Sai desta iteração para processar na próxima
-              isProcessing = false;
-              return;
-            } catch (e) {
-              console.warn('⚠️ [SocialMedia] Erro ao navegar para YouTube Studio:', e);
-              isProcessing = false;
-            }
-          }
-          
-          if (currentUrl.includes('studio.youtube.com')) {
-            console.log('📍 [SocialMedia] YouTube Studio detectado, extraindo dados do canal...');
-            
-            // Aguarda um pouco para garantir que a página carregou
-            await new Promise(r => setTimeout(r, 3000));
-            
-            try {
-              // Tenta extrair o nome e avatar do canal da página
-              const pageContent = await page.content();
-              
-              // Busca pela imagem do thumbnail na navigation-drawer
-              // <img class="thumbnail image-thumbnail style-scope ytcp-navigation-drawer" alt="Anarchy IA" src="https://...">
-              const thumbnailMatch = pageContent.match(/<img[^>]*class="[^"]*thumbnail[^"]*image-thumbnail[^"]*ytcp-navigation-drawer[^"]*"[^>]*alt="([^"]+)"[^>]*src="([^"]+)"[^>]*>/);
-              
-              if (thumbnailMatch && thumbnailMatch[1]) {
-                username = thumbnailMatch[1]; // Nome do canal (alt)
-                const avatarUrl = thumbnailMatch[2]; // URL do avatar (src)
-                console.log(`✅ [SocialMedia] YouTube canal: ${username}`);
-                console.log(`🖼️ [SocialMedia] YouTube avatar: ${avatarUrl}`);
-              }
-              
-              // Fallback: tenta outra ordem de atributos (src antes de alt)
-              if (!username) {
-                const altMatch = pageContent.match(/<img[^>]*class="[^"]*thumbnail[^"]*image-thumbnail[^"]*"[^>]*alt="([^"]+)"[^>]*>/);
-                if (altMatch && altMatch[1]) {
-                  username = altMatch[1];
-                  console.log(`✅ [SocialMedia] YouTube canal via alt: ${username}`);
-                }
-              }
-              
-              // Fallback: busca pelo channel name em JSON
-              if (!username) {
-                const channelMatch = pageContent.match(/"channelName"\s*:\s*"([^"]+)"/);
-                if (channelMatch && channelMatch[1]) {
-                  username = channelMatch[1];
-                  console.log(`✅ [SocialMedia] YouTube canal via JSON: ${username}`);
-                }
-              }
-              
-              if (!username) {
-                username = 'YouTube Channel';
-              }
-              
-              loggedIn = true;
-            } catch (e: any) {
-              console.warn('⚠️ [SocialMedia] Erro ao extrair dados do YouTube:', e?.message || e);
-              loggedIn = true;
-              username = 'YouTube Channel';
-            }
-          }
-        }
+        // Nota: YouTube agora é tratado por connectYouTube() usando a lib YouTube.ts
+        // Este bloco não deve ser alcançado para YouTube
 
         if (loggedIn) {
           isComplete = true;
@@ -402,6 +645,9 @@ export class SocialMediaService {
           
           console.log(`✅ [SocialMedia] Login detectado para ${platform}: ${username}`);
           onStatusChange?.('saving_cookies');
+
+          // Salva cookies da plataforma
+          await this.saveCookies(page, workspaceId, platform);
 
           // Fecha o navegador
           await browser.close();
@@ -446,21 +692,26 @@ export class SocialMediaService {
 
   /**
    * Verifica se um workspace tem credenciais salvas para uma plataforma
+   * Verifica APENAS o arquivo de cookies (não o userDataDir que é compartilhado)
    */
   hasStoredCredentials(workspaceId: string, platform: SocialPlatform): boolean {
-    const userDataDir = this.getUserDataDir(workspaceId, platform);
-    return fs.existsSync(userDataDir);
+    const cookiesPath = this.getCookiesPath(workspaceId, platform);
+    return fs.existsSync(cookiesPath);
   }
 
   /**
    * Remove credenciais salvas de uma plataforma específica
    */
   removeCredentials(workspaceId: string, platform: SocialPlatform): void {
-    const userDataDir = this.getUserDataDir(workspaceId, platform);
-    if (fs.existsSync(userDataDir)) {
-      fs.rmSync(userDataDir, { recursive: true, force: true });
-      console.log(`🗑️ [SocialMedia] Perfil removido para ${workspaceId}-${platform}`);
+    // Remove o arquivo de cookies da plataforma
+    const cookiesPath = this.getCookiesPath(workspaceId, platform);
+    if (fs.existsSync(cookiesPath)) {
+      fs.rmSync(cookiesPath);
+      console.log(`🗑️ [SocialMedia] Cookies removidos para ${workspaceId}-${platform}`);
     }
+    
+    // Nota: Ó userDataDir é compartilhado, então não removemos ele aqui
+    // Os cookies são suficientes para desconectar a plataforma
   }
 
   /**
@@ -497,7 +748,7 @@ export class SocialMediaService {
     console.log(`🌐 [SocialMedia] Abrindo navegador para ${platform}...`);
 
     const chromePath = this.findChromePath();
-    const userDataDir = this.getUserDataDir(workspaceId, platform);
+    const userDataDir = this.getUserDataDir(workspaceId);
 
     // URLs para abrir cada plataforma
     const platformUrls: Record<SocialPlatform, string> = {
