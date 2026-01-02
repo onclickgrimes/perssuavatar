@@ -43,6 +43,17 @@ export interface PlatformLoginStatus {
   avatarUrl?: string;
 }
 
+// Resultado da verificação de login
+export interface PlatformVerificationResult {
+  platform: SocialPlatform;
+  hasCredentials: boolean;  // Se tem cookies salvos
+  isValid: boolean;         // Se o login ainda é válido
+  needsRelogin: boolean;    // Se precisa fazer login novamente
+  username?: string;
+  avatarUrl?: string;
+  error?: string;
+}
+
 // URLs de login para cada plataforma
 const PLATFORM_LOGIN_URLS: Record<SocialPlatform, string> = {
   instagram: 'https://www.instagram.com/accounts/login/',
@@ -800,6 +811,161 @@ export class SocialMediaService {
    */
   isReady(): boolean {
     return this.isInitialized;
+  }
+
+  /**
+   * Retorna lista de plataformas que têm cookies salvos para um workspace
+   */
+  getStoredPlatforms(workspaceId: string): SocialPlatform[] {
+    const platforms: SocialPlatform[] = ['instagram', 'tiktok', 'youtube'];
+    const storedPlatforms: SocialPlatform[] = [];
+
+    for (const platform of platforms) {
+      const cookiesPath = this.getCookiesPath(workspaceId, platform);
+      if (fs.existsSync(cookiesPath)) {
+        storedPlatforms.push(platform);
+      }
+    }
+
+    console.log(`📁 [SocialMedia] Plataformas com cookies para ${workspaceId}:`, storedPlatforms);
+    return storedPlatforms;
+  }
+
+  /**
+   * Verifica o login de uma plataforma específica em modo headless
+   */
+  async verifyPlatformLogin(workspaceId: string, platform: SocialPlatform): Promise<PlatformVerificationResult> {
+    const cookiesPath = this.getCookiesPath(workspaceId, platform);
+    const hasCredentials = fs.existsSync(cookiesPath);
+
+    if (!hasCredentials) {
+      return {
+        platform,
+        hasCredentials: false,
+        isValid: false,
+        needsRelogin: false
+      };
+    }
+
+    console.log(`🔍 [SocialMedia] Verificando login de ${platform}...`);
+
+    try {
+      let isValid = false;
+      let username: string | undefined;
+      let avatarUrl: string | undefined;
+
+      if (platform === 'youtube') {
+        const youtube = createYouTubeInstance(workspaceId, {
+          userDataDir: this.getUserDataDir(workspaceId),
+          headless: false
+        });
+        
+        await youtube.init();
+        
+        // Carrega cookies
+        const page = youtube.getPage();
+        if (page) {
+          await this.loadCookies(page, workspaceId, platform);
+        }
+        
+        // Navega para o Studio e verifica login
+        isValid = await youtube.goToStudio();
+        
+        if (isValid) {
+          const channelInfo = await youtube.getChannelInfo();
+          if (channelInfo) {
+            username = channelInfo.name;
+            avatarUrl = channelInfo.avatarUrl;
+          }
+        }
+        
+        await youtube.close();
+      } else if (platform === 'tiktok') {
+        const tiktok = createTikTokInstance(workspaceId, {
+          userDataDir: this.getUserDataDir(workspaceId),
+          headless: false
+        });
+        
+        await tiktok.init();
+        
+        // Carrega cookies
+        const page = tiktok.getPage();
+        if (page) {
+          await this.loadCookies(page, workspaceId, platform);
+        }
+        
+        // Navega para o Studio e verifica login
+        isValid = await tiktok.goToStudio();
+        
+        if (isValid) {
+          username = tiktok.getUsername();
+        }
+        
+        await tiktok.close();
+      } else if (platform === 'instagram') {
+        const instagram = createInstagramInstance(workspaceId, {
+          userDataDir: this.getUserDataDir(workspaceId),
+          headless: true
+        });
+        
+        await instagram.init();
+        
+        // Carrega cookies
+        const page = instagram.getPage();
+        if (page) {
+          await this.loadCookies(page, workspaceId, platform);
+        }
+        
+        // Navega e verifica login
+        isValid = await instagram.goToInstagram();
+        
+        if (isValid) {
+          username = instagram.getUsername();
+        }
+        
+        await instagram.close();
+      }
+
+      console.log(`${isValid ? '✅' : '⚠️'} [SocialMedia] ${platform}: ${isValid ? 'login válido' : 'precisa relogar'}`);
+
+      return {
+        platform,
+        hasCredentials: true,
+        isValid,
+        needsRelogin: !isValid,
+        username,
+        avatarUrl
+      };
+
+    } catch (error: any) {
+      console.error(`❌ [SocialMedia] Erro ao verificar ${platform}:`, error?.message || error);
+      return {
+        platform,
+        hasCredentials: true,
+        isValid: false,
+        needsRelogin: true,
+        error: error?.message || 'Erro desconhecido'
+      };
+    }
+  }
+
+  /**
+   * Verifica o login de todas as plataformas com cookies salvos para um workspace
+   */
+  async verifyAllPlatforms(workspaceId: string): Promise<PlatformVerificationResult[]> {
+    console.log(`🔄 [SocialMedia] Verificando todas as plataformas para ${workspaceId}...`);
+    
+    const storedPlatforms = this.getStoredPlatforms(workspaceId);
+    const results: PlatformVerificationResult[] = [];
+
+    // Verifica cada plataforma em sequência para evitar conflitos
+    for (const platform of storedPlatforms) {
+      const result = await this.verifyPlatformLogin(workspaceId, platform);
+      results.push(result);
+    }
+
+    console.log(`📊 [SocialMedia] Verificação concluída:`, results.map(r => `${r.platform}: ${r.isValid ? '✅' : '⚠️'}`));
+    return results;
   }
 }
 

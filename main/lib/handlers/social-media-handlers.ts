@@ -10,7 +10,8 @@ import {
   SocialMediaService, 
   getSocialMediaService, 
   destroySocialMediaServiceInstance,
-  SocialPlatform
+  SocialPlatform,
+  PlatformVerificationResult
 } from '../services/social-media-service';
 
 // ========================================
@@ -185,6 +186,51 @@ export function registerSocialMediaHandlers(): void {
       return { success: true };
     } catch (error: any) {
       console.error('❌ [SocialMedia] Open browser error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler: Obter plataformas com cookies salvos
+  ipcMain.handle('social-media:get-stored-platforms', async (event, workspaceId: string) => {
+    try {
+      if (!socialMediaService) {
+        return { success: false, error: 'Serviço Social Media não inicializado' };
+      }
+
+      const platforms = socialMediaService.getStoredPlatforms(workspaceId);
+      return { success: true, platforms };
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Get stored platforms error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler: Verificar login de uma plataforma específica (headless)
+  ipcMain.handle('social-media:verify-platform-login', async (event, workspaceId: string, platform: SocialPlatform) => {
+    try {
+      if (!socialMediaService) {
+        return { success: false, error: 'Serviço Social Media não inicializado' };
+      }
+
+      const result = await socialMediaService.verifyPlatformLogin(workspaceId, platform);
+      return { success: true, result };
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Verify platform login error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler: Verificar login de todas as plataformas (headless)
+  ipcMain.handle('social-media:verify-all-platforms', async (event, workspaceId: string) => {
+    try {
+      if (!socialMediaService) {
+        return { success: false, error: 'Serviço Social Media não inicializado' };
+      }
+
+      const results = await socialMediaService.verifyAllPlatforms(workspaceId);
+      return { success: true, results };
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Verify all platforms error:', error);
       return { success: false, error: error.message };
     }
   });

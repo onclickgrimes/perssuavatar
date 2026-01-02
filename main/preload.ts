@@ -611,6 +611,18 @@ const handler = {
     // Obter status do serviço
     getStatus: () => ipcRenderer.invoke('social-media:get-status'),
     
+    // Obter plataformas com cookies salvos
+    getStoredPlatforms: (workspaceId: string) =>
+      ipcRenderer.invoke('social-media:get-stored-platforms', workspaceId),
+    
+    // Verificar login de uma plataforma específica (headless)
+    verifyPlatformLogin: (workspaceId: string, platform: 'instagram' | 'tiktok' | 'youtube') =>
+      ipcRenderer.invoke('social-media:verify-platform-login', workspaceId, platform),
+    
+    // Verificar login de todas as plataformas (headless)
+    verifyAllPlatforms: (workspaceId: string) =>
+      ipcRenderer.invoke('social-media:verify-all-platforms', workspaceId),
+    
     // Listener: Status de conexão
     onConnectionStatus: (callback: (data: { workspaceId: string; platform: string; status: string }) => void) => {
       const subscription = (_: any, data: any) => callback(data);

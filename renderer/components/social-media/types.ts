@@ -19,6 +19,9 @@ export interface Channel {
   name: string;
   followers: number;
   status: 'good' | 'medium' | 'low';
+  needsRelogin?: boolean;   // Se o login expirou
+  isVerifying?: boolean;    // Se está verificando o login
+  avatarUrl?: string;       // URL do avatar
 }
 
 // URLs de login para cada plataforma

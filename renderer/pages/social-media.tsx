@@ -42,6 +42,9 @@ export default function SocialMediaPage() {
   const [connectingPlatform, setConnectingPlatform] = useState<SocialPlatform | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<string>('');
   
+  // Estado de verificação de plataformas
+  const [isVerifyingPlatforms, setIsVerifyingPlatforms] = useState<boolean>(false);
+  
   // Computed
   const currentWorkspace = workspaces.find(w => w.id === selectedWorkspaceId) || workspaces[0];
   const hasChannels = currentWorkspace.channels.length > 0;
@@ -100,6 +103,71 @@ export default function SocialMediaPage() {
       unsubscribeSuccess?.();
       unsubscribeError?.();
     };
+  }, [selectedWorkspaceId]);
+
+  // Verificar plataformas quando o workspace é selecionado
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.electron?.socialMedia) return;
+
+    async function verifyPlatforms() {
+      setIsVerifyingPlatforms(true);
+      console.log(`🔍 Verificando plataformas para workspace ${selectedWorkspaceId}...`);
+      
+      try {
+        const response = await window.electron.socialMedia.verifyAllPlatforms(selectedWorkspaceId);
+        
+        if (response.success && response.results) {
+          console.log('📊 Resultados da verificação:', response.results);
+          
+          // Atualiza os canais com base nos resultados
+          setWorkspaces(prev => prev.map(ws => {
+            if (ws.id === selectedWorkspaceId) {
+              // Atualiza canais existentes com status de verificação
+              const updatedChannels = ws.channels.map(channel => {
+                const result = response.results.find((r: any) => r.platform === channel.platform);
+                if (result) {
+                  return {
+                    ...channel,
+                    needsRelogin: result.needsRelogin,
+                    isVerifying: false,
+                    name: result.username || channel.name,
+                    avatarUrl: result.avatarUrl || channel.avatarUrl
+                  };
+                }
+                return channel;
+              });
+
+              // Adiciona canais que têm cookies mas não estão na lista
+              const existingPlatforms = ws.channels.map(c => c.platform);
+              const newChannels = response.results
+                .filter((r: any) => r.hasCredentials && !existingPlatforms.includes(r.platform))
+                .map((r: any) => ({
+                  id: `${r.platform}-${Date.now()}`,
+                  platform: r.platform as SocialPlatform,
+                  name: r.username || `@${r.platform}_user`,
+                  followers: 0,
+                  status: 'good' as const,
+                  needsRelogin: r.needsRelogin,
+                  isVerifying: false,
+                  avatarUrl: r.avatarUrl
+                }));
+
+              return {
+                ...ws,
+                channels: [...updatedChannels, ...newChannels]
+              };
+            }
+            return ws;
+          }));
+        }
+      } catch (error) {
+        console.error('❌ Erro ao verificar plataformas:', error);
+      } finally {
+        setIsVerifyingPlatforms(false);
+      }
+    }
+
+    verifyPlatforms();
   }, [selectedWorkspaceId]);
 
   // Handlers

@@ -1,6 +1,6 @@
 
 import React from 'react';
-import { Instagram, Youtube, Video, Check, X, Loader2, Trash2, ExternalLink } from 'lucide-react';
+import { Instagram, Youtube, Video, Check, X, Loader2, Trash2, ExternalLink, AlertCircle } from 'lucide-react';
 import { TikTokIcon } from './icons/TikTokIcon';
 import { SocialPlatform, PLATFORM_CONFIG, Channel } from './types';
 
@@ -109,21 +109,39 @@ export const ConnectedAccounts = ({
                     
                     {/* Badge de Status */}
                     {isConnected && (
-                      <span style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '4px',
-                        padding: '2px 8px',
-                        backgroundColor: 'rgba(34, 197, 94, 0.1)',
-                        color: '#22c55e',
-                        fontSize: '11px',
-                        fontWeight: 600,
-                        borderRadius: '20px',
-                        border: '1px solid rgba(34, 197, 94, 0.2)'
-                      }}>
-                        <Check size={12} />
-                        Conectado
-                      </span>
+                      connectedChannel.needsRelogin ? (
+                        <span style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '2px 8px',
+                          backgroundColor: 'rgba(234, 179, 8, 0.1)',
+                          color: '#eab308',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          borderRadius: '20px',
+                          border: '1px solid rgba(234, 179, 8, 0.2)'
+                        }}>
+                          <AlertCircle size={12} />
+                          Reconectar
+                        </span>
+                      ) : (
+                        <span style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '2px 8px',
+                          backgroundColor: 'rgba(34, 197, 94, 0.1)',
+                          color: '#22c55e',
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          borderRadius: '20px',
+                          border: '1px solid rgba(34, 197, 94, 0.2)'
+                        }}>
+                          <Check size={12} />
+                          Conectado
+                        </span>
+                      )
                     )}
                   </div>
                   
