@@ -227,7 +227,20 @@ export function registerSocialMediaHandlers(): void {
         return { success: false, error: 'Serviço Social Media não inicializado' };
       }
 
-      const results = await socialMediaService.verifyAllPlatforms(workspaceId);
+      const results = await socialMediaService.verifyAllPlatforms(
+        workspaceId,
+        // Callback de progresso - envia eventos para o frontend
+        (data) => {
+          sendToRenderer('social-media:verification-progress', {
+            workspaceId,
+            platform: data.platform,
+            status: data.status,
+            result: data.result,
+            total: data.total,
+            current: data.current
+          });
+        }
+      );
       return { success: true, results };
     } catch (error: any) {
       console.error('❌ [SocialMedia] Verify all platforms error:', error);

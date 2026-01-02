@@ -643,6 +643,20 @@ const handler = {
       ipcRenderer.on('social-media:connection-error', subscription);
       return () => { ipcRenderer.removeListener('social-media:connection-error', subscription); };
     },
+    
+    // Listener: Progresso da verificação de plataformas
+    onVerificationProgress: (callback: (data: { 
+      workspaceId: string; 
+      platform: string; 
+      status: 'checking' | 'done'; 
+      result?: any;
+      total: number;
+      current: number;
+    }) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('social-media:verification-progress', subscription);
+      return () => { ipcRenderer.removeListener('social-media:verification-progress', subscription); };
+    },
   }
 }
 

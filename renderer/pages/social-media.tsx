@@ -44,6 +44,8 @@ export default function SocialMediaPage() {
   
   // Estado de verificação de plataformas
   const [isVerifyingPlatforms, setIsVerifyingPlatforms] = useState<boolean>(false);
+  const [verifyingPlatform, setVerifyingPlatform] = useState<SocialPlatform | null>(null);
+  const [verificationProgress, setVerificationProgress] = useState<{ current: number; total: number }>({ current: 0, total: 0 });
   
   // Computed
   const currentWorkspace = workspaces.find(w => w.id === selectedWorkspaceId) || workspaces[0];
@@ -98,10 +100,71 @@ export default function SocialMediaPage() {
       }
     });
 
+    // Listener para progresso da verificação
+    const unsubscribeProgress = window.electron.socialMedia.onVerificationProgress?.((data: any) => {
+      if (data.workspaceId === selectedWorkspaceId) {
+        setVerificationProgress({ current: data.current, total: data.total });
+        
+        if (data.status === 'checking') {
+          setVerifyingPlatform(data.platform as SocialPlatform);
+          console.log(`🔍 Verificando ${data.platform} (${data.current}/${data.total})...`);
+        } else if (data.status === 'done' && data.result) {
+          console.log(`${data.result.isValid ? '✅' : '⚠️'} ${data.platform} verificado`);
+          
+          // Atualiza o canal com o resultado da verificação
+          setWorkspaces(prev => prev.map(ws => {
+            if (ws.id === selectedWorkspaceId) {
+              const existingChannel = ws.channels.find(c => c.platform === data.platform);
+              
+              if (data.result.hasCredentials) {
+                if (existingChannel) {
+                  // Atualiza canal existente
+                  return {
+                    ...ws,
+                    channels: ws.channels.map(c => 
+                      c.platform === data.platform 
+                        ? { 
+                            ...c, 
+                            needsRelogin: data.result.needsRelogin,
+                            name: data.result.username || c.name,
+                            avatarUrl: data.result.avatarUrl || c.avatarUrl,
+                            isVerifying: false
+                          }
+                        : c
+                    )
+                  };
+                } else {
+                  // Adiciona novo canal
+                  return {
+                    ...ws,
+                    channels: [
+                      ...ws.channels,
+                      {
+                        id: `${data.platform}-${Date.now()}`,
+                        platform: data.platform as SocialPlatform,
+                        name: data.result.username || `@${data.platform}_user`,
+                        followers: 0,
+                        status: 'good' as const,
+                        needsRelogin: data.result.needsRelogin,
+                        isVerifying: false,
+                        avatarUrl: data.result.avatarUrl
+                      }
+                    ]
+                  };
+                }
+              }
+            }
+            return ws;
+          }));
+        }
+      }
+    });
+
     return () => {
       unsubscribeStatus?.();
       unsubscribeSuccess?.();
       unsubscribeError?.();
+      unsubscribeProgress?.();
     };
   }, [selectedWorkspaceId]);
 
@@ -111,59 +174,19 @@ export default function SocialMediaPage() {
 
     async function verifyPlatforms() {
       setIsVerifyingPlatforms(true);
+      setVerifyingPlatform(null);
+      setVerificationProgress({ current: 0, total: 0 });
       console.log(`🔍 Verificando plataformas para workspace ${selectedWorkspaceId}...`);
       
       try {
-        const response = await window.electron.socialMedia.verifyAllPlatforms(selectedWorkspaceId);
-        
-        if (response.success && response.results) {
-          console.log('📊 Resultados da verificação:', response.results);
-          
-          // Atualiza os canais com base nos resultados
-          setWorkspaces(prev => prev.map(ws => {
-            if (ws.id === selectedWorkspaceId) {
-              // Atualiza canais existentes com status de verificação
-              const updatedChannels = ws.channels.map(channel => {
-                const result = response.results.find((r: any) => r.platform === channel.platform);
-                if (result) {
-                  return {
-                    ...channel,
-                    needsRelogin: result.needsRelogin,
-                    isVerifying: false,
-                    name: result.username || channel.name,
-                    avatarUrl: result.avatarUrl || channel.avatarUrl
-                  };
-                }
-                return channel;
-              });
-
-              // Adiciona canais que têm cookies mas não estão na lista
-              const existingPlatforms = ws.channels.map(c => c.platform);
-              const newChannels = response.results
-                .filter((r: any) => r.hasCredentials && !existingPlatforms.includes(r.platform))
-                .map((r: any) => ({
-                  id: `${r.platform}-${Date.now()}`,
-                  platform: r.platform as SocialPlatform,
-                  name: r.username || `@${r.platform}_user`,
-                  followers: 0,
-                  status: 'good' as const,
-                  needsRelogin: r.needsRelogin,
-                  isVerifying: false,
-                  avatarUrl: r.avatarUrl
-                }));
-
-              return {
-                ...ws,
-                channels: [...updatedChannels, ...newChannels]
-              };
-            }
-            return ws;
-          }));
-        }
+        // A chamada inicia a verificação, os resultados vêm via listener de progresso
+        await window.electron.socialMedia.verifyAllPlatforms(selectedWorkspaceId);
+        console.log('📊 Verificação concluída');
       } catch (error) {
         console.error('❌ Erro ao verificar plataformas:', error);
       } finally {
         setIsVerifyingPlatforms(false);
+        setVerifyingPlatform(null);
       }
     }
 
@@ -342,6 +365,92 @@ export default function SocialMediaPage() {
           channels={currentWorkspace.channels}
           onBack={() => setCurrentView('overview')}
         />
+      );
+    }
+    
+    // Se está verificando plataformas, mostra progresso
+    if (isVerifyingPlatforms) {
+      const platformName = verifyingPlatform 
+        ? PLATFORM_CONFIG[verifyingPlatform]?.label || verifyingPlatform 
+        : 'plataformas';
+      
+      return (
+        <div style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          justifyContent: 'center',
+          height: '100%',
+          width: '100%',
+          padding: '40px',
+          textAlign: 'center'
+        }}>
+          <div style={{ 
+            width: '80px', 
+            height: '80px', 
+            borderRadius: '50%', 
+            backgroundColor: 'rgba(99, 102, 241, 0.1)', 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'center',
+            marginBottom: '24px',
+            border: '2px solid #6366f1'
+          }}>
+            <Loader2 
+              size={32} 
+              color="#6366f1" 
+              style={{ animation: 'spin 1s linear infinite' }} 
+            />
+          </div>
+          
+          <h2 style={{ fontSize: '24px', fontWeight: 700, color: 'white', marginBottom: '8px' }}>
+            Verificando Contas
+          </h2>
+          <p style={{ color: '#a1a1aa', marginBottom: '16px', maxWidth: '400px', lineHeight: '1.5' }}>
+            {verifyingPlatform 
+              ? `Verificando ${platformName}...` 
+              : 'Iniciando verificação...'
+            }
+          </p>
+          
+          {verificationProgress.total > 0 && (
+            <div style={{ 
+              display: 'flex', 
+              alignItems: 'center', 
+              gap: '8px',
+              marginBottom: '24px'
+            }}>
+              <div style={{
+                width: '200px',
+                height: '4px',
+                backgroundColor: '#27272a',
+                borderRadius: '2px',
+                overflow: 'hidden'
+              }}>
+                <div style={{
+                  width: `${(verificationProgress.current / verificationProgress.total) * 100}%`,
+                  height: '100%',
+                  backgroundColor: '#6366f1',
+                  transition: 'width 0.3s ease'
+                }} />
+              </div>
+              <span style={{ color: '#71717a', fontSize: '13px' }}>
+                {verificationProgress.current}/{verificationProgress.total}
+              </span>
+            </div>
+          )}
+          
+          <p style={{ color: '#71717a', fontSize: '13px', maxWidth: '450px' }}>
+            Verificando se suas contas ainda estão conectadas...
+          </p>
+
+          <style>{`
+            @keyframes spin {
+              from { transform: rotate(0deg); }
+              to { transform: rotate(360deg); }
+            }
+          `}</style>
+        </div>
       );
     }
     

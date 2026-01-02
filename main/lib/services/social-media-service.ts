@@ -951,17 +951,30 @@ export class SocialMediaService {
 
   /**
    * Verifica o login de todas as plataformas com cookies salvos para um workspace
+   * @param onProgress Callback chamado quando uma plataforma começa e termina a verificação
    */
-  async verifyAllPlatforms(workspaceId: string): Promise<PlatformVerificationResult[]> {
+  async verifyAllPlatforms(
+    workspaceId: string,
+    onProgress?: (data: { platform: SocialPlatform; status: 'checking' | 'done'; result?: PlatformVerificationResult; total: number; current: number }) => void
+  ): Promise<PlatformVerificationResult[]> {
     console.log(`🔄 [SocialMedia] Verificando todas as plataformas para ${workspaceId}...`);
     
     const storedPlatforms = this.getStoredPlatforms(workspaceId);
     const results: PlatformVerificationResult[] = [];
+    const total = storedPlatforms.length;
 
     // Verifica cada plataforma em sequência para evitar conflitos
-    for (const platform of storedPlatforms) {
+    for (let i = 0; i < storedPlatforms.length; i++) {
+      const platform = storedPlatforms[i];
+      
+      // Notifica início da verificação
+      onProgress?.({ platform, status: 'checking', total, current: i + 1 });
+      
       const result = await this.verifyPlatformLogin(workspaceId, platform);
       results.push(result);
+      
+      // Notifica conclusão da verificação
+      onProgress?.({ platform, status: 'done', result, total, current: i + 1 });
     }
 
     console.log(`📊 [SocialMedia] Verificação concluída:`, results.map(r => `${r.platform}: ${r.isValid ? '✅' : '⚠️'}`));
