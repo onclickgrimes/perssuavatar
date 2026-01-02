@@ -363,6 +363,7 @@ export default function SocialMediaPage() {
       return (
         <NewPost
           channels={currentWorkspace.channels}
+          workspaceId={selectedWorkspaceId}
           onBack={() => setCurrentView('overview')}
         />
       );

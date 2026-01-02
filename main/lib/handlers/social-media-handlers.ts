@@ -5,7 +5,7 @@
  * Gerencia comunicação entre o renderer e o serviço Social Media (Puppeteer).
  */
 
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, dialog } from 'electron';
 import { 
   SocialMediaService, 
   getSocialMediaService, 
@@ -244,6 +244,96 @@ export function registerSocialMediaHandlers(): void {
       return { success: true, results };
     } catch (error: any) {
       console.error('❌ [SocialMedia] Verify all platforms error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler: Upload de mídia para uma plataforma
+  ipcMain.handle('social-media:upload-media', async (
+    event, 
+    workspaceId: string, 
+    platform: SocialPlatform,
+    options: {
+      mediaPath: string;
+      title?: string;
+      description?: string;
+      coverPath?: string;
+      visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+    }
+  ) => {
+    try {
+      if (!socialMediaService) {
+        return { success: false, error: 'Serviço Social Media não inicializado' };
+      }
+
+      console.log(`📤 [SocialMedia] Iniciando upload para ${platform}...`);
+      sendToRenderer('social-media:upload-status', {
+        workspaceId,
+        platform,
+        status: 'uploading',
+        message: 'Iniciando upload...'
+      });
+
+      const result = await socialMediaService.uploadMedia(workspaceId, platform, options);
+      
+      if (result.success) {
+        sendToRenderer('social-media:upload-success', {
+          workspaceId,
+          platform,
+          message: 'Mídia publicada com sucesso!'
+        });
+      } else {
+        sendToRenderer('social-media:upload-error', {
+          workspaceId,
+          platform,
+          error: result.error || 'Erro desconhecido'
+        });
+      }
+
+      return result;
+    } catch (error: any) {
+      console.error(`❌ [SocialMedia] Upload error for ${platform}:`, error);
+      sendToRenderer('social-media:upload-error', {
+        workspaceId,
+        platform,
+        error: error.message
+      });
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler: Selecionar arquivos de mídia via dialog do sistema
+  ipcMain.handle('social-media:select-media', async (event) => {
+    try {
+      const window = getWindowFn?.();
+      if (!window) {
+        return { success: false, error: 'Janela não encontrada' };
+      }
+
+      const result = await dialog.showOpenDialog(window, {
+        title: 'Selecionar mídia',
+        properties: ['openFile'],
+        filters: [
+          { name: 'Vídeos', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm'] },
+          { name: 'Imagens', extensions: ['jpg', 'jpeg', 'png', 'gif', 'webp'] },
+          { name: 'Todos os arquivos', extensions: ['*'] }
+        ]
+      });
+
+      if (result.canceled || result.filePaths.length === 0) {
+        return { success: false, canceled: true };
+      }
+
+      const filePath = result.filePaths[0];
+      console.log(`📁 [SocialMedia] Arquivo selecionado: ${filePath}`);
+      
+      return { 
+        success: true, 
+        filePath,
+        fileName: filePath.split(/[/\\]/).pop() || 'unknown'
+      };
+    } catch (error: any) {
+      console.error('❌ [SocialMedia] Erro ao selecionar arquivo:', error);
       return { success: false, error: error.message };
     }
   });

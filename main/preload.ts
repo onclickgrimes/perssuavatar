@@ -622,6 +622,9 @@ const handler = {
     // Verificar login de todas as plataformas (headless)
     verifyAllPlatforms: (workspaceId: string) =>
       ipcRenderer.invoke('social-media:verify-all-platforms', workspaceId),
+
+    // Selecionar arquivo de mídia via dialog do sistema
+    selectMedia: () => ipcRenderer.invoke('social-media:select-media'),
     
     // Listener: Status de conexão
     onConnectionStatus: (callback: (data: { workspaceId: string; platform: string; status: string }) => void) => {
@@ -656,6 +659,40 @@ const handler = {
       const subscription = (_: any, data: any) => callback(data);
       ipcRenderer.on('social-media:verification-progress', subscription);
       return () => { ipcRenderer.removeListener('social-media:verification-progress', subscription); };
+    },
+
+    // Upload de mídia para uma plataforma
+    uploadMedia: (
+      workspaceId: string, 
+      platform: 'instagram' | 'tiktok' | 'youtube',
+      options: {
+        mediaPath: string;
+        title?: string;
+        description?: string;
+        coverPath?: string;
+        visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+      }
+    ) => ipcRenderer.invoke('social-media:upload-media', workspaceId, platform, options),
+
+    // Listener: Status de upload
+    onUploadStatus: (callback: (data: { workspaceId: string; platform: string; status: string; message: string }) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('social-media:upload-status', subscription);
+      return () => { ipcRenderer.removeListener('social-media:upload-status', subscription); };
+    },
+    
+    // Listener: Upload bem-sucedido
+    onUploadSuccess: (callback: (data: { workspaceId: string; platform: string; message: string }) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('social-media:upload-success', subscription);
+      return () => { ipcRenderer.removeListener('social-media:upload-success', subscription); };
+    },
+    
+    // Listener: Erro de upload
+    onUploadError: (callback: (data: { workspaceId: string; platform: string; error: string }) => void) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('social-media:upload-error', subscription);
+      return () => { ipcRenderer.removeListener('social-media:upload-error', subscription); };
     },
   }
 }

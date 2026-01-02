@@ -686,24 +686,29 @@ export class YouTube {
       // Seleciona "Não é conteúdo para crianças"
       console.log('🔞 [YouTube] Selecionando "Não é conteúdo para crianças"...');
       try {
-        // Tenta clicar no radio button de "Não é conteúdo para crianças"
-        const notForKidsSelector = 'tp-yt-paper-radio-button[name="NOT_MADE_FOR_KIDS"], ytcp-ve:has-text("Não é conteúdo para crianças")';
-        await this.page.waitForSelector('tp-yt-paper-radio-button[name="NOT_MADE_FOR_KIDS"]', { timeout: 10000 });
-        await this.page.click('tp-yt-paper-radio-button[name="NOT_MADE_FOR_KIDS"]');
+        // O seletor correto para o radio button de "Não é conteúdo para crianças"
+        const notForKidsSelector = 'tp-yt-paper-radio-button[name="VIDEO_MADE_FOR_KIDS_NOT_MFK"]';
+        await this.page.waitForSelector(notForKidsSelector, { timeout: 15000 });
+        await this.page.click(notForKidsSelector);
         await this.randomDelay(1000, 2000);
+        console.log('✅ [YouTube] Classificação etária selecionada');
       } catch (error) {
         console.warn('⚠️ [YouTube] Não foi possível selecionar classificação etária:', error);
-        // Tenta método alternativo
+        // Tenta método alternativo via JavaScript
         try {
           await this.page.evaluate(() => {
             const radioButtons = document.querySelectorAll('tp-yt-paper-radio-button');
             for (const btn of radioButtons) {
-              if (btn.getAttribute('name') === 'NOT_MADE_FOR_KIDS') {
+              const name = btn.getAttribute('name') || '';
+              if (name.includes('NOT_MFK') || name.includes('NOT_MADE_FOR_KIDS')) {
                 (btn as HTMLElement).click();
+                console.log('Clicado via fallback:', name);
                 break;
               }
             }
           });
+          await this.randomDelay(1000, 2000);
+          console.log('✅ [YouTube] Classificação etária selecionada (fallback)');
         } catch (e) {
           console.warn('⚠️ [YouTube] Método alternativo também falhou');
         }

@@ -1,5 +1,5 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Instagram, 
   Youtube, 
@@ -13,14 +13,24 @@ import {
   Sparkles,
   Send,
   FileVideo,
-  ImagePlus
+  ImagePlus,
+  Loader2,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react';
 import { TikTokIcon } from './icons/TikTokIcon';
 import { SocialPlatform, PLATFORM_CONFIG, Channel } from './types';
 
 interface NewPostProps {
   channels: Channel[];
+  workspaceId: string;
   onBack?: () => void;
+}
+
+interface UploadStatus {
+  platform: SocialPlatform;
+  status: 'pending' | 'uploading' | 'success' | 'error';
+  message?: string;
 }
 
 const PLATFORM_ICONS: Record<SocialPlatform, typeof Instagram> = {
@@ -29,16 +39,63 @@ const PLATFORM_ICONS: Record<SocialPlatform, typeof Instagram> = {
   youtube: Youtube
 };
 
-export const NewPost = ({ channels, onBack }: NewPostProps) => {
+export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
   const [caption, setCaption] = useState('');
-  const [mediaFiles, setMediaFiles] = useState<File[]>([]);
-  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
+  const [title, setTitle] = useState('');
+  const [mediaPath, setMediaPath] = useState<string>('');
+  const [mediaFileName, setMediaFileName] = useState<string>('');
+  const [previewUrl, setPreviewUrl] = useState<string>('');
   const [scheduleDate, setScheduleDate] = useState<string>('');
   const [scheduleTime, setScheduleTime] = useState<string>('');
   const [isScheduled, setIsScheduled] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadStatuses, setUploadStatuses] = useState<UploadStatus[]>([]);
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Setup IPC listeners para upload
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.electron?.socialMedia) return;
+
+    const unsubscribeStatus = window.electron.socialMedia.onUploadStatus?.((data: any) => {
+      if (data.workspaceId === workspaceId) {
+        setUploadStatuses(prev => prev.map(s => 
+          s.platform === data.platform 
+            ? { ...s, status: 'uploading', message: data.message }
+            : s
+        ));
+      }
+    });
+
+    const unsubscribeSuccess = window.electron.socialMedia.onUploadSuccess?.((data: any) => {
+      if (data.workspaceId === workspaceId) {
+        console.log(`✅ Upload para ${data.platform} concluído`);
+        setUploadStatuses(prev => prev.map(s => 
+          s.platform === data.platform 
+            ? { ...s, status: 'success', message: data.message }
+            : s
+        ));
+      }
+    });
+
+    const unsubscribeError = window.electron.socialMedia.onUploadError?.((data: any) => {
+      if (data.workspaceId === workspaceId) {
+        console.error(`❌ Erro no upload para ${data.platform}:`, data.error);
+        setUploadStatuses(prev => prev.map(s => 
+          s.platform === data.platform 
+            ? { ...s, status: 'error', message: data.error }
+            : s
+        ));
+      }
+    });
+
+    return () => {
+      unsubscribeStatus?.();
+      unsubscribeSuccess?.();
+      unsubscribeError?.();
+    };
+  }, [workspaceId]);
 
   const toggleChannel = (channelId: string) => {
     setSelectedChannels(prev => 
@@ -48,31 +105,103 @@ export const NewPost = ({ channels, onBack }: NewPostProps) => {
     );
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || []);
-    setMediaFiles(prev => [...prev, ...files]);
+  // Seleciona arquivo usando o dialog do sistema (para obter o caminho correto)
+  const handleSelectMedia = async () => {
+    if (!window.electron?.socialMedia?.selectMedia) {
+      console.error('selectMedia não disponível');
+      return;
+    }
+
+    const result = await window.electron.socialMedia.selectMedia();
     
-    // Criar URLs de preview
-    files.forEach(file => {
-      const url = URL.createObjectURL(file);
-      setPreviewUrls(prev => [...prev, url]);
-    });
+    if (result.success && result.filePath) {
+      console.log('📁 Arquivo selecionado:', result);
+      setMediaPath(result.filePath);
+      setMediaFileName(result.fileName || 'Arquivo');
+      
+      // Para preview, usa file:// protocol
+      setPreviewUrl(`file://${result.filePath}`);
+    } else if (!result.canceled) {
+      console.error('Erro ao selecionar arquivo:', result.error);
+    }
   };
 
-  const removeMedia = (index: number) => {
-    setMediaFiles(prev => prev.filter((_, i) => i !== index));
-    URL.revokeObjectURL(previewUrls[index]);
-    setPreviewUrls(prev => prev.filter((_, i) => i !== index));
+  const removeMedia = () => {
+    setMediaPath('');
+    setMediaFileName('');
+    setPreviewUrl('');
   };
 
-  const handlePost = () => {
-    console.log('Posting...', {
+  const handlePost = async () => {
+    if (!window.electron?.socialMedia || !mediaPath || selectedChannels.length === 0) {
+      console.error('Condições não atendidas para upload');
+      return;
+    }
+
+    setIsUploading(true);
+
+    // Prepara os status iniciais
+    const selectedPlatforms = channels
+      .filter(c => selectedChannels.includes(c.id))
+      .map(c => c.platform);
+    
+    setUploadStatuses(selectedPlatforms.map(platform => ({
+      platform,
+      status: 'pending'
+    })));
+
+    console.log('📤 Iniciando uploads...', {
       channels: selectedChannels,
+      title,
       caption,
-      mediaFiles,
+      mediaPath,
       scheduled: isScheduled ? { date: scheduleDate, time: scheduleTime } : null
     });
-    // TODO: Implementar lógica de postagem
+
+    // Faz upload para cada plataforma selecionada
+    for (const channel of channels.filter(c => selectedChannels.includes(c.id))) {
+      const platform = channel.platform;
+      
+      setUploadStatuses(prev => prev.map(s => 
+        s.platform === platform 
+          ? { ...s, status: 'uploading', message: 'Iniciando...' }
+          : s
+      ));
+
+      try {
+        const result = await window.electron.socialMedia.uploadMedia(
+          workspaceId,
+          platform as 'instagram' | 'tiktok' | 'youtube',
+          {
+            mediaPath,
+            title: title || caption.substring(0, 100),
+            description: caption
+          }
+        );
+
+        if (result.success) {
+          setUploadStatuses(prev => prev.map(s => 
+            s.platform === platform 
+              ? { ...s, status: 'success', message: 'Publicado!' }
+              : s
+          ));
+        } else {
+          setUploadStatuses(prev => prev.map(s => 
+            s.platform === platform 
+              ? { ...s, status: 'error', message: result.error || 'Erro' }
+              : s
+          ));
+        }
+      } catch (error: any) {
+        setUploadStatuses(prev => prev.map(s => 
+          s.platform === platform 
+            ? { ...s, status: 'error', message: error.message || 'Erro' }
+            : s
+        ));
+      }
+    }
+
+    setIsUploading(false);
   };
 
   return (
@@ -139,7 +268,7 @@ export const NewPost = ({ channels, onBack }: NewPostProps) => {
             cursor: 'pointer',
             transition: 'all 0.2s ease'
           }}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleSelectMedia}
           onMouseEnter={(e) => {
             e.currentTarget.style.borderColor = '#6366f1';
             e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.05)';
@@ -149,14 +278,6 @@ export const NewPost = ({ channels, onBack }: NewPostProps) => {
             e.currentTarget.style.backgroundColor = '#18181b';
           }}
           >
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,video/*"
-              multiple
-              onChange={handleFileSelect}
-              style={{ display: 'none' }}
-            />
             <div style={{
               width: '64px',
               height: '64px',
@@ -170,7 +291,7 @@ export const NewPost = ({ channels, onBack }: NewPostProps) => {
               <ImagePlus size={32} color="#6366f1" />
             </div>
             <p style={{ color: 'white', fontWeight: 600, marginBottom: '4px' }}>
-              Arraste arquivos ou clique para fazer upload
+              Clique para selecionar um arquivo
             </p>
             <p style={{ color: '#71717a', fontSize: '13px' }}>
               Suporta imagens e vídeos (MP4, MOV, JPG, PNG)
@@ -178,54 +299,56 @@ export const NewPost = ({ channels, onBack }: NewPostProps) => {
           </div>
 
           {/* Preview de Mídia */}
-          {previewUrls.length > 0 && (
+          {mediaPath && (
             <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fill, minmax(100px, 1fr))',
-              gap: '12px'
+              position: 'relative',
+              borderRadius: '12px',
+              overflow: 'hidden',
+              backgroundColor: '#27272a',
+              border: '1px solid #3f3f46'
             }}>
-              {previewUrls.map((url, index) => (
-                <div key={index} style={{
-                  position: 'relative',
-                  aspectRatio: '1',
+              <div style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '48px',
+                  height: '48px',
                   borderRadius: '8px',
-                  overflow: 'hidden',
-                  backgroundColor: '#27272a'
+                  backgroundColor: '#3f3f46',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
                 }}>
-                  {mediaFiles[index]?.type.startsWith('video/') ? (
-                    <video 
-                      src={url} 
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
+                  {mediaPath.match(/\.(mp4|mov|avi|mkv|webm)$/i) ? (
+                    <FileVideo size={24} color="#a1a1aa" />
                   ) : (
-                    <img 
-                      src={url} 
-                      alt="" 
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
+                    <Image size={24} color="#a1a1aa" />
                   )}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); removeMedia(index); }}
-                    style={{
-                      position: 'absolute',
-                      top: '4px',
-                      right: '4px',
-                      width: '24px',
-                      height: '24px',
-                      borderRadius: '50%',
-                      backgroundColor: 'rgba(0,0,0,0.7)',
-                      border: 'none',
-                      color: 'white',
-                      cursor: 'pointer',
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <X size={14} />
-                  </button>
                 </div>
-              ))}
+                <div style={{ flex: 1 }}>
+                  <p style={{ color: 'white', fontSize: '14px', fontWeight: 500 }}>
+                    {mediaFileName}
+                  </p>
+                  <p style={{ color: '#71717a', fontSize: '12px' }}>
+                    {mediaPath.match(/\.(mp4|mov|avi|mkv|webm)$/i) ? 'Vídeo' : 'Imagem'}
+                  </p>
+                </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); removeMedia(); }}
+                  style={{
+                    width: '32px',
+                    height: '32px',
+                    borderRadius: '50%',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#ef4444',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}
+                >
+                  <X size={16} />
+                </button>
+              </div>
             </div>
           )}
 

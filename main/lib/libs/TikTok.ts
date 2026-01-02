@@ -401,6 +401,192 @@ export class TikTok {
   }
 
   // ========================================
+  // MÉTODOS PÚBLICOS - UPLOAD
+  // ========================================
+
+  /**
+   * Faz upload de um vídeo para o TikTok
+   * @param videoPath Caminho do arquivo de vídeo
+   * @param description Descrição/legenda do vídeo
+   * @param coverPath Caminho da imagem de capa (opcional)
+   */
+  async uploadVideo(
+    videoPath: string, 
+    description: string,
+    coverPath?: string
+  ): Promise<boolean> {
+    if (!this._isLoggedIn || !this.page) {
+      throw new Error('Usuário não está logado no TikTok');
+    }
+
+    try {
+      console.log(`📹 [TikTok] Iniciando upload do vídeo: ${videoPath}`);
+
+      // Navega para a página de upload
+      console.log('🌐 [TikTok] Navegando para página de upload...');
+      await this.page.goto('https://www.tiktok.com/tiktokstudio/upload?from=webapp', { 
+        waitUntil: 'load',
+        timeout: 60000 
+      });
+      await this.randomDelay(3000, 5000);
+
+      // Verifica se aparece modal de "Turn on" / "Habilitar" / "Ligar"
+      try {
+        const modalButton = await this.page.$('button:has-text("Turn on"), button:has-text("Habilitar"), button:has-text("Ligar")');
+        if (modalButton) {
+          console.log('🔔 [TikTok] Modal de ativação detectado, clicando...');
+          await modalButton.click();
+          await this.randomDelay(2000, 3000);
+        }
+      } catch (error) {
+        // Tenta fallback via evaluate
+        await this.page.evaluate(() => {
+          const buttons = document.querySelectorAll('button');
+          for (const btn of buttons) {
+            const text = btn.textContent?.toLowerCase() || '';
+            if (text.includes('turn on') || text.includes('habilitar') || text.includes('ligar')) {
+              btn.click();
+              break;
+            }
+          }
+        });
+        await this.randomDelay(1000, 2000);
+      }
+
+      // Espera o input de arquivo aparecer e faz upload
+      console.log('⏳ [TikTok] Aguardando campo de upload...');
+      const fileInputSelector = 'input[type="file"][accept*="video"]';
+      await this.page.waitForSelector(fileInputSelector, { timeout: 30000 });
+
+      console.log('📤 [TikTok] Fazendo upload do arquivo...');
+      const fileInput = await this.page.$(fileInputSelector);
+      if (!fileInput) {
+        throw new Error('Campo de upload não encontrado');
+      }
+      await fileInput.uploadFile(videoPath);
+      
+      // Aguarda o processamento do upload
+      console.log('⏳ [TikTok] Aguardando processamento do upload...');
+      await this.randomDelay(8000, 12000);
+
+      // Preenche a descrição
+      console.log('📝 [TikTok] Preenchendo descrição...');
+      try {
+        // Tenta encontrar o editor de descrição (DraftEditor)
+        const descriptionEditor = await this.page.$('.public-DraftEditor-content[contenteditable="true"]');
+        if (descriptionEditor) {
+          await descriptionEditor.click();
+          await this.randomDelay(500, 1000);
+          
+          // Limpa qualquer conteúdo existente
+          await this.page.keyboard.down('Control');
+          await this.page.keyboard.press('a');
+          await this.page.keyboard.up('Control');
+          await this.page.keyboard.press('Backspace');
+          
+          // Digita a descrição
+          await this.page.keyboard.type(description, { delay: 20 });
+          await this.randomDelay(1000, 2000);
+          console.log('✅ [TikTok] Descrição preenchida');
+        } else {
+          console.warn('⚠️ [TikTok] Editor de descrição não encontrado');
+        }
+      } catch (error) {
+        console.warn('⚠️ [TikTok] Erro ao preencher descrição:', error);
+      }
+
+      // Upload da capa (se fornecida)
+      if (coverPath) {
+        console.log('🖼️ [TikTok] Fazendo upload da capa...');
+        try {
+          const coverInputSelector = 'input[type="file"][accept*="image"]';
+          const coverInput = await this.page.$(coverInputSelector);
+          if (coverInput) {
+            await coverInput.uploadFile(coverPath);
+            await this.randomDelay(3000, 5000);
+
+            // Clica no botão Confirm
+            const confirmButton = await this.page.$('button:has-text("Confirm"), button:has-text("Confirmar")');
+            if (confirmButton) {
+              await confirmButton.click();
+              await this.randomDelay(2000, 3000);
+              console.log('✅ [TikTok] Capa carregada');
+            } else {
+              // Fallback via evaluate
+              await this.page.evaluate(() => {
+                const buttons = document.querySelectorAll('button');
+                for (const btn of buttons) {
+                  const text = btn.textContent?.toLowerCase() || '';
+                  if (text.includes('confirm') || text.includes('confirmar')) {
+                    btn.click();
+                    break;
+                  }
+                }
+              });
+              await this.randomDelay(2000, 3000);
+            }
+          }
+        } catch (error) {
+          console.warn('⚠️ [TikTok] Erro ao carregar capa:', error);
+        }
+      }
+
+      // Aguarda um pouco antes de publicar
+      console.log('⏳ [TikTok] Aguardando processamento final...');
+      await this.randomDelay(5000, 8000);
+
+      // Clica no botão Post/Publicar
+      console.log('🚀 [TikTok] Publicando vídeo...');
+      try {
+        const postButtonSelector = 'button[data-e2e="post_video_button"]';
+        const postButton = await this.page.$(postButtonSelector);
+        
+        if (postButton) {
+          await postButton.click();
+          console.log('✅ [TikTok] Botão Post clicado');
+        } else {
+          // Fallback: procura por texto
+          await this.page.evaluate(() => {
+            const buttons = document.querySelectorAll('button');
+            for (const btn of buttons) {
+              const text = btn.textContent?.toLowerCase() || '';
+              if (text === 'post' || text === 'publicar') {
+                btn.click();
+                break;
+              }
+            }
+          });
+          console.log('✅ [TikTok] Botão Post clicado (fallback)');
+        }
+      } catch (error) {
+        console.error('❌ [TikTok] Erro ao clicar em Post:', error);
+        throw error;
+      }
+
+      // Aguarda confirmação de publicação
+      console.log('⏳ [TikTok] Aguardando confirmação de publicação...');
+      await this.randomDelay(8000, 15000);
+
+      // Verifica se houve sucesso
+      const pageContent = await this.page.content();
+      if (pageContent.includes('Your video has been published') || 
+          pageContent.includes('Seu vídeo foi publicado') ||
+          pageContent.includes('Video published') ||
+          pageContent.includes('posted')) {
+        console.log('✅ [TikTok] Vídeo publicado com sucesso!');
+        return true;
+      }
+
+      console.log('✅ [TikTok] Upload concluído (verifique manualmente se foi publicado)');
+      return true;
+
+    } catch (error) {
+      console.error('❌ [TikTok] Erro ao fazer upload do vídeo:', error);
+      throw error;
+    }
+  }
+
+  // ========================================
   // MÉTODOS PÚBLICOS - CLEANUP
   // ========================================
 

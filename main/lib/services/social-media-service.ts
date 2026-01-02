@@ -980,6 +980,125 @@ export class SocialMediaService {
     console.log(`📊 [SocialMedia] Verificação concluída:`, results.map(r => `${r.platform}: ${r.isValid ? '✅' : '⚠️'}`));
     return results;
   }
+
+  /**
+   * Faz upload de mídia para uma plataforma
+   */
+  async uploadMedia(
+    workspaceId: string,
+    platform: SocialPlatform,
+    options: {
+      mediaPath: string;
+      title?: string;
+      description?: string;
+      coverPath?: string;
+      visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+    }
+  ): Promise<{ success: boolean; error?: string }> {
+    console.log(`📤 [SocialMedia] Fazendo upload para ${platform}...`);
+
+    try {
+      if (platform === 'youtube') {
+        const youtube = createYouTubeInstance(workspaceId, {
+          userDataDir: this.getUserDataDir(workspaceId),
+          headless: false // Precisa ser visível para interações
+        });
+        
+        await youtube.init();
+        
+        // Carrega cookies
+        const page = youtube.getPage();
+        if (page) {
+          await this.loadCookies(page, workspaceId, platform);
+        }
+        
+        // Navega e verifica login
+        const isLoggedIn = await youtube.goToStudio();
+        if (!isLoggedIn) {
+          await youtube.close();
+          return { success: false, error: 'Usuário não está logado no YouTube' };
+        }
+        
+        // Faz upload do vídeo
+        const success = await youtube.uploadVideo(
+          options.mediaPath,
+          options.title || 'Vídeo sem título',
+          options.description,
+          options.visibility || 'PUBLIC'
+        );
+        
+        await youtube.close();
+        return { success };
+
+      } else if (platform === 'tiktok') {
+        const tiktok = createTikTokInstance(workspaceId, {
+          userDataDir: this.getUserDataDir(workspaceId),
+          headless: false
+        });
+        
+        await tiktok.init();
+        
+        // Carrega cookies
+        const page = tiktok.getPage();
+        if (page) {
+          await this.loadCookies(page, workspaceId, platform);
+        }
+        
+        // Navega e verifica login
+        const isLoggedIn = await tiktok.goToStudio();
+        if (!isLoggedIn) {
+          await tiktok.close();
+          return { success: false, error: 'Usuário não está logado no TikTok' };
+        }
+        
+        // Faz upload do vídeo
+        const success = await tiktok.uploadVideo(
+          options.mediaPath,
+          options.description || '',
+          options.coverPath
+        );
+        
+        await tiktok.close();
+        return { success };
+
+      } else if (platform === 'instagram') {
+        const instagram = createInstagramInstance(workspaceId, {
+          userDataDir: this.getUserDataDir(workspaceId),
+          headless: false
+        });
+        
+        await instagram.init();
+        
+        // Carrega cookies
+        const page = instagram.getPage();
+        if (page) {
+          await this.loadCookies(page, workspaceId, platform);
+        }
+        
+        // Navega e verifica login
+        const isLoggedIn = await instagram.goToInstagram();
+        if (!isLoggedIn) {
+          await instagram.close();
+          return { success: false, error: 'Usuário não está logado no Instagram' };
+        }
+        
+        // Faz upload do post
+        const success = await instagram.makePost(
+          options.mediaPath,
+          options.description
+        );
+        
+        await instagram.close();
+        return { success };
+      }
+
+      return { success: false, error: 'Plataforma não suportada' };
+
+    } catch (error: any) {
+      console.error(`❌ [SocialMedia] Erro ao fazer upload para ${platform}:`, error);
+      return { success: false, error: error?.message || 'Erro desconhecido' };
+    }
+  }
 }
 
 // Singleton para uso global
