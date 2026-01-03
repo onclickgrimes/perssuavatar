@@ -430,30 +430,7 @@ export class TikTok {
       });
       await this.randomDelay(3000, 5000);
 
-      // Verifica se aparece modal de "Turn on" / "Habilitar" / "Ligar"
-      try {
-        const modalButton = await this.page.$('button:has-text("Turn on"), button:has-text("Habilitar"), button:has-text("Ligar")');
-        if (modalButton) {
-          console.log('🔔 [TikTok] Modal de ativação detectado, clicando...');
-          await modalButton.click();
-          await this.randomDelay(2000, 3000);
-        }
-      } catch (error) {
-        // Tenta fallback via evaluate
-        await this.page.evaluate(() => {
-          const buttons = document.querySelectorAll('button');
-          for (const btn of buttons) {
-            const text = btn.textContent?.toLowerCase() || '';
-            if (text.includes('turn on') || text.includes('habilitar') || text.includes('ligar')) {
-              btn.click();
-              break;
-            }
-          }
-        });
-        await this.randomDelay(1000, 2000);
-      }
-
-      // Espera o input de arquivo aparecer e faz upload
+      // Espera o input de arquivo aparecer e faz upload PRIMEIRO
       console.log('⏳ [TikTok] Aguardando campo de upload...');
       const fileInputSelector = 'input[type="file"][accept*="video"]';
       await this.page.waitForSelector(fileInputSelector, { timeout: 30000 });
@@ -468,6 +445,27 @@ export class TikTok {
       // Aguarda o processamento do upload
       console.log('⏳ [TikTok] Aguardando processamento do upload...');
       await this.randomDelay(8000, 12000);
+
+      // Verifica se aparece modal de "Turn on" / "Habilitar" / "Ligar" (pode aparecer após upload)
+      try {
+        const modalButton = await this.page.$('button');
+        if (modalButton) {
+          // Verifica se é o modal de ativação
+          const buttons = await this.page.$$('button');
+          for (const btn of buttons) {
+            const text = await btn.evaluate(el => (el.textContent || '').toLowerCase());
+            if (text.indexOf('turn on') >= 0 || text.indexOf('habilitar') >= 0 || text.indexOf('ligar') >= 0) {
+              console.log('🔔 [TikTok] Modal de ativação detectado, clicando...');
+              await btn.click();
+              await this.randomDelay(1000, 2000);
+              break;
+            }
+          }
+        }
+      } catch (error) {
+        // Ignora se não encontrar o modal
+        console.log('ℹ️ [TikTok] Nenhum modal de ativação detectado');
+      }
 
       // Preenche a descrição
       console.log('📝 [TikTok] Preenchendo descrição...');
@@ -515,9 +513,10 @@ export class TikTok {
               // Fallback via evaluate
               await this.page.evaluate(() => {
                 const buttons = document.querySelectorAll('button');
-                for (const btn of buttons) {
-                  const text = btn.textContent?.toLowerCase() || '';
-                  if (text.includes('confirm') || text.includes('confirmar')) {
+                for (let i = 0; i < buttons.length; i++) {
+                  const btn = buttons[i];
+                  const text = (btn.textContent || '').toLowerCase();
+                  if (text.indexOf('confirm') >= 0 || text.indexOf('confirmar') >= 0) {
                     btn.click();
                     break;
                   }
@@ -546,21 +545,41 @@ export class TikTok {
           console.log('✅ [TikTok] Botão Post clicado');
         } else {
           // Fallback: procura por texto
-          await this.page.evaluate(() => {
-            const buttons = document.querySelectorAll('button');
-            for (const btn of buttons) {
-              const text = btn.textContent?.toLowerCase() || '';
-              if (text === 'post' || text === 'publicar') {
-                btn.click();
-                break;
-              }
+          const buttons = await this.page.$$('button');
+          for (const btn of buttons) {
+            const text = await btn.evaluate(el => (el.textContent || '').toLowerCase().trim());
+            if (text === 'post' || text === 'publicar') {
+              await btn.click();
+              console.log('✅ [TikTok] Botão Post clicado (fallback)');
+              break;
             }
-          });
-          console.log('✅ [TikTok] Botão Post clicado (fallback)');
+          }
         }
       } catch (error) {
         console.error('❌ [TikTok] Erro ao clicar em Post:', error);
         throw error;
+      }
+
+      // Aguarda o modal de confirmação aparecer
+      console.log('⏳ [TikTok] Verificando modal de confirmação...');
+      await this.randomDelay(2000, 3000);
+
+      // Verifica se aparece o modal "Continue to post?" e clica em "Post now" / "Publicar agora"
+      try {
+        const labels = await this.page.$$('.TUXButton-label');
+        for (const label of labels) {
+          const textHandle = await label.getProperty('innerText');
+          const text = ((await textHandle.jsonValue()) as string || '').toLowerCase().trim();
+          
+          if (text === 'post now' || text === 'publicar agora') {
+            console.log('🔔 [TikTok] Clicando em "' + text + '"...');
+            await label.click();
+            await this.randomDelay(2000, 3000);
+            break;
+          }
+        }
+      } catch (error) {
+        console.log('ℹ️ [TikTok] Modal não detectado');
       }
 
       // Aguarda confirmação de publicação
@@ -569,10 +588,10 @@ export class TikTok {
 
       // Verifica se houve sucesso
       const pageContent = await this.page.content();
-      if (pageContent.includes('Your video has been published') || 
-          pageContent.includes('Seu vídeo foi publicado') ||
-          pageContent.includes('Video published') ||
-          pageContent.includes('posted')) {
+      if (pageContent.indexOf('Your video has been published') >= 0 || 
+          pageContent.indexOf('Seu vídeo foi publicado') >= 0 ||
+          pageContent.indexOf('Video published') >= 0 ||
+          pageContent.indexOf('posted') >= 0) {
         console.log('✅ [TikTok] Vídeo publicado com sucesso!');
         return true;
       }
