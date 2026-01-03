@@ -1422,49 +1422,47 @@ export class Instagram {
       const shareClicked = await this.clickButtonByText(['Compartilhar', 'Share']);
       
       if (shareClicked) {
-        // Aguarda o modal ser fechado (indica que a publicação foi concluída)
+        // Aguarda a publicação ser concluída
         console.log('⏳ [Instagram] Aguardando conclusão da publicação...');
         
-        // Primeiro verifica se o modal existe
-        const modalSelector = 'div[aria-label="Criar novo post"], div[aria-label="Create new post"]';
-        let modal = await this.page.$(modalSelector);
-        
-        if (!modal) {
-          // Tenta seletor mais genérico - qualquer dialog
-          modal = await this.page.$('div[role="dialog"]');
-          if (modal) {
-            console.log('🔍 [Instagram] Modal dialog encontrado (genérico)');
-          }
-        } else {
-          console.log('🔍 [Instagram] Modal "Criar novo post" encontrado');
-        }
-        
-        if (!modal) {
-          console.log('⚠️ [Instagram] Nenhum modal encontrado, assumindo sucesso');
-          return true;
-        }
-        
-        // Usa polling para verificar quando o modal desaparece
         const maxWaitTime = 180000; // 3 minutos
-        const checkInterval = 3000; // Verifica a cada 3 segundos
+        const checkInterval = 2000; // Verifica a cada 2 segundos
         const startTime = Date.now();
         
+        // Seletores para verificar sucesso
+        const successCheckmarkSelector = 'img[alt="Marca de seleção animada"], img[alt="Animated checkmark"]';
+        const dialogSelector = 'div[role="dialog"]';
+        
         while (Date.now() - startTime < maxWaitTime) {
-          await this.randomDelay(checkInterval, checkInterval + 500);
+          // Prioridade 1: Verifica se o checkmark de sucesso apareceu
+          const successCheckmark = await this.page.$(successCheckmarkSelector);
+          if (successCheckmark) {
+            console.log('✅ [Instagram] Post publicado com sucesso! (checkmark detectado)');
+            await this.randomDelay(2000, 3000); // Aguarda um pouco antes de fechar
+            return true;
+          }
           
-          // Verifica se ainda existe algum modal/dialog
-          const stillExists = await this.page.$('div[role="dialog"]');
-          
-          if (!stillExists) {
+          // Prioridade 2: Verifica se o modal foi fechado
+          const dialogExists = await this.page.$(dialogSelector);
+          if (!dialogExists) {
             console.log('✅ [Instagram] Post publicado com sucesso! (modal fechado)');
             return true;
           }
           
           const elapsed = Math.round((Date.now() - startTime) / 1000);
           console.log(`⏳ [Instagram] Ainda publicando... (${elapsed}s)`);
+          
+          await this.randomDelay(checkInterval, checkInterval + 500);
         }
         
-        console.warn('⚠️ [Instagram] Timeout aguardando modal fechar, mas post pode ter sido publicado');
+        // Verifica uma última vez se o checkmark apareceu
+        const finalCheck = await this.page.$(successCheckmarkSelector);
+        if (finalCheck) {
+          console.log('✅ [Instagram] Post publicado com sucesso! (checkmark na verificação final)');
+          return true;
+        }
+        
+        console.warn('⚠️ [Instagram] Timeout aguardando publicação, mas post pode ter sido publicado');
         return true;
       }
 
