@@ -1065,6 +1065,7 @@ async function openSocialMediaWindow() {
       nodeIntegration: false,
       contextIsolation: true,
       webviewTag: true, // Habilita <webview> para login em redes sociais
+      webSecurity: false, // Permite carregar arquivos locais via file://
     },
   });
 

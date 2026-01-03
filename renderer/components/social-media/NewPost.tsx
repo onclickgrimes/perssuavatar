@@ -53,8 +53,9 @@ const PLATFORM_ICONS: Record<SocialPlatform, typeof Instagram> = {
 
 export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
   const [selectedChannels, setSelectedChannels] = useState<string[]>([]);
-  const [caption, setCaption] = useState('');
   const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [hashtags, setHashtags] = useState('');
   const [mediaPath, setMediaPath] = useState<string>('');
   const [mediaFileName, setMediaFileName] = useState<string>('');
   const [previewUrl, setPreviewUrl] = useState<string>('');
@@ -133,7 +134,10 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
       setMediaFileName(result.fileName || 'Arquivo');
       
       // Para preview, usa file:// protocol
-      const fileUrl = `file://${result.filePath}`;
+      // No Windows, converte barras invertidas para normais e usa file:///
+      const normalizedPath = result.filePath.replace(/\\/g, '/');
+      const fileUrl = encodeURI(`file:///${normalizedPath}`);
+      console.log('🔗 Preview URL:', fileUrl);
       setPreviewUrl(fileUrl);
       
       // Detecta orientação da mídia automaticamente
@@ -221,7 +225,8 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
     console.log('📤 Iniciando uploads...', {
       channels: selectedChannels,
       title,
-      caption,
+      description,
+      hashtags,
       mediaPath,
       orientation: mediaOrientation,
       scheduled: isScheduled ? { date: scheduleDate, time: scheduleTime } : null
@@ -238,13 +243,31 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
       ));
 
       try {
+        // Monta descrição com hashtags
+        const hashtagsText = hashtags.trim() ? `\n\n${hashtags.trim()}` : '';
+        
+        // Para YouTube: título e descrição separados
+        // Para Instagram/TikTok: título + descrição + hashtags concatenados
+        let uploadTitle = title;
+        let uploadDescription = description;
+        
+        if (platform === 'youtube') {
+          // YouTube aceita título e descrição separados
+          uploadDescription = description + hashtagsText;
+        } else {
+          // Instagram e TikTok: concatena tudo no campo de descrição
+          const combined = [title, description].filter(Boolean).join('\n');
+          uploadTitle = '';
+          uploadDescription = combined + hashtagsText;
+        }
+        
         const result = await window.electron.socialMedia.uploadMedia(
           workspaceId,
           platform as 'instagram' | 'tiktok' | 'youtube',
           {
             mediaPath,
-            title: title || caption.substring(0, 100),
-            description: caption,
+            title: uploadTitle || title,
+            description: uploadDescription,
             orientation: mediaOrientation
           }
         );
@@ -275,14 +298,19 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
   };
 
   return (
-    <div style={{
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100%',
-      width: '100%',
-      maxWidth: '900px',
-      margin: '0 auto'
-    }}>
+    <div 
+      className="social-media-scrollbar"
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100%',
+        width: '100%',
+        maxWidth: '900px',
+        margin: '0 auto',
+        overflowY: 'auto',
+        paddingBottom: '32px'
+      }}
+    >
       {/* Header */}
       <div style={{ 
         display: 'flex', 
@@ -325,48 +353,53 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
         )}
       </div>
 
-      <div style={{ display: 'flex', gap: '24px', flex: 1 }}>
-        {/* Coluna Esquerda - Mídia e Caption */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          {/* Upload de Mídia */}
-          <div style={{
-            backgroundColor: '#18181b',
-            border: '2px dashed #3f3f46',
-            borderRadius: '12px',
-            padding: '32px',
-            textAlign: 'center',
-            cursor: 'pointer',
-            transition: 'all 0.2s ease'
-          }}
-          onClick={handleSelectMedia}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.borderColor = '#6366f1';
-            e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.05)';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.borderColor = '#3f3f46';
-            e.currentTarget.style.backgroundColor = '#18181b';
-          }}
-          >
+      <div style={{ display: 'flex', gap: '24px', flex: 1, minHeight: 0 }}>
+        {/* Coluna Esquerda - Mídia e Campos */}
+        <div 
+          className="social-media-scrollbar"
+          style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '20px', overflowY: 'auto', paddingRight: '8px' }}
+        >
+          {/* Upload de Mídia - só mostra se não tiver mídia */}
+          {!mediaPath && (
             <div style={{
-              width: '64px',
-              height: '64px',
-              borderRadius: '16px',
-              backgroundColor: 'rgba(99, 102, 241, 0.1)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto 16px'
-            }}>
-              <ImagePlus size={32} color="#6366f1" />
+              backgroundColor: '#18181b',
+              border: '2px dashed #3f3f46',
+              borderRadius: '12px',
+              padding: '32px',
+              textAlign: 'center',
+              cursor: 'pointer',
+              transition: 'all 0.2s ease'
+            }}
+            onClick={handleSelectMedia}
+            onMouseEnter={(e) => {
+              e.currentTarget.style.borderColor = '#6366f1';
+              e.currentTarget.style.backgroundColor = 'rgba(99, 102, 241, 0.05)';
+            }}
+            onMouseLeave={(e) => {
+              e.currentTarget.style.borderColor = '#3f3f46';
+              e.currentTarget.style.backgroundColor = '#18181b';
+            }}
+            >
+              <div style={{
+                width: '64px',
+                height: '64px',
+                borderRadius: '16px',
+                backgroundColor: 'rgba(99, 102, 241, 0.1)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 16px'
+              }}>
+                <ImagePlus size={32} color="#6366f1" />
+              </div>
+              <p style={{ color: 'white', fontWeight: 600, marginBottom: '4px' }}>
+                Clique para selecionar um arquivo
+              </p>
+              <p style={{ color: '#71717a', fontSize: '13px' }}>
+                Suporta imagens e vídeos (MP4, MOV, JPG, PNG)
+              </p>
             </div>
-            <p style={{ color: 'white', fontWeight: 600, marginBottom: '4px' }}>
-              Clique para selecionar um arquivo
-            </p>
-            <p style={{ color: '#71717a', fontSize: '13px' }}>
-              Suporta imagens e vídeos (MP4, MOV, JPG, PNG)
-            </p>
-          </div>
+          )}
 
           {/* Preview de Mídia */}
           {mediaPath && (
@@ -374,61 +407,95 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
             <div style={{
               position: 'relative',
               borderRadius: '12px',
-              overflow: 'hidden',
-              backgroundColor: '#27272a',
-              border: '1px solid #3f3f46'
+              overflow: 'visible',
+              backgroundColor: '#0a0a0a',
+              minHeight: '280px'
             }}>
-              <div style={{ padding: '12px', display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <div style={{
-                  width: '48px',
-                  height: '48px',
-                  borderRadius: '8px',
-                  backgroundColor: '#3f3f46',
+              {/* Botão X para remover */}
+              <button
+                onClick={(e) => { e.stopPropagation(); removeMedia(); }}
+                style={{
+                  position: 'absolute',
+                  top: '12px',
+                  right: '12px',
+                  width: '36px',
+                  height: '36px',
+                  borderRadius: '50%',
+                  backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                  backdropFilter: 'blur(8px)',
+                  border: '1px solid rgba(255, 255, 255, 0.1)',
+                  color: 'white',
+                  cursor: 'pointer',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center'
-                }}>
-                  {mediaPath.match(/\.(mp4|mov|avi|mkv|webm)$/i) ? (
-                    <FileVideo size={24} color="#a1a1aa" />
-                  ) : (
-                    <Image size={24} color="#a1a1aa" />
-                  )}
-                </div>
-                <div style={{ flex: 1 }}>
-                  <p style={{ color: 'white', fontSize: '14px', fontWeight: 500 }}>
-                    {mediaFileName}
-                  </p>
-                  <p style={{ color: '#71717a', fontSize: '12px' }}>
-                    {mediaPath.match(/\.(mp4|mov|avi|mkv|webm)$/i) ? 'Vídeo' : 'Imagem'}
-                  </p>
-                </div>
-                <button
-                  onClick={(e) => { e.stopPropagation(); removeMedia(); }}
-                  style={{
-                    width: '32px',
-                    height: '32px',
-                    borderRadius: '50%',
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    border: '1px solid rgba(239, 68, 68, 0.3)',
-                    color: '#ef4444',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center'
-                  }}
-                >
-                  <X size={16} />
-                </button>
+                  justifyContent: 'center',
+                  zIndex: 10,
+                  transition: 'all 0.2s ease'
+                }}
+                onMouseEnter={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.8)';
+                  e.currentTarget.style.transform = 'scale(1.1)';
+                }}
+                onMouseLeave={(e) => {
+                  e.currentTarget.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+                  e.currentTarget.style.transform = 'scale(1)';
+                }}
+              >
+                <X size={18} />
+              </button>
+
+              {/* Preview da Mídia */}
+              <div style={{
+                width: '100%',
+                minHeight: '200px',
+                maxHeight: '300px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#0a0a0a'
+              }}>
+                {mediaPath.match(/\.(mp4|mov|avi|mkv|webm)$/i) ? (
+                  <video
+                    src={previewUrl}
+                    controls
+                    muted
+                    autoPlay
+                    loop
+                    playsInline
+                    onError={(e) => console.error('❌ Erro ao carregar vídeo:', e, previewUrl)}
+                    onLoadedData={() => console.log('✅ Vídeo carregado com sucesso')}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      minHeight: '200px',
+                      maxHeight: '300px',
+                      objectFit: 'contain',
+                      display: 'block'
+                    }}
+                  />
+                ) : (
+                  <img
+                    src={previewUrl}
+                    alt="Preview"
+                    onError={(e) => console.error('❌ Erro ao carregar imagem:', e, previewUrl)}
+                    onLoad={() => console.log('✅ Imagem carregada com sucesso')}
+                    style={{
+                      width: '100%',
+                      maxHeight: '300px',
+                      objectFit: 'contain'
+                    }}
+                  />
+                )}
               </div>
             </div>
 
             {/* Seletor de Orientação */}
             <div style={{
-              marginTop: '12px',
+              marginTop: '16px',
               padding: '12px',
-              backgroundColor: '#27272a',
+              backgroundColor: '#18181b',
               borderRadius: '8px',
-              border: '1px solid #3f3f46'
+              border: '1px solid #27272a'
             }}>
               <span style={{ color: '#a1a1aa', fontSize: '12px', display: 'block', marginBottom: '8px' }}>
                 Orientação (para Instagram)
@@ -443,8 +510,8 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
                       onClick={(e) => { e.stopPropagation(); setMediaOrientation(opt.value); }}
                       style={{
                         flex: 1,
-                        padding: '8px',
-                        backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.2)' : '#18181b',
+                        padding: '10px 8px',
+                        backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.2)' : '#27272a',
                         border: isSelected ? '1px solid #6366f1' : '1px solid #3f3f46',
                         borderRadius: '6px',
                         color: isSelected ? '#818cf8' : '#a1a1aa',
@@ -453,11 +520,12 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
                         flexDirection: 'column' as const,
                         alignItems: 'center',
                         gap: '4px',
-                        transition: 'all 0.2s'
+                        transition: 'all 0.2s',
+                        minWidth: 0
                       }}
                     >
-                      <Icon size={20} />
-                      <span style={{ fontSize: '10px' }}>{opt.label}</span>
+                      <Icon size={18} />
+                      <span style={{ fontSize: '10px', whiteSpace: 'nowrap' }}>{opt.label}</span>
                     </button>
                   );
                 })}
@@ -466,7 +534,7 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
             </>
           )}
 
-          {/* Caption/Legenda */}
+          {/* Título */}
           <div style={{
             backgroundColor: '#18181b',
             borderRadius: '12px',
@@ -480,7 +548,55 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
               marginBottom: '12px'
             }}>
               <span style={{ color: '#a1a1aa', fontSize: '13px', fontWeight: 500 }}>
-                Legenda
+                Título
+              </span>
+              <span style={{ color: '#71717a', fontSize: '11px' }}>
+                YouTube: título separado | Instagram/TikTok: combinado com descrição
+              </span>
+            </div>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="Título do seu post..."
+              maxLength={100}
+              style={{
+                width: '100%',
+                padding: '10px 12px',
+                backgroundColor: '#27272a',
+                border: '1px solid #3f3f46',
+                borderRadius: '8px',
+                color: 'white',
+                fontSize: '14px',
+                outline: 'none'
+              }}
+            />
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'flex-end',
+              marginTop: '8px' 
+            }}>
+              <span style={{ color: '#71717a', fontSize: '12px' }}>
+                {title.length} / 100 caracteres
+              </span>
+            </div>
+          </div>
+
+          {/* Descrição */}
+          <div style={{
+            backgroundColor: '#18181b',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid #27272a'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: '12px'
+            }}>
+              <span style={{ color: '#a1a1aa', fontSize: '13px', fontWeight: 500 }}>
+                Descrição
               </span>
               <button style={{
                 background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
@@ -500,12 +616,12 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
               </button>
             </div>
             <textarea
-              value={caption}
-              onChange={(e) => setCaption(e.target.value)}
-              placeholder="Escreva uma legenda para seu post..."
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="Escreva uma descrição para seu post..."
               style={{
                 width: '100%',
-                minHeight: '120px',
+                minHeight: '100px',
                 backgroundColor: 'transparent',
                 border: 'none',
                 color: 'white',
@@ -521,9 +637,47 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
               marginTop: '8px' 
             }}>
               <span style={{ color: '#71717a', fontSize: '12px' }}>
-                {caption.length} / 2200 caracteres
+                {description.length} / 2200 caracteres
               </span>
             </div>
+          </div>
+
+          {/* Hashtags */}
+          <div style={{
+            backgroundColor: '#18181b',
+            borderRadius: '12px',
+            padding: '16px',
+            border: '1px solid #27272a'
+          }}>
+            <div style={{ 
+              display: 'flex', 
+              justifyContent: 'space-between', 
+              alignItems: 'center',
+              marginBottom: '12px'
+            }}>
+              <span style={{ color: '#a1a1aa', fontSize: '13px', fontWeight: 500 }}>
+                Hashtags
+              </span>
+              <span style={{ color: '#71717a', fontSize: '11px' }}>
+                Adicionadas no final da descrição
+              </span>
+            </div>
+            <textarea
+              value={hashtags}
+              onChange={(e) => setHashtags(e.target.value)}
+              placeholder="#exemplo #hashtag #conteudo"
+              style={{
+                width: '100%',
+                minHeight: '60px',
+                backgroundColor: 'transparent',
+                border: 'none',
+                color: '#818cf8',
+                fontSize: '14px',
+                lineHeight: '1.6',
+                resize: 'vertical',
+                outline: 'none'
+              }}
+            />
           </div>
         </div>
 

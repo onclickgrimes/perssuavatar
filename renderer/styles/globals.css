@@ -91,3 +91,39 @@ body {
   scrollbar-width: thin;
   scrollbar-color: #444 #1a1a1a;
 }
+
+/* Social Media Page Scrollbar - Modern Gray Theme */
+.social-media-scrollbar::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.social-media-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 8px;
+  margin: 4px 0;
+}
+
+.social-media-scrollbar::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+  border-radius: 8px;
+  transition: background 0.2s ease;
+}
+
+.social-media-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+
+.social-media-scrollbar::-webkit-scrollbar-thumb:active {
+  background: #71717a;
+}
+
+.social-media-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Firefox support */
+.social-media-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #3f3f46 transparent;
+}
