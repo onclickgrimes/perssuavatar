@@ -73,6 +73,8 @@ export class SocialMediaService {
   private connections: Map<string, WorkspaceConnection> = new Map();
   private cookiesDir: string;
   private workspaceBrowsers: Map<string, Browser> = new Map(); // Browser compartilhado por workspace
+  private workspacePages: Map<string, Map<SocialPlatform, Page>> = new Map(); // Páginas (abas) por plataforma
+  private workspaceLocks: Map<string, Promise<void>> = new Map(); // Locks para evitar conflitos de userDataDir
   private youtubeInstances: Map<string, YouTube> = new Map(); // Instâncias YouTube por workspace
   private tiktokInstances: Map<string, TikTok> = new Map(); // Instâncias TikTok por workspace
   private instagramInstances: Map<string, Instagram> = new Map(); // Instâncias Instagram por workspace
@@ -99,7 +101,7 @@ export class SocialMediaService {
 
   /**
    * Retorna o diretório de dados do usuário para um workspace
-   * COMPARTILHADO entre todas as plataformas
+   * COMPARTILHADO entre todas as plataformas para economizar RAM e armazenamento
    */
   private getUserDataDir(workspaceId: string): string {
     return path.join(this.cookiesDir, 'profiles', workspaceId);
@@ -154,6 +156,45 @@ export class SocialMediaService {
     
     this.isInitialized = true;
     console.log('✅ [SocialMedia] Service initialized');
+  }
+
+  /**
+   * Aguarda até que o lock do workspace seja liberado
+   */
+  private async waitForLock(workspaceId: string): Promise<void> {
+    const existingLock = this.workspaceLocks.get(workspaceId);
+    if (existingLock) {
+      console.log(`🔒 [SocialMedia] Aguardando lock do workspace ${workspaceId}...`);
+      try {
+        await existingLock;
+      } catch (e) {
+        // Ignora erros do lock anterior
+      }
+    }
+  }
+
+  /**
+   * Adquire um lock para o workspace
+   * Retorna uma função para liberar o lock
+   */
+  private async acquireLock(workspaceId: string): Promise<() => void> {
+    // Aguarda qualquer lock existente
+    await this.waitForLock(workspaceId);
+    
+    // Cria um novo lock
+    let releaseLock: () => void = () => {};
+    const lockPromise = new Promise<void>((resolve) => {
+      releaseLock = () => {
+        console.log(`🔓 [SocialMedia] Lock liberado para workspace ${workspaceId}`);
+        this.workspaceLocks.delete(workspaceId);
+        resolve();
+      };
+    });
+    
+    this.workspaceLocks.set(workspaceId, lockPromise);
+    console.log(`🔒 [SocialMedia] Lock adquirido para workspace ${workspaceId}`);
+    
+    return releaseLock;
   }
 
   /**
@@ -749,6 +790,7 @@ export class SocialMediaService {
 
   /**
    * Abre o navegador para ver a conta conectada
+   * Usa um único navegador por workspace com abas separadas para cada plataforma
    */
   async openBrowser(workspaceId: string, platform: SocialPlatform): Promise<void> {
     // Verifica se tem credenciais
@@ -758,9 +800,6 @@ export class SocialMediaService {
 
     console.log(`🌐 [SocialMedia] Abrindo navegador para ${platform}...`);
 
-    const chromePath = this.findChromePath();
-    const userDataDir = this.getUserDataDir(workspaceId);
-
     // URLs para abrir cada plataforma
     const platformUrls: Record<SocialPlatform, string> = {
       instagram: 'https://www.instagram.com/',
@@ -768,27 +807,92 @@ export class SocialMediaService {
       youtube: 'https://studio.youtube.com/'
     };
 
-    const launchOptions: any = {
-      headless: false,
-      userDataDir,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--lang=pt-BR',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-infobars',
-      ],
-      ignoreDefaultArgs: ['--enable-automation'],
-    };
-
-    if (chromePath) {
-      launchOptions.executablePath = chromePath;
+    // Verifica se já existe uma página aberta para essa plataforma
+    let pagesMap = this.workspacePages.get(workspaceId);
+    if (pagesMap?.has(platform)) {
+      const existingPage = pagesMap.get(platform)!;
+      try {
+        // Verifica se a página ainda está aberta
+        if (!existingPage.isClosed()) {
+          // Traz a página para frente
+          await existingPage.bringToFront();
+          console.log(`✅ [SocialMedia] Aba existente de ${platform} trazida para frente`);
+          return;
+        }
+      } catch (e) {
+        // Página foi fechada, remove do map
+        pagesMap.delete(platform);
+      }
     }
 
-    const browser = await puppeteerExtra.launch(launchOptions);
-    const pages = await browser.pages();
-    const page = pages[0] || await browser.newPage();
+    // Verifica se já existe um navegador aberto para este workspace
+    let browser = this.workspaceBrowsers.get(workspaceId);
+    
+    if (browser) {
+      try {
+        // Verifica se o navegador ainda está conectado
+        if (!browser.connected) {
+          this.workspaceBrowsers.delete(workspaceId);
+          this.workspacePages.delete(workspaceId);
+          browser = undefined;
+        }
+      } catch (e) {
+        this.workspaceBrowsers.delete(workspaceId);
+        this.workspacePages.delete(workspaceId);
+        browser = undefined;
+      }
+    }
+
+    // Se não existe navegador, cria um novo
+    if (!browser) {
+      // Aguarda lock para evitar conflitos com verificações headless
+      const releaseLock = await this.acquireLock(workspaceId);
+      
+      try {
+        const chromePath = this.findChromePath();
+        const userDataDir = this.getUserDataDir(workspaceId);
+
+        // Garante que o diretório existe
+        if (!fs.existsSync(userDataDir)) {
+          fs.mkdirSync(userDataDir, { recursive: true });
+        }
+
+        const launchOptions: any = {
+          headless: false,
+          userDataDir,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--lang=pt-BR',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-infobars',
+          ],
+          ignoreDefaultArgs: ['--enable-automation'],
+        };
+
+        if (chromePath) {
+          launchOptions.executablePath = chromePath;
+        }
+
+        browser = await puppeteerExtra.launch(launchOptions);
+        this.workspaceBrowsers.set(workspaceId, browser);
+        this.workspacePages.set(workspaceId, new Map());
+
+        // Detecta quando o navegador é fechado
+        browser.on('disconnected', () => {
+          console.log(`🔌 [SocialMedia] Navegador do workspace ${workspaceId} foi fechado`);
+          this.workspaceBrowsers.delete(workspaceId);
+          this.workspacePages.delete(workspaceId);
+        });
+      } finally {
+        // Libera o lock após criar o navegador
+        releaseLock();
+      }
+    }
+
+    // Cria uma nova aba para a plataforma
+    const page = await browser.newPage();
 
     // Remove webdriver property
     await page.evaluateOnNewDocument(() => {
@@ -797,13 +901,31 @@ export class SocialMediaService {
       });
     });
 
+    // Carrega os cookies da plataforma
+    await this.loadCookies(page, workspaceId, platform);
+
     // Navega para a plataforma
     await page.goto(platformUrls[platform], { 
       waitUntil: 'networkidle2',
       timeout: 30000 
     });
 
-    console.log(`✅ [SocialMedia] Navegador aberto para ${platform}`);
+    // Armazena a página no map
+    pagesMap = this.workspacePages.get(workspaceId);
+    if (pagesMap) {
+      pagesMap.set(platform, page);
+    }
+
+    // Detecta quando a aba é fechada
+    page.on('close', () => {
+      console.log(`🔌 [SocialMedia] Aba de ${platform} foi fechada`);
+      const pages = this.workspacePages.get(workspaceId);
+      if (pages) {
+        pages.delete(platform);
+      }
+    });
+
+    console.log(`✅ [SocialMedia] Aba aberta para ${platform}`);
   }
 
   /**
@@ -848,6 +970,9 @@ export class SocialMediaService {
     }
 
     console.log(`🔍 [SocialMedia] Verificando login de ${platform}...`);
+
+    // Adquire lock para evitar conflitos de userDataDir
+    const releaseLock = await this.acquireLock(workspaceId);
 
     try {
       let isValid = false;
@@ -946,6 +1071,9 @@ export class SocialMediaService {
         needsRelogin: true,
         error: error?.message || 'Erro desconhecido'
       };
+    } finally {
+      // Sempre libera o lock
+      releaseLock();
     }
   }
 
