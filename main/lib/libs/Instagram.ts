@@ -1286,91 +1286,222 @@ export class Instagram {
   }
 
   /**
-   * Faz um post
+   * Faz um post no Instagram
+   * @param mediaPath Caminho local do arquivo (imagem ou vídeo)
+   * @param caption Legenda do post (opcional)
+   * @param orientation Orientação do corte: 'square', 'portrait' ou 'landscape' (opcional)
    */
-  async makePost(imagePath: string, caption?: string): Promise<boolean> {
+  async makePost(
+    mediaPath: string, 
+    caption?: string, 
+    orientation?: 'square' | 'portrait' | 'landscape'
+  ): Promise<boolean> {
     if (!this.isLoggedIn || !this.page) {
-      throw new Error('Usuário não está logado');
+      throw new Error('Usuário não está logado no Instagram');
     }
 
     try {
-      console.log(`📸 Postando foto: ${imagePath}`);
+      console.log(`📸 [Instagram] Postando mídia: ${mediaPath}, orientação: ${orientation || 'auto'}`);
 
+      // Navega para o Instagram
       await this.page.goto('https://www.instagram.com/', { waitUntil: 'networkidle2' });
       await this.randomDelay(2000, 4000);
 
-      // Clica no botão de criar post
-      const [createButton] = await this.page.$$('svg[aria-label="Novo post"]');
-      console.log("createButton", createButton);
-      await this.page.evaluate((el) => {
-        (el as unknown as HTMLElement).style.border = '3px solid red';
-      }, createButton);
-      if (createButton) {
-        await createButton.click();
-        //aria-label="Postar"
-        const [postButton] = await this.page.$$('svg[aria-label="Postar"]');
-        console.log("postButton", postButton);
-        if (postButton) {
-          await postButton.click();
-        }
-
-        // await this.page.evaluate((el) => (el as HTMLElement).click(), createButton);
-        await this.randomDelay(2000, 3000);
-
-        // Upload da imagem
-        const fileInput = await this.page.$('input[type="file"]');
-        if (fileInput) {
-          const localPath = await this.downloadFile(imagePath, 'upload.jpg');
-          await fileInput.uploadFile(localPath);
-          await this.randomDelay(3000, 5000);
-
-          // Clica em "Avançar"
-          let [nextButton] = await this.page.$$('//div[@role="button" and contains(text(), "Avançar")]');
-          if (nextButton) {
-            await this.page.evaluate((el) => (el as HTMLElement).click(), nextButton);
-            await this.randomDelay(2000, 3000);
-
-            // Clica em "Avançar" novamente (filtros)
-            [nextButton] = await this.page.$$('//div[@role="button" and contains(text(), "Avançar")]');
-            if (nextButton) {
-              await this.page.evaluate((el) => (el as HTMLElement).click(), nextButton);
-              await this.randomDelay(2000, 3000);
-
-              // Adiciona legenda se fornecida
-              const captionField = await this.page.$('div[aria-label="Escreva uma legenda..."][role="textbox"]');
-
-              console.log("captionField", captionField);
-              if (captionField) {
-                await captionField.click({ clickCount: 1 });
-                if (caption) {
-                  await this.page.keyboard.type(caption, { delay: 50 });
-                  await this.randomDelay(1000, 2000);
-                }
-              }
-
-              // Clica em "Compartilhar"
-              const [shareButton] = await this.page.$$('//div[@role="button" and contains(text(), "Compartilhar")]');
-              if (shareButton) {
-                await this.page.evaluate((el) => (el as HTMLElement).click(), shareButton);
-                await this.randomDelay(5000, 8000)
-                fs.unlinkSync(localPath);
-                console.log('✅ Foto postada com sucesso');
-                return true;
-              }
-            }
-          }
-        }
-
+      // Clica no botão de criar post (ícone +)
+      console.log('🔍 [Instagram] Procurando botão de criar post...');
+      const createButtons = await this.page.$$('svg[aria-label="Novo post"], svg[aria-label="New post"]');
+      
+      if (createButtons.length === 0) {
+        console.error('❌ [Instagram] Botão de criar post não encontrado');
+        return false;
       }
 
-      console.log('⚠️ Não foi possível postar a foto');
+      await createButtons[0].click();
+      await this.randomDelay(2000, 3000);
+
+      // Clica no botão "Postar" (submenu que aparece após clicar em criar)
+      console.log('🔍 [Instagram] Procurando botão Postar...');
+      const postButtons = await this.page.$$('svg[aria-label="Postar"], svg[aria-label="Post"]');
+      if (postButtons.length > 0) {
+        await postButtons[0].click();
+        await this.randomDelay(1000, 2000);
+        console.log('✅ [Instagram] Botão Postar clicado');
+      }
+
+      // Espera o modal de upload aparecer e encontra o input de arquivo
+      console.log('⏳ [Instagram] Aguardando modal de upload...');
+      await this.page.waitForSelector('input[type="file"]', { timeout: 10000 });
+      
+      const fileInput = await this.page.$('input[type="file"]');
+      if (!fileInput) {
+        console.error('❌ [Instagram] Input de arquivo não encontrado');
+        return false;
+      }
+
+      // Faz upload do arquivo local diretamente
+      console.log('📤 [Instagram] Fazendo upload do arquivo...');
+      await fileInput.uploadFile(mediaPath);
+      await this.randomDelay(3000, 5000);
+
+      // Seleciona a orientação do corte se especificada
+      if (orientation) {
+        console.log(`📐 [Instagram] Selecionando orientação: ${orientation}...`);
+        try {
+          // Clica no botão "Selecionar corte"
+          const cropButton = await this.page.$('svg[aria-label="Selecionar corte"], svg[aria-label="Select crop"]');
+          if (cropButton) {
+            await cropButton.click();
+            await this.randomDelay(1000, 1500);
+
+            // Mapeia orientação para o aria-label correto
+            const cropLabels: Record<string, string[]> = {
+              'square': ['Ícone de corte em formato quadrado', 'Crop square icon'],
+              'portrait': ['Ícone de corte em formato retrato', 'Crop portrait icon'],
+              'landscape': ['Ícone de corte em formato paisagem', 'Crop landscape icon']
+            };
+
+            const labels = cropLabels[orientation] || [];
+            let orientationClicked = false;
+
+            for (const label of labels) {
+              const orientationButton = await this.page.$(`svg[aria-label="${label}"]`);
+              if (orientationButton) {
+                await orientationButton.click();
+                orientationClicked = true;
+                console.log(`✅ [Instagram] Orientação ${orientation} selecionada`);
+                await this.randomDelay(1000, 1500);
+                break;
+              }
+            }
+
+            if (!orientationClicked) {
+              console.warn(`⚠️ [Instagram] Botão de orientação ${orientation} não encontrado`);
+            }
+          } else {
+            console.warn('⚠️ [Instagram] Botão de corte não encontrado');
+          }
+        } catch (error) {
+          console.warn('⚠️ [Instagram] Erro ao selecionar orientação:', error);
+        }
+      }
+
+      // Clica em "Avançar" (primeira vez - corte)
+      console.log('➡️ [Instagram] Clicando em Avançar...');
+      let nextClicked = await this.clickButtonByText(['Avançar', 'Next']);
+      if (!nextClicked) {
+        console.warn('⚠️ [Instagram] Botão Avançar não encontrado na primeira etapa');
+      }
+      await this.randomDelay(2000, 3000);
+
+      // Clica em "Avançar" novamente (filtros)
+      console.log('➡️ [Instagram] Clicando em Avançar (filtros)...');
+      nextClicked = await this.clickButtonByText(['Avançar', 'Next']);
+      if (!nextClicked) {
+        console.warn('⚠️ [Instagram] Botão Avançar não encontrado na etapa de filtros');
+      }
+      await this.randomDelay(2000, 3000);
+
+      // Adiciona legenda se fornecida
+      if (caption) {
+        console.log('📝 [Instagram] Adicionando legenda...');
+        const captionField = await this.page.$('div[aria-label="Escreva uma legenda..."][role="textbox"], div[aria-label="Write a caption..."][role="textbox"]');
+        
+        if (captionField) {
+          await captionField.click();
+          await this.randomDelay(500, 1000);
+          await this.page.keyboard.type(caption, { delay: 30 });
+          await this.randomDelay(1000, 2000);
+          console.log('✅ [Instagram] Legenda adicionada');
+        } else {
+          console.warn('⚠️ [Instagram] Campo de legenda não encontrado');
+        }
+      }
+
+      // Clica em "Compartilhar"
+      console.log('🚀 [Instagram] Publicando...');
+      const shareClicked = await this.clickButtonByText(['Compartilhar', 'Share']);
+      
+      if (shareClicked) {
+        // Aguarda o modal ser fechado (indica que a publicação foi concluída)
+        console.log('⏳ [Instagram] Aguardando conclusão da publicação...');
+        
+        // Primeiro verifica se o modal existe
+        const modalSelector = 'div[aria-label="Criar novo post"], div[aria-label="Create new post"]';
+        let modal = await this.page.$(modalSelector);
+        
+        if (!modal) {
+          // Tenta seletor mais genérico - qualquer dialog
+          modal = await this.page.$('div[role="dialog"]');
+          if (modal) {
+            console.log('🔍 [Instagram] Modal dialog encontrado (genérico)');
+          }
+        } else {
+          console.log('🔍 [Instagram] Modal "Criar novo post" encontrado');
+        }
+        
+        if (!modal) {
+          console.log('⚠️ [Instagram] Nenhum modal encontrado, assumindo sucesso');
+          return true;
+        }
+        
+        // Usa polling para verificar quando o modal desaparece
+        const maxWaitTime = 180000; // 3 minutos
+        const checkInterval = 3000; // Verifica a cada 3 segundos
+        const startTime = Date.now();
+        
+        while (Date.now() - startTime < maxWaitTime) {
+          await this.randomDelay(checkInterval, checkInterval + 500);
+          
+          // Verifica se ainda existe algum modal/dialog
+          const stillExists = await this.page.$('div[role="dialog"]');
+          
+          if (!stillExists) {
+            console.log('✅ [Instagram] Post publicado com sucesso! (modal fechado)');
+            return true;
+          }
+          
+          const elapsed = Math.round((Date.now() - startTime) / 1000);
+          console.log(`⏳ [Instagram] Ainda publicando... (${elapsed}s)`);
+        }
+        
+        console.warn('⚠️ [Instagram] Timeout aguardando modal fechar, mas post pode ter sido publicado');
+        return true;
+      }
+
+      console.warn('⚠️ [Instagram] Botão Compartilhar não encontrado');
       return false;
 
     } catch (error) {
-      console.error('❌ Erro ao postar foto:', error);
+      console.error('❌ [Instagram] Erro ao postar:', error);
       await this.takeScreenshot('post-error');
       throw error;
     }
+  }
+
+  /**
+   * Clica em um botão pelo texto
+   * @param texts Lista de textos para procurar
+   * @returns true se clicou, false se não encontrou
+   */
+  private async clickButtonByText(texts: string[]): Promise<boolean> {
+    if (!this.page) return false;
+    
+    // Procura por divs com role="button"
+    const buttons = await this.page.$$('div[role="button"]');
+    
+    for (const btn of buttons) {
+      const textHandle = await btn.getProperty('innerText');
+      const text = ((await textHandle.jsonValue()) as string || '').trim();
+      
+      for (const searchText of texts) {
+        if (text === searchText) {
+          await btn.click();
+          return true;
+        }
+      }
+    }
+    
+    return false;
   }
 
   /**

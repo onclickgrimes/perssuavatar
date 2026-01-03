@@ -16,7 +16,10 @@ import {
   ImagePlus,
   Loader2,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Square,
+  RectangleVertical,
+  RectangleHorizontal
 } from 'lucide-react';
 import { TikTokIcon } from './icons/TikTokIcon';
 import { SocialPlatform, PLATFORM_CONFIG, Channel } from './types';
@@ -33,6 +36,15 @@ interface UploadStatus {
   message?: string;
 }
 
+// Tipo de orientação da mídia
+type MediaOrientation = 'square' | 'portrait' | 'landscape';
+
+const ORIENTATION_OPTIONS: { value: MediaOrientation; label: string; icon: typeof Square }[] = [
+  { value: 'square', label: 'Quadrado (1:1)', icon: Square },
+  { value: 'portrait', label: 'Retrato (9:16)', icon: RectangleVertical },
+  { value: 'landscape', label: 'Paisagem (16:9)', icon: RectangleHorizontal },
+];
+
 const PLATFORM_ICONS: Record<SocialPlatform, typeof Instagram> = {
   instagram: Instagram,
   tiktok: Video,
@@ -46,6 +58,7 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
   const [mediaPath, setMediaPath] = useState<string>('');
   const [mediaFileName, setMediaFileName] = useState<string>('');
   const [previewUrl, setPreviewUrl] = useState<string>('');
+  const [mediaOrientation, setMediaOrientation] = useState<MediaOrientation>('portrait');
   const [scheduleDate, setScheduleDate] = useState<string>('');
   const [scheduleTime, setScheduleTime] = useState<string>('');
   const [isScheduled, setIsScheduled] = useState(false);
@@ -120,9 +133,63 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
       setMediaFileName(result.fileName || 'Arquivo');
       
       // Para preview, usa file:// protocol
-      setPreviewUrl(`file://${result.filePath}`);
+      const fileUrl = `file://${result.filePath}`;
+      setPreviewUrl(fileUrl);
+      
+      // Detecta orientação da mídia automaticamente
+      detectMediaOrientation(fileUrl, result.fileName || '');
     } else if (!result.canceled) {
       console.error('Erro ao selecionar arquivo:', result.error);
+    }
+  };
+
+  // Detecta a orientação da mídia (vídeo ou imagem) pelas dimensões
+  const detectMediaOrientation = (fileUrl: string, fileName: string) => {
+    const isVideo = /\.(mp4|mov|avi|mkv|webm)$/i.test(fileName);
+    
+    if (isVideo) {
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.onloadedmetadata = () => {
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        const orientation = calculateOrientation(width, height);
+        console.log(`📐 Vídeo: ${width}x${height} → ${orientation}`);
+        setMediaOrientation(orientation);
+        URL.revokeObjectURL(video.src);
+      };
+      video.onerror = () => {
+        console.warn('Não foi possível obter dimensões do vídeo');
+        setMediaOrientation('portrait'); // Default
+      };
+      video.src = fileUrl;
+    } else {
+      const img = new window.Image();
+      img.onload = () => {
+        const width = img.width;
+        const height = img.height;
+        const orientation = calculateOrientation(width, height);
+        console.log(`📐 Imagem: ${width}x${height} → ${orientation}`);
+        setMediaOrientation(orientation);
+      };
+      img.onerror = () => {
+        console.warn('Não foi possível obter dimensões da imagem');
+        setMediaOrientation('portrait'); // Default
+      };
+      img.src = fileUrl;
+    }
+  };
+
+  // Calcula a orientação baseada nas dimensões
+  const calculateOrientation = (width: number, height: number): MediaOrientation => {
+    const ratio = width / height;
+    
+    if (ratio > 1.2) {
+      return 'landscape'; // Mais largo que alto
+    } else if (ratio < 0.8) {
+      return 'portrait'; // Mais alto que largo
+    } else {
+      return 'square'; // Aproximadamente quadrado
     }
   };
 
@@ -130,6 +197,7 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
     setMediaPath('');
     setMediaFileName('');
     setPreviewUrl('');
+    setMediaOrientation('portrait');
   };
 
   const handlePost = async () => {
@@ -155,6 +223,7 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
       title,
       caption,
       mediaPath,
+      orientation: mediaOrientation,
       scheduled: isScheduled ? { date: scheduleDate, time: scheduleTime } : null
     });
 
@@ -175,7 +244,8 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
           {
             mediaPath,
             title: title || caption.substring(0, 100),
-            description: caption
+            description: caption,
+            orientation: mediaOrientation
           }
         );
 
@@ -300,6 +370,7 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
 
           {/* Preview de Mídia */}
           {mediaPath && (
+            <>
             <div style={{
               position: 'relative',
               borderRadius: '12px',
@@ -350,6 +421,49 @@ export const NewPost = ({ channels, workspaceId, onBack }: NewPostProps) => {
                 </button>
               </div>
             </div>
+
+            {/* Seletor de Orientação */}
+            <div style={{
+              marginTop: '12px',
+              padding: '12px',
+              backgroundColor: '#27272a',
+              borderRadius: '8px',
+              border: '1px solid #3f3f46'
+            }}>
+              <span style={{ color: '#a1a1aa', fontSize: '12px', display: 'block', marginBottom: '8px' }}>
+                Orientação (para Instagram)
+              </span>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                {ORIENTATION_OPTIONS.map(opt => {
+                  const Icon = opt.icon;
+                  const isSelected = mediaOrientation === opt.value;
+                  return (
+                    <button
+                      key={opt.value}
+                      onClick={(e) => { e.stopPropagation(); setMediaOrientation(opt.value); }}
+                      style={{
+                        flex: 1,
+                        padding: '8px',
+                        backgroundColor: isSelected ? 'rgba(99, 102, 241, 0.2)' : '#18181b',
+                        border: isSelected ? '1px solid #6366f1' : '1px solid #3f3f46',
+                        borderRadius: '6px',
+                        color: isSelected ? '#818cf8' : '#a1a1aa',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column' as const,
+                        alignItems: 'center',
+                        gap: '4px',
+                        transition: 'all 0.2s'
+                      }}
+                    >
+                      <Icon size={20} />
+                      <span style={{ fontSize: '10px' }}>{opt.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            </>
           )}
 
           {/* Caption/Legenda */}

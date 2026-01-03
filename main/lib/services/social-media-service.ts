@@ -993,6 +993,7 @@ export class SocialMediaService {
       description?: string;
       coverPath?: string;
       visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+      orientation?: 'square' | 'portrait' | 'landscape';
     }
   ): Promise<{ success: boolean; error?: string }> {
     console.log(`📤 [SocialMedia] Fazendo upload para ${platform}...`);
@@ -1085,7 +1086,8 @@ export class SocialMediaService {
         // Faz upload do post
         const success = await instagram.makePost(
           options.mediaPath,
-          options.description
+          options.description,
+          options.orientation
         );
         
         await instagram.close();

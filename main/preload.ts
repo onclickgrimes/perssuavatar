@@ -671,6 +671,7 @@ const handler = {
         description?: string;
         coverPath?: string;
         visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+        orientation?: 'square' | 'portrait' | 'landscape';
       }
     ) => ipcRenderer.invoke('social-media:upload-media', workspaceId, platform, options),
 

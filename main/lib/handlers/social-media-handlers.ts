@@ -259,6 +259,7 @@ export function registerSocialMediaHandlers(): void {
       description?: string;
       coverPath?: string;
       visibility?: 'PUBLIC' | 'PRIVATE' | 'UNLISTED';
+      orientation?: 'square' | 'portrait' | 'landscape';
     }
   ) => {
     try {
