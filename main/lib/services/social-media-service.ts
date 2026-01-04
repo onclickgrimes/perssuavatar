@@ -61,13 +61,6 @@ const PLATFORM_LOGIN_URLS: Record<SocialPlatform, string> = {
   youtube: 'https://studio.youtube.com/'
 };
 
-// URLs para verificar login
-const PLATFORM_CHECK_URLS: Record<SocialPlatform, string> = {
-  instagram: 'https://www.instagram.com/',
-  tiktok: 'https://www.tiktok.com/tiktokstudio',
-  youtube: 'https://studio.youtube.com/'
-};
-
 export class SocialMediaService {
   private isInitialized = false;
   private connections: Map<string, WorkspaceConnection> = new Map();

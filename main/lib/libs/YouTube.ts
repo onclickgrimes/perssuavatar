@@ -65,9 +65,6 @@ export class YouTube {
 
   // URLs do YouTube Studio
   private static readonly STUDIO_URL = 'https://studio.youtube.com/';
-  private static readonly STUDIO_DASHBOARD = 'https://studio.youtube.com/channel/';
-  private static readonly STUDIO_CONTENT = 'https://studio.youtube.com/channel/*/videos';
-  private static readonly STUDIO_ANALYTICS = 'https://studio.youtube.com/channel/*/analytics';
   private static readonly YOUTUBE_LOGIN = 'https://accounts.google.com/ServiceLogin?service=youtube';
 
   // Seletor para verificar se está logado no Studio
@@ -303,6 +300,9 @@ export class YouTube {
         }
       }
 
+      // Verifica e lida com popup de seleção de canal
+      await this.handleChannelSwitcherPopup();
+
       // Verifica se está logado
       this._isLoggedIn = await this.checkLoginStatus();
       
@@ -311,6 +311,169 @@ export class YouTube {
       console.error('❌ [YouTube] Erro ao navegar para Studio:', error);
       return false;
     }
+  }
+
+  /**
+   * Lida com o popup de seleção de canal do YouTube
+   * Se detectado em modo headless, reabre o navegador em modo visível para o usuário selecionar
+   */
+  private async handleChannelSwitcherPopup(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      // Verifica se o popup de seleção de canal está presente
+      const channelSwitcherSelector = 'ytd-channel-switcher-renderer[dialog="true"]';
+      const channelSwitcher = await this.page.$(channelSwitcherSelector);
+
+      if (!channelSwitcher) {
+        // Popup não está presente, continua normalmente
+        return;
+      }
+
+      console.log('📋 [YouTube] Popup de seleção de canal detectado');
+
+      // Se estiver em modo headless, precisa reabrir em modo visível
+      if (this.config.headless) {
+        console.log('🔄 [YouTube] Reabrindo navegador em modo visível para seleção de canal...');
+        
+        // Fecha o navegador headless atual
+        await this.close();
+        
+        // Reabre em modo visível
+        this.config.headless = false;
+        await this.init();
+        
+        // Navega novamente para o Studio
+        await this.page!.goto(YouTube.STUDIO_URL, { 
+          waitUntil: 'load',
+          timeout: 30000 
+        });
+        
+        await this.randomDelay(2000, 3000);
+      }
+
+      // Injeta um banner de instrução na página
+      await this.injectChannelSelectionBanner();
+
+      // Aguarda o usuário selecionar o canal (popup desaparecer)
+      console.log('⏳ [YouTube] Aguardando usuário selecionar o canal...');
+      await this.waitForChannelSelection();
+
+    } catch (error) {
+      console.warn('⚠️ [YouTube] Erro ao lidar com popup de seleção de canal:', error);
+    }
+  }
+
+  /**
+   * Injeta um banner de instrução para o usuário selecionar o canal
+   */
+  private async injectChannelSelectionBanner(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      await this.page.evaluate(() => {
+        // Remove banner existente se houver
+        const existingBanner = document.getElementById('channel-selection-banner');
+        if (existingBanner) existingBanner.remove();
+
+        // Cria o banner
+        const banner = document.createElement('div');
+        banner.id = 'channel-selection-banner';
+        banner.innerHTML = `
+          <div style="
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 999999;
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            color: white;
+            padding: 16px 24px;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            font-size: 16px;
+            font-weight: 500;
+            text-align: center;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 12px;
+          ">
+            <span style="font-size: 24px;">📺</span>
+            <span>
+              <strong>Selecione o canal</strong> que você deseja usar e marque 
+              <strong>"Não perguntar novamente"</strong> para salvar sua escolha.
+            </span>
+            <span style="font-size: 24px;">👇</span>
+          </div>
+        `;
+        document.body.appendChild(banner);
+      });
+
+      console.log('✅ [YouTube] Banner de instrução injetado');
+    } catch (error) {
+      console.warn('⚠️ [YouTube] Não foi possível injetar o banner:', error);
+    }
+  }
+
+  /**
+   * Aguarda o usuário selecionar um canal (popup desaparecer)
+   */
+  private async waitForChannelSelection(timeoutMs: number = 120000): Promise<boolean> {
+    if (!this.page) return false;
+
+    const startTime = Date.now();
+    const checkInterval = 2000;
+    const channelSwitcherSelector = 'ytd-channel-switcher-renderer[dialog="true"]';
+
+    while (Date.now() - startTime < timeoutMs) {
+      try {
+        const popup = await this.page.$(channelSwitcherSelector);
+        
+        if (!popup) {
+          // Popup desapareceu - usuário selecionou o canal
+          console.log('✅ [YouTube] Canal selecionado pelo usuário');
+          
+          // Remove o banner
+          await this.page.evaluate(() => {
+            const banner = document.getElementById('channel-selection-banner');
+            if (banner) banner.remove();
+          });
+
+          // Aguarda mais tempo para garantir que o YouTube salvou a preferência
+          console.log('⏳ [YouTube] Aguardando persistência da seleção...');
+          await this.randomDelay(3000, 5000);
+
+          // Navega para o dashboard para forçar o salvamento dos cookies
+          console.log('🔄 [YouTube] Navegando para dashboard para persistir escolha...');
+          await this.page.goto('https://studio.youtube.com/', { 
+            waitUntil: 'networkidle2',
+            timeout: 30000 
+          });
+
+          await this.randomDelay(3000, 5000);
+
+          // Verifica se ainda aparece o popup (se sim, a seleção não foi salva)
+          const popupAfterNav = await this.page.$(channelSwitcherSelector);
+          if (popupAfterNav) {
+            console.log('⚠️ [YouTube] Popup apareceu novamente, aguardando nova seleção...');
+            // Injeta banner novamente
+            await this.injectChannelSelectionBanner();
+            continue;
+          }
+
+          console.log('✅ [YouTube] Seleção de canal persistida com sucesso');
+          return true;
+        }
+      } catch (error) {
+        // Ignora erros durante a verificação
+      }
+
+      await new Promise(resolve => setTimeout(resolve, checkInterval));
+    }
+
+    console.log('⚠️ [YouTube] Timeout aguardando seleção de canal');
+    return false;
   }
 
   /**
