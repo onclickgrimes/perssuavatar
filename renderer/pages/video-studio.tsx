@@ -7,6 +7,7 @@
 import React, { useState } from 'react';
 import Head from 'next/head';
 import { AudioToVideoTool } from '../components/video-studio/tools/AudioToVideoTool';
+import { ScriptGeneratorTool } from '../components/video-studio/tools/ScriptGeneratorTool';
 
 // Definição das ferramentas disponíveis
 interface VideoTool {
@@ -51,7 +52,7 @@ const VIDEO_TOOLS: VideoTool[] = [
       </svg>
     ),
     gradient: 'from-cyan-500 via-blue-500 to-indigo-500',
-    status: 'coming_soon',
+    status: 'available',
     category: 'ai',
   },
   {
@@ -178,6 +179,8 @@ export default function VideoStudioPage() {
     switch (activeTool) {
       case 'audio-to-video':
         return <AudioToVideoTool onBack={() => setActiveTool(null)} />;
+      case 'script-generator':
+        return <ScriptGeneratorTool onBack={() => setActiveTool(null)} />;
       default:
         // Para ferramentas não implementadas, volta ao hub
         setActiveTool(null);

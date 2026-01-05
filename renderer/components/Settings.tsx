@@ -14,7 +14,19 @@ interface SettingsProps {
   onClose?: () => void;
 }
 
-type TabId = 'api' | 'audio' | 'avatar' | 'features' | 'shortcuts' | 'embeddings' | 'help';
+type TabId = 'api' | 'audio' | 'avatar' | 'features' | 'shortcuts' | 'embeddings' | 'providers' | 'help';
+
+// Tipos para Providers
+type ProviderPlatform = 'gemini' | 'openai' | 'qwen';
+
+interface ProviderConfig {
+  id: string;
+  name: string;
+  platform: ProviderPlatform;
+  createdAt: string;
+  lastUsed?: string;
+  isLoggedIn?: boolean;
+}
 
 export default function Settings({ 
   onSizeChange, 
@@ -52,6 +64,14 @@ export default function Settings({
   const [selectedOllamaModel, setSelectedOllamaModel] = useState('nomic-embed-text');
   const [isDownloadingModel, setIsDownloadingModel] = useState(false);
   const [downloadProgress, setDownloadProgress] = useState('');
+
+  // Provider settings (AI via Puppeteer)
+  const [providers, setProviders] = useState<ProviderConfig[]>([]);
+  const [newProviderName, setNewProviderName] = useState('');
+  const [newProviderPlatform, setNewProviderPlatform] = useState<ProviderPlatform>('gemini');
+  const [isCreatingProvider, setIsCreatingProvider] = useState(false);
+  const [isOpeningProvider, setIsOpeningProvider] = useState<string | null>(null);
+  const [providerError, setProviderError] = useState<string | null>(null);
   
   // Continuous recorder & Screen Share
   const { isRecording, startRecording, stopRecording, saveLastSeconds, getBufferInfo } = useContinuousRecorder({ maxBufferSeconds: 600 });
@@ -470,6 +490,131 @@ export default function Settings({
     }
   }, [activeTab]);
 
+  // ================================================
+  // FUNÇÕES DE PROVIDERS (AI via Puppeteer)
+  // ================================================
+
+  // Carregar providers ao abrir a aba
+  const loadProviders = async () => {
+    try {
+      const result = await window.electron.provider.list();
+      if (result.success && result.data) {
+        setProviders(result.data);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao carregar providers:', error);
+    }
+  };
+
+  // Criar novo provider
+  const handleCreateProvider = async () => {
+    if (!newProviderName.trim()) {
+      setProviderError('Digite um nome para o provider');
+      return;
+    }
+
+    setIsCreatingProvider(true);
+    setProviderError(null);
+
+    try {
+      const result = await window.electron.provider.create(newProviderName.trim(), newProviderPlatform);
+      if (result.success && result.data) {
+        setProviders(prev => [...prev, result.data]);
+        setNewProviderName('');
+        console.log('✅ Provider criado:', result.data.name);
+      } else {
+        setProviderError(result.error || 'Erro ao criar provider');
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao criar provider:', error);
+      setProviderError(error.message || 'Erro ao criar provider');
+    } finally {
+      setIsCreatingProvider(false);
+    }
+  };
+
+  // Deletar provider
+  const handleDeleteProvider = async (id: string) => {
+    if (!confirm('Tem certeza que deseja remover este provider? Os dados de login serão perdidos.')) {
+      return;
+    }
+
+    try {
+      const result = await window.electron.provider.delete(id);
+      if (result.success) {
+        setProviders(prev => prev.filter(p => p.id !== id));
+        console.log('🗑️ Provider removido:', id);
+      }
+    } catch (error) {
+      console.error('❌ Erro ao deletar provider:', error);
+    }
+  };
+
+  // Abrir navegador para login
+  const handleOpenProvider = async (id: string) => {
+    setIsOpeningProvider(id);
+    setProviderError(null);
+
+    try {
+      const result = await window.electron.provider.openForLogin(id);
+      if (result.success) {
+        // Atualizar status de login
+        setProviders(prev => prev.map(p => 
+          p.id === id ? { ...p, isLoggedIn: result.isLoggedIn, lastUsed: new Date().toISOString() } : p
+        ));
+        console.log('🌐 Provider aberto:', id, 'Logado:', result.isLoggedIn);
+      } else {
+        setProviderError(result.error || 'Erro ao abrir navegador');
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao abrir provider:', error);
+      setProviderError(error.message || 'Erro ao abrir navegador');
+    } finally {
+      setIsOpeningProvider(null);
+    }
+  };
+
+  // Verificar login de um provider
+  const handleCheckLogin = async (id: string) => {
+    try {
+      const result = await window.electron.provider.checkLogin(id);
+      if (result.success) {
+        setProviders(prev => prev.map(p => 
+          p.id === id ? { ...p, isLoggedIn: result.isLoggedIn } : p
+        ));
+      }
+    } catch (error) {
+      console.error('❌ Erro ao verificar login:', error);
+    }
+  };
+
+  // Fechar navegador de um provider
+  const handleCloseProvider = async (id: string) => {
+    try {
+      await window.electron.provider.close(id);
+      console.log('🔌 Provider fechado:', id);
+    } catch (error) {
+      console.error('❌ Erro ao fechar provider:', error);
+    }
+  };
+
+  // Carregar providers ao abrir a aba
+  useEffect(() => {
+    if (activeTab === 'providers') {
+      loadProviders();
+    }
+  }, [activeTab]);
+
+  // Helper para obter configurações de plataforma
+  const getPlatformConfig = (platform: ProviderPlatform) => {
+    const configs: Record<ProviderPlatform, { label: string; icon: string; color: string; bgColor: string }> = {
+      gemini: { label: 'Google Gemini', icon: '⚡', color: 'purple', bgColor: 'bg-purple-900/10' },
+      openai: { label: 'OpenAI ChatGPT', icon: '🤖', color: 'green', bgColor: 'bg-green-900/10' },
+      qwen: { label: 'Qwen', icon: '🧠', color: 'blue', bgColor: 'bg-blue-900/10' }
+    };
+    return configs[platform];
+  };
+
   if (!showSettings && isControlled) return null;
 
   // Render Helpers
@@ -537,6 +682,7 @@ export default function Settings({
                    {renderSidebarItem('avatar', 'Avatar', '👤')}
                    {renderSidebarItem('features', 'Recursos', '⚡')}
                    {renderSidebarItem('embeddings', 'Embeddings', '🧠')}
+                   {renderSidebarItem('providers', 'Modelos Web', '🌐')}
                    {renderSidebarItem('shortcuts', 'Atalhos', '⌨')}
                    {renderSidebarItem('help', 'Ajuda', '❓')}
                 </nav>
@@ -1151,6 +1297,156 @@ export default function Settings({
                             </div>
                          </div>
                       )}
+                   </div>
+                )}
+
+                {/* --- Providers (Modelos Web via Puppeteer) --- */}
+                {activeTab === 'providers' && (
+                   <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+                      <div>
+                         <h3 className="text-xl font-medium text-white mb-1">Modelos de IA via Navegador</h3>
+                         <p className="text-sm text-gray-500 mb-6">
+                            Configure contas para usar modelos de IA diretamente pelo navegador, sem necessidade de API.
+                         </p>
+                         
+                         {/* Info Box */}
+                         <div className="bg-blue-900/10 border border-blue-500/20 rounded-xl p-4 mb-6">
+                            <div className="flex items-start gap-3">
+                               <span className="text-xl">🌐</span>
+                               <div>
+                                  <h4 className="text-sm font-semibold text-blue-300 mb-1">Como funciona?</h4>
+                                  <p className="text-xs text-blue-200/70">
+                                     Diferente das APIs, esses providers usam o navegador Chrome para acessar 
+                                     as versões web dos modelos de IA. Você faz login uma vez e os cookies 
+                                     são salvos para uso posterior.
+                                  </p>
+                               </div>
+                            </div>
+                         </div>
+
+                         {/* Criar novo provider */}
+                         <div className="bg-[#111] border border-[#222] rounded-xl p-4 mb-6">
+                            <h4 className="text-sm font-semibold text-white mb-3">➕ Adicionar Nova Conta</h4>
+                            
+                            <div className="flex gap-3 mb-3">
+                               <input
+                                  type="text"
+                                  value={newProviderName}
+                                  onChange={(e) => setNewProviderName(e.target.value)}
+                                  placeholder="Nome da conta (ex: Minha conta pessoal)"
+                                  className="flex-1 bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                               />
+                               
+                               <select
+                                  value={newProviderPlatform}
+                                  onChange={(e) => setNewProviderPlatform(e.target.value as ProviderPlatform)}
+                                  className="w-48 bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                               >
+                                  <option value="gemini">⚡ Google Gemini</option>
+                                  <option value="openai">🤖 OpenAI ChatGPT</option>
+                                  <option value="qwen">🧠 Qwen</option>
+                               </select>
+                               
+                               <button
+                                  onClick={handleCreateProvider}
+                                  disabled={isCreatingProvider}
+                                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-600/50 text-white rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                               >
+                                  {isCreatingProvider ? (
+                                     <>
+                                        <span className="animate-spin">⟳</span>
+                                        Criando...
+                                     </>
+                                  ) : (
+                                     <>➕ Adicionar</>
+                                  )}
+                               </button>
+                            </div>
+
+                            {providerError && (
+                               <p className="text-xs text-red-400 mt-2">❌ {providerError}</p>
+                            )}
+                         </div>
+
+                         {/* Lista de providers */}
+                         <div className="space-y-3">
+                            <h4 className="text-sm font-semibold text-gray-400 mb-2">Contas Configuradas</h4>
+                            
+                            {providers.length === 0 ? (
+                               <div className="text-center py-8 bg-[#111] border border-[#222] rounded-xl">
+                                  <span className="text-4xl mb-3 block">🌐</span>
+                                  <p className="text-gray-400 text-sm">Nenhuma conta configurada</p>
+                                  <p className="text-gray-500 text-xs mt-1">Adicione uma conta acima para começar</p>
+                               </div>
+                            ) : (
+                               providers.map((provider) => {
+                                  const config = getPlatformConfig(provider.platform);
+                                  return (
+                                     <div
+                                        key={provider.id}
+                                        className={`${config.bgColor} border border-[#333] rounded-xl p-4`}
+                                     >
+                                        <div className="flex items-center justify-between">
+                                           <div className="flex items-center gap-3">
+                                              <span className="text-2xl">{config.icon}</span>
+                                              <div>
+                                                 <h5 className="font-semibold text-white">{provider.name}</h5>
+                                                 <p className="text-xs text-gray-400">
+                                                    {config.label}
+                                                    {provider.lastUsed && (
+                                                       <span className="ml-2">
+                                                          • Último uso: {new Date(provider.lastUsed).toLocaleDateString('pt-BR')}
+                                                       </span>
+                                                    )}
+                                                 </p>
+                                              </div>
+                                           </div>
+                                           
+                                           <div className="flex items-center gap-2">
+                                              {/* Status de login */}
+                                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                                 provider.isLoggedIn 
+                                                    ? 'bg-green-500/20 text-green-400' 
+                                                    : 'bg-gray-500/20 text-gray-400'
+                                              }`}>
+                                                 {provider.isLoggedIn ? '✓ Logado' : '○ Não logado'}
+                                              </span>
+                                              
+                                              {/* Botão de abrir/login */}
+                                              <button
+                                                 onClick={() => handleOpenProvider(provider.id)}
+                                                 disabled={isOpeningProvider === provider.id}
+                                                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                                                    provider.isLoggedIn
+                                                       ? 'bg-white/10 hover:bg-white/20 text-white'
+                                                       : 'bg-blue-600 hover:bg-blue-700 text-white'
+                                                 }`}
+                                              >
+                                                 {isOpeningProvider === provider.id ? (
+                                                    <span className="animate-spin">⟳</span>
+                                                 ) : provider.isLoggedIn ? (
+                                                    '🌐 Abrir'
+                                                 ) : (
+                                                    '🔑 Fazer Login'
+                                                 )}
+                                              </button>
+                                              
+                                              {/* Botão de deletar */}
+                                              <button
+                                                 onClick={() => handleDeleteProvider(provider.id)}
+                                                 className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                                                 title="Remover conta"
+                                              >
+                                                 🗑️
+                                              </button>
+                                           </div>
+                                        </div>
+                                     </div>
+                                  );
+                               })
+                            )}
+                         </div>
+                      </div>
                    </div>
                 )}
 

@@ -126,6 +126,7 @@ import {
   initializeSocialMediaService, 
   destroySocialMediaService 
 } from './lib/handlers/social-media-handlers';
+import { registerProviderHandlers } from './lib/handlers/provider-handlers';
 import { isProd, getUserDataPath } from './lib/app-config';
 import { promisify } from 'util';
 import { exec as execCallback } from 'child_process';
@@ -167,6 +168,7 @@ if (isProd) {
   registerKnowledgeHandlers();
   registerVideoEditorHandlers();
   registerSocialMediaHandlers();
+  registerProviderHandlers(null);
 
   // Permissão de Microfone
   app.on('web-contents-created', (event, contents) => {

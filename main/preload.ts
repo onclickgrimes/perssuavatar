@@ -695,6 +695,130 @@ const handler = {
       ipcRenderer.on('social-media:upload-error', subscription);
       return () => { ipcRenderer.removeListener('social-media:upload-error', subscription); };
     },
+  },
+
+  // ========================================
+  // PROVIDER (AI Models via Puppeteer) SERVICE
+  // ========================================
+  
+  provider: {
+    // Listar todos os providers
+    list: () => ipcRenderer.invoke('provider:list'),
+    
+    // Listar providers de uma plataforma específica
+    listByPlatform: (platform: 'gemini' | 'openai' | 'qwen') => 
+      ipcRenderer.invoke('provider:list-by-platform', platform),
+    
+    // Criar novo provider
+    create: (name: string, platform: 'gemini' | 'openai' | 'qwen') => 
+      ipcRenderer.invoke('provider:create', name, platform),
+    
+    // Remover provider
+    delete: (id: string) => ipcRenderer.invoke('provider:delete', id),
+    
+    // Renomear provider
+    rename: (id: string, newName: string) => 
+      ipcRenderer.invoke('provider:rename', id, newName),
+    
+    // Abrir navegador para login
+    openForLogin: (id: string) => ipcRenderer.invoke('provider:open-for-login', id),
+    
+    // Verificar status de login
+    checkLogin: (id: string) => ipcRenderer.invoke('provider:check-login', id),
+    
+    // Fechar navegador de um provider
+    close: (id: string) => ipcRenderer.invoke('provider:close', id),
+    
+    // Fechar todos os navegadores
+    closeAll: () => ipcRenderer.invoke('provider:close-all'),
+
+    // Enviar mensagem simples (sem streaming)
+    sendMessage: (id: string, message: string) => 
+      ipcRenderer.invoke('provider:send-message', id, message),
+
+    // Enviar mensagem com streaming (Gemini)
+    // O onChunk callback será chamado via eventos separados
+    sendMessageWithStream: async (
+      id: string, 
+      message: string, 
+      onChunk?: (chunk: string) => void
+    ) => {
+      // Configura listeners temporários para os chunks
+      let chunkListener: ((event: any, data: { id: string; chunk: string }) => void) | null = null;
+      let completeListener: ((event: any, data: { id: string; response: string }) => void) | null = null;
+      let errorListener: ((event: any, data: { id: string; error: string }) => void) | null = null;
+
+      const cleanup = () => {
+        if (chunkListener) ipcRenderer.removeListener('provider:stream-chunk', chunkListener);
+        if (completeListener) ipcRenderer.removeListener('provider:stream-complete', completeListener);
+        if (errorListener) ipcRenderer.removeListener('provider:stream-error', errorListener);
+      };
+
+      return new Promise((resolve, reject) => {
+        // Listener para chunks
+        if (onChunk) {
+          chunkListener = (_event: any, data: { id: string; chunk: string }) => {
+            if (data.id === id) {
+              onChunk(data.chunk);
+            }
+          };
+          ipcRenderer.on('provider:stream-chunk', chunkListener);
+        }
+
+        // Listener para conclusão
+        completeListener = (_event: any, data: { id: string; response: string }) => {
+          if (data.id === id) {
+            cleanup();
+            resolve({ success: true, response: data.response });
+          }
+        };
+        ipcRenderer.on('provider:stream-complete', completeListener);
+
+        // Listener para erros
+        errorListener = (_event: any, data: { id: string; error: string }) => {
+          if (data.id === id) {
+            cleanup();
+            reject(new Error(data.error));
+          }
+        };
+        ipcRenderer.on('provider:stream-error', errorListener);
+
+        // Faz a chamada IPC
+        ipcRenderer.invoke('provider:send-message-stream', id, message)
+          .then((result) => {
+            if (!result.success) {
+              cleanup();
+              reject(new Error(result.error));
+            }
+            // Se sucesso, o listener de complete vai resolver a promise
+          })
+          .catch((err) => {
+            cleanup();
+            reject(err);
+          });
+      });
+    },
+
+    // Listener para chunks de stream (uso manual)
+    onStreamChunk: (callback: (data: { id: string; chunk: string }) => void) => {
+      const subscription = (_: any, data: { id: string; chunk: string }) => callback(data);
+      ipcRenderer.on('provider:stream-chunk', subscription);
+      return () => { ipcRenderer.removeListener('provider:stream-chunk', subscription); };
+    },
+
+    // Listener para conclusão de stream (uso manual)
+    onStreamComplete: (callback: (data: { id: string; response: string }) => void) => {
+      const subscription = (_: any, data: { id: string; response: string }) => callback(data);
+      ipcRenderer.on('provider:stream-complete', subscription);
+      return () => { ipcRenderer.removeListener('provider:stream-complete', subscription); };
+    },
+
+    // Listener para erros de stream (uso manual)
+    onStreamError: (callback: (data: { id: string; error: string }) => void) => {
+      const subscription = (_: any, data: { id: string; error: string }) => callback(data);
+      ipcRenderer.on('provider:stream-error', subscription);
+      return () => { ipcRenderer.removeListener('provider:stream-error', subscription); };
+    },
   }
 }
 

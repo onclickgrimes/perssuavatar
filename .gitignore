@@ -22,6 +22,7 @@ build/
 
 # Cache do Puppeteer e dados sensíveis
 puppeteer-cache/
+provider-cookies/
 cookies-*.json
 screenshot-*.png
 user-data/
