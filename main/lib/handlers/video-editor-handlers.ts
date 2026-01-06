@@ -262,5 +262,247 @@ export function registerVideoEditorHandlers(): void {
     }
   });
 
+  // Handler para gerar questões de quiz com IA
+  ipcMain.handle('quiz:generate', async (
+    event, 
+    options: {
+      theme: string;
+      easyCount: number;
+      mediumCount: number;
+      hardCount: number;
+      optionsCount: number;
+      provider: 'gemini' | 'openai' | 'deepseek';
+    }
+  ) => {
+    try {
+      const totalQuestions = options.easyCount + options.mediumCount + options.hardCount;
+      console.log(`🎯 [Quiz] Generating quiz with ${options.provider}...`);
+      console.log(`📝 Theme: "${options.theme}", Easy: ${options.easyCount}, Medium: ${options.mediumCount}, Hard: ${options.hardCount}`);
+
+      const difficultyText: Record<string, string> = {
+        easy: 'fáceis, adequadas para iniciantes',
+        medium: 'de dificuldade moderada',
+        hard: 'difíceis e desafiadoras',
+      };
+
+      // Constrói requisição para cada dificuldade
+      const difficultyRequests: string[] = [];
+      if (options.easyCount > 0) {
+        difficultyRequests.push(`- ${options.easyCount} perguntas FÁCEIS (${difficultyText.easy})`);
+      }
+      if (options.mediumCount > 0) {
+        difficultyRequests.push(`- ${options.mediumCount} perguntas MÉDIAS (${difficultyText.medium})`);
+      }
+      if (options.hardCount > 0) {
+        difficultyRequests.push(`- ${options.hardCount} perguntas DIFÍCEIS (${difficultyText.hard})`);
+      }
+
+      const prompt = `Crie um quiz sobre "${options.theme}" com exatamente ${totalQuestions} perguntas, divididas assim:
+
+${difficultyRequests.join('\n')}
+
+Requisitos:
+- Cada pergunta deve ter exatamente ${options.optionsCount} opções de resposta
+- Inclua uma explicação breve para cada resposta correta
+- As opções devem ser plausíveis, mas apenas uma correta
+- Inclua o campo "difficulty" em cada questão ("easy", "medium" ou "hard")
+- IMPORTANTE: Respeite exatamente a quantidade de perguntas para cada dificuldade
+
+Responda com um JSON no seguinte formato:
+{
+  "questions": [
+    {
+      "question": "Qual é a pergunta?",
+      "options": ["Opção A", "Opção B", "Opção C", "Opção D"],
+      "correctIndex": 0,
+      "explanation": "Explicação da resposta correta.",
+      "difficulty": "easy"
+    }
+  ]
+}
+
+Lembre-se:
+- correctIndex é o índice (0-based) da opção correta
+- difficulty deve ser "easy", "medium" ou "hard"
+- Garanta que o JSON seja válido`;
+
+      let result: any;
+
+      if (options.provider === 'gemini') {
+        const { GeminiService } = require('../services/gemini-service');
+        const gemini = new GeminiService();
+        result = await gemini.getChatVideoAnalysis([
+          { role: 'system', content: 'Você é um criador de quizzes educativos. Responda sempre com JSON válido.' },
+          { role: 'user', content: prompt }
+        ]);
+      } else if (options.provider === 'openai') {
+        const { OpenAIService } = require('../services/openai-service');
+        const openai = new OpenAIService();
+        result = await openai.getChatVideoAnalysis([
+          { role: 'system', content: 'Você é um criador de quizzes educativos. Responda sempre com JSON válido.' },
+          { role: 'user', content: prompt }
+        ]);
+      } else if (options.provider === 'deepseek') {
+        const { DeepSeekService } = require('../services/deepseek-service');
+        const deepseek = new DeepSeekService();
+        result = await deepseek.getChatVideoAnalysis([
+          { role: 'system', content: 'Você é um criador de quizzes educativos. Responda sempre com JSON válido.' },
+          { role: 'user', content: prompt }
+        ]);
+      } else {
+        throw new Error(`Provider inválido: ${options.provider}`);
+      }
+
+      // Valida a resposta
+      if (!result || !result.questions || !Array.isArray(result.questions)) {
+        throw new Error('Resposta inválida da IA');
+      }
+
+      // Valida cada questão
+      const validQuestions = result.questions.map((q: any, i: number) => {
+        if (!q.question || !Array.isArray(q.options) || typeof q.correctIndex !== 'number') {
+          throw new Error(`Questão ${i + 1} mal formatada`);
+        }
+        return {
+          question: q.question,
+          options: q.options.slice(0, options.optionsCount),
+          correctIndex: Math.min(q.correctIndex, options.optionsCount - 1),
+          explanation: q.explanation || '',
+          difficulty: q.difficulty || 'medium',
+        };
+      });
+
+      console.log(`✅ [Quiz] Generated ${validQuestions.length} questions successfully`);
+      return { success: true, questions: validQuestions };
+
+    } catch (error: any) {
+      console.error('❌ [Quiz] Generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler para gerar áudio completo do quiz (um único arquivo)
+  ipcMain.handle('quiz:generate-audio', async (
+    event,
+    options: {
+      questions: Array<{
+        question: string;
+        options: string[];
+        correctIndex: number;
+        explanation?: string;
+      }>;
+      voiceName?: string;
+      outputDir?: string;
+      includeOptions?: boolean;      // Incluir opções de resposta
+      includeCorrectAnswer?: boolean; // Incluir resposta correta
+      includeExplanations?: boolean;  // Incluir explicações
+    }
+  ) => {
+    try {
+      console.log(`🎤 [Quiz] Generating complete audio for ${options.questions.length} questions...`);
+      
+      const { getGeminiVoiceService } = require('../services/gemini-voice-service');
+      const voiceService = getGeminiVoiceService();
+      
+      // Define pasta de saída
+      const path = require('path');
+      const outputDir = options.outputDir || path.join(
+        require('electron').app.getPath('userData'), 
+        'quiz-audio'
+      );
+      
+      // Cria diretório se não existe
+      const fs = require('fs');
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      
+      // Envia progresso para o frontend
+      const window = getWindowFn?.();
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('quiz:audio-progress', {
+          current: 0,
+          total: 1,
+          stage: 'building'
+        });
+      }
+      
+      // Valores padrão para as opções
+      const includeOptions = options.includeOptions !== false; // Padrão: true
+      const includeCorrectAnswer = options.includeCorrectAnswer ?? false; // Padrão: false
+      const includeExplanations = options.includeExplanations ?? false; // Padrão: false
+      
+      // Constrói o texto completo do quiz
+      const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
+      let fullScript = '';
+      
+      for (let i = 0; i < options.questions.length; i++) {
+        const q = options.questions[i];
+        const correctLetter = optionLetters[q.correctIndex];
+        
+        // Adiciona a pergunta
+        fullScript += `Questão ${i + 1}. ${q.question} `;
+        
+        // Adiciona as opções (se habilitado)
+        if (includeOptions) {
+          for (let j = 0; j < q.options.length; j++) {
+            fullScript += `${optionLetters[j]}: ${q.options[j]}. `;
+          }
+        }
+        
+        // Adiciona resposta correta (se habilitado)
+        if (includeCorrectAnswer) {
+          fullScript += `A resposta correta é ${correctLetter}. `;
+        }
+        
+        // Adiciona explicação (se habilitado e existir)
+        if (includeExplanations && q.explanation) {
+          fullScript += `${q.explanation} `;
+        }
+        
+        // Pausa entre questões
+        fullScript += ' ';
+      }
+      
+      console.log(`📝 [Quiz] Script completo: ${fullScript.length} caracteres`);
+      
+      // Envia progresso
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('quiz:audio-progress', {
+          current: 1,
+          total: 1,
+          stage: 'generating'
+        });
+      }
+      
+      // Gera o áudio completo
+      const timestamp = Date.now();
+      const outputPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
+      
+      const result = await voiceService.generateSpeech({
+        text: fullScript,
+        voiceName: options.voiceName || 'Kore',
+        outputPath: outputPath
+      });
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Erro ao gerar áudio');
+      }
+      
+      console.log(`✅ [Quiz] Audio completo gerado: ${outputPath}`);
+      return { 
+        success: true, 
+        audioPath: outputPath,
+        outputDir,
+        scriptLength: fullScript.length,
+        questionsCount: options.questions.length
+      };
+      
+    } catch (error: any) {
+      console.error('❌ [Quiz] Audio generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   console.log('✅ [VideoEditor] Handlers registered');
 }

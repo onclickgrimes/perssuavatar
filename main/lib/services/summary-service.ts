@@ -21,7 +21,7 @@ export class SummaryService extends EventEmitter {
         super();
         
         // Inicializar Gemini
-        const geminiApiKey = process.env.GOOGLE_API_KEY || '';
+        const geminiApiKey = process.env.GOOGLE_API_KEY_1 || '';
         if (!geminiApiKey) {
             console.warn("[SummaryService] Google API Key missing!");
         }

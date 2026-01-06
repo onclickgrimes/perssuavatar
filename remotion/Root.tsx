@@ -17,6 +17,12 @@ import { TrailPrintingVisualGuide } from './compositions/TrailPrintingVisualGuid
 import { WaveEffectDemo } from './compositions/WaveEffectDemo';
 import { Timeline3D, timeline3DSchema } from './components/Timeline3D';
 import { calculateProjectFrames } from './types/project';
+import { 
+  QuizVideoComposition, 
+  quizVideoCompositionSchema,
+  defaultQuizProps,
+  calculateQuizDuration,
+} from './compositions/QuizVideoComposition';
 
 export const RemotionRoot: React.FC = () => {
   // Calcular duração do projeto de exemplo
@@ -169,6 +175,44 @@ export const RemotionRoot: React.FC = () => {
               image: '/generic_historical_figure.png',
             },
           ]
+        }}
+      />
+
+      {/* 
+        =========================================
+        QUIZ VIDEO - Vídeos de Quiz Interativos
+        =========================================
+        Gera vídeos de quiz com perguntas, opções
+        e revelação animada das respostas.
+      */}
+      <Composition
+        id="QuizVideo"
+        component={QuizVideoComposition}
+        durationInFrames={calculateQuizDuration(
+          defaultQuizProps.questions.length,
+          defaultQuizProps.thinkingTimeSeconds,
+          defaultQuizProps.showAnswerTimeSeconds,
+          30
+        )}
+        fps={30}
+        width={1080}
+        height={1920}
+        schema={quizVideoCompositionSchema}
+        defaultProps={defaultQuizProps}
+        calculateMetadata={async ({ props }) => {
+          const fps = 30;
+          const durationInFrames = calculateQuizDuration(
+            props.questions.length,
+            props.thinkingTimeSeconds,
+            props.showAnswerTimeSeconds,
+            fps
+          );
+          return {
+            durationInFrames,
+            fps,
+            width: 1080,
+            height: 1920,
+          };
         }}
       />
     </>

@@ -194,7 +194,7 @@ export class VideoProjectService extends EventEmitter {
         }
 
         // Inicializar Gemini Service
-        if (process.env.GOOGLE_API_KEY) {
+        if (process.env.GOOGLE_API_KEY_1) {
             this.geminiService = new GeminiService();
             console.log('🎬 VideoProjectService initialized with GeminiService');
         }

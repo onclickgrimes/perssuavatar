@@ -8,6 +8,7 @@ import React, { useState } from 'react';
 import Head from 'next/head';
 import { AudioToVideoTool } from '../components/video-studio/tools/AudioToVideoTool';
 import { ScriptGeneratorTool } from '../components/video-studio/tools/ScriptGeneratorTool';
+import { QuizVideoTool } from '../components/video-studio/tools/QuizVideoTool';
 
 // Definição das ferramentas disponíveis
 interface VideoTool {
@@ -54,6 +55,21 @@ const VIDEO_TOOLS: VideoTool[] = [
     gradient: 'from-cyan-500 via-blue-500 to-indigo-500',
     status: 'available',
     category: 'ai',
+  },
+  {
+    id: 'quiz-video',
+    name: 'Vídeos Quiz',
+    description: 'Crie vídeos de quiz interativos com perguntas geradas por IA.',
+    icon: (
+      <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+        <circle cx="12" cy="12" r="10" />
+        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+        <path d="M12 17h.01" />
+      </svg>
+    ),
+    gradient: 'from-amber-500 via-orange-500 to-red-500',
+    status: 'available',
+    category: 'creation',
   },
   {
     id: 'silence-remover',
@@ -181,6 +197,8 @@ export default function VideoStudioPage() {
         return <AudioToVideoTool onBack={() => setActiveTool(null)} />;
       case 'script-generator':
         return <ScriptGeneratorTool onBack={() => setActiveTool(null)} />;
+      case 'quiz-video':
+        return <QuizVideoTool onBack={() => setActiveTool(null)} />;
       default:
         // Para ferramentas não implementadas, volta ao hub
         setActiveTool(null);

@@ -413,6 +413,44 @@ const handler = {
   },
   
   // ========================================
+  // QUIZ GENERATION SERVICE
+  // ========================================
+  
+  quiz: {
+    // Gerar questões de quiz com IA
+    generate: (options: {
+      theme: string;
+      easyCount: number;
+      mediumCount: number;
+      hardCount: number;
+      optionsCount: number;
+      provider: 'gemini' | 'openai' | 'deepseek';
+    }) => ipcRenderer.invoke('quiz:generate', options),
+    
+    // Gerar áudio completo do quiz (um único arquivo)
+    generateAudio: (options: {
+      questions: Array<{
+        question: string;
+        options: string[];
+        correctIndex: number;
+        explanation?: string;
+      }>;
+      voiceName?: string;
+      outputDir?: string;
+      includeOptions?: boolean;       // Incluir opções de resposta
+      includeCorrectAnswer?: boolean; // Incluir resposta correta
+      includeExplanations?: boolean;  // Incluir explicações
+    }) => ipcRenderer.invoke('quiz:generate-audio', options),
+    
+    // Listener para progresso da geração de áudio
+    onAudioProgress: (callback: (data: { current: number; total: number; stage: string }) => void) => {
+      const subscription = (_: any, data: { current: number; total: number; stage: string }) => callback(data);
+      ipcRenderer.on('quiz:audio-progress', subscription);
+      return () => ipcRenderer.removeListener('quiz:audio-progress', subscription);
+    },
+  },
+  
+  // ========================================
   // NICHE (Channel Niches) SERVICE
   // ========================================
   

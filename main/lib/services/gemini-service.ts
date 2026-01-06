@@ -30,7 +30,7 @@ export class GeminiService extends EventEmitter {
 
     constructor() {
         super();
-        const apiKey = process.env.GOOGLE_API_KEY || '';
+        const apiKey = process.env.GOOGLE_API_KEY_1 || '';
         if (!apiKey) {
             console.error("Google API Key missing!");
         }
