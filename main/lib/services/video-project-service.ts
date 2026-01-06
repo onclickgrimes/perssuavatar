@@ -394,6 +394,12 @@ export class VideoProjectService extends EventEmitter {
                         res.end('Invalid video URL format. Expected: /videos/{category}/{filename}');
                         return;
                     }
+                } else if (url.startsWith('/absolute/')) {
+                    // Servir arquivo de caminho absoluto
+                    // URL format: /absolute/C:/Users/.../file.wav
+                    const absolutePath = decodeURIComponent(url.replace('/absolute/', ''));
+                    filePath = absolutePath;
+                    console.log(`📂 [Absolute] Servindo: ${filePath}`);
                 } else {
                     // Servir da pasta de projetos
                     filePath = path.join(this.projectsDir, decodeURIComponent(url));

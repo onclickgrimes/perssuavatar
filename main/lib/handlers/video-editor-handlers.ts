@@ -470,7 +470,7 @@ Lembre-se:
       if (window && !window.isDestroyed()) {
         window.webContents.send('quiz:audio-progress', {
           current: 1,
-          total: 1,
+          total: 3, // Gerar, Transcrever, Mapear
           stage: 'generating'
         });
       }
@@ -489,17 +489,172 @@ Lembre-se:
         throw new Error(result.error || 'Erro ao gerar áudio');
       }
       
-      console.log(`✅ [Quiz] Audio completo gerado: ${outputPath}`);
+      console.log(`✅ [Quiz] Audio gerado: ${outputPath}`);
+      
+      // ETAPA 2: Transcrever o áudio para obter timestamps
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('quiz:audio-progress', {
+          current: 2,
+          total: 3,
+          stage: 'transcribing'
+        });
+      }
+      
+      const { getAudioTranscriptionService } = require('../services/audio-transcription-service');
+      const transcriptionService = getAudioTranscriptionService();
+      
+      const transcriptionResult = await transcriptionService.transcribeFile(outputPath);
+      
+      if (!transcriptionResult.success) {
+        console.warn('⚠️ [Quiz] Transcription failed, returning without segments:', transcriptionResult.error);
+        return { 
+          success: true, 
+          audioPath: outputPath,
+          outputDir,
+          duration: 0,
+          segments: [],
+          questionsCount: options.questions.length
+        };
+      }
+      
+      console.log(`✅ [Quiz] Audio transcrito: ${transcriptionResult.segments.length} segments`);
+      
+      // ETAPA 3: Mapear segments para as questões
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('quiz:audio-progress', {
+          current: 3,
+          total: 3,
+          stage: 'mapping'
+        });
+      }
+      
+      // Retornar segments do Deepgram para sincronização
+      const quizSegments = transcriptionResult.segments.map((seg: any) => ({
+        id: seg.id,
+        text: seg.text,
+        start: seg.start,
+        end: seg.end,
+        words: seg.words,
+      }));
+      
+      console.log(`✅ [Quiz] Audio completo gerado com ${quizSegments.length} segments sincronizados`);
       return { 
         success: true, 
         audioPath: outputPath,
         outputDir,
-        scriptLength: fullScript.length,
+        duration: transcriptionResult.duration,
+        segments: quizSegments,
+        words: transcriptionResult.words,
         questionsCount: options.questions.length
       };
       
     } catch (error: any) {
       console.error('❌ [Quiz] Audio generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler para renderizar vídeo de quiz
+  ipcMain.handle('quiz:render', async (
+    event,
+    options: {
+      theme: string;
+      questions: Array<{
+        question: string;
+        options: string[];
+        correctIndex: number;
+        explanation?: string;
+      }>;
+      thinkingTimeSeconds?: number;
+      showAnswerTimeSeconds?: number;
+      primaryColor?: string;
+      secondaryColor?: string;
+      backgroundColor?: string;
+      audioPath?: string;
+      width?: number;
+      height?: number;
+    }
+  ) => {
+    try {
+      console.log(`🎬 [Quiz] Rendering video: "${options.theme}"`);
+      
+      // Inicializar VideoService para renderização
+      const { VideoService } = require('../services/video-service');
+      const videoService = new VideoService();
+      
+      // Configurar listener de progresso
+      const window = getWindowFn?.();
+      videoService.on('progress', (data: any) => {
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('quiz:render-progress', {
+            percent: data.percent || Math.round(data.progress * 100),
+            stage: data.stage,
+            frame: data.frame,
+            totalFrames: data.totalFrames,
+          });
+        }
+      });
+
+      // Calcular duração do quiz
+      const INTRO_FRAMES = 3 * 30; // 3 segundos de intro
+      const QUESTION_INTRO_FRAMES = 1 * 30; // 1 segundo de entrada
+      const FPS = 30;
+      
+      const thinkingSeconds = options.thinkingTimeSeconds || 5;
+      const showAnswerSeconds = options.showAnswerTimeSeconds || 3;
+      
+      const durationInFrames = INTRO_FRAMES + 
+        (options.questions.length * (QUESTION_INTRO_FRAMES + (thinkingSeconds * FPS) + (showAnswerSeconds * FPS)));
+      
+      console.log(`📊 [Quiz] Duration: ${durationInFrames} frames @ ${FPS} fps`);
+
+      // Converter caminho do áudio para URL HTTP (necessário para Remotion)
+      let audioUrl: string | undefined;
+      if (options.audioPath) {
+        // Usar servidor HTTP local para servir o áudio
+        // O Remotion não aceita file://, precisa ser http://
+        const normalizedPath = options.audioPath.replace(/\\/g, '/');
+        audioUrl = `http://localhost:9999/absolute/${encodeURIComponent(normalizedPath)}`;
+        console.log(`🔊 [Quiz] Audio URL: ${audioUrl}`);
+      }
+
+      // Preparar props para a composição QuizVideo
+      const quizProps = {
+        theme: options.theme,
+        questions: options.questions,
+        thinkingTimeSeconds: thinkingSeconds,
+        showAnswerTimeSeconds: showAnswerSeconds,
+        primaryColor: options.primaryColor || '#8B5CF6',
+        secondaryColor: options.secondaryColor || '#EC4899',
+        backgroundColor: options.backgroundColor || '#0a0a0f',
+        // Áudio narrado
+        audioUrl,
+      };
+
+      // Renderizar usando VideoService
+      const result = await videoService.render({
+        compositionId: 'QuizVideo',
+        outputFileName: `quiz-${options.theme.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}.mp4`,
+        inputProps: quizProps,
+        durationInFrames,
+        fps: FPS,
+        codec: 'h264',
+        hardwareAcceleration: 'if-possible',
+      });
+
+      if (!result.success) {
+        throw new Error(result.error || 'Erro ao renderizar vídeo');
+      }
+
+      console.log(`✅ [Quiz] Video rendered: ${result.outputPath}`);
+      return {
+        success: true,
+        outputPath: result.outputPath,
+        durationMs: result.durationMs,
+      };
+
+    } catch (error: any) {
+      console.error('❌ [Quiz] Render error:', error);
       return { success: false, error: error.message };
     }
   });

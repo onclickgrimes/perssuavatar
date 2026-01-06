@@ -7,6 +7,9 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { QuizPreviewPlayer } from '../QuizPreviewPlayer';
+
+type QuizStep = 'config' | 'preview' | 'rendering' | 'complete';
 
 interface QuizVideoToolProps {
   onBack: () => void;
@@ -76,11 +79,20 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isRendering, setIsRendering] = useState(false);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
-  const [audioProgress, setAudioProgress] = useState({ current: 0, total: 0 });
+  const [audioProgress, setAudioProgress] = useState({ current: 0, total: 0, stage: '' });
   const [audioOutputDir, setAudioOutputDir] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generationProgress, setGenerationProgress] = useState('');
   const [outputPath, setOutputPath] = useState<string | null>(null);
+
+  // Estados do Workflow (config -> preview -> rendering -> complete)
+  const [currentStep, setCurrentStep] = useState<QuizStep>('config');
+  const [renderProgress, setRenderProgress] = useState(0);
+  const [outputVideoPath, setOutputVideoPath] = useState<string | null>(null);
+
+  // Estados de Áudio Sincronizado
+  const [audioSegments, setAudioSegments] = useState<any[]>([]);
+  const [audioDuration, setAudioDuration] = useState(0);
 
   // Configurações de Áudio
   const [audioIncludeOptions, setAudioIncludeOptions] = useState(true);
@@ -90,7 +102,15 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   // Listener para progresso do áudio
   useEffect(() => {
     const unsubscribe = window.electron.quiz.onAudioProgress((data) => {
-      setAudioProgress({ current: data.current, total: data.total });
+      setAudioProgress({ current: data.current, total: data.total, stage: data.stage });
+    });
+    return () => { unsubscribe(); };
+  }, []);
+
+  // Listener para progresso de renderização
+  useEffect(() => {
+    const unsubscribe = window.electron.quiz.onRenderProgress((data) => {
+      setRenderProgress(data.percent);
     });
     return () => { unsubscribe(); };
   }, []);
@@ -150,8 +170,10 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
     }
 
     setIsGeneratingAudio(true);
-    setAudioProgress({ current: 0, total: 1 });
+    setAudioProgress({ current: 0, total: 3, stage: 'starting' });
     setAudioOutputDir(null);
+    setAudioSegments([]);
+    setAudioDuration(0);
     setError(null);
 
     try {
@@ -172,6 +194,8 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         success: boolean; 
         audioPath?: string; 
         outputDir?: string;
+        duration?: number;
+        segments?: any[];
         questionsCount?: number;
         error?: string 
       };
@@ -181,7 +205,11 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       }
 
       setAudioOutputDir(result.audioPath || null);
+      setAudioDuration(result.duration || 0);
+      setAudioSegments(result.segments || []);
+      
       console.log('✅ [QuizGenerator] Áudio completo gerado:', result.audioPath);
+      console.log(`✅ [QuizGenerator] ${result.segments?.length || 0} segments sincronizados, duração: ${result.duration?.toFixed(2)}s`);
 
     } catch (err: any) {
       console.error('❌ [QuizGenerator] Erro ao gerar áudios:', err);
@@ -202,7 +230,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
     setOutputPath(null);
 
     try {
-      // Prepara as props do vídeo
+      // Prepara as props do vídeo (com dados de áudio sincronizado se disponível)
       const videoProps = {
         theme: config.theme,
         questions,
@@ -211,6 +239,12 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         primaryColor: config.primaryColor,
         secondaryColor: config.secondaryColor,
         backgroundColor: '#0a0a0f',
+        // Dados de áudio sincronizado
+        ...(audioOutputDir && {
+          audioPath: audioOutputDir,
+          audioDuration: audioDuration,
+          audioSegments: audioSegments,
+        }),
       };
 
       console.log('📦 [QuizGenerator] Exportando projeto...', videoProps);
@@ -244,6 +278,12 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       primaryColor: config.primaryColor,
       secondaryColor: config.secondaryColor,
       backgroundColor: '#0a0a0f',
+      // Dados de áudio sincronizado
+      ...(audioOutputDir && {
+        audioPath: audioOutputDir,
+        audioDuration: audioDuration,
+        audioSegments: audioSegments,
+      }),
     };
 
     const projectJson = JSON.stringify(videoProps, null, 2);
@@ -257,6 +297,83 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
+  };
+
+  // Calcula duração total do quiz em segundos
+  const calculateQuizDuration = (): number => {
+    const INTRO_SECONDS = 3;
+    const QUESTION_INTRO_SECONDS = 1;
+    
+    return INTRO_SECONDS + 
+      (questions.length * (QUESTION_INTRO_SECONDS + config.thinkingTimeSeconds + config.showAnswerTimeSeconds));
+  };
+
+  // Calcula duração em frames
+  const getQuizDurationInFrames = (): number => {
+    const FPS = 30;
+    return Math.ceil(calculateQuizDuration() * FPS);
+  };
+
+  // Props do Quiz para preview
+  const getQuizProps = () => {
+    // Converter caminho do áudio para URL HTTP (servidor local)
+    let audioUrl: string | undefined;
+    if (audioOutputDir) {
+      const normalizedPath = audioOutputDir.replace(/\\/g, '/');
+      audioUrl = `http://localhost:9999/absolute/${encodeURIComponent(normalizedPath)}`;
+    }
+    
+    return {
+      theme: config.theme,
+      questions,
+      thinkingTimeSeconds: config.thinkingTimeSeconds,
+      showAnswerTimeSeconds: config.showAnswerTimeSeconds,
+      primaryColor: config.primaryColor,
+      secondaryColor: config.secondaryColor,
+      backgroundColor: '#0a0a0f',
+      audioUrl,
+    };
+  };
+
+  // Iniciar renderização do vídeo
+  const handleStartRender = async () => {
+    setCurrentStep('rendering');
+    setRenderProgress(0);
+    setError(null);
+
+    try {
+      // Renderizar usando API real
+      console.log('🎬 [QuizGenerator] Iniciando renderização...');
+      
+      const result = await window.electron.quiz.render({
+        theme: config.theme,
+        questions: questions.map(q => ({
+          question: q.question,
+          options: q.options,
+          correctIndex: q.correctIndex,
+          explanation: q.explanation,
+        })),
+        thinkingTimeSeconds: config.thinkingTimeSeconds,
+        showAnswerTimeSeconds: config.showAnswerTimeSeconds,
+        primaryColor: config.primaryColor,
+        secondaryColor: config.secondaryColor,
+        backgroundColor: '#0a0a0f',
+        audioPath: audioOutputDir || undefined,
+      }) as { success: boolean; outputPath?: string; error?: string };
+
+      if (!result.success) {
+        throw new Error(result.error || 'Erro ao renderizar vídeo');
+      }
+
+      console.log('✅ [QuizGenerator] Vídeo renderizado:', result.outputPath);
+      setOutputVideoPath(result.outputPath || null);
+      setCurrentStep('complete');
+
+    } catch (err: any) {
+      console.error('❌ [QuizGenerator] Erro ao renderizar:', err);
+      setError(err.message || 'Erro ao renderizar vídeo');
+      setCurrentStep('preview'); // Voltar para preview em caso de erro
+    }
   };
 
   // === RENDER SECTIONS ===
@@ -765,22 +882,28 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
             {isGeneratingAudio ? (
               <>
                 <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
-                Gerando áudio...
+                <span>
+                  {audioProgress.stage === 'generating' && 'Gerando áudio...'}
+                  {audioProgress.stage === 'transcribing' && 'Sincronizando legendas...'}
+                  {audioProgress.stage === 'mapping' && 'Mapeando questões...'}
+                  {!audioProgress.stage && 'Iniciando...'}
+                </span>
+                <span className="text-white/60 text-sm">({audioProgress.current}/{audioProgress.total})</span>
               </>
             ) : (
               <>
                 <span>🎤</span>
-                Gerar Áudio Completo
+                Gerar Áudio Sincronizado
               </>
             )}
           </button>
 
           {audioOutputDir && (
-            <div className="mt-3 p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl">
+            <div className="mt-3 p-4 bg-orange-500/10 border border-orange-500/30 rounded-xl space-y-3">
               <div className="flex items-center gap-3">
                 <span className="text-2xl">🎵</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-orange-400 font-medium">Áudio do quiz gerado!</p>
+                  <p className="text-orange-400 font-medium">Áudio sincronizado gerado!</p>
                   <p className="text-white/40 text-xs truncate">{audioOutputDir}</p>
                 </div>
                 <button
@@ -790,6 +913,29 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
                   Copiar Caminho
                 </button>
               </div>
+
+              {/* Informações de Sincronização */}
+              {audioSegments.length > 0 && (
+                <div className="pt-3 border-t border-orange-500/20">
+                  <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="p-2 bg-white/5 rounded-lg">
+                      <p className="text-lg font-bold text-orange-400">{audioSegments.length}</p>
+                      <p className="text-xs text-white/40">Legendas</p>
+                    </div>
+                    <div className="p-2 bg-white/5 rounded-lg">
+                      <p className="text-lg font-bold text-orange-400">{audioDuration.toFixed(1)}s</p>
+                      <p className="text-xs text-white/40">Duração</p>
+                    </div>
+                    <div className="p-2 bg-white/5 rounded-lg">
+                      <p className="text-lg font-bold text-green-400">✓</p>
+                      <p className="text-xs text-white/40">Sincronizado</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 text-xs text-white/40 text-center">
+                    Legendas sincronizadas com timestamps via Deepgram
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
@@ -807,6 +953,166 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
           </ol>
         </div>
       )}
+
+      {/* Botão de Preview */}
+      {questions.length > 0 && audioOutputDir && (
+        <div className="mt-4">
+          <button
+            onClick={() => setCurrentStep('preview')}
+            className="w-full py-4 rounded-xl font-medium text-white flex items-center justify-center gap-3 transition-all bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 shadow-lg shadow-pink-500/25"
+          >
+            <span>👁️</span>
+            Ver Preview do Vídeo
+          </button>
+        </div>
+      )}
+    </div>
+  );
+
+  // === RENDER: Preview Step ===
+  const renderPreviewStep = () => (
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-2xl font-bold text-white mb-2">👁️ Preview do Quiz</h2>
+          <p className="text-white/60">
+            Visualize o resultado antes de renderizar
+          </p>
+        </div>
+        <div className="flex gap-3">
+          <button
+            onClick={() => setCurrentStep('config')}
+            className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+          >
+            ← Voltar
+          </button>
+          <button
+            onClick={handleStartRender}
+            className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all"
+          >
+            🎬 Renderizar Vídeo
+          </button>
+        </div>
+      </div>
+
+      {/* Player de Preview */}
+      <div className="bg-black/50 rounded-xl overflow-hidden shadow-2xl">
+        <div className="flex justify-center bg-black/80 py-8">
+          <div 
+            className="relative shadow-2xl" 
+            style={{ 
+              aspectRatio: '9/16',
+              height: '60vh',
+              maxHeight: '600px'
+            }}
+          >
+            <QuizPreviewPlayer
+              quizProps={getQuizProps()}
+              durationInFrames={getQuizDurationInFrames()}
+              fps={30}
+              width={1080}
+              height={1920}
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Informações do projeto */}
+      <div className="grid grid-cols-4 gap-4">
+        <div className="p-4 bg-white/5 rounded-lg text-center">
+          <p className="text-white/60 text-sm">Duração</p>
+          <p className="text-white text-lg font-bold">
+            {Math.floor(calculateQuizDuration() / 60)}:{String(Math.floor(calculateQuizDuration() % 60)).padStart(2, '0')}
+          </p>
+        </div>
+        <div className="p-4 bg-white/5 rounded-lg text-center">
+          <p className="text-white/60 text-sm">Questões</p>
+          <p className="text-white text-lg font-bold">{questions.length}</p>
+        </div>
+        <div className="p-4 bg-white/5 rounded-lg text-center">
+          <p className="text-white/60 text-sm">Resolução</p>
+          <p className="text-white text-lg font-bold">1080x1920</p>
+        </div>
+        <div className="p-4 bg-white/5 rounded-lg text-center">
+          <p className="text-white/60 text-sm">Áudio</p>
+          <p className="text-white text-lg font-bold">{audioOutputDir ? '✓' : '—'}</p>
+        </div>
+      </div>
+    </div>
+  );
+
+  // === RENDER: Rendering Step ===
+  const renderRenderingStep = () => (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8">
+      <div className="text-center">
+        <h2 className="text-3xl font-bold text-white mb-4">🎬 Renderizando Vídeo</h2>
+        <p className="text-white/60">Aguarde enquanto seu quiz é renderizado...</p>
+      </div>
+
+      {/* Barra de Progresso */}
+      <div className="w-full max-w-md">
+        <div className="h-4 bg-white/10 rounded-full overflow-hidden">
+          <div 
+            className="h-full bg-gradient-to-r from-pink-500 to-purple-500 transition-all duration-300"
+            style={{ width: `${renderProgress}%` }}
+          />
+        </div>
+        <p className="mt-2 text-center text-white/60">
+          {renderProgress}% concluído
+        </p>
+      </div>
+
+      {/* Spinner animado */}
+      <div className="w-16 h-16 border-4 border-pink-500/30 border-t-pink-500 rounded-full animate-spin" />
+    </div>
+  );
+
+  // === RENDER: Complete Step ===
+  const renderCompleteStep = () => (
+    <div className="flex flex-col items-center justify-center min-h-[60vh] space-y-8">
+      <div className="text-center">
+        <div className="w-24 h-24 mx-auto mb-6 bg-gradient-to-r from-green-500 to-emerald-500 rounded-full flex items-center justify-center">
+          <span className="text-5xl">✓</span>
+        </div>
+        <h2 className="text-3xl font-bold text-white mb-4">Vídeo Renderizado!</h2>
+        <p className="text-white/60 mb-4">Seu quiz foi criado com sucesso.</p>
+        
+        {outputVideoPath && (
+          <div className="max-w-xl mx-auto p-4 bg-white/5 border border-white/10 rounded-xl">
+            <p className="text-xs text-white/40 mb-2">📂 Caminho do vídeo:</p>
+            <div className="flex items-center gap-2">
+              <p className="flex-1 text-sm text-white/80 truncate font-mono">{outputVideoPath}</p>
+              <button
+                onClick={() => navigator.clipboard.writeText(outputVideoPath)}
+                className="px-3 py-1.5 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-lg text-xs font-medium transition-colors"
+              >
+                Copiar
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="flex gap-4">
+        <button
+          onClick={() => {
+            setCurrentStep('config');
+            setOutputVideoPath(null);
+            setQuestions([]);
+            setAudioOutputDir(null);
+            setAudioSegments([]);
+          }}
+          className="px-6 py-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
+        >
+          🔄 Criar Novo Quiz
+        </button>
+        <button
+          onClick={() => setCurrentStep('preview')}
+          className="px-6 py-3 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-xl font-medium transition-all"
+        >
+          👁️ Ver Novamente
+        </button>
+      </div>
     </div>
   );
 
@@ -821,47 +1127,71 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       {/* Header */}
       <header className="relative z-10 border-b border-white/5">
         <div className="max-w-7xl mx-auto px-6 py-4">
-          <div className="flex items-center gap-4">
-            <button
-              onClick={onBack}
-              className="p-2 bg-white/5 hover:bg-white/10 rounded-xl transition-colors"
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M19 12H5M12 19l-7-7 7-7" />
-              </svg>
-            </button>
-
-            <div className="flex items-center gap-3">
-              <div 
-                className="w-12 h-12 rounded-xl flex items-center justify-center"
-                style={{ background: `linear-gradient(135deg, ${config.primaryColor}, ${config.secondaryColor})` }}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <button
+                onClick={currentStep === 'config' ? onBack : () => setCurrentStep('config')}
+                className="p-2 bg-white/5 hover:bg-white/10 rounded-xl transition-colors"
               >
-                <span className="text-2xl">❓</span>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+              </button>
+
+              <div className="flex items-center gap-3">
+                <div 
+                  className="w-12 h-12 rounded-xl flex items-center justify-center"
+                  style={{ background: `linear-gradient(135deg, ${config.primaryColor}, ${config.secondaryColor})` }}
+                >
+                  <span className="text-2xl">❓</span>
+                </div>
+                <div>
+                  <h1 className="text-xl font-bold text-white">Gerador de Vídeos Quiz</h1>
+                  <p className="text-sm text-white/40">Crie vídeos de quiz interativos com IA</p>
+                </div>
               </div>
-              <div>
-                <h1 className="text-xl font-bold text-white">Gerador de Vídeos Quiz</h1>
-                <p className="text-sm text-white/40">Crie vídeos de quiz interativos com IA</p>
-              </div>
+            </div>
+
+            {/* Step Indicators */}
+            <div className="flex items-center gap-2">
+              {['config', 'preview', 'rendering', 'complete'].map((step, index) => (
+                <div
+                  key={step}
+                  className={`w-3 h-3 rounded-full transition-all ${
+                    currentStep === step
+                      ? 'bg-pink-500 scale-125'
+                      : ['config', 'preview', 'rendering', 'complete'].indexOf(currentStep) > index
+                      ? 'bg-green-500'
+                      : 'bg-white/20'
+                  }`}
+                />
+              ))}
             </div>
           </div>
         </div>
       </header>
 
-      {/* Main Content */}
+      {/* Main Content - Switch by Step */}
       <main className="relative z-10 max-w-7xl mx-auto px-6 py-8">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {/* Left Column */}
-          <div className="space-y-6">
-            {renderProviderSection()}
-            {renderConfigSection()}
-          </div>
+        {currentStep === 'config' && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left Column */}
+            <div className="space-y-6">
+              {renderProviderSection()}
+              {renderConfigSection()}
+            </div>
 
-          {/* Right Column */}
-          <div className="space-y-6">
-            {renderPreviewSection()}
-            {renderActionsSection()}
+            {/* Right Column */}
+            <div className="space-y-6">
+              {renderPreviewSection()}
+              {renderActionsSection()}
+            </div>
           </div>
-        </div>
+        )}
+
+        {currentStep === 'preview' && renderPreviewStep()}
+        {currentStep === 'rendering' && renderRenderingStep()}
+        {currentStep === 'complete' && renderCompleteStep()}
       </main>
     </div>
   );

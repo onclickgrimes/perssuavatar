@@ -448,6 +448,32 @@ const handler = {
       ipcRenderer.on('quiz:audio-progress', subscription);
       return () => ipcRenderer.removeListener('quiz:audio-progress', subscription);
     },
+
+    // Renderizar vídeo de quiz
+    render: (options: {
+      theme: string;
+      questions: Array<{
+        question: string;
+        options: string[];
+        correctIndex: number;
+        explanation?: string;
+      }>;
+      thinkingTimeSeconds?: number;
+      showAnswerTimeSeconds?: number;
+      primaryColor?: string;
+      secondaryColor?: string;
+      backgroundColor?: string;
+      audioPath?: string;
+      width?: number;
+      height?: number;
+    }) => ipcRenderer.invoke('quiz:render', options),
+
+    // Listener para progresso de renderização
+    onRenderProgress: (callback: (data: { percent: number; stage: string; frame?: number; totalFrames?: number }) => void) => {
+      const subscription = (_: any, data: { percent: number; stage: string; frame?: number; totalFrames?: number }) => callback(data);
+      ipcRenderer.on('quiz:render-progress', subscription);
+      return () => ipcRenderer.removeListener('quiz:render-progress', subscription);
+    },
   },
   
   // ========================================

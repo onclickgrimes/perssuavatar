@@ -36,6 +36,9 @@ export const quizVideoCompositionSchema = z.object({
   primaryColor: z.string().default('#8B5CF6'),
   secondaryColor: z.string().default('#EC4899'),
   backgroundColor: z.string().default('#0a0a0f'),
+  // Áudio narrado do quiz
+  audioUrl: z.string().optional(),
+  // Sons de efeito
   questionSound: z.string().optional(),
   correctSound: z.string().optional(),
   wrongSound: z.string().optional(),
@@ -574,6 +577,7 @@ export const QuizVideoComposition: React.FC<QuizVideoCompositionProps> = ({
   primaryColor = '#8B5CF6',
   secondaryColor = '#EC4899',
   backgroundColor = '#0a0a0f',
+  audioUrl,
   questionSound,
   correctSound,
 }) => {
@@ -584,6 +588,11 @@ export const QuizVideoComposition: React.FC<QuizVideoCompositionProps> = ({
   
   return (
     <AbsoluteFill>
+      {/* Áudio narrado do quiz */}
+      {audioUrl && (
+        <Audio src={audioUrl} volume={1} />
+      )}
+
       {/* Intro */}
       <Sequence from={0} durationInFrames={introFrames}>
         <QuizIntro
