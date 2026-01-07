@@ -381,7 +381,25 @@ Lembre-se:
     }
   });
 
-  // Handler para gerar áudio completo do quiz (um único arquivo)
+  // Rate limiter para API do Gemini (10 req/min = 6s entre requisições)
+  const geminiRateLimiter = {
+    lastRequest: 0,
+    minInterval: 6500,
+    
+    async wait() {
+      const now = Date.now();
+      const elapsed = now - this.lastRequest;
+      if (elapsed < this.minInterval) {
+        const waitTime = this.minInterval - elapsed;
+        console.log(`⏳ [RateLimiter] Waiting ${waitTime}ms before next request...`);
+        await new Promise(r => setTimeout(r, waitTime));
+      }
+      this.lastRequest = Date.now();
+    }
+  };
+
+  // Handler para gerar áudio do quiz com estratégia otimizada
+  // Estrutura: [P1] + silêncio + [R1+P2] + silêncio + [R2+P3]...
   ipcMain.handle('quiz:generate-audio', async (
     event,
     options: {
@@ -393,109 +411,174 @@ Lembre-se:
       }>;
       voiceName?: string;
       outputDir?: string;
-      includeOptions?: boolean;      // Incluir opções de resposta
-      includeCorrectAnswer?: boolean; // Incluir resposta correta
-      includeExplanations?: boolean;  // Incluir explicações
+      includeOptions?: boolean;
+      includeCorrectAnswer?: boolean;
+      includeExplanations?: boolean;
+      thinkingTimeSeconds?: number;
     }
   ) => {
     try {
-      console.log(`🎤 [Quiz] Generating complete audio for ${options.questions.length} questions...`);
+      console.log(`🎤 [Quiz] Generating optimized audio for ${options.questions.length} questions...`);
       
       const { getGeminiVoiceService } = require('../services/gemini-voice-service');
       const voiceService = getGeminiVoiceService();
       
-      // Define pasta de saída
       const path = require('path');
+      const fs = require('fs');
+      const { execSync } = require('child_process');
+      
+      // Define pasta de saída
       const outputDir = options.outputDir || path.join(
         require('electron').app.getPath('userData'), 
         'quiz-audio'
       );
       
-      // Cria diretório se não existe
-      const fs = require('fs');
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true });
       }
       
-      // Envia progresso para o frontend
       const window = getWindowFn?.();
-      if (window && !window.isDestroyed()) {
-        window.webContents.send('quiz:audio-progress', {
-          current: 0,
-          total: 1,
-          stage: 'building'
-        });
-      }
       
-      // Valores padrão para as opções
-      const includeOptions = options.includeOptions !== false; // Padrão: true
-      const includeCorrectAnswer = options.includeCorrectAnswer ?? false; // Padrão: false
-      const includeExplanations = options.includeExplanations ?? false; // Padrão: false
+      // Configurações
+      const includeOptions = options.includeOptions !== false;
+      const includeCorrectAnswer = options.includeCorrectAnswer ?? false;
+      const includeExplanations = options.includeExplanations ?? false;
+      const thinkingTimeSeconds = options.thinkingTimeSeconds ?? 5;
       
-      // Constrói o texto completo do quiz
       const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
-      let fullScript = '';
+      const timestamp = Date.now();
+      const tempDir = path.join(outputDir, `temp_${timestamp}`);
       
-      for (let i = 0; i < options.questions.length; i++) {
-        const q = options.questions[i];
-        const correctLetter = optionLetters[q.correctIndex];
-        
-        // Adiciona a pergunta
-        fullScript += `Questão ${i + 1}. ${q.question} `;
-        
-        // Adiciona as opções (se habilitado)
-        if (includeOptions) {
-          for (let j = 0; j < q.options.length; j++) {
-            fullScript += `${optionLetters[j]}: ${q.options[j]}. `;
-          }
-        }
-        
-        // Adiciona resposta correta (se habilitado)
-        if (includeCorrectAnswer) {
-          fullScript += `A resposta correta é ${correctLetter}. `;
-        }
-        
-        // Adiciona explicação (se habilitado e existir)
-        if (includeExplanations && q.explanation) {
-          fullScript += `${q.explanation} `;
-        }
-        
-        // Pausa entre questões
-        fullScript += ' ';
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true });
       }
       
-      console.log(`📝 [Quiz] Script completo: ${fullScript.length} caracteres`);
+      // --- ETAPA 1: Construção dos Scripts (Shifted Strategy) ---
+      const audioScripts: string[] = [];
       
-      // Envia progresso
+      // Helper para formatar opções
+      const formatOptions = (q: any) => {
+         if (!includeOptions) return '';
+         return q.options.map((opt: string, idx: number) => `${optionLetters[idx]}: ${opt}.`).join(' ');
+      };
+      
+      // Helper para formatar resposta/explicação
+      const formatAnswer = (q: any) => {
+        let text = '';
+        if (includeCorrectAnswer) text += `A resposta correta é ${optionLetters[q.correctIndex]}. `;
+        if (includeExplanations && q.explanation) text += `${q.explanation} `;
+        return text;
+      };
+
+      // 1. Primeiro bloco: Apenas a primeira pergunta
+      audioScripts.push(`Questão 1. ${options.questions[0].question} ${formatOptions(options.questions[0])}`);
+      
+      // 2. Blocos intermediários: Resposta da anterior + Próxima pergunta
+      for (let i = 0; i < options.questions.length - 1; i++) {
+        const prevQ = options.questions[i];
+        const nextQ = options.questions[i + 1];
+        
+        const text = `${formatAnswer(prevQ)} Questão ${i + 2}. ${nextQ.question} ${formatOptions(nextQ)}`;
+        audioScripts.push(text);
+      }
+      
+      // 3. Último bloco: Resposta da última pergunta (se necessário)
+      const lastAnswer = formatAnswer(options.questions[options.questions.length - 1]);
+      if (lastAnswer.trim().length > 0) {
+        audioScripts.push(lastAnswer);
+      }
+      
+      console.log(`📝 [Quiz] Scripts prepared: ${audioScripts.length} blocks`);
+      
+      // --- ETAPA 2: Geração de Áudio com Rate Limiting ---
+      const audioFiles: string[] = [];
+      const totalSteps = audioScripts.length + 2;
+      
+      for (let i = 0; i < audioScripts.length; i++) {
+        // Reporta progresso
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('quiz:audio-progress', {
+            current: i + 1,
+            total: totalSteps,
+            stage: `generating block ${i + 1}/${audioScripts.length}`
+          });
+        }
+        
+        await geminiRateLimiter.wait();
+        
+        const blockPath = path.join(tempDir, `block_${i}.wav`);
+        const result = await voiceService.generateSpeech({
+          text: audioScripts[i],
+          voiceName: options.voiceName || 'Kore',
+          outputPath: blockPath
+        });
+        
+        if (!result.success) {
+          throw new Error(`Erro ao gerar bloco de áudio ${i + 1}: ${result.error}`);
+        }
+        
+        audioFiles.push(blockPath);
+        console.log(`✅ [Quiz] Block ${i} generated`);
+      }
+      
+      // --- ETAPA 3: Concatenação com Silêncio ---
       if (window && !window.isDestroyed()) {
         window.webContents.send('quiz:audio-progress', {
-          current: 1,
-          total: 3, // Gerar, Transcrever, Mapear
-          stage: 'generating'
+          current: audioScripts.length + 1,
+          total: totalSteps,
+          stage: 'concatenating'
         });
       }
       
-      // Gera o áudio completo
-      const timestamp = Date.now();
-      const outputPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
+      // Gera arquivo de silêncio (Thinking Time)
+      const silenceFile = path.join(tempDir, 'thinking_silence.wav');
+      try {
+        execSync(
+          `ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t ${thinkingTimeSeconds} "${silenceFile}"`,
+          { encoding: 'utf8', stdio: 'pipe' }
+        );
+      } catch (e) {
+        // Fallback se falhar criar silêncio (não ideal, mas previne crash)
+        console.warn('⚠️ [Quiz] Could not create silence file via ffmpeg');
+      }
+
+      // Cria lista de concatenação
+      // Lógica: Block 0 + Silence + Block 1 + Silence + ... + Block N
+      // (Não adiciona silêncio após o ÚLTIMO bloco se ele for apenas resposta)
       
-      const result = await voiceService.generateSpeech({
-        text: fullScript,
-        voiceName: options.voiceName || 'Kore',
-        outputPath: outputPath
-      });
+      const concatListPath = path.join(tempDir, 'concat_list.txt');
+      let concatContent = '';
       
-      if (!result.success) {
-        throw new Error(result.error || 'Erro ao gerar áudio');
+      for (let i = 0; i < audioFiles.length; i++) {
+        concatContent += `file '${audioFiles[i].replace(/'/g, "'\\''")}'\\n`;
+        
+        // Adiciona silêncio APÓS o bloco, EXCETO se for o último
+        // (O último bloco é a última resposta, não precisa de "pensar" depois dele)
+        if (i < options.questions.length && fs.existsSync(silenceFile)) {
+             concatContent += `file '${silenceFile.replace(/'/g, "'\\''")}'\\n`;
+        }
       }
       
-      console.log(`✅ [Quiz] Audio gerado: ${outputPath}`);
+      fs.writeFileSync(concatListPath, concatContent.replace(/\\n/g, '\n'));
       
-      // ETAPA 2: Transcrever o áudio para obter timestamps
+      // Executa Concatenação
+      const finalOutputPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
+      try {
+        execSync(
+          `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${finalOutputPath}"`,
+          { encoding: 'utf8', stdio: 'pipe' }
+        );
+      } catch (e: any) {
+        throw new Error('Erro ao concatenar áudios com ffmpeg');
+      }
+      
+      console.log(`✅ [Quiz] Final audio created: ${finalOutputPath}`);
+      
+      // --- ETAPA 4: Transcrição (Crucial para sincronização) ---
       if (window && !window.isDestroyed()) {
         window.webContents.send('quiz:audio-progress', {
-          current: 2,
-          total: 3,
+          current: totalSteps,
+          total: totalSteps,
           stage: 'transcribing'
         });
       }
@@ -503,13 +586,16 @@ Lembre-se:
       const { getAudioTranscriptionService } = require('../services/audio-transcription-service');
       const transcriptionService = getAudioTranscriptionService();
       
-      const transcriptionResult = await transcriptionService.transcribeFile(outputPath);
+      // Transcreve o arquivo FINAL concatenado para obter os timestamps reais
+      // Isso é necessário porque os tempos mudaram com a inserção de silêncio
+      // e os blocos misturados
+      const transcriptionResult = await transcriptionService.transcribeFile(finalOutputPath);
       
       if (!transcriptionResult.success) {
-        console.warn('⚠️ [Quiz] Transcription failed, returning without segments:', transcriptionResult.error);
+        console.warn('⚠️ [Quiz] Transcription failed:', transcriptionResult.error);
         return { 
           success: true, 
-          audioPath: outputPath,
+          audioPath: finalOutputPath,
           outputDir,
           duration: 0,
           segments: [],
@@ -517,18 +603,12 @@ Lembre-se:
         };
       }
       
-      console.log(`✅ [Quiz] Audio transcrito: ${transcriptionResult.segments.length} segments`);
-      
-      // ETAPA 3: Mapear segments para as questões
-      if (window && !window.isDestroyed()) {
-        window.webContents.send('quiz:audio-progress', {
-          current: 3,
-          total: 3,
-          stage: 'mapping'
-        });
-      }
-      
-      // Retornar segments do Deepgram para sincronização
+      // Limpeza
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch (e) {}
+
+      // Mapeia segmentos
       const quizSegments = transcriptionResult.segments.map((seg: any) => ({
         id: seg.id,
         text: seg.text,
@@ -537,15 +617,18 @@ Lembre-se:
         words: seg.words,
       }));
       
-      console.log(`✅ [Quiz] Audio completo gerado com ${quizSegments.length} segments sincronizados`);
+      console.log(`✅ [Quiz] Audio process complete. Duration: ${transcriptionResult.duration}s`);
+      
       return { 
         success: true, 
-        audioPath: outputPath,
+        audioPath: finalOutputPath,
         outputDir,
         duration: transcriptionResult.duration,
-        segments: quizSegments,
+        segments: quizSegments, // Deepgram segments
         words: transcriptionResult.words,
         questionsCount: options.questions.length
+        // NÃO retornamos questionTimestamps manuais aqui, pois
+        // confiamos na robustez da busca por "Questão X" na transcrição
       };
       
     } catch (error: any) {
@@ -571,12 +654,36 @@ Lembre-se:
       secondaryColor?: string;
       backgroundColor?: string;
       audioPath?: string;
+      audioDuration?: number;        // Duração do áudio em segundos
+      audioSegments?: Array<{        // Segments de transcrição para sincronização
+        id: number;
+        text: string;
+        start: number;
+        end: number;
+        words?: Array<{
+          word: string;
+          start: number;
+          end: number;
+          confidence?: number;
+        }>;
+      }>;
+      questionTimestamps?: Array<{   // Timestamps precisos (nova geração)
+        questionIndex: number;
+        startTime: number;
+        optionsTime: number;
+        answerTime: number;
+        endTime: number;
+      }>;
       width?: number;
       height?: number;
     }
   ) => {
     try {
       console.log(`🎬 [Quiz] Rendering video: "${options.theme}"`);
+      console.log(`🎬 [Quiz] Received options:`);
+      console.log(`   - audioDuration: ${options.audioDuration}`);
+      console.log(`   - audioSegments: ${options.audioSegments?.length || 0} items`);
+      console.log(`   - audioPath: ${options.audioPath}`);
       
       // Inicializar VideoService para renderização
       const { VideoService } = require('../services/video-service');
@@ -595,45 +702,88 @@ Lembre-se:
         }
       });
 
-      // Calcular duração do quiz
-      const INTRO_FRAMES = 3 * 30; // 3 segundos de intro
-      const QUESTION_INTRO_FRAMES = 1 * 30; // 1 segundo de entrada
       const FPS = 30;
       
-      const thinkingSeconds = options.thinkingTimeSeconds || 5;
-      const showAnswerSeconds = options.showAnswerTimeSeconds || 3;
-      
-      const durationInFrames = INTRO_FRAMES + 
-        (options.questions.length * (QUESTION_INTRO_FRAMES + (thinkingSeconds * FPS) + (showAnswerSeconds * FPS)));
-      
-      console.log(`📊 [Quiz] Duration: ${durationInFrames} frames @ ${FPS} fps`);
-
       // Converter caminho do áudio para URL HTTP (necessário para Remotion)
       let audioUrl: string | undefined;
       if (options.audioPath) {
-        // Usar servidor HTTP local para servir o áudio
-        // O Remotion não aceita file://, precisa ser http://
         const normalizedPath = options.audioPath.replace(/\\/g, '/');
         audioUrl = `http://localhost:9999/absolute/${encodeURIComponent(normalizedPath)}`;
         console.log(`🔊 [Quiz] Audio URL: ${audioUrl}`);
       }
-
-      // Preparar props para a composição QuizVideo
-      const quizProps = {
-        theme: options.theme,
-        questions: options.questions,
-        thinkingTimeSeconds: thinkingSeconds,
-        showAnswerTimeSeconds: showAnswerSeconds,
-        primaryColor: options.primaryColor || '#8B5CF6',
-        secondaryColor: options.secondaryColor || '#EC4899',
-        backgroundColor: options.backgroundColor || '#0a0a0f',
-        // Áudio narrado
-        audioUrl,
-      };
+      
+      // Verificar se temos dados de sincronização de áudio
+      const hasAudioSync = options.audioDuration && options.audioDuration > 0;
+      
+      let durationInFrames: number;
+      let compositionId: string;
+      let quizProps: any;
+      
+      if (hasAudioSync) {
+        // Usar composição sincronizada
+        console.log(`🎯 [Quiz] Using SYNCED composition (audio: ${options.audioDuration}s)`);
+        console.log(`🎯 [Quiz] audioSegments count: ${options.audioSegments?.length || 0}`);
+        
+        // Log detalhado dos primeiros segments
+        if (options.audioSegments && options.audioSegments.length > 0) {
+          console.log(`🎯 [Quiz] First segment:`, JSON.stringify(options.audioSegments[0], null, 2));
+          const totalWords = options.audioSegments.reduce((acc: number, seg: any) => acc + (seg.words?.length || 0), 0);
+          console.log(`🎯 [Quiz] Total words across all segments: ${totalWords}`);
+        }
+        
+        compositionId = 'QuizVideoSynced';
+        
+        // Duração baseada no áudio + intro + buffer
+        const INTRO_SECONDS = 3; // Intro visual antes do áudio
+        durationInFrames = Math.ceil((INTRO_SECONDS + options.audioDuration + 1) * FPS);
+        console.log(`🎯 [Quiz] Duration breakdown: intro=${INTRO_SECONDS}s + audio=${options.audioDuration}s + buffer=1s`);
+        
+        quizProps = {
+          theme: options.theme,
+          questions: options.questions,
+          primaryColor: options.primaryColor || '#8B5CF6',
+          secondaryColor: options.secondaryColor || '#EC4899',
+          backgroundColor: options.backgroundColor || '#0a0a0f',
+          audioUrl,
+          audioDuration: options.audioDuration,
+          audioSegments: options.audioSegments || [],
+          questionTimestamps: options.questionTimestamps, // Timestamps precisos!
+          thinkingSilenceSeconds: 3, // Buffer de silêncio para "pensar"
+        };
+        
+        console.log(`🎯 [Quiz] quizProps.audioSegments: ${quizProps.audioSegments.length} segments`);
+        console.log(`🎯 [Quiz] questionTimestamps: ${options.questionTimestamps?.length || 0} precisos`);
+        
+      } else {
+        // Usar composição com timing fixo (fallback)
+        console.log(`📊 [Quiz] Using FIXED timing composition`);
+        compositionId = 'QuizVideo';
+        
+        const thinkingSeconds = options.thinkingTimeSeconds || 5;
+        const showAnswerSeconds = options.showAnswerTimeSeconds || 3;
+        const INTRO_FRAMES = 3 * FPS;
+        const QUESTION_INTRO_FRAMES = 1 * FPS;
+        
+        durationInFrames = INTRO_FRAMES + 
+          (options.questions.length * (QUESTION_INTRO_FRAMES + (thinkingSeconds * FPS) + (showAnswerSeconds * FPS)));
+        
+        quizProps = {
+          theme: options.theme,
+          questions: options.questions,
+          thinkingTimeSeconds: thinkingSeconds,
+          showAnswerTimeSeconds: showAnswerSeconds,
+          primaryColor: options.primaryColor || '#8B5CF6',
+          secondaryColor: options.secondaryColor || '#EC4899',
+          backgroundColor: options.backgroundColor || '#0a0a0f',
+          audioUrl,
+        };
+      }
+      
+      console.log(`📊 [Quiz] Duration: ${durationInFrames} frames @ ${FPS} fps (~${(durationInFrames / FPS).toFixed(1)}s)`);
 
       // Renderizar usando VideoService
       const result = await videoService.render({
-        compositionId: 'QuizVideo',
+        compositionId,
         outputFileName: `quiz-${options.theme.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}.mp4`,
         inputProps: quizProps,
         durationInFrames,

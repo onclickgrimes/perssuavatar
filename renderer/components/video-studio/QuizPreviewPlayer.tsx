@@ -6,11 +6,14 @@ interface QuizPreviewPlayerProps {
   fps: number;
   width?: number;
   height?: number;
+  // Dados de sincronização
+  useSyncedComposition?: boolean;
 }
 
 /**
  * Player de Preview para Quiz Videos
  * Carrega dinamicamente o Player do Remotion e a composição QuizVideo
+ * Usa QuizVideoSyncedComposition quando há dados de áudio sincronizado
  */
 export function QuizPreviewPlayer({ 
   quizProps, 
@@ -18,6 +21,7 @@ export function QuizPreviewPlayer({
   fps,
   width = 1080,
   height = 1920,
+  useSyncedComposition = false,
 }: QuizPreviewPlayerProps) {
   const [Player, setPlayer] = React.useState<any>(null);
   const [QuizVideoComposition, setQuizVideoComposition] = React.useState<any>(null);
@@ -34,9 +38,16 @@ export function QuizPreviewPlayer({
         const playerModule = await import('@remotion/player');
         setPlayer(() => playerModule.Player);
         
-        // Importar composição do Quiz
-        const compositionModule = await import('../../../remotion/compositions/QuizVideoComposition');
-        setQuizVideoComposition(() => compositionModule.QuizVideoComposition);
+        // Importar composição apropriada (sincronizada ou fixa)
+        if (useSyncedComposition) {
+          console.log('📽️ [QuizPreviewPlayer] Loading SYNCED composition');
+          const compositionModule = await import('../../../remotion/compositions/QuizVideoSyncedComposition');
+          setQuizVideoComposition(() => compositionModule.QuizVideoSyncedComposition);
+        } else {
+          console.log('📽️ [QuizPreviewPlayer] Loading FIXED timing composition');
+          const compositionModule = await import('../../../remotion/compositions/QuizVideoComposition');
+          setQuizVideoComposition(() => compositionModule.QuizVideoComposition);
+        }
         
         setIsLoading(false);
       } catch (err: any) {
@@ -47,7 +58,7 @@ export function QuizPreviewPlayer({
     };
 
     loadComponents();
-  }, []);
+  }, [useSyncedComposition]);
 
   if (isLoading) {
     return (
@@ -77,7 +88,7 @@ export function QuizPreviewPlayer({
 
   return (
     <Player
-      key={`quiz-${width}-${height}`}
+      key={`quiz-${width}-${height}-${useSyncedComposition ? 'synced' : 'fixed'}`}
       component={QuizVideoComposition}
       inputProps={quizProps}
       durationInFrames={durationInFrames}

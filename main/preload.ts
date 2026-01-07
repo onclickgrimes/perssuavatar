@@ -464,6 +464,26 @@ const handler = {
       secondaryColor?: string;
       backgroundColor?: string;
       audioPath?: string;
+      audioDuration?: number;        // Duração do áudio em segundos
+      audioSegments?: Array<{        // Segments de transcrição para sincronização
+        id: number;
+        text: string;
+        start: number;
+        end: number;
+        words?: Array<{
+          word: string;
+          start: number;
+          end: number;
+          confidence?: number;
+        }>;
+      }>;
+      questionTimestamps?: Array<{   // Timestamps precisos (nova geração)
+        questionIndex: number;
+        startTime: number;
+        optionsTime: number;
+        answerTime: number;
+        endTime: number;
+      }>;
       width?: number;
       height?: number;
     }) => ipcRenderer.invoke('quiz:render', options),

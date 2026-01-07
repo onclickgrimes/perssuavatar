@@ -93,6 +93,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   // Estados de Áudio Sincronizado
   const [audioSegments, setAudioSegments] = useState<any[]>([]);
   const [audioDuration, setAudioDuration] = useState(0);
+  const [questionTimestamps, setQuestionTimestamps] = useState<any[]>([]); // Timestamps precisos
 
   // Configurações de Áudio
   const [audioIncludeOptions, setAudioIncludeOptions] = useState(true);
@@ -197,6 +198,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         duration?: number;
         segments?: any[];
         questionsCount?: number;
+        questionTimestamps?: Array<{ questionIndex: number; startTime: number; optionsTime: number; answerTime: number; endTime: number }>;
         error?: string 
       };
 
@@ -207,9 +209,11 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       setAudioOutputDir(result.audioPath || null);
       setAudioDuration(result.duration || 0);
       setAudioSegments(result.segments || []);
+      setQuestionTimestamps(result.questionTimestamps || []); // Timestamps precisos!
       
       console.log('✅ [QuizGenerator] Áudio completo gerado:', result.audioPath);
       console.log(`✅ [QuizGenerator] ${result.segments?.length || 0} segments sincronizados, duração: ${result.duration?.toFixed(2)}s`);
+      console.log(`✅ [QuizGenerator] ${result.questionTimestamps?.length || 0} questionTimestamps precisos`);
 
     } catch (err: any) {
       console.error('❌ [QuizGenerator] Erro ao gerar áudios:', err);
@@ -302,8 +306,14 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   // Calcula duração total do quiz em segundos
   const calculateQuizDuration = (): number => {
     const INTRO_SECONDS = 3;
-    const QUESTION_INTRO_SECONDS = 1;
     
+    // Se temos duração do áudio, usar ela + intro
+    if (audioDuration > 0) {
+      return INTRO_SECONDS + audioDuration;
+    }
+    
+    // Fallback: cálculo com tempos fixos
+    const QUESTION_INTRO_SECONDS = 1;
     return INTRO_SECONDS + 
       (questions.length * (QUESTION_INTRO_SECONDS + config.thinkingTimeSeconds + config.showAnswerTimeSeconds));
   };
@@ -311,7 +321,12 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   // Calcula duração em frames
   const getQuizDurationInFrames = (): number => {
     const FPS = 30;
-    return Math.ceil(calculateQuizDuration() * FPS);
+    return Math.ceil((calculateQuizDuration() + 1) * FPS); // +1 segundo de buffer
+  };
+
+  // Verifica se deve usar composição sincronizada
+  const shouldUseSyncedComposition = (): boolean => {
+    return audioDuration > 0 && audioSegments.length > 0;
   };
 
   // Props do Quiz para preview
@@ -323,15 +338,31 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       audioUrl = `http://localhost:9999/absolute/${encodeURIComponent(normalizedPath)}`;
     }
     
-    return {
+    const baseProps = {
       theme: config.theme,
       questions,
-      thinkingTimeSeconds: config.thinkingTimeSeconds,
-      showAnswerTimeSeconds: config.showAnswerTimeSeconds,
       primaryColor: config.primaryColor,
       secondaryColor: config.secondaryColor,
       backgroundColor: '#0a0a0f',
       audioUrl,
+    };
+    
+    // Se temos dados de sincronização, adiciona os campos extras
+    if (shouldUseSyncedComposition()) {
+      return {
+        ...baseProps,
+        audioDuration,
+        audioSegments,
+        questionTimestamps, // Timestamps precisos!
+        thinkingSilenceSeconds: 3,
+      };
+    }
+    
+    // Senão, usa props de timing fixo
+    return {
+      ...baseProps,
+      thinkingTimeSeconds: config.thinkingTimeSeconds,
+      showAnswerTimeSeconds: config.showAnswerTimeSeconds,
     };
   };
 
@@ -344,6 +375,10 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
     try {
       // Renderizar usando API real
       console.log('🎬 [QuizGenerator] Iniciando renderização...');
+      console.log('🎬 [QuizGenerator] audioDuration:', audioDuration);
+      console.log('🎬 [QuizGenerator] audioSegments.length:', audioSegments.length);
+      console.log('🎬 [QuizGenerator] questionTimestamps.length:', questionTimestamps.length);
+      console.log('🎬 [QuizGenerator] audioOutputDir:', audioOutputDir);
       
       const result = await window.electron.quiz.render({
         theme: config.theme,
@@ -359,6 +394,10 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         secondaryColor: config.secondaryColor,
         backgroundColor: '#0a0a0f',
         audioPath: audioOutputDir || undefined,
+        // Dados de sincronização de áudio
+        audioDuration: audioDuration || undefined,
+        audioSegments: audioSegments.length > 0 ? audioSegments : undefined,
+        questionTimestamps: questionTimestamps.length > 0 ? questionTimestamps : undefined, // Precisos!
       }) as { success: boolean; outputPath?: string; error?: string };
 
       if (!result.success) {
@@ -1012,6 +1051,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
               fps={30}
               width={1080}
               height={1920}
+              useSyncedComposition={shouldUseSyncedComposition()}
             />
           </div>
         </div>

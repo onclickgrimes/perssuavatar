@@ -23,6 +23,12 @@ import {
   defaultQuizProps,
   calculateQuizDuration,
 } from './compositions/QuizVideoComposition';
+import {
+  QuizVideoSyncedComposition,
+  quizVideoSyncedSchema,
+  defaultSyncedQuizProps,
+  calculateSyncedQuizDuration,
+} from './compositions/QuizVideoSyncedComposition';
 
 export const RemotionRoot: React.FC = () => {
   // Calcular duração do projeto de exemplo
@@ -205,6 +211,37 @@ export const RemotionRoot: React.FC = () => {
             props.questions.length,
             props.thinkingTimeSeconds,
             props.showAnswerTimeSeconds,
+            fps
+          );
+          return {
+            durationInFrames,
+            fps,
+            width: 1080,
+            height: 1920,
+          };
+        }}
+      />
+
+      {/* 
+        =========================================
+        QUIZ VIDEO SYNCED - Sincronizado com Áudio
+        =========================================
+        Versão do quiz que sincroniza elementos visuais
+        com os timestamps do áudio transcrito.
+      */}
+      <Composition
+        id="QuizVideoSynced"
+        component={QuizVideoSyncedComposition}
+        durationInFrames={calculateSyncedQuizDuration(defaultSyncedQuizProps.audioDuration, 30)}
+        fps={30}
+        width={1080}
+        height={1920}
+        schema={quizVideoSyncedSchema}
+        defaultProps={defaultSyncedQuizProps}
+        calculateMetadata={async ({ props }) => {
+          const fps = 30;
+          const durationInFrames = calculateSyncedQuizDuration(
+            props.audioDuration || 60,
             fps
           );
           return {
