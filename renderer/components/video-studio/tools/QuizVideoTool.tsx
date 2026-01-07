@@ -100,6 +100,16 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   const [audioIncludeCorrectAnswer, setAudioIncludeCorrectAnswer] = useState(false);
   const [audioIncludeExplanations, setAudioIncludeExplanations] = useState(false);
 
+  // Configuração de Vídeo
+  const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
+
+  // Helper de dimensões
+  const getDimensions = () => {
+    return aspectRatio === '9:16' 
+      ? { width: 1080, height: 1920 } 
+      : { width: 1920, height: 1080 };
+  };
+
   // Listener para progresso do áudio
   useEffect(() => {
     const unsubscribe = window.electron.quiz.onAudioProgress((data) => {
@@ -393,6 +403,8 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         primaryColor: config.primaryColor,
         secondaryColor: config.secondaryColor,
         backgroundColor: '#0a0a0f',
+        width: getDimensions().width,
+        height: getDimensions().height,
         audioPath: audioOutputDir || undefined,
         // Dados de sincronização de áudio
         audioDuration: audioDuration || undefined,
@@ -652,6 +664,44 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
               +
             </button>
           </div>
+        </div>
+      </div>
+
+      {/* Proporção do Vídeo */}
+      <div>
+        <label className="block text-sm font-medium text-white/70 mb-2">
+          Proporção do Vídeo
+        </label>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setAspectRatio('9:16')}
+            className={`flex-1 p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${
+              aspectRatio === '9:16'
+                ? 'bg-purple-500/20 border-purple-500/50 text-white'
+                : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            <span className="text-xl">📱</span>
+            <div className="text-left">
+              <p className="text-sm font-bold">9:16</p>
+              <p className="text-xs opacity-70">Shorts/Reels (1080x1920)</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setAspectRatio('16:9')}
+            className={`flex-1 p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${
+              aspectRatio === '16:9'
+                ? 'bg-purple-500/20 border-purple-500/50 text-white'
+                : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            <span className="text-xl">📺</span>
+            <div className="text-left">
+              <p className="text-sm font-bold">16:9</p>
+              <p className="text-xs opacity-70">YouTube (1920x1080)</p>
+            </div>
+          </button>
         </div>
       </div>
 
@@ -1018,7 +1068,31 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
             Visualize o resultado antes de renderizar
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
+          {/* Seletor de Aspect Ratio */}
+          <div className="flex bg-white/5 rounded-lg border border-white/10 p-1 mr-4">
+            <button
+              onClick={() => setAspectRatio('9:16')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                aspectRatio === '9:16'
+                  ? 'bg-purple-500 text-white shadow-lg'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              📱 9:16
+            </button>
+            <button
+              onClick={() => setAspectRatio('16:9')}
+              className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                aspectRatio === '16:9'
+                  ? 'bg-purple-500 text-white shadow-lg'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              📺 16:9
+            </button>
+          </div>
+
           <button
             onClick={() => setCurrentStep('config')}
             className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
@@ -1038,19 +1112,21 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       <div className="bg-black/50 rounded-xl overflow-hidden shadow-2xl">
         <div className="flex justify-center bg-black/80 py-8">
           <div 
-            className="relative shadow-2xl" 
+            className="relative shadow-2xl transition-all duration-300" // Adicionado transition
             style={{ 
-              aspectRatio: '9/16',
-              height: '60vh',
-              maxHeight: '600px'
+              aspectRatio: aspectRatio === '9:16' ? '9/16' : '16/9',
+              height: aspectRatio === '9:16' ? '60vh' : 'auto',
+              width: aspectRatio === '16:9' ? '80vw' : 'auto',
+              maxHeight: '600px',
+              maxWidth: '1000px'
             }}
           >
             <QuizPreviewPlayer
               quizProps={getQuizProps()}
               durationInFrames={getQuizDurationInFrames()}
               fps={30}
-              width={1080}
-              height={1920}
+              width={getDimensions().width}
+              height={getDimensions().height}
               useSyncedComposition={shouldUseSyncedComposition()}
             />
           </div>
@@ -1071,7 +1147,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         </div>
         <div className="p-4 bg-white/5 rounded-lg text-center">
           <p className="text-white/60 text-sm">Resolução</p>
-          <p className="text-white text-lg font-bold">1080x1920</p>
+          <p className="text-white text-lg font-bold">{getDimensions().width}x{getDimensions().height}</p>
         </div>
         <div className="p-4 bg-white/5 rounded-lg text-center">
           <p className="text-white/60 text-sm">Áudio</p>

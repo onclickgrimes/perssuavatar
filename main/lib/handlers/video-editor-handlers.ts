@@ -790,6 +790,8 @@ Lembre-se:
         fps: FPS,
         codec: 'h264',
         hardwareAcceleration: 'if-possible',
+        width: options.width,
+        height: options.height,
       });
 
       if (!result.success) {

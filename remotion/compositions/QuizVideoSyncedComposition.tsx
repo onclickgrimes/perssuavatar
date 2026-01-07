@@ -251,19 +251,18 @@ const Timer: React.FC<{
   progress: number; 
   primaryColor: string;
   secondaryColor: string;
-}> = ({ progress, primaryColor, secondaryColor }) => {
+  size?: number;
+}> = ({ progress, primaryColor, secondaryColor, size = 100 }) => {
   const circumference = 2 * Math.PI * 45;
   const strokeDashoffset = circumference * (1 - progress);
   
   return (
     <div style={{
-      position: 'absolute',
-      top: 40,
-      right: 40,
-      width: 100,
-      height: 100,
+      width: size,
+      height: size,
+      position: 'relative', // Relative ao container pai
     }}>
-      <svg width="100" height="100" viewBox="0 0 100 100">
+      <svg width={size} height={size} viewBox="0 0 100 100">
         {/* Background circle */}
         <circle
           cx="50"
@@ -301,7 +300,7 @@ const Timer: React.FC<{
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: 32,
+        fontSize: size * 0.32,
         fontWeight: 'bold',
         color: 'white',
         fontFamily: 'Inter, sans-serif',
@@ -311,6 +310,7 @@ const Timer: React.FC<{
     </div>
   );
 };
+
 
 // Componente de Opção
 const QuizOption: React.FC<{
@@ -322,7 +322,8 @@ const QuizOption: React.FC<{
   delay: number;
   primaryColor: string;
   secondaryColor: string;
-}> = ({ label, index, isCorrect, showAnswer, isVisible, delay, primaryColor, secondaryColor }) => {
+  baseScale?: number;
+}> = ({ label, index, isCorrect, showAnswer, isVisible, delay, primaryColor, secondaryColor, baseScale = 1 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
   
@@ -374,28 +375,28 @@ const QuizOption: React.FC<{
     <div style={{
       transform: `translateX(${translateX}px) scale(${scale})`,
       opacity,
-      padding: '20px 24px',
-      marginBottom: 16,
-      borderRadius: 16,
+      padding: `${20 * baseScale}px ${24 * baseScale}px`,
+      marginBottom: 16 * baseScale,
+      borderRadius: 16 * baseScale,
       backgroundColor: bgColor,
       border: `2px solid ${borderColor}`,
       display: 'flex',
       alignItems: 'center',
-      gap: 20,
+      gap: 20 * baseScale,
       transition: 'background-color 0.3s, border-color 0.3s',
     }}>
       {/* Letter badge */}
       <div style={{
-        width: 50,
-        height: 50,
-        borderRadius: 12,
+        width: 50 * baseScale,
+        height: 50 * baseScale,
+        borderRadius: 12 * baseScale,
         background: showAnswer && isCorrect 
           ? `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`
           : labelBg,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        fontSize: 24,
+        fontSize: 24 * baseScale,
         fontWeight: 'bold',
         color: 'white',
         fontFamily: 'Inter, sans-serif',
@@ -405,7 +406,7 @@ const QuizOption: React.FC<{
       
       {/* Option text */}
       <span style={{
-        fontSize: 28,
+        fontSize: 28 * baseScale,
         color: 'white',
         fontFamily: 'Inter, sans-serif',
         fontWeight: 500,
@@ -417,14 +418,14 @@ const QuizOption: React.FC<{
       {/* Correct/Wrong indicator */}
       {showAnswer && (
         <div style={{
-          width: 40,
-          height: 40,
-          borderRadius: 20,
+          width: 40 * baseScale,
+          height: 40 * baseScale,
+          borderRadius: 20 * baseScale,
           backgroundColor: isCorrect ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)',
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          fontSize: 24,
+          fontSize: 24 * baseScale,
           transform: `scale(${answerReveal})`,
         }}>
           {isCorrect ? '✓' : '✗'}
@@ -448,7 +449,13 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
   thinkingSilenceSeconds = 3,
 }) => {
   const frame = useCurrentFrame();
-  const { fps, durationInFrames } = useVideoConfig();
+  const { fps, durationInFrames, width, height } = useVideoConfig(); // Adicionado width/height
+  const isLandscape = width > height;
+
+  // Escala baseada na resolução (referência 1080px de largura mobile)
+  const scale = width / 1080;
+  // Para landscape, reduz um pouco a escala vertical para caber
+  const baseScale = isLandscape ? scale * 0.7 : scale;
   
   // Constantes de timing
   const INTRO_DURATION_SECONDS = 3; // Tempo de intro visual antes do áudio
@@ -567,28 +574,28 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           alignItems: 'center',
         }}>
           <div style={{
-            width: 150,
-            height: 150,
-            borderRadius: 40,
+            width: 150 * baseScale,
+            height: 150 * baseScale,
+            borderRadius: 40 * baseScale,
             background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            marginBottom: 40,
+            marginBottom: 40 * baseScale,
             transform: `scale(${titleScale})`,
             boxShadow: `0 20px 60px ${primaryColor}50`,
           }}>
-            <span style={{ fontSize: 80 }}>❓</span>
+            <span style={{ fontSize: 80 * baseScale }}>❓</span>
           </div>
           
           <div style={{
-            fontSize: 72,
+            fontSize: 72 * baseScale,
             fontWeight: 'bold',
             color: 'white',
             textAlign: 'center',
             fontFamily: 'Inter, sans-serif',
             transform: `scale(${titleScale})`,
-            marginBottom: 20,
+            marginBottom: 20 * baseScale,
             background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
             WebkitBackgroundClip: 'text',
             WebkitTextFillColor: 'transparent',
@@ -598,22 +605,23 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           </div>
           
           <div style={{
-            fontSize: 36,
+            fontSize: 36 * baseScale,
             color: 'white',
             textAlign: 'center',
             fontFamily: 'Inter, sans-serif',
             opacity: subtitleOpacity,
-            marginBottom: 30,
+            marginBottom: 30 * baseScale,
+            padding: `0 ${40 * baseScale}px`,
           }}>
             {theme}
           </div>
           
           <div style={{
-            padding: '16px 32px',
-            borderRadius: 30,
+            padding: `${16 * baseScale}px ${32 * baseScale}px`,
+            borderRadius: 30 * baseScale,
             backgroundColor: 'rgba(255,255,255,0.1)',
             border: '1px solid rgba(255,255,255,0.2)',
-            fontSize: 24,
+            fontSize: 24 * baseScale,
             color: 'rgba(255,255,255,0.8)',
             fontFamily: 'Inter, sans-serif',
             opacity: subtitleOpacity,
@@ -651,17 +659,17 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
       {/* Question number badge */}
       <div style={{
         position: 'absolute',
-        top: 40,
-        left: 40,
+        top: 40 * baseScale,
+        left: 40 * baseScale,
         display: 'flex',
         alignItems: 'center',
-        gap: 12,
+        gap: 12 * baseScale,
       }}>
         <div style={{
-          padding: '8px 16px',
-          borderRadius: 20,
+          padding: `${8 * baseScale}px ${16 * baseScale}px`,
+          borderRadius: 20 * baseScale,
           background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
-          fontSize: 18,
+          fontSize: 18 * baseScale,
           fontWeight: 'bold',
           color: 'white',
           fontFamily: 'Inter, sans-serif',
@@ -672,23 +680,31 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
       
       {/* Timer (durante tempo de pensar) */}
       {isShowingOptions && !isShowingAnswer && (
-        <Timer 
-          progress={timerProgress} 
-          primaryColor={primaryColor}
-          secondaryColor={secondaryColor}
-        />
+        <div style={{
+          position: 'absolute',
+          top: 40 * baseScale,
+          right: 40 * baseScale,
+          zIndex: 10,
+        }}>
+          <Timer 
+            progress={timerProgress} 
+            primaryColor={primaryColor}
+            secondaryColor={secondaryColor}
+            size={100 * baseScale}
+          />
+        </div>
       )}
       
       {/* Answer badge */}
       {isShowingAnswer && (
         <div style={{
           position: 'absolute',
-          top: 40,
-          right: 40,
-          padding: '12px 24px',
-          borderRadius: 16,
+          top: 40 * baseScale,
+          right: 40 * baseScale,
+          padding: `${12 * baseScale}px ${24 * baseScale}px`,
+          borderRadius: 16 * baseScale,
           background: 'linear-gradient(135deg, #22C55E, #16A34A)',
-          fontSize: 20,
+          fontSize: 20 * baseScale,
           fontWeight: 'bold',
           color: 'white',
           fontFamily: 'Inter, sans-serif',
@@ -697,6 +713,7 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
             fps,
             config: { damping: 10, stiffness: 200 },
           })})`,
+          zIndex: 10,
         }}>
           ✓ RESPOSTA
         </div>
@@ -707,24 +724,26 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
         position: 'absolute',
         inset: 0,
         display: 'flex',
-        flexDirection: 'column',
+        flexDirection: isLandscape ? 'row' : 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 80,
+        padding: isLandscape ? 40 * baseScale : 80 * baseScale,
+        gap: isLandscape ? 60 * baseScale : 0,
       }}>
         {/* Question */}
         {currentQuestion && (
           <>
             <div style={{
+              flex: isLandscape ? 1 : 'none',
               transform: `scale(${questionScale})`,
-              fontSize: 48,
+              fontSize: (isLandscape ? 56 : 48) * baseScale,
               fontWeight: 'bold',
               color: 'white',
-              textAlign: 'center',
-              marginBottom: 60,
+              textAlign: isLandscape ? 'left' : 'center',
+              marginBottom: isLandscape ? 0 : 60 * baseScale,
               fontFamily: 'Inter, sans-serif',
               textShadow: '0 4px 20px rgba(0,0,0,0.3)',
-              maxWidth: 1200,
+              maxWidth: isLandscape ? 'none' : 1200 * baseScale,
               lineHeight: 1.3,
             }}>
               {currentQuestion.question}
@@ -732,14 +751,16 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
             
             {/* Options */}
             <div style={{
+              flex: isLandscape ? 1 : 'none',
               width: '100%',
-              maxWidth: 900,
+              maxWidth: (isLandscape ? 800 : 900) * baseScale,
             }}>
               {currentQuestion.options.map((option, index) => (
                 <QuizOption
                   key={index}
                   label={option}
                   index={index}
+                  baseScale={baseScale}
                   isCorrect={index === currentQuestion.correctIndex}
                   showAnswer={isShowingAnswer || false}
                   isVisible={isShowingOptions || false}
@@ -753,12 +774,12 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
             {/* Explanation */}
             {isShowingAnswer && currentQuestion.explanation && (
               <div style={{
-                marginTop: 40,
-                padding: '20px 32px',
-                borderRadius: 16,
+                marginTop: 40 * baseScale,
+                padding: `${20 * baseScale}px ${32 * baseScale}px`,
+                borderRadius: 16 * baseScale,
                 backgroundColor: 'rgba(139, 92, 246, 0.1)',
                 border: '1px solid rgba(139, 92, 246, 0.3)',
-                maxWidth: 900,
+                maxWidth: (isLandscape ? 800 : 900) * baseScale,
                 transform: `translateY(${interpolate(
                   spring({
                     frame: frame - ((currentQuestion.answerRevealTime || 0) * fps) - 10,
@@ -775,16 +796,16 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
                 }),
               }}>
                 <div style={{
-                  fontSize: 16,
+                  fontSize: 16 * baseScale,
                   color: primaryColor,
                   fontWeight: 'bold',
-                  marginBottom: 8,
+                  marginBottom: 8 * baseScale,
                   fontFamily: 'Inter, sans-serif',
                 }}>
                   💡 Explicação
                 </div>
                 <div style={{
-                  fontSize: 22,
+                  fontSize: 22 * baseScale,
                   color: 'rgba(255,255,255,0.8)',
                   fontFamily: 'Inter, sans-serif',
                   lineHeight: 1.5,

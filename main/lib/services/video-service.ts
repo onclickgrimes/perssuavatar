@@ -58,6 +58,12 @@ export interface RenderOptions {
   
   /** Sobrescrever FPS */
   fps?: number;
+
+  /** Sobrescrever Largura */
+  width?: number;
+
+  /** Sobrescrever Altura */
+  height?: number;
   
   /** Aceleração por hardware (GPU)
    * - 'if-possible': Usa GPU se disponível (recomendado)
@@ -392,6 +398,12 @@ export class VideoService extends EventEmitter {
       }
       if (options.fps) {
         composition.fps = options.fps;
+      }
+      if (options.width) {
+        composition.width = options.width;
+      }
+      if (options.height) {
+        composition.height = options.height;
       }
 
       // 3. Definir caminho de saída
