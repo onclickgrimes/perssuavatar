@@ -195,6 +195,7 @@ export class AudioTranscriptionService {
       }
 
       console.log(`✅ Transcription complete: ${segments.length} segments, ${duration.toFixed(2)}s`);
+      console.log(`Transcription result: ${JSON.stringify(segments)}`);
 
       return {
         success: true,

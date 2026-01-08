@@ -76,7 +76,8 @@ export type GeminiVoiceName = typeof GEMINI_VOICES[number];
 
 export class GeminiVoiceService {
     private ai: GoogleGenAI;
-    private model: string = 'gemini-2.5-flash-preview-tts';
+    //private model: string = 'gemini-2.5-flash-preview-tts';
+    private model: string = 'gemini-2.5-pro-preview-tts'; 
     private defaultVoice: GeminiVoiceName = 'Achernar';
     private defaultTemperature: number = 1;
 
