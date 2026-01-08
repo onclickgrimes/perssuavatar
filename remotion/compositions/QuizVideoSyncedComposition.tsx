@@ -457,47 +457,50 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
   // Para landscape, reduz um pouco a escala vertical para caber
   const baseScale = isLandscape ? scale * 0.7 : scale;
   
-  // Constantes de timing
-  const INTRO_DURATION_SECONDS = 3; // Tempo de intro visual antes do áudio
+  // Calcula timings base (sem offset de intro visual extra)
+  const baseTimings = useMemo(() => {
+    return findQuestionTimings(
+      audioSegments || [], 
+      questions, 
+      thinkingSilenceSeconds,
+      questionTimestamps
+    );
+  }, [audioSegments, questions, thinkingSilenceSeconds, questionTimestamps]);
+
+  // Detecta se há intro falada (se a primeira pergunta começa após 2s)
+  const firstQuestionStart = baseTimings[0]?.questionStartTime || 0;
+  const hasSpokenIntro = firstQuestionStart > 2.0;
+  
+  // Se tiver intro falada, não adicionamos tempo extra visual. Se não tiver, adicionamos 3s fixos.
+  const visualIntroOffset = hasSpokenIntro ? 0 : 3;
+
+  // Timings finais ajustados
+  const timedQuestions = useMemo(() => {
+    return baseTimings.map(q => ({
+      ...q,
+      questionStartTime: (q.questionStartTime || 0) + visualIntroOffset,
+      optionsStartTime: (q.optionsStartTime || 0) + visualIntroOffset,
+      answerRevealTime: (q.answerRevealTime || 0) + visualIntroOffset,
+      endTime: (q.endTime || 0) + visualIntroOffset,
+    }));
+  }, [baseTimings, visualIntroOffset]);
   
   // Tempo atual em segundos
   const currentTime = frame / fps;
   
-  // Tempo relativo ao áudio (áudio começa após a intro)
-  const audioTime = currentTime - INTRO_DURATION_SECONDS;
-  
-  // Calcula timings das questões (prioriza timestamps precisos)
-  const timedQuestions = useMemo(() => {
-    const baseTimings = findQuestionTimings(
-      audioSegments || [], 
-      questions, 
-      thinkingSilenceSeconds,
-      questionTimestamps // Passa timestamps precisos quando disponíveis
-    );
-    // Adiciona o offset de intro a todos os timestamps
-    return baseTimings.map(q => ({
-      ...q,
-      questionStartTime: (q.questionStartTime || 0) + INTRO_DURATION_SECONDS,
-      optionsStartTime: (q.optionsStartTime || 0) + INTRO_DURATION_SECONDS,
-      answerRevealTime: (q.answerRevealTime || 0) + INTRO_DURATION_SECONDS,
-      endTime: (q.endTime || 0) + INTRO_DURATION_SECONDS,
-    }));
-  }, [audioSegments, questions, thinkingSilenceSeconds, questionTimestamps]);
-  
-  // Encontra a questão atual baseado no tempo (com offset de intro)
+  // Encontra a questão atual baseado no tempo
   const currentQuestionIndex = useMemo(() => {
-    // Durante a intro, retorna -1
-    if (currentTime < INTRO_DURATION_SECONDS) {
-      return -1;
-    }
-    
     for (let i = timedQuestions.length - 1; i >= 0; i--) {
       const q = timedQuestions[i];
       if (currentTime >= (q.questionStartTime || 0)) {
         return i;
       }
     }
-    return 0; // Se passou da intro, mostra a primeira questão
+    // Se não encontrou nenhuma (está antes da primeira), é intro (-1)
+    if (timedQuestions.length > 0 && currentTime < timedQuestions[0].questionStartTime) {
+      return -1;
+    }
+    return 0;
   }, [currentTime, timedQuestions]);
   
   const currentQuestion = currentQuestionIndex >= 0 ? timedQuestions[currentQuestionIndex] : null;
@@ -537,19 +540,19 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
   );
   const opacity = Math.min(fadeIn, fadeOut);
   
+  // Frame onde o áudio deve começar
+  const audioStartFrame = Math.ceil(visualIntroOffset * fps);
+  
   // Intro
   if (isIntro) {
     const titleScale = spring({ frame, fps, config: { damping: 12, stiffness: 80 } });
     const subtitleOpacity = spring({ frame: frame - 15, fps, config: { damping: 15 } });
     
-    // Calcula o frame onde o áudio deve começar (após intro)
-    const introFrames = Math.ceil(INTRO_DURATION_SECONDS * fps);
-    
     return (
       <AbsoluteFill style={{ backgroundColor, opacity }}>
-        {/* Áudio começa após a intro */}
+        {/* Áudio começa se tiver intro falada OU após o delay visual */}
         {audioUrl && (
-          <Sequence from={introFrames} layout="none">
+          <Sequence from={audioStartFrame} layout="none">
             <Audio src={audioUrl} volume={1} />
           </Sequence>
         )}
@@ -633,15 +636,12 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
     );
   }
   
-  // Calcula o frame onde o áudio deve começar (após intro)
-  const introFrames = Math.ceil(INTRO_DURATION_SECONDS * fps);
-  
-  // Questão
+  // Main Render (Questions)
   return (
     <AbsoluteFill style={{ backgroundColor, opacity }}>
-      {/* Áudio começa após a intro */}
+      {/* Áudio começa após a intro (ou imediato se tiver intro falada) */}
       {audioUrl && (
-        <Sequence from={introFrames} layout="none">
+        <Sequence from={audioStartFrame} layout="none">
           <Audio src={audioUrl} volume={1} />
         </Sequence>
       )}

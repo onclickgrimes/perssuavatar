@@ -440,6 +440,7 @@ const handler = {
       includeOptions?: boolean;       // Incluir opções de resposta
       includeCorrectAnswer?: boolean; // Incluir resposta correta
       includeExplanations?: boolean;  // Incluir explicações
+      introText?: string;            // Texto de introdução para narrar
     }) => ipcRenderer.invoke('quiz:generate-audio', options),
     
     // Listener para progresso da geração de áudio

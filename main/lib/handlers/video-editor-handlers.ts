@@ -415,6 +415,7 @@ Lembre-se:
       includeCorrectAnswer?: boolean;
       includeExplanations?: boolean;
       thinkingTimeSeconds?: number;
+      introText?: string;
     }
   ) => {
     try {
@@ -470,8 +471,9 @@ Lembre-se:
         return text;
       };
 
-      // 1. Primeiro bloco: Apenas a primeira pergunta
-      audioScripts.push(`Questão 1. ${options.questions[0].question} ${formatOptions(options.questions[0])}`);
+      // 1. Primeiro bloco: Apenas a primeira pergunta (com Intro)
+      const introPrefix = options.introText ? `${options.introText}... ` : '';
+      audioScripts.push(`${introPrefix}Questão 1. ${options.questions[0].question} ${formatOptions(options.questions[0])}`);
       
       // 2. Blocos intermediários: Resposta da anterior + Próxima pergunta
       for (let i = 0; i < options.questions.length - 1; i++) {

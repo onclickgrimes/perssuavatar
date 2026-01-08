@@ -34,6 +34,7 @@ interface QuizConfig {
   primaryColor: string;
   secondaryColor: string;
   provider: 'gemini' | 'openai' | 'deepseek';
+  introText?: string;
 }
 
 const DIFFICULTY_OPTIONS = [
@@ -60,6 +61,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   // Estados de Configuração
   const [config, setConfig] = useState<QuizConfig>({
     theme: '',
+    introText: 'Bem-vindo ao Quiz Challenge! Teste seus conhecimentos e divirta-se.',
     easyCount: 5,
     mediumCount: 5,
     hardCount: 5,
@@ -201,6 +203,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         includeOptions: audioIncludeOptions,
         includeCorrectAnswer: audioIncludeCorrectAnswer,
         includeExplanations: audioIncludeExplanations,
+        introText: config.introText,
       }) as { 
         success: boolean; 
         audioPath?: string; 
@@ -483,6 +486,20 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
           placeholder="Ex: História do Brasil, Matemática Básica, Cultura Pop..."
           className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white placeholder-white/30 focus:outline-none focus:border-purple-500/50"
         />
+      </div>
+
+      {/* Introdução */}
+      <div>
+        <label className="block text-sm font-medium text-white/70 mb-2">
+          Introdução do Vídeo
+        </label>
+        <textarea
+          value={config.introText || ''}
+          onChange={(e) => setConfig({ ...config, introText: e.target.value })}
+          placeholder="Ex: Bem-vindo ao Quiz! Teste seus conhecimentos..."
+          className="w-full bg-white/5 border border-white/10 rounded-xl p-4 text-white placeholder-white/30 focus:outline-none focus:border-purple-500/50 h-24 resize-none"
+        />
+        <p className="text-xs text-white/40 mt-1">Este texto será narrado no início do vídeo.</p>
       </div>
 
       {/* Questões por Dificuldade */}
