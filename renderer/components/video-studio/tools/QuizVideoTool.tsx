@@ -101,6 +101,12 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   const [audioIncludeOptions, setAudioIncludeOptions] = useState(true);
   const [audioIncludeCorrectAnswer, setAudioIncludeCorrectAnswer] = useState(false);
   const [audioIncludeExplanations, setAudioIncludeExplanations] = useState(false);
+  const [audioNarrateDifficultyChange, setAudioNarrateDifficultyChange] = useState(true);
+  const [difficultyTransitionTexts, setDifficultyTransitionTexts] = useState({
+    easy: 'Voltando para o nível Fácil.',
+    medium: 'Agora, nível Médio.',
+    hard: 'Atenção! Agora é nível Difícil.',
+  });
 
   // Configuração de Vídeo
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
@@ -198,12 +204,15 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
           options: q.options,
           correctIndex: q.correctIndex,
           explanation: q.explanation,
+          difficulty: q.difficulty,
         })),
         voiceName: 'Kore',
         includeOptions: audioIncludeOptions,
         includeCorrectAnswer: audioIncludeCorrectAnswer,
         includeExplanations: audioIncludeExplanations,
         introText: config.introText,
+        narrateDifficultyChange: audioNarrateDifficultyChange,
+        transitionTexts: difficultyTransitionTexts,
       }) as { 
         success: boolean; 
         audioPath?: string; 
@@ -588,27 +597,6 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
 
       {/* Opções por Questão */}
       <div>
-        <label className="block text-sm font-medium text-white/70 mb-2">
-          Opções por Questão
-        </label>
-        <div className="flex items-center gap-2 max-w-xs">
-          <button
-            onClick={() => setConfig({ ...config, optionsCount: Math.max(2, config.optionsCount - 1) })}
-            className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors"
-          >
-            -
-          </button>
-          <div className="flex-1 bg-white/5 border border-white/10 rounded-lg p-3 text-center text-white font-bold">
-            {config.optionsCount}
-          </div>
-          <button
-            onClick={() => setConfig({ ...config, optionsCount: Math.min(6, config.optionsCount + 1) })}
-            className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors"
-          >
-            +
-          </button>
-        </div>
-
         <div>
           <label className="block text-sm font-medium text-white/70 mb-2">
             Opções por Questão
@@ -917,7 +905,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
           </h4>
           
           {/* Toggles de Configuração */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
+          <div className="grid grid-cols-2 gap-3 mb-4">
             <button
               onClick={() => setAudioIncludeOptions(!audioIncludeOptions)}
               className={`p-3 rounded-lg border text-left transition-all ${
@@ -974,7 +962,72 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
               </div>
               <p className="text-xs text-white/40">Detalhes da resposta</p>
             </button>
+
+            <button
+              onClick={() => setAudioNarrateDifficultyChange(!audioNarrateDifficultyChange)}
+              className={`p-3 rounded-lg border text-left transition-all ${
+                audioNarrateDifficultyChange
+                  ? 'bg-orange-500/20 border-orange-500/50'
+                  : 'bg-white/5 border-white/10 hover:border-white/20'
+              }`}
+            >
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`w-4 h-4 rounded flex items-center justify-center text-xs ${
+                  audioNarrateDifficultyChange ? 'bg-orange-500 text-white' : 'bg-white/10'
+                }`}>
+                  {audioNarrateDifficultyChange ? '✓' : ''}
+                </span>
+                <span className="text-xs font-medium text-white">Níveis</span>
+              </div>
+              <p className="text-xs text-white/40">Narrar troca de dific.</p>
+            </button>
           </div>
+
+          {/* Textos de Transição de Nível */}
+          {audioNarrateDifficultyChange && (
+            <div className="mb-4 p-3 bg-white/5 border border-white/10 rounded-lg space-y-3">
+              <p className="text-xs font-medium text-white/60 mb-2">Textos de Transição:</p>
+              
+              {questions.some(q => q.difficulty === 'medium') && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-yellow-400 w-12 font-medium">Médio:</span>
+                    <input 
+                      type="text" 
+                      value={difficultyTransitionTexts.medium}
+                      onChange={(e) => setDifficultyTransitionTexts({...difficultyTransitionTexts, medium: e.target.value})}
+                      className="flex-1 bg-black/20 border border-white/10 rounded px-2 py-1.5 text-xs text-white focus:border-yellow-500/50 focus:outline-none transition-colors"
+                      placeholder="Texto para entrada no nível Médio"
+                    />
+                  </div>
+              )}
+              
+              {questions.some(q => q.difficulty === 'hard') && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-red-400 w-12 font-medium">Difícil:</span>
+                    <input 
+                      type="text" 
+                      value={difficultyTransitionTexts.hard}
+                      onChange={(e) => setDifficultyTransitionTexts({...difficultyTransitionTexts, hard: e.target.value})}
+                      className="flex-1 bg-black/20 border border-white/10 rounded px-2 py-1.5 text-xs text-white focus:border-red-500/50 focus:outline-none transition-colors"
+                      placeholder="Texto para entrada no nível Difícil"
+                    />
+                  </div>
+              )}
+
+               {questions.some(q => q.difficulty === 'easy') && questions.some(q => q.difficulty !== 'easy') && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-green-400 w-12 font-medium">Fácil:</span>
+                    <input 
+                      type="text" 
+                      value={difficultyTransitionTexts.easy}
+                      onChange={(e) => setDifficultyTransitionTexts({...difficultyTransitionTexts, easy: e.target.value})}
+                      className="flex-1 bg-black/20 border border-white/10 rounded px-2 py-1.5 text-xs text-white focus:border-green-500/50 focus:outline-none transition-colors"
+                      placeholder="Texto para retorno ao nível Fácil"
+                    />
+                  </div>
+              )}
+            </div>
+          )}
 
           <button
             onClick={generateAudio}

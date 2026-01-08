@@ -434,6 +434,7 @@ const handler = {
         options: string[];
         correctIndex: number;
         explanation?: string;
+        difficulty?: string;
       }>;
       voiceName?: string;
       outputDir?: string;
@@ -441,6 +442,8 @@ const handler = {
       includeCorrectAnswer?: boolean; // Incluir resposta correta
       includeExplanations?: boolean;  // Incluir explicações
       introText?: string;            // Texto de introdução para narrar
+      narrateDifficultyChange?: boolean; // Narrar mudança de dificuldade
+      transitionTexts?: { easy?: string; medium?: string; hard?: string };
     }) => ipcRenderer.invoke('quiz:generate-audio', options),
     
     // Listener para progresso da geração de áudio

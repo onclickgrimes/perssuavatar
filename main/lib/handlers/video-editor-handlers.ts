@@ -408,6 +408,7 @@ Lembre-se:
         options: string[];
         correctIndex: number;
         explanation?: string;
+        difficulty?: string;
       }>;
       voiceName?: string;
       outputDir?: string;
@@ -416,6 +417,8 @@ Lembre-se:
       includeExplanations?: boolean;
       thinkingTimeSeconds?: number;
       introText?: string;
+      narrateDifficultyChange?: boolean;
+      transitionTexts?: { easy?: string; medium?: string; hard?: string };
     }
   ) => {
     try {
@@ -480,7 +483,21 @@ Lembre-se:
         const prevQ = options.questions[i];
         const nextQ = options.questions[i + 1];
         
-        const text = `${formatAnswer(prevQ)} Questão ${i + 2}. ${nextQ.question} ${formatOptions(nextQ)}`;
+        let transitionText = '';
+        // Verifica mudança de dificuldade se a opção estiver ativa
+        if (options.narrateDifficultyChange && nextQ.difficulty && nextQ.difficulty !== prevQ.difficulty) {
+           const customText = options.transitionTexts?.[nextQ.difficulty as keyof typeof options.transitionTexts];
+           
+           if (customText) {
+             transitionText = `${customText} `;
+           } else {
+             const diffMap: {[key: string]: string} = { 'easy': 'Fácil', 'medium': 'Médio', 'hard': 'Difícil' };
+             const diffName = diffMap[nextQ.difficulty] || nextQ.difficulty;
+             transitionText = `Agora, nível ${diffName}... `;
+           }
+        }
+        
+        const text = `${formatAnswer(prevQ)} ${transitionText}Questão ${i + 2}. ${nextQ.question} ${formatOptions(nextQ)}`;
         audioScripts.push(text);
       }
       
