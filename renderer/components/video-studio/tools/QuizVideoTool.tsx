@@ -57,6 +57,516 @@ const AI_PROVIDERS = [
   { id: 'deepseek', name: 'DeepSeek', icon: '🔮', description: 'DeepSeek Chat', color: 'from-purple-500 to-pink-500' },
 ];
 
+// Interface para perfil/nicho de Quiz
+interface QuizProfile {
+  id: string;
+  name: string;
+  icon: string;
+  description?: string;
+  // Configurações do Quiz
+  theme: string;
+  introText: string;
+  easyCount: number;
+  mediumCount: number;
+  hardCount: number;
+  optionsCount: number;
+  thinkingTimeSeconds: number;
+  showAnswerTimeSeconds: number;
+  primaryColor: string;
+  secondaryColor: string;
+  provider: 'gemini' | 'openai' | 'deepseek';
+  voiceName: string;
+  // Configurações de áudio
+  audioIncludeOptions: boolean;
+  audioIncludeCorrectAnswer: boolean;
+  audioIncludeExplanations: boolean;
+  audioNarrateDifficultyChange: boolean;
+  difficultyTransitionTexts: {
+    easy: string;
+    medium: string;
+    hard: string;
+  };
+  // Configurações de vídeo
+  aspectRatio: '9:16' | '16:9';
+  createdAt: string;
+  updatedAt: string;
+}
+
+const QUIZ_PROFILES_STORAGE_KEY = 'quiz-video-profiles';
+
+// Componente de formulário para editar/criar perfil
+interface ProfileEditFormProps {
+  profile: Omit<QuizProfile, 'id' | 'createdAt' | 'updatedAt'> | QuizProfile;
+  isCreating: boolean;
+  onSave: (data: Partial<QuizProfile>) => void;
+  onCancel: () => void;
+}
+
+function ProfileEditForm({ profile, isCreating, onSave, onCancel }: ProfileEditFormProps) {
+  const [formData, setFormData] = useState({
+    name: profile.name || '',
+    icon: profile.icon || '🎯',
+    description: profile.description || '',
+    theme: profile.theme || '',
+    introText: profile.introText || '',
+    easyCount: profile.easyCount,
+    mediumCount: profile.mediumCount,
+    hardCount: profile.hardCount,
+    optionsCount: profile.optionsCount,
+    thinkingTimeSeconds: profile.thinkingTimeSeconds,
+    showAnswerTimeSeconds: profile.showAnswerTimeSeconds,
+    primaryColor: profile.primaryColor,
+    secondaryColor: profile.secondaryColor,
+    provider: profile.provider,
+    voiceName: profile.voiceName,
+    audioIncludeOptions: profile.audioIncludeOptions,
+    audioIncludeCorrectAnswer: profile.audioIncludeCorrectAnswer,
+    audioIncludeExplanations: profile.audioIncludeExplanations,
+    audioNarrateDifficultyChange: profile.audioNarrateDifficultyChange,
+    difficultyTransitionTexts: profile.difficultyTransitionTexts,
+    aspectRatio: profile.aspectRatio,
+  });
+
+  const handleSubmit = () => {
+    if (!formData.name.trim()) {
+      alert('Digite um nome para o perfil');
+      return;
+    }
+    onSave(formData);
+  };
+
+  return (
+    <div className="space-y-6">
+      {/* Informações Básicas */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-white/80 text-sm font-medium mb-2">Nome do Perfil *</label>
+          <input
+            type="text"
+            value={formData.name}
+            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+            className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+            placeholder="Ex: Quiz de História"
+          />
+        </div>
+        <div>
+          <label className="block text-white/80 text-sm font-medium mb-2">Ícone</label>
+          <input
+            type="text"
+            value={formData.icon}
+            onChange={(e) => setFormData({ ...formData, icon: e.target.value })}
+            className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white text-2xl focus:border-purple-500 focus:outline-none"
+            placeholder="🎯"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="block text-white/80 text-sm font-medium mb-2">Descrição</label>
+        <input
+          type="text"
+          value={formData.description}
+          onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+          className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+          placeholder="Descrição breve do perfil"
+        />
+      </div>
+
+      {/* Tema do Quiz */}
+      <div>
+        <label className="block text-white/80 text-sm font-medium mb-2">
+          🎯 Tema do Quiz <span className="text-white/40">(ex: História do Brasil, Ciência, Curiosidades)</span>
+        </label>
+        <input
+          type="text"
+          value={formData.theme}
+          onChange={(e) => setFormData({ ...formData, theme: e.target.value })}
+          className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+          placeholder="Digite o tema do quiz (será usado para gerar as perguntas)"
+        />
+      </div>
+
+      {/* Configurações de Questões */}
+      <div>
+        <label className="block text-white/80 text-sm font-medium mb-3">
+          Questões por Dificuldade
+          <span className="ml-2 text-white/40 text-xs">(Total: {formData.easyCount + formData.mediumCount + formData.hardCount})</span>
+        </label>
+        <div className="grid grid-cols-3 gap-3">
+          {/* Fácil */}
+          <div className="p-4 rounded-xl border border-green-500/30 bg-green-500/5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">🟢</span>
+              <span className="text-sm font-medium text-green-400">Fácil</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, easyCount: Math.max(0, formData.easyCount - 1) })}
+                className="w-8 h-8 bg-white/10 border border-white/10 rounded-lg text-white hover:bg-white/20 transition-colors text-sm"
+              >
+                -
+              </button>
+              <div className="flex-1 bg-white/10 border border-white/10 rounded-lg p-2 text-center text-white font-bold">
+                {formData.easyCount}
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, easyCount: Math.min(30, formData.easyCount + 1) })}
+                className="w-8 h-8 bg-white/10 border border-white/10 rounded-lg text-white hover:bg-white/20 transition-colors text-sm"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Médio */}
+          <div className="p-4 rounded-xl border border-yellow-500/30 bg-yellow-500/5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">🟡</span>
+              <span className="text-sm font-medium text-yellow-400">Médio</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, mediumCount: Math.max(0, formData.mediumCount - 1) })}
+                className="w-8 h-8 bg-white/10 border border-white/10 rounded-lg text-white hover:bg-white/20 transition-colors text-sm"
+              >
+                -
+              </button>
+              <div className="flex-1 bg-white/10 border border-white/10 rounded-lg p-2 text-center text-white font-bold">
+                {formData.mediumCount}
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, mediumCount: Math.min(30, formData.mediumCount + 1) })}
+                className="w-8 h-8 bg-white/10 border border-white/10 rounded-lg text-white hover:bg-white/20 transition-colors text-sm"
+              >
+                +
+              </button>
+            </div>
+          </div>
+
+          {/* Difícil */}
+          <div className="p-4 rounded-xl border border-red-500/30 bg-red-500/5">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="text-xl">🔴</span>
+              <span className="text-sm font-medium text-red-400">Difícil</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, hardCount: Math.max(0, formData.hardCount - 1) })}
+                className="w-8 h-8 bg-white/10 border border-white/10 rounded-lg text-white hover:bg-white/20 transition-colors text-sm"
+              >
+                -
+              </button>
+              <div className="flex-1 bg-white/10 border border-white/10 rounded-lg p-2 text-center text-white font-bold">
+                {formData.hardCount}
+              </div>
+              <button
+                type="button"
+                onClick={() => setFormData({ ...formData, hardCount: Math.min(30, formData.hardCount + 1) })}
+                className="w-8 h-8 bg-white/10 border border-white/10 rounded-lg text-white hover:bg-white/20 transition-colors text-sm"
+              >
+                +
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Opções por Questão */}
+      <div>
+        <label className="block text-sm font-medium text-white/70 mb-2">
+          Opções por Questão
+        </label>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setFormData({ ...formData, optionsCount: Math.max(2, formData.optionsCount - 1) })}
+            className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors"
+          >
+            -
+          </button>
+          <div className="flex-1 bg-white/5 border border-white/10 rounded-lg p-3 text-center text-white font-bold">
+            {formData.optionsCount}
+          </div>
+          <button
+            type="button"
+            onClick={() => setFormData({ ...formData, optionsCount: Math.min(6, formData.optionsCount + 1) })}
+            className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      {/* Tempos */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-sm font-medium text-white/70 mb-2 flex items-center gap-2">
+            <span>⏱️</span> Tempo para Pensar
+            <span className="text-white/40 text-xs">(segundos)</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, thinkingTimeSeconds: Math.max(3, formData.thinkingTimeSeconds - 1) })}
+              className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors"
+            >
+              -
+            </button>
+            <div className="flex-1 bg-white/5 border border-white/10 rounded-lg p-3 text-center text-white font-bold">
+              {formData.thinkingTimeSeconds}s
+            </div>
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, thinkingTimeSeconds: Math.min(30, formData.thinkingTimeSeconds + 1) })}
+              className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-white/70 mb-2 flex items-center gap-2">
+            <span>✅</span> Tempo da Resposta
+            <span className="text-white/40 text-xs">(segundos)</span>
+          </label>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, showAnswerTimeSeconds: Math.max(2, formData.showAnswerTimeSeconds - 1) })}
+              className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors"
+            >
+              -
+            </button>
+            <div className="flex-1 bg-white/5 border border-white/10 rounded-lg p-3 text-center text-white font-bold">
+              {formData.showAnswerTimeSeconds}s
+            </div>
+            <button
+              type="button"
+              onClick={() => setFormData({ ...formData, showAnswerTimeSeconds: Math.min(10, formData.showAnswerTimeSeconds + 1) })}
+              className="w-10 h-10 bg-white/5 border border-white/10 rounded-lg text-white hover:bg-white/10 transition-colors"
+            >
+              +
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Provedor de IA */}
+      <div>
+        <label className="block text-white/80 text-sm font-medium mb-3">Provedor de IA</label>
+        <div className="grid grid-cols-3 gap-3">
+          {AI_PROVIDERS.map((provider) => (
+            <button
+              key={provider.id}
+              type="button"
+              onClick={() => setFormData({ ...formData, provider: provider.id as 'gemini' | 'openai' | 'deepseek' })}
+              className={`p-3 rounded-xl border-2 transition-all flex flex-col items-center gap-2 ${
+                formData.provider === provider.id
+                  ? 'border-purple-500 bg-purple-500/10'
+                  : 'border-white/10 bg-white/5 hover:border-white/30'
+              }`}
+            >
+              <span className="text-2xl">{provider.icon}</span>
+              <span className="text-white text-sm font-medium">{provider.name}</span>
+              <span className="text-white/40 text-xs">{provider.description}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+      {/* Cores */}
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <label className="block text-white/80 text-sm font-medium mb-2">Cor Primária</label>
+          <input
+            type="color"
+            value={formData.primaryColor}
+            onChange={(e) => setFormData({ ...formData, primaryColor: e.target.value })}
+            className="w-full h-10 rounded-lg cursor-pointer"
+          />
+        </div>
+        <div>
+          <label className="block text-white/80 text-sm font-medium mb-2">Cor Secundária</label>
+          <input
+            type="color"
+            value={formData.secondaryColor}
+            onChange={(e) => setFormData({ ...formData, secondaryColor: e.target.value })}
+            className="w-full h-10 rounded-lg cursor-pointer"
+          />
+        </div>
+      </div>
+
+      {/* Proporção do Vídeo */}
+      <div>
+        <label className="block text-sm font-medium text-white/70 mb-2">
+          Proporção do Vídeo
+        </label>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setFormData({ ...formData, aspectRatio: '9:16' })}
+            className={`flex-1 p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${
+              formData.aspectRatio === '9:16'
+                ? 'bg-purple-500/20 border-purple-500/50 text-white'
+                : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            <span className="text-xl">📱</span>
+            <div className="text-left">
+              <p className="text-sm font-bold">9:16</p>
+              <p className="text-xs opacity-70">Shorts/Reels</p>
+            </div>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setFormData({ ...formData, aspectRatio: '16:9' })}
+            className={`flex-1 p-3 rounded-xl border flex items-center justify-center gap-2 transition-all ${
+              formData.aspectRatio === '16:9'
+                ? 'bg-purple-500/20 border-purple-500/50 text-white'
+                : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+            }`}
+          >
+            <span className="text-xl">�</span>
+            <div className="text-left">
+              <p className="text-sm font-bold">16:9</p>
+              <p className="text-xs opacity-70">YouTube</p>
+            </div>
+          </button>
+        </div>
+      </div>
+
+      {/* Texto de Introdução */}
+      <div>
+        <label className="block text-white/80 text-sm font-medium mb-2">Texto de Introdução</label>
+        <textarea
+          value={formData.introText}
+          onChange={(e) => setFormData({ ...formData, introText: e.target.value })}
+          className="w-full px-4 py-3 bg-black/30 border border-white/10 rounded-lg text-white focus:border-purple-500 focus:outline-none resize-none h-20"
+          placeholder="Texto para narrar no início do quiz"
+        />
+      </div>
+
+      {/* Configurações de Áudio */}
+      <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-4">
+        <div className="flex items-center gap-2 text-white/80 font-medium">
+          <span>🎤</span>
+          <span>Configurações do Áudio</span>
+        </div>
+        
+        {/* Checkboxes */}
+        <div className="grid grid-cols-2 gap-3">
+          <label className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-white/5 transition-colors">
+            <input
+              type="checkbox"
+              checked={formData.audioIncludeOptions}
+              onChange={(e) => setFormData({ ...formData, audioIncludeOptions: e.target.checked })}
+              className="w-4 h-4 rounded bg-black/30 border-white/20 text-purple-500 focus:ring-purple-500"
+            />
+            <div>
+              <span className="text-white text-sm">Opções</span>
+              <p className="text-white/40 text-xs">A, B, C, D...</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-white/5 transition-colors">
+            <input
+              type="checkbox"
+              checked={formData.audioIncludeCorrectAnswer}
+              onChange={(e) => setFormData({ ...formData, audioIncludeCorrectAnswer: e.target.checked })}
+              className="w-4 h-4 rounded bg-black/30 border-white/20 text-purple-500 focus:ring-purple-500"
+            />
+            <div>
+              <span className="text-white text-sm">Resposta</span>
+              <p className="text-white/40 text-xs">Letra correta</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-white/5 transition-colors">
+            <input
+              type="checkbox"
+              checked={formData.audioIncludeExplanations}
+              onChange={(e) => setFormData({ ...formData, audioIncludeExplanations: e.target.checked })}
+              className="w-4 h-4 rounded bg-black/30 border-white/20 text-purple-500 focus:ring-purple-500"
+            />
+            <div>
+              <span className="text-white text-sm">Explicação</span>
+              <p className="text-white/40 text-xs">Detalhes da resposta</p>
+            </div>
+          </label>
+
+          <label className="flex items-center gap-3 cursor-pointer p-2 rounded-lg hover:bg-white/5 transition-colors">
+            <input
+              type="checkbox"
+              checked={formData.audioNarrateDifficultyChange}
+              onChange={(e) => setFormData({ ...formData, audioNarrateDifficultyChange: e.target.checked })}
+              className="w-4 h-4 rounded bg-black/30 border-white/20 text-purple-500 focus:ring-purple-500"
+            />
+            <div>
+              <span className="text-white text-sm">Níveis</span>
+              <p className="text-white/40 text-xs">Narrar troca de dific.</p>
+            </div>
+          </label>
+        </div>
+
+        {/* Textos de Transição */}
+        {formData.audioNarrateDifficultyChange && (
+          <div className="space-y-3 pt-3 border-t border-white/10">
+            <p className="text-white/60 text-xs font-medium">Textos de Transição:</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="text-yellow-400 text-xs font-medium mb-1 block">Médio:</label>
+                <input
+                  type="text"
+                  value={formData.difficultyTransitionTexts.medium}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    difficultyTransitionTexts: { ...formData.difficultyTransitionTexts, medium: e.target.value }
+                  })}
+                  className="w-full px-2 py-1.5 bg-black/30 border border-white/10 rounded text-white text-xs focus:border-yellow-500 focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-red-400 text-xs font-medium mb-1 block">Difícil:</label>
+                <input
+                  type="text"
+                  value={formData.difficultyTransitionTexts.hard}
+                  onChange={(e) => setFormData({ 
+                    ...formData, 
+                    difficultyTransitionTexts: { ...formData.difficultyTransitionTexts, hard: e.target.value }
+                  })}
+                  className="w-full px-2 py-1.5 bg-black/30 border border-white/10 rounded text-white text-xs focus:border-red-500 focus:outline-none"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Botões */}
+      <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
+        <button
+          onClick={onCancel}
+          className="px-6 py-2 rounded-lg bg-white/10 text-white/80 hover:bg-white/20 transition-colors"
+        >
+          Cancelar
+        </button>
+        <button
+          onClick={handleSubmit}
+          className="px-6 py-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white font-medium hover:opacity-90 transition-opacity"
+        >
+          {isCreating ? 'Criar Perfil' : 'Salvar Alterações'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   // Estados de Configuração
   const [config, setConfig] = useState<QuizConfig>({
@@ -112,6 +622,14 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
 
   // Configuração de Vídeo
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
+  const [voiceName, setVoiceName] = useState('Achernar');
+
+  // Estados de Perfis/Nichos
+  const [profiles, setProfiles] = useState<QuizProfile[]>([]);
+  const [selectedProfile, setSelectedProfile] = useState<QuizProfile | null>(null);
+  const [showProfileModal, setShowProfileModal] = useState(false);
+  const [editingProfile, setEditingProfile] = useState<QuizProfile | null>(null);
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false);
 
   // Helper de dimensões
   const getDimensions = () => {
@@ -119,6 +637,143 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       ? { width: 1080, height: 1920 } 
       : { width: 1920, height: 1080 };
   };
+
+  // Carregar perfis do localStorage
+  const loadProfiles = () => {
+    try {
+      const stored = localStorage.getItem(QUIZ_PROFILES_STORAGE_KEY);
+      if (stored) {
+        setProfiles(JSON.parse(stored));
+      }
+    } catch (error) {
+      console.error('Erro ao carregar perfis de quiz:', error);
+    }
+  };
+
+  // Salvar perfis no localStorage
+  const saveProfiles = (newProfiles: QuizProfile[]) => {
+    try {
+      localStorage.setItem(QUIZ_PROFILES_STORAGE_KEY, JSON.stringify(newProfiles));
+      setProfiles(newProfiles);
+    } catch (error) {
+      console.error('Erro ao salvar perfis de quiz:', error);
+    }
+  };
+
+  // Aplicar perfil nas configurações
+  const applyProfile = (profile: QuizProfile) => {
+    setConfig({
+      theme: profile.theme, // Aplica o tema do perfil
+      introText: profile.introText,
+      easyCount: profile.easyCount,
+      mediumCount: profile.mediumCount,
+      hardCount: profile.hardCount,
+      optionsCount: profile.optionsCount,
+      thinkingTimeSeconds: profile.thinkingTimeSeconds,
+      showAnswerTimeSeconds: profile.showAnswerTimeSeconds,
+      primaryColor: profile.primaryColor,
+      secondaryColor: profile.secondaryColor,
+      provider: profile.provider,
+    });
+    setVoiceName(profile.voiceName);
+    setAudioIncludeOptions(profile.audioIncludeOptions);
+    setAudioIncludeCorrectAnswer(profile.audioIncludeCorrectAnswer);
+    setAudioIncludeExplanations(profile.audioIncludeExplanations);
+    setAudioNarrateDifficultyChange(profile.audioNarrateDifficultyChange);
+    setDifficultyTransitionTexts(profile.difficultyTransitionTexts);
+    setAspectRatio(profile.aspectRatio);
+    setSelectedProfile(profile);
+    setShowProfileModal(false);
+  };
+
+  // Criar perfil atual
+  const createProfileFromCurrent = (): Omit<QuizProfile, 'id' | 'createdAt' | 'updatedAt'> => ({
+    name: '',
+    icon: '🎯',
+    description: '',
+    theme: config.theme || '',
+    introText: config.introText || '',
+    easyCount: config.easyCount,
+    mediumCount: config.mediumCount,
+    hardCount: config.hardCount,
+    optionsCount: config.optionsCount,
+    thinkingTimeSeconds: config.thinkingTimeSeconds,
+    showAnswerTimeSeconds: config.showAnswerTimeSeconds,
+    primaryColor: config.primaryColor,
+    secondaryColor: config.secondaryColor,
+    provider: config.provider,
+    voiceName,
+    audioIncludeOptions,
+    audioIncludeCorrectAnswer,
+    audioIncludeExplanations,
+    audioNarrateDifficultyChange,
+    difficultyTransitionTexts,
+    aspectRatio,
+  });
+
+  // Salvar novo perfil
+  const saveNewProfile = (profileData: Partial<QuizProfile>) => {
+    const newProfile: QuizProfile = {
+      id: Date.now().toString(),
+      name: profileData.name || 'Novo Perfil',
+      icon: profileData.icon || '🎯',
+      description: profileData.description,
+      theme: profileData.theme || config.theme || '',
+      introText: profileData.introText || config.introText || '',
+      easyCount: profileData.easyCount ?? config.easyCount,
+      mediumCount: profileData.mediumCount ?? config.mediumCount,
+      hardCount: profileData.hardCount ?? config.hardCount,
+      optionsCount: profileData.optionsCount ?? config.optionsCount,
+      thinkingTimeSeconds: profileData.thinkingTimeSeconds ?? config.thinkingTimeSeconds,
+      showAnswerTimeSeconds: profileData.showAnswerTimeSeconds ?? config.showAnswerTimeSeconds,
+      primaryColor: profileData.primaryColor || config.primaryColor,
+      secondaryColor: profileData.secondaryColor || config.secondaryColor,
+      provider: profileData.provider || config.provider,
+      voiceName: profileData.voiceName || voiceName,
+      audioIncludeOptions: profileData.audioIncludeOptions ?? audioIncludeOptions,
+      audioIncludeCorrectAnswer: profileData.audioIncludeCorrectAnswer ?? audioIncludeCorrectAnswer,
+      audioIncludeExplanations: profileData.audioIncludeExplanations ?? audioIncludeExplanations,
+      audioNarrateDifficultyChange: profileData.audioNarrateDifficultyChange ?? audioNarrateDifficultyChange,
+      difficultyTransitionTexts: profileData.difficultyTransitionTexts || difficultyTransitionTexts,
+      aspectRatio: profileData.aspectRatio || aspectRatio,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    saveProfiles([...profiles, newProfile]);
+    setSelectedProfile(newProfile);
+    setIsCreatingProfile(false);
+    setShowProfileModal(false);
+  };
+
+  // Atualizar perfil existente
+  const updateProfile = (profileId: string, profileData: Partial<QuizProfile>) => {
+    const updatedProfiles = profiles.map(p => 
+      p.id === profileId 
+        ? { ...p, ...profileData, updatedAt: new Date().toISOString() }
+        : p
+    );
+    saveProfiles(updatedProfiles);
+    if (selectedProfile?.id === profileId) {
+      setSelectedProfile(updatedProfiles.find(p => p.id === profileId) || null);
+    }
+    setEditingProfile(null);
+    setShowProfileModal(false);
+  };
+
+  // Excluir perfil
+  const deleteProfile = (profileId: string) => {
+    if (!confirm('Tem certeza que deseja excluir este perfil?')) return;
+    const updatedProfiles = profiles.filter(p => p.id !== profileId);
+    saveProfiles(updatedProfiles);
+    if (selectedProfile?.id === profileId) {
+      setSelectedProfile(null);
+    }
+  };
+
+  // Carregar perfis ao montar
+  useEffect(() => {
+    loadProfiles();
+  }, []);
 
   // Listener para progresso do áudio
   useEffect(() => {
@@ -208,7 +863,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
           explanation: q.explanation,
           difficulty: q.difficulty,
         })),
-        voiceName: 'Achernar',
+        voiceName: voiceName,
         includeOptions: audioIncludeOptions,
         includeCorrectAnswer: audioIncludeCorrectAnswer,
         includeExplanations: audioIncludeExplanations,
@@ -1018,19 +1673,6 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
                     />
                   </div>
               )}
-
-               {questions.some(q => q.difficulty === 'easy') && questions.some(q => q.difficulty !== 'easy') && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-green-400 w-12 font-medium">Fácil:</span>
-                    <input 
-                      type="text" 
-                      value={difficultyTransitionTexts.easy}
-                      onChange={(e) => setDifficultyTransitionTexts({...difficultyTransitionTexts, easy: e.target.value})}
-                      className="flex-1 bg-black/20 border border-white/10 rounded px-2 py-1.5 text-xs text-white focus:border-green-500/50 focus:outline-none transition-colors"
-                      placeholder="Texto para retorno ao nível Fácil"
-                    />
-                  </div>
-              )}
             </div>
           )}
 
@@ -1328,6 +1970,23 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
                   <p className="text-sm text-white/40">Crie vídeos de quiz interativos com IA</p>
                 </div>
               </div>
+
+              {/* Profile Selector Button */}
+              <button
+                onClick={() => setShowProfileModal(true)}
+                className="ml-4 px-4 py-2 bg-white/5 hover:bg-white/10 border border-white/10 hover:border-purple-500/50 rounded-xl transition-all flex items-center gap-3 group"
+              >
+                <span className="text-xl">{selectedProfile?.icon || '📋'}</span>
+                <div className="text-left">
+                  <p className="text-sm font-medium text-white group-hover:text-purple-300 transition-colors">
+                    {selectedProfile?.name || 'Sem Perfil'}
+                  </p>
+                  <p className="text-xs text-white/40">Clique para selecionar</p>
+                </div>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/40 group-hover:text-purple-400 transition-colors">
+                  <path d="M6 9l6 6 6-6" />
+                </svg>
+              </button>
             </div>
 
             {/* Step Indicators */}
@@ -1371,6 +2030,152 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         {currentStep === 'rendering' && renderRenderingStep()}
         {currentStep === 'complete' && renderCompleteStep()}
       </main>
+
+      {/* Quiz Profile Modal */}
+      {showProfileModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-gradient-to-br from-gray-900 to-gray-950 border border-white/10 rounded-2xl w-[90vw] max-w-2xl max-h-[85vh] overflow-hidden shadow-2xl">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📋</span>
+                <h2 className="text-xl font-semibold text-white">
+                  {isCreatingProfile ? 'Criar Novo Perfil' : editingProfile ? 'Editar Perfil' : 'Perfis de Quiz'}
+                </h2>
+              </div>
+              <button
+                onClick={() => {
+                  setShowProfileModal(false);
+                  setIsCreatingProfile(false);
+                  setEditingProfile(null);
+                }}
+                className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+              >
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/60">
+                  <path d="M18 6L6 18M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6 overflow-y-auto max-h-[calc(85vh-80px)]">
+              {/* Edit/Create Form */}
+              {(isCreatingProfile || editingProfile) ? (
+                <ProfileEditForm
+                  profile={editingProfile || createProfileFromCurrent()}
+                  isCreating={isCreatingProfile}
+                  onSave={(data) => {
+                    if (isCreatingProfile) {
+                      saveNewProfile(data);
+                    } else if (editingProfile) {
+                      updateProfile(editingProfile.id, data);
+                    }
+                  }}
+                  onCancel={() => {
+                    setIsCreatingProfile(false);
+                    setEditingProfile(null);
+                  }}
+                />
+              ) : (
+                /* Profile List */
+                <div className="space-y-4">
+                  {/* Clear Selection */}
+                  <button
+                    onClick={() => {
+                      setSelectedProfile(null);
+                      setShowProfileModal(false);
+                    }}
+                    className={`w-full p-4 rounded-xl border-2 transition-all text-left ${
+                      !selectedProfile
+                        ? 'border-purple-500 bg-purple-500/10'
+                        : 'border-white/10 bg-white/5 hover:border-white/30'
+                    }`}
+                  >
+                    <div className="flex items-center gap-4">
+                      <span className="text-3xl">🎯</span>
+                      <div>
+                        <h3 className="text-lg font-medium text-white">Sem Perfil (Padrão)</h3>
+                        <p className="text-sm text-white/60">Usar configurações manuais</p>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Profile List */}
+                  {profiles.map((profile) => (
+                    <div
+                      key={profile.id}
+                      className={`p-4 rounded-xl border-2 transition-all ${
+                        selectedProfile?.id === profile.id
+                          ? 'border-purple-500 bg-purple-500/10'
+                          : 'border-white/10 bg-white/5 hover:border-white/30'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between">
+                        <button
+                          onClick={() => applyProfile(profile)}
+                          className="flex items-center gap-4 text-left flex-1"
+                        >
+                          <span className="text-3xl">{profile.icon}</span>
+                          <div>
+                            <h3 className="text-lg font-medium text-white">{profile.name}</h3>
+                            <p className="text-sm text-white/60">{profile.description || 'Sem descrição'}</p>
+                            <div className="flex gap-2 mt-2 flex-wrap">
+                              <span className="px-2 py-0.5 bg-green-500/20 text-green-300 text-xs rounded">
+                                {profile.easyCount} fáceis
+                              </span>
+                              <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 text-xs rounded">
+                                {profile.mediumCount} médias
+                              </span>
+                              <span className="px-2 py-0.5 bg-red-500/20 text-red-300 text-xs rounded">
+                                {profile.hardCount} difíceis
+                              </span>
+                              <span className="px-2 py-0.5 bg-purple-500/20 text-purple-300 text-xs rounded">
+                                {profile.aspectRatio}
+                              </span>
+                            </div>
+                          </div>
+                        </button>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); setEditingProfile(profile); }}
+                            className="p-2 rounded-lg hover:bg-white/10 transition-colors"
+                            title="Editar"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/60">
+                              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+                              <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
+                            </svg>
+                          </button>
+                          <button
+                            onClick={(e) => { e.stopPropagation(); deleteProfile(profile.id); }}
+                            className="p-2 rounded-lg hover:bg-red-500/20 transition-colors"
+                            title="Excluir"
+                          >
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-red-400">
+                              <path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                            </svg>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Create New Profile Button */}
+                  <button
+                    onClick={() => setIsCreatingProfile(true)}
+                    className="w-full p-4 rounded-xl border-2 border-dashed border-white/20 bg-white/5 hover:border-purple-500/50 hover:bg-purple-500/10 transition-all flex items-center justify-center gap-3"
+                  >
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400">
+                      <path d="M12 5v14M5 12h14" />
+                    </svg>
+                    <span className="text-white/80 font-medium">Criar Novo Perfil</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
