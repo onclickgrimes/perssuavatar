@@ -168,23 +168,63 @@ function findQuestionTimings(
     }));
   }
   
-  // Se temos menos marcadores que questões, a primeira questão pode não ter "Questão N"
-  // Nesse caso, inserimos 0 como início da primeira questão
+  // Se temos menos marcadores que questões, precisamos descobrir QUAL questão está faltando
   if (questionMarkers.length < questions.length) {
-    // Verificar se o primeiro marcador está muito depois do início
-    // (indica que a primeira questão não tem "Questão 1")
-    if (questionMarkers[0] > 5) { // Se primeiro marcador está após 5 segundos
-      console.log('First question seems to not have "Questão" marker, adding 0 as start');
-      questionMarkers.unshift(0);
+    const missingCount = questions.length - questionMarkers.length;
+    console.log(`Missing ${missingCount} question marker(s), analyzing gaps...`);
+    
+    // Calcular duração média esperada por questão
+    const avgQuestionDuration = totalDuration / questions.length;
+    
+    // Se o primeiro marcador está muito longe do início (>20s ou >30% da duração média),
+    // pode ser que tem intro E Q1 começa depois
+    const introThreshold = Math.min(20, avgQuestionDuration * 0.5);
+    
+    if (questionMarkers[0] > introThreshold) {
+      // Verificar se há espaço para a intro + Q1 antes do primeiro marcador
+      // Se o primeiro marcador está muito longe, Q1 pode estar sem "Questão 1"
+      console.log(`First marker at ${questionMarkers[0].toFixed(2)}s, checking if Q1 is missing...`);
+      
+      // Se o gap até o primeiro marcador é grande demais, assume que Q1 não tem marcador
+      if (questionMarkers[0] > avgQuestionDuration * 0.8) {
+        console.log('First question seems to not have "Questão" marker, adding start of audio as Q1');
+        // Não adiciona 0, mas sim um tempo após a possível intro (5s?)
+        const estimatedQ1Start = Math.min(5, questionMarkers[0] - avgQuestionDuration);
+        questionMarkers.unshift(Math.max(0, estimatedQ1Start));
+      }
     }
-  }
-  
-  // Se ainda temos menos marcadores, estimar os faltantes
-  while (questionMarkers.length < questions.length) {
-    const lastMarker = questionMarkers[questionMarkers.length - 1];
-    const estimatedNext = lastMarker + (totalDuration / questions.length);
-    questionMarkers.push(estimatedNext);
-    console.log(`Estimated question marker at ${estimatedNext.toFixed(2)}s`);
+    
+    // Agora verificar gaps entre marcadores consecutivos para encontrar questões faltantes
+    // Um gap muito grande indica que uma questão intermediária não tem marcador
+    while (questionMarkers.length < questions.length) {
+      let maxGapIndex = -1;
+      let maxGap = 0;
+      
+      // Encontrar o maior gap
+      for (let i = 0; i < questionMarkers.length - 1; i++) {
+        const gap = questionMarkers[i + 1] - questionMarkers[i];
+        if (gap > maxGap) {
+          maxGap = gap;
+          maxGapIndex = i;
+        }
+      }
+      
+      // Também verificar o gap final (do último marcador até o fim)
+      const finalGap = totalDuration - questionMarkers[questionMarkers.length - 1];
+      
+      // Se o maior gap é significativamente maior que a média, inserir um marcador no meio
+      if (maxGapIndex >= 0 && maxGap > avgQuestionDuration * 1.5) {
+        const insertTime = questionMarkers[maxGapIndex] + (maxGap / 2);
+        questionMarkers.splice(maxGapIndex + 1, 0, insertTime);
+        console.log(`Inserted missing marker at ${insertTime.toFixed(2)}s (gap was ${maxGap.toFixed(2)}s)`);
+      } else {
+        // Se não há gaps grandes, adicionar no final
+        const lastMarker = questionMarkers[questionMarkers.length - 1];
+        const estimatedNext = lastMarker + avgQuestionDuration;
+        questionMarkers.push(Math.min(estimatedNext, totalDuration - 5));
+        console.log(`Appended marker at ${estimatedNext.toFixed(2)}s`);
+      }
+    }
   }
   
   // Mapear questões usando os marcadores
@@ -201,7 +241,7 @@ function findQuestionTimings(
     // Opções aparecem 2 segundos após a questão
     const optionsStartTime = questionStartTime + 2;
     
-    // Tentar encontrar "resposta correta" DENTRO deste intervalo de tempo
+    // Tentar encontrar marcador de resposta DENTRO deste intervalo de tempo
     // para definir o momento exato da revelação visual
     let answerRevealTime = -1;
     
@@ -210,14 +250,50 @@ function findQuestionTimings(
       
       // Só procura palavras dentro do tempo desta questão
       if (wordStart >= questionStartTime && wordStart < endTime) {
-        const word = allWords[w].word.toLowerCase();
-        const nextWord = allWords[w + 1]?.word?.toLowerCase() || '';
+        const word = allWords[w].word.toLowerCase().replace(/[^a-záàâãéèêíïóôõöúç]/g, '');
+        const nextWord = allWords[w + 1]?.word?.toLowerCase().replace(/[^a-záàâãéèêíïóôõöúç]/g, '') || '';
+        const thirdWord = allWords[w + 2]?.word?.toLowerCase().replace(/[^a-záàâãéèêíïóôõöúç]/g, '') || '';
         
-        // Procura "resposta" seguido de "correta"
-        if (word.includes('resposta') && nextWord.includes('correta')) {
-          answerRevealTime = allWords[w].start; // Tempo de INÍCIO da frase "A resposta..."
-          console.log(`✅ Found answer reveal for Q${i+1} at ${answerRevealTime.toFixed(2)}s`);
-          break; // Encontrou, para de procurar nesta questão
+        // Padrão 1: "resposta" seguido de "correta" ou "certa"
+        if (word.includes('resposta') && (nextWord.includes('correta') || nextWord.includes('certa'))) {
+          answerRevealTime = allWords[w].start;
+          console.log(`✅ Found answer reveal for Q${i+1} at ${answerRevealTime.toFixed(2)}s (pattern: resposta correta/certa)`);
+          break;
+        }
+        
+        // Padrão 2: "resposta" seguido de "é" (a resposta é X)
+        if (word.includes('resposta') && nextWord === 'é') {
+          answerRevealTime = allWords[w].start;
+          console.log(`✅ Found answer reveal for Q${i+1} at ${answerRevealTime.toFixed(2)}s (pattern: resposta é)`);
+          break;
+        }
+        
+        // Padrão 3: "correta" ou "certa" seguido de "é"
+        if ((word.includes('correta') || word.includes('certa')) && nextWord === 'é') {
+          answerRevealTime = w > 0 ? allWords[w - 1].start : allWords[w].start;
+          console.log(`✅ Found answer reveal for Q${i+1} at ${answerRevealTime.toFixed(2)}s (pattern: correta/certa é)`);
+          break;
+        }
+        
+        // Padrão 4: "correta" ou "certa" seguido de letra (a, b, c, d)
+        if ((word.includes('correta') || word.includes('certa')) && ['a', 'b', 'c', 'd', 'e', 'f'].includes(nextWord)) {
+          answerRevealTime = w > 0 ? allWords[w - 1].start : allWords[w].start;
+          console.log(`✅ Found answer reveal for Q${i+1} at ${answerRevealTime.toFixed(2)}s (pattern: correta/certa + letter)`);
+          break;
+        }
+        
+        // Padrão 5: "a resposta" seguido de "correta/certa/é"
+        if (word === 'a' && nextWord === 'resposta' && (thirdWord.includes('correta') || thirdWord.includes('certa') || thirdWord === 'é')) {
+          answerRevealTime = allWords[w].start;
+          console.log(`✅ Found answer reveal for Q${i+1} at ${answerRevealTime.toFixed(2)}s (pattern: a resposta ...)`);
+          break;
+        }
+        
+        // Padrão 6: Apenas "correta" ou "certa" isolados (fallback menos preciso)
+        if ((word === 'correta' || word === 'certa') && !nextWord.includes('questão')) {
+          answerRevealTime = w > 0 ? allWords[w - 1].start : allWords[w].start;
+          console.log(`✅ Found answer reveal for Q${i+1} at ${answerRevealTime.toFixed(2)}s (pattern: correta/certa isolated)`);
+          break;
         }
       }
     }

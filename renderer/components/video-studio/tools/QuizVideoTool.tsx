@@ -108,6 +108,9 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
     hard: 'Atenção! Agora é nível Difícil.',
   });
 
+  // Modo de Geração de Áudio: 'chunked' (em partes) ou 'single' (único arquivo)
+  const [audioGenerationMode, setAudioGenerationMode] = useState<'chunked' | 'single'>('single');
+
   // Configuração de Vídeo
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
 
@@ -213,6 +216,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         introText: config.introText,
         narrateDifficultyChange: audioNarrateDifficultyChange,
         transitionTexts: difficultyTransitionTexts,
+        generationMode: audioGenerationMode,
       }) as { 
         success: boolean; 
         audioPath?: string; 
@@ -903,6 +907,51 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
           <h4 className="text-sm font-medium text-orange-400 mb-3 flex items-center gap-2">
             <span>🎤</span> Configurações do Áudio
           </h4>
+
+          {/* Modo de Geração */}
+          <div className="mb-4 p-3 bg-white/5 border border-white/10 rounded-lg">
+            <p className="text-xs font-medium text-white/60 mb-2">Modo de Geração:</p>
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                onClick={() => setAudioGenerationMode('single')}
+                className={`p-3 rounded-lg border text-left transition-all ${
+                  audioGenerationMode === 'single'
+                    ? 'bg-green-500/20 border-green-500/50'
+                    : 'bg-white/5 border-white/10 hover:border-white/20'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs ${
+                    audioGenerationMode === 'single' ? 'bg-green-500 text-white' : 'bg-white/10'
+                  }`}>
+                    {audioGenerationMode === 'single' ? '●' : ''}
+                  </span>
+                  <span className="text-xs font-medium text-white">Único</span>
+                  <span className="text-xs text-green-400">⚡ Recomendado</span>
+                </div>
+                <p className="text-xs text-white/40">1 requisição, corte automático</p>
+              </button>
+
+              <button
+                onClick={() => setAudioGenerationMode('chunked')}
+                className={`p-3 rounded-lg border text-left transition-all ${
+                  audioGenerationMode === 'chunked'
+                    ? 'bg-orange-500/20 border-orange-500/50'
+                    : 'bg-white/5 border-white/10 hover:border-white/20'
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className={`w-4 h-4 rounded-full flex items-center justify-center text-xs ${
+                    audioGenerationMode === 'chunked' ? 'bg-orange-500 text-white' : 'bg-white/10'
+                  }`}>
+                    {audioGenerationMode === 'chunked' ? '●' : ''}
+                  </span>
+                  <span className="text-xs font-medium text-white">Em Partes</span>
+                </div>
+                <p className="text-xs text-white/40">Múltiplas requisições (rate limit)</p>
+              </button>
+            </div>
+          </div>
           
           {/* Toggles de Configuração */}
           <div className="grid grid-cols-2 gap-3 mb-4">
@@ -1097,19 +1146,6 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
               )}
             </div>
           )}
-        </div>
-      )}
-
-      {/* Instruções de uso */}
-      {questions.length > 0 && (
-        <div className="mt-4 p-4 bg-white/5 border border-white/10 rounded-xl">
-          <p className="text-sm text-white/60 mb-2">📌 <strong>Como renderizar o vídeo:</strong></p>
-          <ol className="text-xs text-white/40 space-y-1 list-decimal list-inside">
-            <li>Copie ou baixe o projeto JSON</li>
-            <li>Abra o Remotion Studio: <code className="bg-white/10 px-1 rounded">npx remotion studio remotion/index.ts</code></li>
-            <li>Selecione a composição "QuizVideo"</li>
-            <li>Cole o JSON nas props e renderize</li>
-          </ol>
         </div>
       )}
 

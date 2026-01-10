@@ -398,6 +398,33 @@ Lembre-se:
     }
   };
 
+  // Helper para transcrição com retry (3 tentativas, 3s de intervalo)
+  const transcribeWithRetry = async (transcriptionService: any, filePath: string, maxRetries = 3, delayMs = 3000) => {
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await transcriptionService.transcribeFile(filePath);
+        if (result.success) {
+          return result;
+        }
+        
+        // Se não foi sucesso mas não deu erro, tenta de novo
+        if (attempt < maxRetries) {
+          console.log(`⚠️ [Transcription] Attempt ${attempt}/${maxRetries} failed, retrying in ${delayMs/1000}s...`);
+          await new Promise(r => setTimeout(r, delayMs));
+        }
+      } catch (error: any) {
+        if (attempt < maxRetries) {
+          console.log(`⚠️ [Transcription] Attempt ${attempt}/${maxRetries} error: ${error.message}, retrying in ${delayMs/1000}s...`);
+          await new Promise(r => setTimeout(r, delayMs));
+        } else {
+          console.error(`❌ [Transcription] All ${maxRetries} attempts failed`);
+          return { success: false, error: error.message };
+        }
+      }
+    }
+    return { success: false, error: 'All retry attempts exhausted' };
+  };
+
   // Handler para gerar áudio do quiz com estratégia otimizada
   // Estrutura: [P1] + silêncio + [R1+P2] + silêncio + [R2+P3]...
   ipcMain.handle('quiz:generate-audio', async (
@@ -419,6 +446,7 @@ Lembre-se:
       introText?: string;
       narrateDifficultyChange?: boolean;
       transitionTexts?: { easy?: string; medium?: string; hard?: string };
+      generationMode?: 'single' | 'chunked';
     }
   ) => {
     try {
@@ -448,6 +476,7 @@ Lembre-se:
       const includeCorrectAnswer = options.includeCorrectAnswer ?? false;
       const includeExplanations = options.includeExplanations ?? false;
       const thinkingTimeSeconds = options.thinkingTimeSeconds ?? 5;
+      const generationMode = options.generationMode ?? 'single';
       
       const optionLetters = ['A', 'B', 'C', 'D', 'E', 'F'];
       const timestamp = Date.now();
@@ -456,9 +485,6 @@ Lembre-se:
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true });
       }
-      
-      // --- ETAPA 1: Construção dos Scripts (Shifted Strategy) ---
-      const audioScripts: string[] = [];
       
       // Helper para formatar opções
       const formatOptions = (q: any) => {
@@ -473,6 +499,307 @@ Lembre-se:
         if (includeExplanations && q.explanation) text += `${q.explanation} `;
         return text;
       };
+      
+      // Helper para formatar transição de dificuldade
+      const formatDifficultyTransition = (prevQ: any, nextQ: any) => {
+        if (!options.narrateDifficultyChange || !nextQ.difficulty || nextQ.difficulty === prevQ.difficulty) {
+          return '';
+        }
+        const customText = options.transitionTexts?.[nextQ.difficulty as keyof typeof options.transitionTexts];
+        if (customText) {
+          return `${customText} `;
+        }
+        const diffMap: {[key: string]: string} = { 'easy': 'Fácil', 'medium': 'Médio', 'hard': 'Difícil' };
+        const diffName = diffMap[nextQ.difficulty] || nextQ.difficulty;
+        return `Agora, nível ${diffName}... `;
+      };
+
+      // ========================================
+      // MODO SINGLE: Gera um único arquivo de áudio
+      // ========================================
+      if (generationMode === 'single') {
+        console.log(`📝 [Quiz] Mode: SINGLE - generating one complete audio file`);
+        
+        // Constrói o script COMPLETO
+        let fullScript = '';
+        
+        // Intro
+        if (options.introText) {
+          fullScript += `${options.introText}... `;
+        }
+        
+        // Loop por todas as questões
+        for (let i = 0; i < options.questions.length; i++) {
+          const q = options.questions[i];
+          
+          // Transição de dificuldade (exceto para primeira questão)
+          if (i > 0) {
+            const prevQ = options.questions[i - 1];
+            fullScript += formatDifficultyTransition(prevQ, q);
+          }
+          
+          // Questão
+          fullScript += `Questão ${i + 1}. ${q.question} ${formatOptions(q)}`;
+          
+          // Resposta/Explicação
+          fullScript += formatAnswer(q);
+        }
+        
+        console.log(`📝 [Quiz] Full script: ${fullScript.substring(0, 200)}...`);
+        
+        // Reporta progresso
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('quiz:audio-progress', {
+            current: 1,
+            total: 5,
+            stage: 'generating'
+          });
+        }
+        
+        // Gera UM único arquivo de áudio (temporário)
+        const rawAudioPath = path.join(tempDir, `quiz_raw_${timestamp}.wav`);
+        const result = await voiceService.generateSpeech({
+          text: fullScript,
+          voiceName: options.voiceName || 'Kore',
+          outputPath: rawAudioPath
+        });
+        
+        if (!result.success) {
+          throw new Error(`Erro ao gerar áudio: ${result.error}`);
+        }
+        
+        console.log(`✅ [Quiz] Raw audio file generated: ${rawAudioPath}`);
+        
+        // Reporta progresso - Transcrição inicial
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('quiz:audio-progress', {
+            current: 2,
+            total: 5,
+            stage: 'transcribing (finding cut points)'
+          });
+        }
+        
+        // Transcreve para encontrar pontos de corte (marcadores de resposta)
+        const { getAudioTranscriptionService } = require('../services/audio-transcription-service');
+        const transcriptionService = getAudioTranscriptionService();
+        
+        const initialTranscription = await transcribeWithRetry(transcriptionService, rawAudioPath);
+        
+        if (!initialTranscription.success) {
+          console.warn('⚠️ [Quiz] Initial transcription failed, returning raw audio');
+          const finalPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
+          fs.copyFileSync(rawAudioPath, finalPath);
+          return { 
+            success: true, 
+            audioPath: finalPath,
+            outputDir,
+            duration: 0,
+            segments: [],
+            questionsCount: options.questions.length
+          };
+        }
+        
+        console.log(`✅ [Quiz] Initial transcription complete. Finding answer markers...`);
+        
+        // Encontra os pontos de corte (onde "resposta correta/certa" aparece)
+        const allWords = initialTranscription.words || [];
+        const cutPoints: number[] = [];
+        
+        for (let w = 0; w < allWords.length - 1; w++) {
+          const word = allWords[w].word.toLowerCase().replace(/[^a-záàâãéèêíïóôõöúç]/g, '');
+          const nextWord = allWords[w + 1]?.word?.toLowerCase().replace(/[^a-záàâãéèêíïóôõöúç]/g, '') || '';
+          
+          // Detecta "resposta correta", "resposta certa", "resposta é"
+          if (word.includes('resposta') && (nextWord.includes('correta') || nextWord.includes('certa') || nextWord === 'é')) {
+            // Pega o timestamp um pouco antes da palavra
+            const cutTime = Math.max(0, allWords[w].start - 0.3);
+            cutPoints.push(cutTime);
+            console.log(`✂️ [Quiz] Cut point found at ${cutTime.toFixed(2)}s (${word} ${nextWord})`);
+          }
+        }
+        
+        console.log(`✂️ [Quiz] Found ${cutPoints.length} cut points for ${options.questions.length} questions`);
+        
+        // Se não encontrou pontos de corte, retorna o áudio raw
+        if (cutPoints.length === 0) {
+          console.warn('⚠️ [Quiz] No cut points found, returning raw audio');
+          const finalPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
+          fs.copyFileSync(rawAudioPath, finalPath);
+          
+          const quizSegments = initialTranscription.segments.map((seg: any) => ({
+            id: seg.id,
+            text: seg.text,
+            start: seg.start,
+            end: seg.end,
+            words: seg.words,
+          }));
+          
+          return { 
+            success: true, 
+            audioPath: finalPath,
+            outputDir,
+            duration: initialTranscription.duration,
+            segments: quizSegments,
+            words: initialTranscription.words,
+            questionsCount: options.questions.length
+          };
+        }
+        
+        // Reporta progresso - Cortando e inserindo silêncio
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('quiz:audio-progress', {
+            current: 3,
+            total: 5,
+            stage: 'inserting thinking time'
+          });
+        }
+        
+        // Gera arquivo de silêncio (5 segundos)
+        const silenceFile = path.join(tempDir, 'thinking_silence.wav');
+        try {
+          execSync(
+            `ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t ${thinkingTimeSeconds} "${silenceFile}"`,
+            { encoding: 'utf8', stdio: 'pipe' }
+          );
+          console.log(`✅ [Quiz] Silence file created: ${thinkingTimeSeconds}s`);
+        } catch (e) {
+          console.warn('⚠️ [Quiz] Could not create silence file');
+        }
+        
+        // Corta o áudio nos pontos identificados e insere silêncio
+        const audioParts: string[] = [];
+        let lastCutTime = 0;
+        
+        for (let i = 0; i < cutPoints.length; i++) {
+          const cutTime = cutPoints[i];
+          const partPath = path.join(tempDir, `part_${i}.wav`);
+          
+          // Extrai a parte do áudio (de lastCutTime até cutTime)
+          const duration = cutTime - lastCutTime;
+          if (duration > 0.1) {
+            try {
+              execSync(
+                `ffmpeg -y -i "${rawAudioPath}" -ss ${lastCutTime} -t ${duration} -c copy "${partPath}"`,
+                { encoding: 'utf8', stdio: 'pipe' }
+              );
+              audioParts.push(partPath);
+              console.log(`✂️ [Quiz] Part ${i}: ${lastCutTime.toFixed(2)}s - ${cutTime.toFixed(2)}s`);
+            } catch (e) {
+              console.warn(`⚠️ [Quiz] Failed to extract part ${i}`);
+            }
+          }
+          
+          // Adiciona silêncio após esta parte (exceto após a última resposta)
+          if (fs.existsSync(silenceFile)) {
+            audioParts.push(silenceFile);
+          }
+          
+          lastCutTime = cutTime;
+        }
+        
+        // Adiciona a parte final (da última resposta até o fim)
+        const finalPartPath = path.join(tempDir, `part_final.wav`);
+        try {
+          execSync(
+            `ffmpeg -y -i "${rawAudioPath}" -ss ${lastCutTime} -c copy "${finalPartPath}"`,
+            { encoding: 'utf8', stdio: 'pipe' }
+          );
+          audioParts.push(finalPartPath);
+          console.log(`✂️ [Quiz] Final part: ${lastCutTime.toFixed(2)}s - end`);
+        } catch (e) {
+          console.warn('⚠️ [Quiz] Failed to extract final part');
+        }
+        
+        // Reporta progresso - Concatenando
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('quiz:audio-progress', {
+            current: 4,
+            total: 5,
+            stage: 'concatenating'
+          });
+        }
+        
+        // Cria lista de concatenação
+        const concatListPath = path.join(tempDir, 'concat_list.txt');
+        let concatContent = '';
+        for (const part of audioParts) {
+          if (fs.existsSync(part)) {
+            concatContent += `file '${part.replace(/\\/g, '/').replace(/'/g, "'\\''")}'\n`;
+          }
+        }
+        fs.writeFileSync(concatListPath, concatContent);
+        
+        // Executa concatenação
+        const finalOutputPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
+        try {
+          execSync(
+            `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${finalOutputPath}"`,
+            { encoding: 'utf8', stdio: 'pipe' }
+          );
+          console.log(`✅ [Quiz] Final audio created with thinking time: ${finalOutputPath}`);
+        } catch (e: any) {
+          console.warn('⚠️ [Quiz] Concatenation failed, using raw audio');
+          fs.copyFileSync(rawAudioPath, finalOutputPath);
+        }
+        
+        // Reporta progresso - Re-transcrição final
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('quiz:audio-progress', {
+            current: 5,
+            total: 5,
+            stage: 'final transcription'
+          });
+        }
+        
+        // Re-transcreve o áudio FINAL para obter timestamps corretos (com retry)
+        const finalTranscription = await transcribeWithRetry(transcriptionService, finalOutputPath);
+        
+        // Limpeza
+        try {
+          fs.rmSync(tempDir, { recursive: true, force: true });
+        } catch (e) {}
+        
+        if (!finalTranscription.success) {
+          console.warn('⚠️ [Quiz] Final transcription failed');
+          return { 
+            success: true, 
+            audioPath: finalOutputPath,
+            outputDir,
+            duration: 0,
+            segments: [],
+            questionsCount: options.questions.length
+          };
+        }
+        
+        console.log(`✅ [Quiz] Final transcription complete. Duration: ${finalTranscription.duration}s`);
+        
+        // Mapeia segmentos
+        const quizSegments = finalTranscription.segments.map((seg: any) => ({
+          id: seg.id,
+          text: seg.text,
+          start: seg.start,
+          end: seg.end,
+          words: seg.words,
+        }));
+        
+        return { 
+          success: true, 
+          audioPath: finalOutputPath,
+          outputDir,
+          duration: finalTranscription.duration,
+          segments: quizSegments,
+          words: finalTranscription.words,
+          questionsCount: options.questions.length
+        };
+      }
+
+      // ========================================
+      // MODO CHUNKED: Gera em partes (lógica original)
+      // ========================================
+      console.log(`📝 [Quiz] Mode: CHUNKED - generating audio in parts`);
+      
+      // --- ETAPA 1: Construção dos Scripts (Shifted Strategy) ---
+      const audioScripts: string[] = [];
 
       // 1. Primeiro bloco: Apenas a primeira pergunta (com Intro)
       const introPrefix = options.introText ? `${options.introText}... ` : '';
@@ -483,19 +810,7 @@ Lembre-se:
         const prevQ = options.questions[i];
         const nextQ = options.questions[i + 1];
         
-        let transitionText = '';
-        // Verifica mudança de dificuldade se a opção estiver ativa
-        if (options.narrateDifficultyChange && nextQ.difficulty && nextQ.difficulty !== prevQ.difficulty) {
-           const customText = options.transitionTexts?.[nextQ.difficulty as keyof typeof options.transitionTexts];
-           
-           if (customText) {
-             transitionText = `${customText} `;
-           } else {
-             const diffMap: {[key: string]: string} = { 'easy': 'Fácil', 'medium': 'Médio', 'hard': 'Difícil' };
-             const diffName = diffMap[nextQ.difficulty] || nextQ.difficulty;
-             transitionText = `Agora, nível ${diffName}... `;
-           }
-        }
+        let transitionText = formatDifficultyTransition(prevQ, nextQ);
         
         const text = `${formatAnswer(prevQ)} ${transitionText}Questão ${i + 2}. ${nextQ.question} ${formatOptions(nextQ)}`;
         audioScripts.push(text);
@@ -607,8 +922,8 @@ Lembre-se:
       
       // Transcreve o arquivo FINAL concatenado para obter os timestamps reais
       // Isso é necessário porque os tempos mudaram com a inserção de silêncio
-      // e os blocos misturados
-      const transcriptionResult = await transcriptionService.transcribeFile(finalOutputPath);
+      // e os blocos misturados (com retry)
+      const transcriptionResult = await transcribeWithRetry(transcriptionService, finalOutputPath);
       
       if (!transcriptionResult.success) {
         console.warn('⚠️ [Quiz] Transcription failed:', transcriptionResult.error);

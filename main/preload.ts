@@ -444,6 +444,7 @@ const handler = {
       introText?: string;            // Texto de introdução para narrar
       narrateDifficultyChange?: boolean; // Narrar mudança de dificuldade
       transitionTexts?: { easy?: string; medium?: string; hard?: string };
+      generationMode?: 'single' | 'chunked'; // Modo de geração
     }) => ipcRenderer.invoke('quiz:generate-audio', options),
     
     // Listener para progresso da geração de áudio
