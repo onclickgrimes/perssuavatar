@@ -77,7 +77,7 @@ export type GeminiVoiceName = typeof GEMINI_VOICES[number];
 export class GeminiVoiceService {
     private ai: GoogleGenAI;
     //private model: string = 'gemini-2.5-flash-preview-tts';
-    private model: string = 'gemini-2.5-pro-preview-tts'; 
+    private model: string = 'gemini-2.5-flash-preview-tts'; 
     private defaultVoice: GeminiVoiceName = 'Achernar';
     private defaultTemperature: number = 1;
 
@@ -103,6 +103,21 @@ export class GeminiVoiceService {
     public setDefaultTemperature(temperature: number): void {
         this.defaultTemperature = Math.max(0, Math.min(2, temperature));
         console.log(`[GeminiVoice] Temperatura padrão definida: ${this.defaultTemperature}`);
+    }
+
+    /**
+     * Define o modelo TTS (para fallback em caso de rate limit)
+     */
+    public setModel(modelName: string): void {
+        this.model = modelName;
+        console.log(`[GeminiVoice] Modelo alterado para: ${modelName}`);
+    }
+
+    /**
+     * Retorna o modelo atual
+     */
+    public getModel(): string {
+        return this.model;
     }
 
     /**

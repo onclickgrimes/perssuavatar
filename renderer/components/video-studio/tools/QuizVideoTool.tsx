@@ -208,7 +208,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
           explanation: q.explanation,
           difficulty: q.difficulty,
         })),
-        voiceName: 'Kore',
+        voiceName: 'Achernar',
         includeOptions: audioIncludeOptions,
         includeCorrectAnswer: audioIncludeCorrectAnswer,
         includeExplanations: audioIncludeExplanations,

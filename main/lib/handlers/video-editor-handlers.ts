@@ -425,6 +425,74 @@ Lembre-se:
     return { success: false, error: 'All retry attempts exhausted' };
   };
 
+  // Helper para geração de áudio com retry e fallback de modelo
+  const generateSpeechWithRetry = async (
+    voiceService: any, 
+    options: { text: string; voiceName?: string; outputPath: string },
+    maxRetries = 3,
+    delayMs = 3000
+  ) => {
+    const PRO_MODEL = 'gemini-2.5-pro-preview-tts';
+    const FLASH_MODEL = 'gemini-2.5-flash-preview-tts';
+    
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await voiceService.generateSpeech(options);
+        
+        if (result.success) {
+          return result;
+        }
+        
+        // Verifica se é erro 429 (rate limit)
+        const is429 = result.error && (
+          result.error.includes('429') || 
+          result.error.toLowerCase().includes('rate limit') ||
+          result.error.toLowerCase().includes('quota') ||
+          result.error.toLowerCase().includes('resource exhausted')
+        );
+        
+        if (is429) {
+          const currentModel = voiceService.getModel();
+          const newModel = currentModel === PRO_MODEL ? FLASH_MODEL : PRO_MODEL;
+          console.log(`⚠️ [TTS] Rate limit hit (429), switching from ${currentModel} to ${newModel}...`);
+          voiceService.setModel(newModel);
+        }
+        
+        if (attempt < maxRetries) {
+          console.log(`⚠️ [TTS] Attempt ${attempt}/${maxRetries} failed: ${result.error}, retrying in ${delayMs/1000}s...`);
+          await new Promise(r => setTimeout(r, delayMs));
+        } else {
+          return result;
+        }
+        
+      } catch (error: any) {
+        const errorMessage = error.message || String(error);
+        
+        // Verifica se é erro 429
+        const is429 = errorMessage.includes('429') || 
+          errorMessage.toLowerCase().includes('rate limit') ||
+          errorMessage.toLowerCase().includes('quota') ||
+          errorMessage.toLowerCase().includes('resource exhausted');
+        
+        if (is429) {
+          const currentModel = voiceService.getModel();
+          const newModel = currentModel === PRO_MODEL ? FLASH_MODEL : PRO_MODEL;
+          console.log(`⚠️ [TTS] Rate limit hit (429), switching from ${currentModel} to ${newModel}...`);
+          voiceService.setModel(newModel);
+        }
+        
+        if (attempt < maxRetries) {
+          console.log(`⚠️ [TTS] Attempt ${attempt}/${maxRetries} error: ${errorMessage}, retrying in ${delayMs/1000}s...`);
+          await new Promise(r => setTimeout(r, delayMs));
+        } else {
+          console.error(`❌ [TTS] All ${maxRetries} attempts failed`);
+          return { success: false, error: errorMessage };
+        }
+      }
+    }
+    return { success: false, error: 'All retry attempts exhausted' };
+  };
+
   // Handler para gerar áudio do quiz com estratégia otimizada
   // Estrutura: [P1] + silêncio + [R1+P2] + silêncio + [R2+P3]...
   ipcMain.handle('quiz:generate-audio', async (
@@ -536,9 +604,9 @@ Lembre-se:
         }
         
         const introPath = path.join(tempDir, `chunk_intro_${timestamp}.wav`);
-        const introResult = await voiceService.generateSpeech({
+        const introResult = await generateSpeechWithRetry(voiceService, {
           text: `${options.introText}...`,
-          voiceName: options.voiceName || 'Kore',
+          voiceName: options.voiceName || 'Achernar',
           outputPath: introPath
         });
         
@@ -591,9 +659,9 @@ Lembre-se:
         console.log(`📝 [Quiz] Chunk ${chunkIndex} script (Q${chunkStart + 1}-${chunkEnd}): ${chunkScript.substring(0, 100)}...`);
         
         const chunkPath = path.join(tempDir, `chunk_${chunkIndex}_${timestamp}.wav`);
-        const chunkResult = await voiceService.generateSpeech({
+        const chunkResult = await generateSpeechWithRetry(voiceService, {
           text: chunkScript,
-          voiceName: options.voiceName || 'Kore',
+          voiceName: options.voiceName || 'Achernar',
           outputPath: chunkPath
         });
         
