@@ -514,265 +514,191 @@ Lembre-se:
       };
 
       // ========================================
-      // MODO SINGLE: Gera um único arquivo de áudio
+      // MODO CHUNKED OTIMIZADO: Intro + 5 questões por vez
       // ========================================
-        console.log(`📝 [Quiz] Mode: SINGLE - generating one complete audio file`);
-        
-        // Constrói o script COMPLETO
-        let fullScript = '';
-        
-        // Intro
-        if (options.introText) {
-          fullScript += `${options.introText}... `;
+      const QUESTIONS_PER_CHUNK = 5;
+      const totalChunks = Math.ceil(options.questions.length / QUESTIONS_PER_CHUNK) + (options.introText ? 1 : 0);
+      
+      console.log(`📝 [Quiz] Mode: CHUNKED - generating ${totalChunks} audio chunks (intro + ${QUESTIONS_PER_CHUNK} questions each)`);
+      
+      const rawAudioFiles: string[] = [];
+      let currentStep = 0;
+      
+      // --- ETAPA 1: Gerar áudio da Introdução (se houver) ---
+      if (options.introText) {
+        currentStep++;
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('quiz:audio-progress', {
+            current: currentStep,
+            total: totalChunks + 3, // chunks + concatenate + transcribe + cut
+            stage: 'generating intro'
+          });
         }
         
-        // Loop por todas as questões
-        for (let i = 0; i < options.questions.length; i++) {
-          const q = options.questions[i];
+        const introPath = path.join(tempDir, `chunk_intro_${timestamp}.wav`);
+        const introResult = await voiceService.generateSpeech({
+          text: `${options.introText}...`,
+          voiceName: options.voiceName || 'Kore',
+          outputPath: introPath
+        });
+        
+        if (!introResult.success) {
+          throw new Error(`Erro ao gerar áudio da introdução: ${introResult.error}`);
+        }
+        
+        rawAudioFiles.push(introPath);
+        console.log(`✅ [Quiz] Intro audio generated`);
+        
+        // Rate limiting entre requisições
+        await geminiRateLimiter.wait();
+      }
+      
+      // --- ETAPA 2: Gerar áudios em chunks de 5 questões ---
+      for (let chunkStart = 0; chunkStart < options.questions.length; chunkStart += QUESTIONS_PER_CHUNK) {
+        const chunkEnd = Math.min(chunkStart + QUESTIONS_PER_CHUNK, options.questions.length);
+        const chunkQuestions = options.questions.slice(chunkStart, chunkEnd);
+        const chunkIndex = Math.floor(chunkStart / QUESTIONS_PER_CHUNK);
+        
+        currentStep++;
+        if (window && !window.isDestroyed()) {
+          window.webContents.send('quiz:audio-progress', {
+            current: currentStep,
+            total: totalChunks + 3,
+            stage: `generating questions ${chunkStart + 1}-${chunkEnd}`
+          });
+        }
+        
+        // Constrói o script deste chunk
+        let chunkScript = '';
+        
+        for (let i = 0; i < chunkQuestions.length; i++) {
+          const globalIndex = chunkStart + i;
+          const q = chunkQuestions[i];
           
-          // Transição de dificuldade (exceto para primeira questão)
-          if (i > 0) {
-            const prevQ = options.questions[i - 1];
-            fullScript += formatDifficultyTransition(prevQ, q);
+          // Transição de dificuldade (exceto para primeira questão global)
+          if (globalIndex > 0) {
+            const prevQ = options.questions[globalIndex - 1];
+            chunkScript += formatDifficultyTransition(prevQ, q);
           }
           
           // Questão
-          fullScript += `Questão ${i + 1}. ${q.question} ${formatOptions(q)}`;
+          chunkScript += `Questão ${globalIndex + 1}. ${q.question} ${formatOptions(q)}`;
           
           // Resposta/Explicação
-          fullScript += formatAnswer(q);
+          chunkScript += formatAnswer(q);
         }
         
-        console.log(`📝 [Quiz] Full script: ${fullScript.substring(0, 200)}...`);
+        console.log(`📝 [Quiz] Chunk ${chunkIndex} script (Q${chunkStart + 1}-${chunkEnd}): ${chunkScript.substring(0, 100)}...`);
         
-        // Reporta progresso
-        if (window && !window.isDestroyed()) {
-          window.webContents.send('quiz:audio-progress', {
-            current: 1,
-            total: 5,
-            stage: 'generating'
-          });
-        }
-        
-        // Gera UM único arquivo de áudio (temporário)
-        const rawAudioPath = path.join(tempDir, `quiz_raw_${timestamp}.wav`);
-        const result = await voiceService.generateSpeech({
-          text: fullScript,
+        const chunkPath = path.join(tempDir, `chunk_${chunkIndex}_${timestamp}.wav`);
+        const chunkResult = await voiceService.generateSpeech({
+          text: chunkScript,
           voiceName: options.voiceName || 'Kore',
-          outputPath: rawAudioPath
+          outputPath: chunkPath
         });
         
-        if (!result.success) {
-          throw new Error(`Erro ao gerar áudio: ${result.error}`);
+        if (!chunkResult.success) {
+          throw new Error(`Erro ao gerar chunk ${chunkIndex}: ${chunkResult.error}`);
         }
         
-        console.log(`✅ [Quiz] Raw audio file generated: ${rawAudioPath}`);
+        rawAudioFiles.push(chunkPath);
+        console.log(`✅ [Quiz] Chunk ${chunkIndex} generated (Q${chunkStart + 1}-${chunkEnd})`);
         
-        // Reporta progresso - Transcrição inicial
-        if (window && !window.isDestroyed()) {
-          window.webContents.send('quiz:audio-progress', {
-            current: 2,
-            total: 5,
-            stage: 'transcribing (finding cut points)'
-          });
+        // Rate limiting entre requisições (exceto no último)
+        if (chunkEnd < options.questions.length) {
+          await geminiRateLimiter.wait();
         }
-        
-        // Transcreve para encontrar pontos de corte (marcadores de resposta)
-        const { getAudioTranscriptionService } = require('../services/audio-transcription-service');
-        const transcriptionService = getAudioTranscriptionService();
-        
-        const initialTranscription = await transcribeWithRetry(transcriptionService, rawAudioPath);
-        
-        if (!initialTranscription.success) {
-          console.warn('⚠️ [Quiz] Initial transcription failed, returning raw audio');
-          const finalPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
-          fs.copyFileSync(rawAudioPath, finalPath);
-          return { 
-            success: true, 
-            audioPath: finalPath,
-            outputDir,
-            duration: 0,
-            segments: [],
-            questionsCount: options.questions.length
-          };
+      }
+      
+      console.log(`✅ [Quiz] All ${rawAudioFiles.length} audio chunks generated`);
+      
+      // --- ETAPA 3: Concatenar todos os chunks RAW ---
+      currentStep++;
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('quiz:audio-progress', {
+          current: currentStep,
+          total: totalChunks + 3,
+          stage: 'concatenating raw chunks'
+        });
+      }
+      
+      const rawConcatListPath = path.join(tempDir, 'raw_concat_list.txt');
+      let rawConcatContent = '';
+      for (const audioFile of rawAudioFiles) {
+        if (fs.existsSync(audioFile)) {
+          rawConcatContent += `file '${audioFile.replace(/\\/g, '/').replace(/'/g, "'\\''")}'\n`;
         }
+      }
+      fs.writeFileSync(rawConcatListPath, rawConcatContent);
+      
+      const rawAudioPath = path.join(tempDir, `quiz_raw_${timestamp}.wav`);
+      try {
+        execSync(
+          `ffmpeg -y -f concat -safe 0 -i "${rawConcatListPath}" -c copy "${rawAudioPath}"`,
+          { encoding: 'utf8', stdio: 'pipe' }
+        );
+        console.log(`✅ [Quiz] Raw audio concatenated: ${rawAudioPath}`);
+      } catch (e: any) {
+        throw new Error('Erro ao concatenar áudios raw com ffmpeg');
+      }
+      
+      // --- ETAPA 4: Transcrever para encontrar pontos de corte ---
+      currentStep++;
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('quiz:audio-progress', {
+          current: currentStep,
+          total: totalChunks + 3,
+          stage: 'transcribing (finding cut points)'
+        });
+      }
+      
+      const { getAudioTranscriptionService } = require('../services/audio-transcription-service');
+      const transcriptionService = getAudioTranscriptionService();
+      
+      const initialTranscription = await transcribeWithRetry(transcriptionService, rawAudioPath);
+      
+      if (!initialTranscription.success) {
+        console.warn('⚠️ [Quiz] Initial transcription failed, returning raw audio');
+        const finalPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
+        fs.copyFileSync(rawAudioPath, finalPath);
+        return { 
+          success: true, 
+          audioPath: finalPath,
+          outputDir,
+          duration: 0,
+          segments: [],
+          questionsCount: options.questions.length
+        };
+      }
+      
+      console.log(`✅ [Quiz] Initial transcription complete. Finding answer markers...`);
+      
+      // Encontra os pontos de corte (onde "resposta correta/certa" aparece)
+      const allWords = initialTranscription.words || [];
+      const cutPoints: number[] = [];
+      
+      for (let w = 0; w < allWords.length - 1; w++) {
+        const word = allWords[w].word.toLowerCase().replace(/[^a-záàâãéèêíïóôõöúç]/g, '');
+        const nextWord = allWords[w + 1]?.word?.toLowerCase().replace(/[^a-záàâãéèêíïóôõöúç]/g, '') || '';
         
-        console.log(`✅ [Quiz] Initial transcription complete. Finding answer markers...`);
-        
-        // Encontra os pontos de corte (onde "resposta correta/certa" aparece)
-        const allWords = initialTranscription.words || [];
-        const cutPoints: number[] = [];
-        
-        for (let w = 0; w < allWords.length - 1; w++) {
-          const word = allWords[w].word.toLowerCase().replace(/[^a-záàâãéèêíïóôõöúç]/g, '');
-          const nextWord = allWords[w + 1]?.word?.toLowerCase().replace(/[^a-záàâãéèêíïóôõöúç]/g, '') || '';
-          
-          // Detecta "resposta correta", "resposta certa", "resposta é"
-          if (word.includes('resposta') && (nextWord.includes('correta') || nextWord.includes('certa') || nextWord === 'é')) {
-            // Pega o timestamp um pouco antes da palavra
-            const cutTime = Math.max(0, allWords[w].start - 0.3);
-            cutPoints.push(cutTime);
-            console.log(`✂️ [Quiz] Cut point found at ${cutTime.toFixed(2)}s (${word} ${nextWord})`);
-          }
+        // Detecta "resposta correta", "resposta certa", "resposta é"
+        if (word.includes('resposta') && (nextWord.includes('correta') || nextWord.includes('certa') || nextWord === 'é')) {
+          // Pega o timestamp um pouco antes da palavra
+          const cutTime = Math.max(0, allWords[w].start - 0.3);
+          cutPoints.push(cutTime);
+          console.log(`✂️ [Quiz] Cut point found at ${cutTime.toFixed(2)}s (${word} ${nextWord})`);
         }
+      }
+      
+      console.log(`✂️ [Quiz] Found ${cutPoints.length} cut points for ${options.questions.length} questions`);
+      
+      // Se não encontrou pontos de corte, retorna o áudio raw
+      if (cutPoints.length === 0) {
+        console.warn('⚠️ [Quiz] No cut points found, returning raw audio');
+        const finalPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
+        fs.copyFileSync(rawAudioPath, finalPath);
         
-        console.log(`✂️ [Quiz] Found ${cutPoints.length} cut points for ${options.questions.length} questions`);
-        
-        // Se não encontrou pontos de corte, retorna o áudio raw
-        if (cutPoints.length === 0) {
-          console.warn('⚠️ [Quiz] No cut points found, returning raw audio');
-          const finalPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
-          fs.copyFileSync(rawAudioPath, finalPath);
-          
-          const quizSegments = initialTranscription.segments.map((seg: any) => ({
-            id: seg.id,
-            text: seg.text,
-            start: seg.start,
-            end: seg.end,
-            words: seg.words,
-          }));
-          
-          return { 
-            success: true, 
-            audioPath: finalPath,
-            outputDir,
-            duration: initialTranscription.duration,
-            segments: quizSegments,
-            words: initialTranscription.words,
-            questionsCount: options.questions.length
-          };
-        }
-        
-        // Reporta progresso - Cortando e inserindo silêncio
-        if (window && !window.isDestroyed()) {
-          window.webContents.send('quiz:audio-progress', {
-            current: 3,
-            total: 5,
-            stage: 'inserting thinking time'
-          });
-        }
-        
-        // Gera arquivo de silêncio (5 segundos)
-        const silenceFile = path.join(tempDir, 'thinking_silence.wav');
-        try {
-          execSync(
-            `ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t ${thinkingTimeSeconds} "${silenceFile}"`,
-            { encoding: 'utf8', stdio: 'pipe' }
-          );
-          console.log(`✅ [Quiz] Silence file created: ${thinkingTimeSeconds}s`);
-        } catch (e) {
-          console.warn('⚠️ [Quiz] Could not create silence file');
-        }
-        
-        // Corta o áudio nos pontos identificados e insere silêncio
-        const audioParts: string[] = [];
-        let lastCutTime = 0;
-        
-        for (let i = 0; i < cutPoints.length; i++) {
-          const cutTime = cutPoints[i];
-          const partPath = path.join(tempDir, `part_${i}.wav`);
-          
-          // Extrai a parte do áudio (de lastCutTime até cutTime)
-          const duration = cutTime - lastCutTime;
-          if (duration > 0.1) {
-            try {
-              execSync(
-                `ffmpeg -y -i "${rawAudioPath}" -ss ${lastCutTime} -t ${duration} -c copy "${partPath}"`,
-                { encoding: 'utf8', stdio: 'pipe' }
-              );
-              audioParts.push(partPath);
-              console.log(`✂️ [Quiz] Part ${i}: ${lastCutTime.toFixed(2)}s - ${cutTime.toFixed(2)}s`);
-            } catch (e) {
-              console.warn(`⚠️ [Quiz] Failed to extract part ${i}`);
-            }
-          }
-          
-          // Adiciona silêncio após esta parte (exceto após a última resposta)
-          if (fs.existsSync(silenceFile)) {
-            audioParts.push(silenceFile);
-          }
-          
-          lastCutTime = cutTime;
-        }
-        
-        // Adiciona a parte final (da última resposta até o fim)
-        const finalPartPath = path.join(tempDir, `part_final.wav`);
-        try {
-          execSync(
-            `ffmpeg -y -i "${rawAudioPath}" -ss ${lastCutTime} -c copy "${finalPartPath}"`,
-            { encoding: 'utf8', stdio: 'pipe' }
-          );
-          audioParts.push(finalPartPath);
-          console.log(`✂️ [Quiz] Final part: ${lastCutTime.toFixed(2)}s - end`);
-        } catch (e) {
-          console.warn('⚠️ [Quiz] Failed to extract final part');
-        }
-        
-        // Reporta progresso - Concatenando
-        if (window && !window.isDestroyed()) {
-          window.webContents.send('quiz:audio-progress', {
-            current: 4,
-            total: 5,
-            stage: 'concatenating'
-          });
-        }
-        
-        // Cria lista de concatenação
-        const concatListPath = path.join(tempDir, 'concat_list.txt');
-        let concatContent = '';
-        for (const part of audioParts) {
-          if (fs.existsSync(part)) {
-            concatContent += `file '${part.replace(/\\/g, '/').replace(/'/g, "'\\''")}'\n`;
-          }
-        }
-        fs.writeFileSync(concatListPath, concatContent);
-        
-        // Executa concatenação
-        const finalOutputPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
-        try {
-          execSync(
-            `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${finalOutputPath}"`,
-            { encoding: 'utf8', stdio: 'pipe' }
-          );
-          console.log(`✅ [Quiz] Final audio created with thinking time: ${finalOutputPath}`);
-        } catch (e: any) {
-          console.warn('⚠️ [Quiz] Concatenation failed, using raw audio');
-          fs.copyFileSync(rawAudioPath, finalOutputPath);
-        }
-        
-        // Reporta progresso - Re-transcrição final
-        if (window && !window.isDestroyed()) {
-          window.webContents.send('quiz:audio-progress', {
-            current: 5,
-            total: 5,
-            stage: 'final transcription'
-          });
-        }
-        
-        // Re-transcreve o áudio FINAL para obter timestamps corretos (com retry)
-        const finalTranscription = await transcribeWithRetry(transcriptionService, finalOutputPath);
-        
-        // Limpeza
-        try {
-          fs.rmSync(tempDir, { recursive: true, force: true });
-        } catch (e) {}
-        
-        if (!finalTranscription.success) {
-          console.warn('⚠️ [Quiz] Final transcription failed');
-          return { 
-            success: true, 
-            audioPath: finalOutputPath,
-            outputDir,
-            duration: 0,
-            segments: [],
-            questionsCount: options.questions.length
-          };
-        }
-        
-        console.log(`✅ [Quiz] Final transcription complete. Duration: ${finalTranscription.duration}s`);
-        
-        // Mapeia segmentos
-        const quizSegments = finalTranscription.segments.map((seg: any) => ({
+        const quizSegments = initialTranscription.segments.map((seg: any) => ({
           id: seg.id,
           text: seg.text,
           start: seg.start,
@@ -782,13 +708,162 @@ Lembre-se:
         
         return { 
           success: true, 
-          audioPath: finalOutputPath,
+          audioPath: finalPath,
           outputDir,
-          duration: finalTranscription.duration,
+          duration: initialTranscription.duration,
           segments: quizSegments,
-          words: finalTranscription.words,
+          words: initialTranscription.words,
           questionsCount: options.questions.length
         };
+      }
+      
+      // --- ETAPA 5: Cortando e inserindo silêncio ---
+      currentStep++;
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('quiz:audio-progress', {
+          current: currentStep,
+          total: totalChunks + 3,
+          stage: 'inserting thinking time'
+        });
+      }
+      
+      // Gera arquivo de silêncio (5 segundos)
+      const silenceFile = path.join(tempDir, 'thinking_silence.wav');
+      try {
+        execSync(
+          `ffmpeg -y -f lavfi -i anullsrc=r=24000:cl=mono -t ${thinkingTimeSeconds} "${silenceFile}"`,
+          { encoding: 'utf8', stdio: 'pipe' }
+        );
+        console.log(`✅ [Quiz] Silence file created: ${thinkingTimeSeconds}s`);
+      } catch (e) {
+        console.warn('⚠️ [Quiz] Could not create silence file');
+      }
+      
+      // Corta o áudio nos pontos identificados e insere silêncio
+      const audioParts: string[] = [];
+      let lastCutTime = 0;
+      
+      for (let i = 0; i < cutPoints.length; i++) {
+        const cutTime = cutPoints[i];
+        const partPath = path.join(tempDir, `part_${i}.wav`);
+        
+        // Extrai a parte do áudio (de lastCutTime até cutTime)
+        const duration = cutTime - lastCutTime;
+        if (duration > 0.1) {
+          try {
+            execSync(
+              `ffmpeg -y -i "${rawAudioPath}" -ss ${lastCutTime} -t ${duration} -c copy "${partPath}"`,
+              { encoding: 'utf8', stdio: 'pipe' }
+            );
+            audioParts.push(partPath);
+            console.log(`✂️ [Quiz] Part ${i}: ${lastCutTime.toFixed(2)}s - ${cutTime.toFixed(2)}s`);
+          } catch (e) {
+            console.warn(`⚠️ [Quiz] Failed to extract part ${i}`);
+          }
+        }
+        
+        // Adiciona silêncio após esta parte
+        if (fs.existsSync(silenceFile)) {
+          audioParts.push(silenceFile);
+        }
+        
+        lastCutTime = cutTime;
+      }
+      
+      // Adiciona a parte final (da última resposta até o fim)
+      const finalPartPath = path.join(tempDir, `part_final.wav`);
+      try {
+        execSync(
+          `ffmpeg -y -i "${rawAudioPath}" -ss ${lastCutTime} -c copy "${finalPartPath}"`,
+          { encoding: 'utf8', stdio: 'pipe' }
+        );
+        audioParts.push(finalPartPath);
+        console.log(`✂️ [Quiz] Final part: ${lastCutTime.toFixed(2)}s - end`);
+      } catch (e) {
+        console.warn('⚠️ [Quiz] Failed to extract final part');
+      }
+      
+      // --- ETAPA 6: Concatenação final ---
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('quiz:audio-progress', {
+          current: totalChunks + 2,
+          total: totalChunks + 3,
+          stage: 'final concatenation'
+        });
+      }
+      
+      // Cria lista de concatenação
+      const concatListPath = path.join(tempDir, 'concat_list.txt');
+      let concatContent = '';
+      for (const part of audioParts) {
+        if (fs.existsSync(part)) {
+          concatContent += `file '${part.replace(/\\/g, '/').replace(/'/g, "'\\''")}'\n`;
+        }
+      }
+      fs.writeFileSync(concatListPath, concatContent);
+      
+      // Executa concatenação
+      const finalOutputPath = path.join(outputDir, `quiz_complete_${timestamp}.wav`);
+      try {
+        execSync(
+          `ffmpeg -y -f concat -safe 0 -i "${concatListPath}" -c copy "${finalOutputPath}"`,
+          { encoding: 'utf8', stdio: 'pipe' }
+        );
+        console.log(`✅ [Quiz] Final audio created with thinking time: ${finalOutputPath}`);
+      } catch (e: any) {
+        console.warn('⚠️ [Quiz] Concatenation failed, using raw audio');
+        fs.copyFileSync(rawAudioPath, finalOutputPath);
+      }
+      
+      // --- ETAPA 7: Re-transcrição final ---
+      if (window && !window.isDestroyed()) {
+        window.webContents.send('quiz:audio-progress', {
+          current: totalChunks + 3,
+          total: totalChunks + 3,
+          stage: 'final transcription'
+        });
+      }
+      
+      // Re-transcreve o áudio FINAL para obter timestamps corretos (com retry)
+      const finalTranscription = await transcribeWithRetry(transcriptionService, finalOutputPath);
+      
+      // Limpeza
+      try {
+        fs.rmSync(tempDir, { recursive: true, force: true });
+      } catch (e) {}
+      
+      if (!finalTranscription.success) {
+        console.warn('⚠️ [Quiz] Final transcription failed');
+        return { 
+          success: true, 
+          audioPath: finalOutputPath,
+          outputDir,
+          duration: 0,
+          segments: [],
+          questionsCount: options.questions.length
+        };
+      }
+      
+      console.log(`✅ [Quiz] Final transcription complete. Duration: ${finalTranscription.duration}s`);
+      
+      // Mapeia segmentos
+      const quizSegments = finalTranscription.segments.map((seg: any) => ({
+        id: seg.id,
+        text: seg.text,
+        start: seg.start,
+        end: seg.end,
+        words: seg.words,
+      }));
+      
+      return { 
+        success: true, 
+        audioPath: finalOutputPath,
+        outputDir,
+        duration: finalTranscription.duration,
+        segments: quizSegments,
+        words: finalTranscription.words,
+        questionsCount: options.questions.length
+      };
 
     } catch (error: any) {
       console.error('❌ [Quiz] Audio generation error:', error);
