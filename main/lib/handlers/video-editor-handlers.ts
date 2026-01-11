@@ -272,12 +272,16 @@ export function registerVideoEditorHandlers(): void {
       hardCount: number;
       optionsCount: number;
       provider: 'gemini' | 'openai' | 'deepseek';
+      previousQuestions?: string[]; // Histórico de perguntas para evitar repetição
     }
   ) => {
     try {
       const totalQuestions = options.easyCount + options.mediumCount + options.hardCount;
       console.log(`🎯 [Quiz] Generating quiz with ${options.provider}...`);
       console.log(`📝 Theme: "${options.theme}", Easy: ${options.easyCount}, Medium: ${options.mediumCount}, Hard: ${options.hardCount}`);
+      if (options.previousQuestions?.length) {
+        console.log(`📜 [Quiz] Avoiding ${options.previousQuestions.length} previous questions`);
+      }
 
       const difficultyText: Record<string, string> = {
         easy: 'fáceis, adequadas para iniciantes',
@@ -297,9 +301,21 @@ export function registerVideoEditorHandlers(): void {
         difficultyRequests.push(`- ${options.hardCount} perguntas DIFÍCEIS (${difficultyText.hard})`);
       }
 
+      // Adiciona lista de perguntas anteriores para evitar repetição
+      let previousQuestionsSection = '';
+      if (options.previousQuestions && options.previousQuestions.length > 0) {
+        previousQuestionsSection = `
+
+IMPORTANTE - NÃO REPITA estas perguntas que já foram usadas anteriormente:
+${options.previousQuestions.map((q, i) => `${i + 1}. ${q}`).join('\n')}
+
+Crie perguntas COMPLETAMENTE DIFERENTES das listadas acima.`;
+      }
+
       const prompt = `Crie um quiz sobre "${options.theme}" com exatamente ${totalQuestions} perguntas, divididas assim:
 
 ${difficultyRequests.join('\n')}
+${previousQuestionsSection}
 
 Requisitos:
 - Cada pergunta deve ter exatamente ${options.optionsCount} opções de resposta

@@ -425,6 +425,7 @@ const handler = {
       hardCount: number;
       optionsCount: number;
       provider: 'gemini' | 'openai' | 'deepseek';
+      previousQuestions?: string[]; // Histórico de perguntas para evitar repetição
     }) => ipcRenderer.invoke('quiz:generate', options),
     
     // Gerar áudio completo do quiz (um único arquivo)

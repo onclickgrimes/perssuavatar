@@ -88,6 +88,8 @@ interface QuizProfile {
   };
   // Configurações de vídeo
   aspectRatio: '9:16' | '16:9';
+  // Histórico de perguntas geradas (para evitar repetição)
+  questionHistory?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -125,6 +127,7 @@ function ProfileEditForm({ profile, isCreating, onSave, onCancel }: ProfileEditF
     audioNarrateDifficultyChange: profile.audioNarrateDifficultyChange,
     difficultyTransitionTexts: profile.difficultyTransitionTexts,
     aspectRatio: profile.aspectRatio,
+    questionHistory: (profile as QuizProfile).questionHistory || [],
   });
 
   const handleSubmit = () => {
@@ -548,6 +551,55 @@ function ProfileEditForm({ profile, isCreating, onSave, onCancel }: ProfileEditF
         )}
       </div>
 
+      {/* Histórico de Perguntas */}
+      {!isCreating && formData.questionHistory.length > 0 && (
+        <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📜</span>
+              <span className="text-white text-sm font-medium">
+                Histórico de Perguntas ({formData.questionHistory.length})
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm('Limpar todo o histórico de perguntas?')) {
+                  setFormData({ ...formData, questionHistory: [] });
+                }
+              }}
+              className="px-2 py-1 bg-red-500/20 hover:bg-red-500/30 text-red-300 rounded text-xs font-medium transition-colors"
+            >
+              🗑️ Limpar Tudo
+            </button>
+          </div>
+          <div className="max-h-48 overflow-y-auto space-y-2">
+            {formData.questionHistory.map((question, index) => (
+              <div 
+                key={index} 
+                className="flex items-start gap-2 p-2 bg-black/20 rounded-lg group"
+              >
+                <span className="text-white/40 text-xs mt-0.5 w-6 flex-shrink-0">{index + 1}.</span>
+                <p className="text-white/70 text-xs flex-1 line-clamp-2">{question}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const newHistory = formData.questionHistory.filter((_, i) => i !== index);
+                    setFormData({ ...formData, questionHistory: newHistory });
+                  }}
+                  className="opacity-0 group-hover:opacity-100 transition-opacity px-1.5 py-0.5 bg-red-500/20 hover:bg-red-500/40 text-red-300 rounded text-xs"
+                >
+                  ✕
+                </button>
+              </div>
+            ))}
+          </div>
+          <p className="text-white/40 text-xs mt-2">
+            Estas perguntas serão evitadas ao gerar novas questões
+          </p>
+        </div>
+      )}
+
       {/* Botões */}
       <div className="flex justify-end gap-3 pt-4 border-t border-white/10">
         <button
@@ -817,6 +869,8 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         hardCount: config.hardCount,
         optionsCount: config.optionsCount,
         provider: config.provider,
+        // Passa o histórico de perguntas do perfil selecionado para evitar repetições
+        previousQuestions: selectedProfile?.questionHistory || [],
       }) as { success: boolean; questions?: QuizQuestion[]; error?: string };
 
       if (!result.success) {
@@ -890,6 +944,22 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       setAudioDuration(result.duration || 0);
       setAudioSegments(result.segments || []);
       setQuestionTimestamps(result.questionTimestamps || []); // Timestamps precisos!
+      
+      // Salva automaticamente as perguntas no histórico do perfil
+      if (selectedProfile && questions.length > 0) {
+        const questionTexts = questions.map(q => q.question);
+        const existingHistory = selectedProfile.questionHistory || [];
+        const newHistory = [...existingHistory, ...questionTexts];
+        
+        const updatedProfiles = profiles.map(p => 
+          p.id === selectedProfile.id 
+            ? { ...p, questionHistory: newHistory, updatedAt: new Date().toISOString() }
+            : p
+        );
+        saveProfiles(updatedProfiles);
+        setSelectedProfile({ ...selectedProfile, questionHistory: newHistory });
+        console.log(`📜 [QuizGenerator] ${questionTexts.length} perguntas salvas automaticamente no histórico do perfil "${selectedProfile.name}"`);
+      }
       
       console.log('✅ [QuizGenerator] Áudio completo gerado:', result.audioPath);
       console.log(`✅ [QuizGenerator] ${result.segments?.length || 0} segments sincronizados, duração: ${result.duration?.toFixed(2)}s`);
