@@ -490,6 +490,7 @@ const handler = {
         answerTime: number;
         endTime: number;
       }>;
+      visualTheme?: 'comics' | 'vintage';
       width?: number;
       height?: number;
     }) => ipcRenderer.invoke('quiz:render', options),

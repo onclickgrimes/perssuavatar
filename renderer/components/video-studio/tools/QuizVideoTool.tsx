@@ -57,6 +57,26 @@ const AI_PROVIDERS = [
   { id: 'deepseek', name: 'DeepSeek', icon: '🔮', description: 'DeepSeek Chat', color: 'from-purple-500 to-pink-500' },
 ];
 
+// Temas visuais disponíveis
+const VISUAL_THEMES = [
+  { 
+    id: 'comics', 
+    name: 'Comics', 
+    icon: '🎨', 
+    description: 'Colorido e divertido', 
+    preview: '🔵🟡🟣',
+    colors: ['#00D4E4', '#FFE135', '#E91E8C']
+  },
+  { 
+    id: 'vintage', 
+    name: 'Vintage', 
+    icon: '📜', 
+    description: 'Pergaminho clássico', 
+    preview: '📿✝️⛪',
+    colors: ['#F5E6C8', '#C9A227', '#5D4037']
+  },
+];
+
 // Interface para perfil/nicho de Quiz
 interface QuizProfile {
   id: string;
@@ -88,6 +108,7 @@ interface QuizProfile {
   };
   // Configurações de vídeo
   aspectRatio: '9:16' | '16:9';
+  visualTheme: 'comics' | 'vintage';
   // Histórico de perguntas geradas (para evitar repetição)
   questionHistory?: string[];
   createdAt: string;
@@ -127,6 +148,7 @@ function ProfileEditForm({ profile, isCreating, onSave, onCancel }: ProfileEditF
     audioNarrateDifficultyChange: profile.audioNarrateDifficultyChange,
     difficultyTransitionTexts: profile.difficultyTransitionTexts,
     aspectRatio: profile.aspectRatio,
+    visualTheme: profile.visualTheme || 'comics',
     questionHistory: (profile as QuizProfile).questionHistory || [],
   });
 
@@ -444,6 +466,33 @@ function ProfileEditForm({ profile, isCreating, onSave, onCancel }: ProfileEditF
         </div>
       </div>
 
+      {/* Tema Visual */}
+      <div>
+        <label className="block text-sm font-medium text-white/70 mb-2">
+          Tema Visual
+        </label>
+        <div className="grid grid-cols-2 gap-2">
+          {VISUAL_THEMES.map((theme) => (
+            <button
+              key={theme.id}
+              type="button"
+              onClick={() => setFormData({ ...formData, visualTheme: theme.id as 'comics' | 'vintage' })}
+              className={`p-3 rounded-xl border flex items-center gap-3 transition-all ${
+                formData.visualTheme === theme.id
+                  ? 'bg-indigo-500/20 border-indigo-500/50 text-white'
+                  : 'bg-white/5 border-white/10 text-white/60 hover:bg-white/10'
+              }`}
+            >
+              <span className="text-xl">{theme.icon}</span>
+              <div className="text-left">
+                <p className="text-sm font-bold">{theme.name}</p>
+                <p className="text-xs opacity-70">{theme.description}</p>
+              </div>
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Texto de Introdução */}
       <div>
         <label className="block text-white/80 text-sm font-medium mb-2">Texto de Introdução</label>
@@ -674,6 +723,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
 
   // Configuração de Vídeo
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
+  const [visualTheme, setVisualTheme] = useState<'comics' | 'vintage'>('comics');
   const [voiceName, setVoiceName] = useState('Achernar');
 
   // Estados de Perfis/Nichos
@@ -734,6 +784,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
     setAudioNarrateDifficultyChange(profile.audioNarrateDifficultyChange);
     setDifficultyTransitionTexts(profile.difficultyTransitionTexts);
     setAspectRatio(profile.aspectRatio);
+    setVisualTheme(profile.visualTheme || 'comics');
     setSelectedProfile(profile);
     setShowProfileModal(false);
   };
@@ -761,6 +812,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
     audioNarrateDifficultyChange,
     difficultyTransitionTexts,
     aspectRatio,
+    visualTheme,
   });
 
   // Salvar novo perfil
@@ -788,6 +840,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       audioNarrateDifficultyChange: profileData.audioNarrateDifficultyChange ?? audioNarrateDifficultyChange,
       difficultyTransitionTexts: profileData.difficultyTransitionTexts || difficultyTransitionTexts,
       aspectRatio: profileData.aspectRatio || aspectRatio,
+      visualTheme: profileData.visualTheme || visualTheme,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -1094,6 +1147,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       primaryColor: config.primaryColor,
       secondaryColor: config.secondaryColor,
       backgroundColor: '#0a0a0f',
+      visualTheme,
       audioUrl,
     };
     
@@ -1143,6 +1197,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         primaryColor: config.primaryColor,
         secondaryColor: config.secondaryColor,
         backgroundColor: '#0a0a0f',
+        visualTheme, // Tema visual selecionado
         width: getDimensions().width,
         height: getDimensions().height,
         audioPath: audioOutputDir || undefined,
@@ -1622,6 +1677,55 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
             <span>💾</span>
             Baixar JSON
           </button>
+        </div>
+      )}
+
+      {/* Seleção de Tema Visual */}
+      {questions.length > 0 && (
+        <div className="mt-4 p-4 bg-indigo-500/5 border border-indigo-500/20 rounded-xl">
+          <h4 className="text-sm font-medium text-indigo-400 mb-3 flex items-center gap-2">
+            <span>🎨</span> Tema Visual
+          </h4>
+          
+          <div className="grid grid-cols-2 gap-3">
+            {VISUAL_THEMES.map((theme) => (
+              <button
+                key={theme.id}
+                onClick={() => setVisualTheme(theme.id as 'comics' | 'vintage')}
+                className={`p-4 rounded-xl border-2 transition-all group ${
+                  visualTheme === theme.id
+                    ? 'border-indigo-500 bg-indigo-500/20'
+                    : 'border-white/10 bg-white/5 hover:border-indigo-500/50 hover:bg-indigo-500/10'
+                }`}
+              >
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-2xl">{theme.icon}</span>
+                  <div className="text-left">
+                    <p className="text-white font-medium">{theme.name}</p>
+                    <p className="text-white/50 text-xs">{theme.description}</p>
+                  </div>
+                </div>
+                
+                {/* Preview de cores */}
+                <div className="flex gap-1 mt-2">
+                  {theme.colors.map((color, idx) => (
+                    <div 
+                      key={idx}
+                      className="h-3 flex-1 rounded-sm"
+                      style={{ backgroundColor: color }}
+                    />
+                  ))}
+                </div>
+                
+                {/* Indicador de selecionado */}
+                {visualTheme === theme.id && (
+                  <div className="absolute top-2 right-2 w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center">
+                    <span className="text-white text-xs">✓</span>
+                  </div>
+                )}
+              </button>
+            ))}
+          </div>
         </div>
       )}
 

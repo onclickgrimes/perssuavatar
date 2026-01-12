@@ -992,6 +992,7 @@ Lembre-se:
         answerTime: number;
         endTime: number;
       }>;
+      visualTheme?: 'comics' | 'vintage';
       width?: number;
       height?: number;
     }
@@ -1062,6 +1063,7 @@ Lembre-se:
           primaryColor: options.primaryColor || '#8B5CF6',
           secondaryColor: options.secondaryColor || '#EC4899',
           backgroundColor: options.backgroundColor || '#0a0a0f',
+          visualTheme: options.visualTheme || 'comics',
           audioUrl,
           audioDuration: options.audioDuration,
           audioSegments: options.audioSegments || [],
@@ -1093,6 +1095,7 @@ Lembre-se:
           primaryColor: options.primaryColor || '#8B5CF6',
           secondaryColor: options.secondaryColor || '#EC4899',
           backgroundColor: options.backgroundColor || '#0a0a0f',
+          visualTheme: options.visualTheme || 'comics',
           audioUrl,
         };
       }

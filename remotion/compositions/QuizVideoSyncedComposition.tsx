@@ -52,6 +52,8 @@ export const quizVideoSyncedSchema = z.object({
   primaryColor: z.string().default('#8B5CF6'),
   secondaryColor: z.string().default('#EC4899'),
   backgroundColor: z.string().default('#0a0a0f'),
+  // Tema visual (comics = colorido/divertido, vintage = pergaminho/clássico)
+  visualTheme: z.enum(['comics', 'vintage']).default('comics'),
   // Áudio
   audioUrl: z.string().optional(),
   audioDuration: z.number().default(0), // Duração total em segundos
@@ -388,7 +390,45 @@ const Timer: React.FC<{
 };
 
 
-// Componente de Opção
+// Cores do tema Comics/Cartoon
+const COMIC_COLORS = {
+  pink: '#E91E8C',        // Rosa magenta vibrante
+  pinkDark: '#B8156E',    // Rosa escuro para sombra
+  yellow: '#FFE500',      // Amarelo vibrante
+  cyan: '#00D4E4',        // Azul turquesa
+  cyanDark: '#00A8B5',    // Turquesa escuro
+  yellowBg: '#FFE135',    // Amarelo de fundo
+  white: '#FFFFFF',
+  black: '#1a1a1a',
+  green: '#32CD32',       // Verde para resposta correta
+  greenDark: '#228B22',
+  red: '#E74C3C',         // Vermelho para resposta errada
+};
+
+// Componente de Estrela decorativa
+const Star: React.FC<{
+  x: number;
+  y: number;
+  size: number;
+  rotation?: number;
+  color?: string;
+}> = ({ x, y, size, rotation = 0, color = COMIC_COLORS.black }) => (
+  <div style={{
+    position: 'absolute',
+    left: x,
+    top: y,
+    width: size,
+    height: size,
+    transform: `rotate(${rotation}deg)`,
+    fontSize: size,
+    color,
+    lineHeight: 1,
+  }}>
+    ★
+  </div>
+);
+
+// Componente de Opção - Estilo Comics/Cartoon
 const QuizOption: React.FC<{
   label: string;
   index: number;
@@ -399,11 +439,9 @@ const QuizOption: React.FC<{
   primaryColor: string;
   secondaryColor: string;
   baseScale?: number;
-}> = ({ label, index, isCorrect, showAnswer, isVisible, delay, primaryColor, secondaryColor, baseScale = 1 }) => {
+}> = ({ label, index, isCorrect, showAnswer, isVisible, delay, baseScale = 1 }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
-  
-  const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
   
   // Animação de entrada
   const slideIn = isVisible ? spring({
@@ -415,8 +453,9 @@ const QuizOption: React.FC<{
     },
   }) : 0;
   
-  const translateX = interpolate(slideIn, [0, 1], [100, 0]);
+  const translateY = interpolate(slideIn, [0, 1], [50, 0]);
   const opacity = interpolate(slideIn, [0, 1], [0, 1]);
+  const scaleAnim = interpolate(slideIn, [0, 1], [0.8, 1]);
   
   // Animação de revelação da resposta
   const answerReveal = showAnswer ? spring({
@@ -429,19 +468,182 @@ const QuizOption: React.FC<{
   }) : 0;
   
   // Cores baseadas no estado
-  let bgColor = 'rgba(255,255,255,0.05)';
-  let borderColor = 'rgba(255,255,255,0.1)';
-  let labelBg = 'rgba(255,255,255,0.1)';
+  let bgColor = COMIC_COLORS.pink;
+  let shadowColor = COMIC_COLORS.pinkDark;
+  let textColor = COMIC_COLORS.yellow;
+  let borderColor = COMIC_COLORS.pinkDark;
   
   if (showAnswer) {
     if (isCorrect) {
-      bgColor = 'rgba(34, 197, 94, 0.15)';
-      borderColor = 'rgba(34, 197, 94, 0.5)';
-      labelBg = 'rgba(34, 197, 94, 0.3)';
+      bgColor = COMIC_COLORS.green;
+      shadowColor = COMIC_COLORS.greenDark;
+      textColor = COMIC_COLORS.white;
+      borderColor = COMIC_COLORS.greenDark;
     } else {
-      bgColor = 'rgba(239, 68, 68, 0.1)';
-      borderColor = 'rgba(239, 68, 68, 0.3)';
-      labelBg = 'rgba(239, 68, 68, 0.2)';
+      bgColor = COMIC_COLORS.red;
+      shadowColor = '#A93226';
+      textColor = COMIC_COLORS.white;
+      borderColor = '#A93226';
+    }
+  }
+  
+  const scale = showAnswer && isCorrect ? 1 + answerReveal * 0.08 : 1;
+  
+  return (
+    <div style={{
+      transform: `translateY(${translateY}px) scale(${scaleAnim * scale})`,
+      opacity,
+      marginBottom: 18 * baseScale,
+      position: 'relative',
+    }}>
+      {/* Sombra 3D */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        top: 6 * baseScale,
+        backgroundColor: shadowColor,
+        borderRadius: 50 * baseScale,
+        border: `3px solid ${borderColor}`,
+      }} />
+      
+      {/* Botão principal */}
+      <div style={{
+        position: 'relative',
+        padding: `${16 * baseScale}px ${32 * baseScale}px`,
+        borderRadius: 50 * baseScale,
+        backgroundColor: bgColor,
+        border: `3px solid ${borderColor}`,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 12 * baseScale,
+        cursor: 'pointer',
+      }}>
+        {/* Option text */}
+        <span style={{
+          fontSize: 32 * baseScale,
+          color: textColor,
+          fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
+          fontWeight: 800,
+          textAlign: 'center',
+          textShadow: showAnswer && isCorrect 
+            ? `0 2px 4px rgba(0,0,0,0.3)` 
+            : 'none',
+          letterSpacing: '0.5px',
+        }}>
+          {label}
+        </span>
+        
+        {/* Indicador de resposta */}
+        {showAnswer && (
+          <div style={{
+            position: 'absolute',
+            right: 16 * baseScale,
+            width: 36 * baseScale,
+            height: 36 * baseScale,
+            borderRadius: 18 * baseScale,
+            backgroundColor: isCorrect ? 'rgba(255,255,255,0.3)' : 'rgba(0,0,0,0.2)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 24 * baseScale,
+            fontWeight: 'bold',
+            color: COMIC_COLORS.white,
+            transform: `scale(${answerReveal})`,
+          }}>
+            {isCorrect ? '✓' : '✗'}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// =====================================
+// TEMA VINTAGE (Pergaminho/Clássico)
+// =====================================
+
+const VINTAGE_COLORS = {
+  parchment: '#F5E6C8',       // Cor de pergaminho
+  parchmentDark: '#E8D4A8',   // Pergaminho escuro
+  brown: '#5D4037',           // Marrom texto
+  brownDark: '#3E2723',       // Marrom escuro
+  gold: '#C9A227',            // Dourado
+  goldDark: '#9E7B12',        // Dourado escuro
+  blue: '#2B6CB0',            // Azul opção A
+  blueDark: '#1A4971',
+  yellow: '#D69E2E',          // Amarelo opção B
+  yellowDark: '#B7791F',
+  green: '#38A169',           // Verde opção C (correta)
+  greenDark: '#276749',
+  red: '#C53030',             // Vermelho opção D
+  redDark: '#9B2C2C',
+  white: '#FFFFFF',
+  cream: '#FFF8E7',
+};
+
+// Cores das opções para o tema Vintage
+const VINTAGE_OPTION_COLORS = [
+  { bg: VINTAGE_COLORS.blue, border: VINTAGE_COLORS.blueDark, letter: 'A' },
+  { bg: VINTAGE_COLORS.yellow, border: VINTAGE_COLORS.yellowDark, letter: 'B' },
+  { bg: VINTAGE_COLORS.green, border: VINTAGE_COLORS.greenDark, letter: 'C' },
+  { bg: VINTAGE_COLORS.red, border: VINTAGE_COLORS.redDark, letter: 'D' },
+  { bg: VINTAGE_COLORS.gold, border: VINTAGE_COLORS.goldDark, letter: 'E' },
+  { bg: VINTAGE_COLORS.brown, border: VINTAGE_COLORS.brownDark, letter: 'F' },
+];
+
+// Componente de Opção - Estilo Vintage/Pergaminho
+const VintageQuizOption: React.FC<{
+  label: string;
+  index: number;
+  isCorrect: boolean;
+  showAnswer: boolean;
+  isVisible: boolean;
+  delay: number;
+  baseScale?: number;
+}> = ({ label, index, isCorrect, showAnswer, isVisible, delay, baseScale = 1 }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  
+  const letters = ['A', 'B', 'C', 'D', 'E', 'F'];
+  const optionStyle = VINTAGE_OPTION_COLORS[index] || VINTAGE_OPTION_COLORS[0];
+  
+  // Animação de entrada
+  const slideIn = isVisible ? spring({
+    frame: frame - delay,
+    fps,
+    config: {
+      damping: 15,
+      stiffness: 100,
+    },
+  }) : 0;
+  
+  const translateY = interpolate(slideIn, [0, 1], [30, 0]);
+  const opacity = interpolate(slideIn, [0, 1], [0, 1]);
+  const scaleAnim = interpolate(slideIn, [0, 1], [0.95, 1]);
+  
+  // Animação de revelação da resposta
+  const answerReveal = showAnswer ? spring({
+    frame: frame - delay,
+    fps,
+    config: {
+      damping: 12,
+      stiffness: 200,
+    },
+  }) : 0;
+  
+  // Cores baseadas no estado
+  let bgColor = VINTAGE_COLORS.cream;
+  let borderColor = optionStyle.border;
+  let textColor = VINTAGE_COLORS.brownDark;
+  
+  if (showAnswer) {
+    if (isCorrect) {
+      bgColor = '#C6F6D5'; // Verde claro
+      borderColor = VINTAGE_COLORS.greenDark;
+    } else {
+      bgColor = '#FED7D7'; // Vermelho claro
+      borderColor = VINTAGE_COLORS.redDark;
     }
   }
   
@@ -449,64 +651,57 @@ const QuizOption: React.FC<{
   
   return (
     <div style={{
-      transform: `translateX(${translateX}px) scale(${scale})`,
+      transform: `translateY(${translateY}px) scale(${scaleAnim * scale})`,
       opacity,
-      padding: `${20 * baseScale}px ${24 * baseScale}px`,
-      marginBottom: 16 * baseScale,
-      borderRadius: 16 * baseScale,
-      backgroundColor: bgColor,
-      border: `2px solid ${borderColor}`,
-      display: 'flex',
-      alignItems: 'center',
-      gap: 20 * baseScale,
-      transition: 'background-color 0.3s, border-color 0.3s',
+      marginBottom: 14 * baseScale,
+      position: 'relative',
     }}>
-      {/* Letter badge */}
+      {/* Botão principal */}
       <div style={{
-        width: 50 * baseScale,
-        height: 50 * baseScale,
+        position: 'relative',
+        padding: `${14 * baseScale}px ${20 * baseScale}px`,
         borderRadius: 12 * baseScale,
-        background: showAnswer && isCorrect 
-          ? `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`
-          : labelBg,
+        backgroundColor: bgColor,
+        border: `3px solid ${borderColor}`,
         display: 'flex',
         alignItems: 'center',
-        justifyContent: 'center',
-        fontSize: 24 * baseScale,
-        fontWeight: 'bold',
-        color: 'white',
-        fontFamily: 'Inter, sans-serif',
+        gap: 14 * baseScale,
+        boxShadow: '0 3px 8px rgba(0,0,0,0.15)',
       }}>
-        {letters[index]}
-      </div>
-      
-      {/* Option text */}
-      <span style={{
-        fontSize: 28 * baseScale,
-        color: 'white',
-        fontFamily: 'Inter, sans-serif',
-        fontWeight: 500,
-        flex: 1,
-      }}>
-        {label}
-      </span>
-      
-      {/* Correct/Wrong indicator */}
-      {showAnswer && (
+        {/* Letra da opção */}
         <div style={{
-          width: 40 * baseScale,
-          height: 40 * baseScale,
-          borderRadius: 20 * baseScale,
-          backgroundColor: isCorrect ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          fontSize: 24 * baseScale,
-          transform: `scale(${answerReveal})`,
+          fontFamily: "'Cinzel', 'Times New Roman', serif",
+          fontSize: 28 * baseScale,
+          fontWeight: 700,
+          color: optionStyle.border,
+          minWidth: 35 * baseScale,
         }}>
-          {isCorrect ? '✓' : '✗'}
+          {letters[index]}.
         </div>
-      )}
+        
+        {/* Texto da opção */}
+        <span style={{
+          fontSize: 26 * baseScale,
+          color: textColor,
+          fontFamily: "'Cinzel', 'Times New Roman', serif",
+          fontWeight: 600,
+          flex: 1,
+        }}>
+          {label}
+        </span>
+        
+        {/* Indicador de resposta */}
+        {showAnswer && isCorrect && (
+          <div style={{
+            fontSize: 28 * baseScale,
+            color: VINTAGE_COLORS.greenDark,
+            fontWeight: 'bold',
+            transform: `scale(${answerReveal})`,
+          }}>
+            ✓
+          </div>
+        )}
+      </div>
     </div>
   );
 };
@@ -518,6 +713,7 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
   primaryColor = '#8B5CF6',
   secondaryColor = '#EC4899',
   backgroundColor = '#0a0a0f',
+  visualTheme = 'comics',
   audioUrl,
   audioDuration = 0,
   audioSegments = [],
@@ -619,13 +815,138 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
   // Frame onde o áudio deve começar
   const audioStartFrame = Math.ceil(visualIntroOffset * fps);
   
-  // Intro
-  if (isIntro) {
+  // =====================================
+  // INTRO - Tema Vintage (Pergaminho)
+  // =====================================
+  if (isIntro && visualTheme === 'vintage') {
     const titleScale = spring({ frame, fps, config: { damping: 12, stiffness: 80 } });
     const subtitleOpacity = spring({ frame: frame - 15, fps, config: { damping: 15 } });
     
     return (
-      <AbsoluteFill style={{ backgroundColor, opacity }}>
+      <AbsoluteFill style={{ backgroundColor: VINTAGE_COLORS.parchment, opacity }}>
+        {/* Áudio */}
+        {audioUrl && (
+          <Sequence from={audioStartFrame} layout="none">
+            <Audio src={audioUrl} volume={1} />
+          </Sequence>
+        )}
+        
+        {/* Fundo de pergaminho com textura */}
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          background: `
+            radial-gradient(ellipse at center, ${VINTAGE_COLORS.parchment} 0%, ${VINTAGE_COLORS.parchmentDark} 100%)
+          `,
+        }} />
+        
+        {/* Bordas decorativas */}
+        <div style={{
+          position: 'absolute',
+          inset: 20 * baseScale,
+          border: `8px double ${VINTAGE_COLORS.gold}`,
+          borderRadius: 10 * baseScale,
+          pointerEvents: 'none',
+        }} />
+        
+        {/* Cantos decorativos */}
+        {[
+          { top: 10, left: 10 },
+          { top: 10, right: 10 },
+          { bottom: 10, left: 10 },
+          { bottom: 10, right: 10 },
+        ].map((pos, i) => (
+          <div key={i} style={{
+            position: 'absolute',
+            ...Object.fromEntries(
+              Object.entries(pos).map(([k, v]) => [k, (v as number) * baseScale])
+            ),
+            fontSize: 40 * baseScale,
+            color: VINTAGE_COLORS.gold,
+            transform: `scale(${titleScale})`,
+          }}>
+            ✦
+          </div>
+        ))}
+        
+        {/* Título principal */}
+        <div style={{
+          position: 'absolute',
+          top: height * 0.15,
+          left: '50%',
+          transform: `translateX(-50%) scale(${titleScale})`,
+          textAlign: 'center',
+        }}>
+          <div style={{
+            fontFamily: "'Cinzel Decorative', 'Times New Roman', serif",
+            fontSize: 72 * baseScale,
+            fontWeight: 900,
+            color: VINTAGE_COLORS.brownDark,
+            textShadow: `
+              2px 2px 0 ${VINTAGE_COLORS.gold},
+              4px 4px 8px rgba(0,0,0,0.3)
+            `,
+            letterSpacing: '4px',
+          }}>
+            QUIZ
+          </div>
+          <div style={{
+            fontFamily: "'Cinzel', 'Times New Roman', serif",
+            fontSize: 48 * baseScale,
+            fontWeight: 700,
+            color: VINTAGE_COLORS.brown,
+            marginTop: 10 * baseScale,
+          }}>
+            {theme}
+          </div>
+        </div>
+        
+        {/* Ícone central decorativo */}
+        <div style={{
+          position: 'absolute',
+          top: '45%',
+          left: '50%',
+          transform: `translate(-50%, -50%) scale(${subtitleOpacity})`,
+          fontSize: 120 * baseScale,
+          opacity: 0.3,
+        }}>
+          📜
+        </div>
+        
+        {/* Info de questões */}
+        <div style={{
+          position: 'absolute',
+          bottom: height * 0.2,
+          left: '50%',
+          transform: `translateX(-50%) scale(${subtitleOpacity})`,
+          padding: `${20 * baseScale}px ${40 * baseScale}px`,
+          backgroundColor: VINTAGE_COLORS.gold + '30',
+          borderRadius: 8 * baseScale,
+          border: `2px solid ${VINTAGE_COLORS.gold}`,
+        }}>
+          <span style={{
+            fontFamily: "'Cinzel', 'Times New Roman', serif",
+            fontSize: 28 * baseScale,
+            color: VINTAGE_COLORS.brownDark,
+            fontWeight: 600,
+          }}>
+            📿 {questions.length} questões
+          </span>
+        </div>
+      </AbsoluteFill>
+    );
+  }
+  
+  // =====================================
+  // INTRO - Tema Comics (Colorido)
+  // =====================================
+  if (isIntro) {
+    const titleScale = spring({ frame, fps, config: { damping: 12, stiffness: 80 } });
+    const subtitleOpacity = spring({ frame: frame - 15, fps, config: { damping: 15 } });
+    const bounceAnim = spring({ frame, fps, config: { damping: 8, stiffness: 150 } });
+    
+    return (
+      <AbsoluteFill style={{ backgroundColor: COMIC_COLORS.cyan, opacity }}>
         {/* Áudio começa se tiver intro falada OU após o delay visual */}
         {audioUrl && (
           <Sequence from={audioStartFrame} layout="none">
@@ -633,229 +954,301 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           </Sequence>
         )}
         
-        {/* Background gradient */}
+        {/* Fundo dividido - Turquesa + Amarelo */}
         <div style={{
           position: 'absolute',
           inset: 0,
-          background: `
-            radial-gradient(circle at 30% 30%, ${primaryColor}30 0%, transparent 50%),
-            radial-gradient(circle at 70% 70%, ${secondaryColor}30 0%, transparent 50%)
-          `,
+          background: `linear-gradient(to bottom, ${COMIC_COLORS.cyan} 65%, ${COMIC_COLORS.yellowBg} 65%)`,
         }} />
         
-        {/* Content */}
+        {/* Estrelas decorativas */}
+        <Star x={width * 0.08} y={height * 0.15} size={30 * baseScale} rotation={15} />
+        <Star x={width * 0.85} y={height * 0.12} size={24 * baseScale} rotation={-10} />
+        <Star x={width * 0.12} y={height * 0.35} size={20 * baseScale} rotation={25} />
+        <Star x={width * 0.92} y={height * 0.28} size={18 * baseScale} rotation={-20} />
+        <Star x={width * 0.75} y={height * 0.18} size={22 * baseScale} rotation={5} />
+        <Star x={width * 0.88} y={height * 0.45} size={16 * baseScale} rotation={30} />
+        
+        {/* Balão explosivo QUIZ! */}
         <div style={{
           position: 'absolute',
-          inset: 0,
+          top: height * 0.08,
+          left: '50%',
+          transform: `translateX(-50%) scale(${bounceAnim * titleScale})`,
           display: 'flex',
           flexDirection: 'column',
-          justifyContent: 'center',
           alignItems: 'center',
         }}>
-          <div style={{
-            width: 150 * baseScale,
-            height: 150 * baseScale,
-            borderRadius: 40 * baseScale,
-            background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            marginBottom: 40 * baseScale,
-            transform: `scale(${titleScale})`,
-            boxShadow: `0 20px 60px ${primaryColor}50`,
-          }}>
-            <span style={{ fontSize: 80 * baseScale }}>❓</span>
-          </div>
+          {/* Efeito de raios/explosão */}
+          <svg 
+            width={450 * baseScale} 
+            height={350 * baseScale} 
+            viewBox="0 0 450 350" 
+            style={{
+              position: 'absolute',
+              top: -20 * baseScale,
+              filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.2))',
+            }}
+          >
+            {/* Balão explosivo estilo comic */}
+            <path
+              d="M225,20 
+                 L260,50 L290,15 L295,60 L340,40 L320,85 
+                 L370,80 L340,120 L400,130 L350,165 
+                 L420,190 L355,210 L400,250 L340,250 
+                 L360,300 L300,275 L290,330 L240,290 
+                 L200,330 L195,280 L140,310 L160,260 
+                 L90,270 L130,225 L50,220 L110,180 
+                 L30,165 L95,135 L40,100 L110,100 
+                 L70,55 L140,75 L130,30 L190,60 L185,20 Z"
+              fill={COMIC_COLORS.pink}
+              stroke={COMIC_COLORS.pinkDark}
+              strokeWidth="4"
+            />
+            {/* Padrão de pontos (halftone) */}
+            <defs>
+              <pattern id="halftone" patternUnits="userSpaceOnUse" width="15" height="15">
+                <circle cx="7.5" cy="7.5" r="4" fill="rgba(255,255,255,0.25)" />
+              </pattern>
+            </defs>
+            <ellipse cx="225" cy="180" rx="130" ry="90" fill="url(#halftone)" />
+          </svg>
           
+          {/* Texto QUIZ! */}
           <div style={{
-            fontSize: 72 * baseScale,
-            fontWeight: 'bold',
-            color: 'white',
-            textAlign: 'center',
-            fontFamily: 'Inter, sans-serif',
-            transform: `scale(${titleScale})`,
-            marginBottom: 20 * baseScale,
-            background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
+            position: 'relative',
+            fontFamily: "'Bangers', 'Impact', 'Comic Sans MS', sans-serif",
+            fontSize: 100 * baseScale,
+            fontWeight: 900,
+            color: COMIC_COLORS.white,
+            textShadow: `
+              4px 4px 0 ${COMIC_COLORS.black},
+              -2px -2px 0 ${COMIC_COLORS.black},
+              2px -2px 0 ${COMIC_COLORS.black},
+              -2px 2px 0 ${COMIC_COLORS.black},
+              6px 6px 0 ${COMIC_COLORS.pinkDark}
+            `,
+            letterSpacing: '4px',
+            marginTop: 60 * baseScale,
+            zIndex: 10,
           }}>
-            QUIZ TIME!
+            QUIZ!
           </div>
-          
+        </div>
+        
+        {/* Card central com pergunta do tema */}
+        <div style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: `translate(-50%, -30%) scale(${subtitleOpacity})`,
+          backgroundColor: COMIC_COLORS.white,
+          borderRadius: 40 * baseScale,
+          padding: `${50 * baseScale}px ${60 * baseScale}px`,
+          boxShadow: '0 15px 40px rgba(0,0,0,0.2)',
+          border: `5px solid ${COMIC_COLORS.cyanDark}`,
+          maxWidth: width * 0.85,
+          textAlign: 'center',
+        }}>
           <div style={{
-            fontSize: 36 * baseScale,
-            color: 'white',
-            textAlign: 'center',
-            fontFamily: 'Inter, sans-serif',
-            opacity: subtitleOpacity,
+            fontSize: 42 * baseScale,
+            fontWeight: 800,
+            color: COMIC_COLORS.black,
+            fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
+            lineHeight: 1.4,
             marginBottom: 30 * baseScale,
-            padding: `0 ${40 * baseScale}px`,
           }}>
             {theme}
           </div>
           
           <div style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 12 * baseScale,
             padding: `${16 * baseScale}px ${32 * baseScale}px`,
-            borderRadius: 30 * baseScale,
-            backgroundColor: 'rgba(255,255,255,0.1)',
-            border: '1px solid rgba(255,255,255,0.2)',
+            borderRadius: 50 * baseScale,
+            backgroundColor: COMIC_COLORS.pink,
             fontSize: 24 * baseScale,
-            color: 'rgba(255,255,255,0.8)',
-            fontFamily: 'Inter, sans-serif',
-            opacity: subtitleOpacity,
+            fontWeight: 700,
+            color: COMIC_COLORS.yellow,
+            fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
+            boxShadow: `0 4px 0 ${COMIC_COLORS.pinkDark}`,
           }}>
-            {questions.length} questões
+            🎯 {questions.length} questões
           </div>
+        </div>
+        
+        {/* Mão decorativa (canto inferior esquerdo) */}
+        <div style={{
+          position: 'absolute',
+          bottom: height * 0.18,
+          left: -20 * baseScale,
+          fontSize: 180 * baseScale,
+          transform: `rotate(20deg) scale(${subtitleOpacity})`,
+          filter: 'drop-shadow(5px 5px 10px rgba(0,0,0,0.2))',
+        }}>
+          ✌️
         </div>
       </AbsoluteFill>
     );
   }
   
-  // Main Render (Questions)
-  return (
-    <AbsoluteFill style={{ backgroundColor, opacity }}>
-      {/* Áudio começa após a intro (ou imediato se tiver intro falada) */}
-      {audioUrl && (
-        <Sequence from={audioStartFrame} layout="none">
-          <Audio src={audioUrl} volume={1} />
-        </Sequence>
-      )}
-      
-      {/* Background gradient */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        background: `
-          radial-gradient(ellipse at top left, ${primaryColor}15 0%, transparent 50%),
-          radial-gradient(ellipse at bottom right, ${secondaryColor}15 0%, transparent 50%)
-        `,
-      }} />
-      
-      {/* Question number badge */}
-      <div style={{
-        position: 'absolute',
-        top: 40 * baseScale,
-        left: 40 * baseScale,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 12 * baseScale,
-      }}>
+  // =====================================
+  // QUESTÕES - Tema Vintage (Pergaminho)
+  // =====================================
+  if (visualTheme === 'vintage') {
+    return (
+      <AbsoluteFill style={{ backgroundColor: VINTAGE_COLORS.parchment, opacity }}>
+        {/* Áudio */}
+        {audioUrl && (
+          <Sequence from={audioStartFrame} layout="none">
+            <Audio src={audioUrl} volume={1} />
+          </Sequence>
+        )}
+        
+        {/* Fundo de pergaminho */}
         <div style={{
-          padding: `${8 * baseScale}px ${16 * baseScale}px`,
-          borderRadius: 20 * baseScale,
-          background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})`,
-          fontSize: 18 * baseScale,
-          fontWeight: 'bold',
-          color: 'white',
-          fontFamily: 'Inter, sans-serif',
-        }}>
-          Questão {currentQuestionIndex + 1} / {questions.length}
-        </div>
-      </div>
-      
-      {/* Timer (durante tempo de pensar) */}
-      {isShowingOptions && !isShowingAnswer && (
+          position: 'absolute',
+          inset: 0,
+          background: `
+            radial-gradient(ellipse at center, ${VINTAGE_COLORS.parchment} 0%, ${VINTAGE_COLORS.parchmentDark} 100%)
+          `,
+        }} />
+        
+        {/* Bordas decorativas */}
+        <div style={{
+          position: 'absolute',
+          inset: 15 * baseScale,
+          border: `6px double ${VINTAGE_COLORS.gold}`,
+          borderRadius: 8 * baseScale,
+          pointerEvents: 'none',
+        }} />
+        
+        {/* Título pequeno no topo */}
         <div style={{
           position: 'absolute',
           top: 40 * baseScale,
-          right: 40 * baseScale,
-          zIndex: 10,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          textAlign: 'center',
+          zIndex: 20,
         }}>
-          <Timer 
-            progress={timerProgress} 
-            primaryColor={primaryColor}
-            secondaryColor={secondaryColor}
-            size={100 * baseScale}
-          />
+          <div style={{
+            fontFamily: "'Cinzel Decorative', 'Times New Roman', serif",
+            fontSize: 42 * baseScale,
+            fontWeight: 800,
+            color: VINTAGE_COLORS.brownDark,
+            textShadow: `1px 1px 0 ${VINTAGE_COLORS.gold}`,
+          }}>
+            Quiz {theme}
+          </div>
         </div>
-      )}
-      
-      {/* Answer badge */}
-      {isShowingAnswer && (
+        
+        {/* Badge de número da questão */}
         <div style={{
           position: 'absolute',
-          top: 40 * baseScale,
-          right: 40 * baseScale,
-          padding: `${12 * baseScale}px ${24 * baseScale}px`,
-          borderRadius: 16 * baseScale,
-          background: 'linear-gradient(135deg, #22C55E, #16A34A)',
-          fontSize: 20 * baseScale,
-          fontWeight: 'bold',
-          color: 'white',
-          fontFamily: 'Inter, sans-serif',
-          transform: `scale(${spring({
-            frame: frame - ((currentQuestion?.answerRevealTime || 0) * fps),
-            fps,
-            config: { damping: 10, stiffness: 200 },
-          })})`,
-          zIndex: 10,
+          top: 100 * baseScale,
+          left: 40 * baseScale,
+          padding: `${8 * baseScale}px ${18 * baseScale}px`,
+          backgroundColor: VINTAGE_COLORS.gold + '40',
+          borderRadius: 6 * baseScale,
+          border: `2px solid ${VINTAGE_COLORS.gold}`,
+          zIndex: 15,
         }}>
-          ✓ RESPOSTA
+          <span style={{
+            fontFamily: "'Cinzel', 'Times New Roman', serif",
+            fontSize: 18 * baseScale,
+            fontWeight: 700,
+            color: VINTAGE_COLORS.brownDark,
+          }}>
+            {currentQuestionIndex + 1} / {questions.length}
+          </span>
         </div>
-      )}
-      
-      {/* Main content */}
-      <div style={{
-        position: 'absolute',
-        inset: 0,
-        display: 'flex',
-        flexDirection: isLandscape ? 'row' : 'column',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: isLandscape ? 40 * baseScale : 80 * baseScale,
-        gap: isLandscape ? 60 * baseScale : 0,
-      }}>
-        {/* Question */}
-        {currentQuestion && (
-          <>
+        
+        {/* Timer (durante tempo de pensar) */}
+        {isShowingOptions && !isShowingAnswer && (
+          <div style={{
+            position: 'absolute',
+            top: 95 * baseScale,
+            right: 40 * baseScale,
+            zIndex: 15,
+          }}>
             <div style={{
-              flex: isLandscape ? 1 : 'none',
-              transform: `scale(${questionScale})`,
-              fontSize: (isLandscape ? 56 : 48) * baseScale,
-              fontWeight: 'bold',
-              color: 'white',
-              textAlign: isLandscape ? 'left' : 'center',
-              marginBottom: isLandscape ? 0 : 60 * baseScale,
-              fontFamily: 'Inter, sans-serif',
-              textShadow: '0 4px 20px rgba(0,0,0,0.3)',
-              maxWidth: isLandscape ? 'none' : 1200 * baseScale,
-              lineHeight: 1.3,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8 * baseScale,
+              padding: `${8 * baseScale}px ${16 * baseScale}px`,
+              backgroundColor: VINTAGE_COLORS.brownDark + '20',
+              borderRadius: 6 * baseScale,
+              border: `2px solid ${VINTAGE_COLORS.brown}`,
+            }}>
+              <span style={{
+                fontSize: 24 * baseScale,
+              }}>⏱️</span>
+              <span style={{
+                fontFamily: "'Cinzel', 'Times New Roman', serif",
+                fontSize: 22 * baseScale,
+                fontWeight: 700,
+                color: VINTAGE_COLORS.brownDark,
+              }}>
+                {String(Math.floor(timerProgress * 10)).padStart(2, '0')}:{String(Math.floor((timerProgress * 10 % 1) * 60)).padStart(2, '0')}
+              </span>
+            </div>
+          </div>
+        )}
+        
+        {/* Card principal com pergunta */}
+        {currentQuestion && (
+          <div style={{
+            position: 'absolute',
+            top: isLandscape ? '18%' : '16%',
+            left: '50%',
+            transform: `translateX(-50%) scale(${questionScale})`,
+            width: isLandscape ? '88%' : '90%',
+            maxWidth: 950 * baseScale,
+          }}>
+            {/* Pergunta */}
+            <div style={{
+              fontSize: (isLandscape ? 34 : 32) * baseScale,
+              fontWeight: 700,
+              color: VINTAGE_COLORS.brownDark,
+              textAlign: 'center',
+              fontFamily: "'Cinzel', 'Times New Roman', serif",
+              marginBottom: 30 * baseScale,
+              lineHeight: 1.4,
+              padding: `0 ${20 * baseScale}px`,
             }}>
               {currentQuestion.question}
             </div>
             
-            {/* Options */}
+            {/* Opções */}
             <div style={{
-              flex: isLandscape ? 1 : 'none',
               width: '100%',
-              maxWidth: (isLandscape ? 800 : 900) * baseScale,
+              maxWidth: 800 * baseScale,
+              margin: '0 auto',
             }}>
               {currentQuestion.options.map((option, index) => (
-                <QuizOption
+                <VintageQuizOption
                   key={index}
                   label={option}
                   index={index}
-                  baseScale={baseScale}
+                  baseScale={baseScale * 0.9}
                   isCorrect={index === currentQuestion.correctIndex}
                   showAnswer={isShowingAnswer || false}
                   isVisible={isShowingOptions || false}
-                  delay={10 + index * 5}
-                  primaryColor={primaryColor}
-                  secondaryColor={secondaryColor}
+                  delay={10 + index * 6}
                 />
               ))}
             </div>
             
-            {/* Explanation */}
+            {/* Explicação */}
             {isShowingAnswer && currentQuestion.explanation && (
               <div style={{
-                marginTop: 40 * baseScale,
-                padding: `${20 * baseScale}px ${32 * baseScale}px`,
-                borderRadius: 16 * baseScale,
-                backgroundColor: 'rgba(139, 92, 246, 0.1)',
-                border: '1px solid rgba(139, 92, 246, 0.3)',
-                maxWidth: (isLandscape ? 800 : 900) * baseScale,
+                marginTop: 25 * baseScale,
+                padding: `${18 * baseScale}px ${25 * baseScale}px`,
+                borderRadius: 12 * baseScale,
+                backgroundColor: VINTAGE_COLORS.gold + '20',
+                border: `2px solid ${VINTAGE_COLORS.gold}`,
                 transform: `translateY(${interpolate(
                   spring({
                     frame: frame - ((currentQuestion.answerRevealTime || 0) * fps) - 10,
@@ -872,26 +1265,312 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
                 }),
               }}>
                 <div style={{
-                  fontSize: 16 * baseScale,
-                  color: primaryColor,
-                  fontWeight: 'bold',
-                  marginBottom: 8 * baseScale,
-                  fontFamily: 'Inter, sans-serif',
+                  fontSize: 18 * baseScale,
+                  color: VINTAGE_COLORS.gold,
+                  fontWeight: 700,
+                  marginBottom: 6 * baseScale,
+                  fontFamily: "'Cinzel', 'Times New Roman', serif",
                 }}>
-                  💡 Explicação
+                  📖 Explicação
                 </div>
                 <div style={{
-                  fontSize: 22 * baseScale,
-                  color: 'rgba(255,255,255,0.8)',
-                  fontFamily: 'Inter, sans-serif',
+                  fontSize: 20 * baseScale,
+                  color: VINTAGE_COLORS.brownDark,
+                  fontFamily: "'Cinzel', serif",
                   lineHeight: 1.5,
+                  fontWeight: 500,
                 }}>
                   {currentQuestion.explanation}
                 </div>
               </div>
             )}
-          </>
+          </div>
         )}
+        
+        {/* Próxima questão / Botão */}
+        <div style={{
+          position: 'absolute',
+          bottom: 40 * baseScale,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12 * baseScale,
+          padding: `${12 * baseScale}px ${24 * baseScale}px`,
+          backgroundColor: VINTAGE_COLORS.brownDark,
+          borderRadius: 8 * baseScale,
+          boxShadow: '0 4px 10px rgba(0,0,0,0.3)',
+        }}>
+          <span style={{
+            fontSize: 18 * baseScale,
+            color: VINTAGE_COLORS.cream,
+            fontFamily: "'Cinzel', 'Times New Roman', serif",
+            fontWeight: 600,
+          }}>
+            PRÓXIMA
+          </span>
+        </div>
+      </AbsoluteFill>
+    );
+  }
+  
+  // =====================================
+  // QUESTÕES - Tema Comics (Colorido)
+  // =====================================
+  // Main Render (Questions)
+  return (
+    <AbsoluteFill style={{ backgroundColor: COMIC_COLORS.cyan, opacity }}>
+      {/* Áudio começa após a intro (ou imediato se tiver intro falada) */}
+      {audioUrl && (
+        <Sequence from={audioStartFrame} layout="none">
+          <Audio src={audioUrl} volume={1} />
+        </Sequence>
+      )}
+      
+      {/* Fundo dividido - Turquesa + Amarelo */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: `linear-gradient(to bottom, ${COMIC_COLORS.cyan} 65%, ${COMIC_COLORS.yellowBg} 65%)`,
+      }} />
+      
+      {/* Estrelas decorativas */}
+      <Star x={width * 0.05} y={height * 0.08} size={28 * baseScale} rotation={10} />
+      <Star x={width * 0.92} y={height * 0.05} size={22 * baseScale} rotation={-15} />
+      <Star x={width * 0.08} y={height * 0.25} size={18 * baseScale} rotation={20} />
+      <Star x={width * 0.88} y={height * 0.18} size={24 * baseScale} rotation={-5} />
+      <Star x={width * 0.15} y={height * 0.85} size={20 * baseScale} rotation={25} />
+      <Star x={width * 0.85} y={height * 0.75} size={16 * baseScale} rotation={-20} />
+      
+      {/* Pequeno balão QUIZ! no topo */}
+      <div style={{
+        position: 'absolute',
+        top: 30 * baseScale,
+        left: '50%',
+        transform: 'translateX(-50%)',
+        zIndex: 20,
+      }}>
+        <svg 
+          width={180 * baseScale} 
+          height={120 * baseScale} 
+          viewBox="0 0 180 120" 
+          style={{
+            filter: 'drop-shadow(0 5px 15px rgba(0,0,0,0.2))',
+          }}
+        >
+          <path
+            d="M90,5 
+               L110,15 L125,5 L125,22 L150,15 L140,35 
+               L170,38 L145,55 L175,70 L140,75 
+               L160,100 L120,90 L110,115 L90,95 
+               L70,115 L60,90 L20,100 L40,75 
+               L5,70 L35,55 L10,38 L40,35 
+               L30,15 L55,22 L55,5 L70,15 Z"
+            fill={COMIC_COLORS.pink}
+            stroke={COMIC_COLORS.pinkDark}
+            strokeWidth="2"
+          />
+        </svg>
+        <div style={{
+          position: 'absolute',
+          inset: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          fontFamily: "'Bangers', 'Impact', 'Comic Sans MS', sans-serif",
+          fontSize: 36 * baseScale,
+          fontWeight: 900,
+          color: COMIC_COLORS.white,
+          textShadow: `
+            2px 2px 0 ${COMIC_COLORS.black},
+            -1px -1px 0 ${COMIC_COLORS.black},
+            1px -1px 0 ${COMIC_COLORS.black},
+            -1px 1px 0 ${COMIC_COLORS.black}
+          `,
+          paddingBottom: 15 * baseScale,
+        }}>
+          QUIZ!
+        </div>
+      </div>
+      
+      {/* Badge de número da questão */}
+      <div style={{
+        position: 'absolute',
+        top: 40 * baseScale,
+        left: 40 * baseScale,
+        padding: `${10 * baseScale}px ${20 * baseScale}px`,
+        borderRadius: 30 * baseScale,
+        backgroundColor: COMIC_COLORS.pink,
+        fontSize: 18 * baseScale,
+        fontWeight: 800,
+        color: COMIC_COLORS.yellow,
+        fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
+        boxShadow: `0 4px 0 ${COMIC_COLORS.pinkDark}`,
+        zIndex: 15,
+      }}>
+        {currentQuestionIndex + 1} / {questions.length}
+      </div>
+      
+      {/* Timer (durante tempo de pensar) */}
+      {isShowingOptions && !isShowingAnswer && (
+        <div style={{
+          position: 'absolute',
+          top: 35 * baseScale,
+          right: 40 * baseScale,
+          zIndex: 15,
+        }}>
+          <Timer 
+            progress={timerProgress} 
+            primaryColor={COMIC_COLORS.pink}
+            secondaryColor={COMIC_COLORS.yellow}
+            size={90 * baseScale}
+          />
+        </div>
+      )}
+      
+      {/* Answer badge */}
+      {isShowingAnswer && (
+        <div style={{
+          position: 'absolute',
+          top: 40 * baseScale,
+          right: 40 * baseScale,
+          padding: `${14 * baseScale}px ${28 * baseScale}px`,
+          borderRadius: 30 * baseScale,
+          backgroundColor: COMIC_COLORS.green,
+          fontSize: 22 * baseScale,
+          fontWeight: 800,
+          color: COMIC_COLORS.white,
+          fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
+          boxShadow: `0 4px 0 ${COMIC_COLORS.greenDark}`,
+          transform: `scale(${spring({
+            frame: frame - ((currentQuestion?.answerRevealTime || 0) * fps),
+            fps,
+            config: { damping: 10, stiffness: 200 },
+          })})`,
+          zIndex: 15,
+        }}>
+          ✓ RESPOSTA
+        </div>
+      )}
+      
+      {/* Card principal com pergunta e opções */}
+      {currentQuestion && (
+        <div style={{
+          position: 'absolute',
+          top: isLandscape ? '15%' : '20%',
+          left: '50%',
+          transform: `translateX(-50%) scale(${questionScale})`,
+          width: isLandscape ? '90%' : '88%',
+          maxWidth: 1000 * baseScale,
+          backgroundColor: COMIC_COLORS.white,
+          borderRadius: 40 * baseScale,
+          padding: `${40 * baseScale}px ${50 * baseScale}px`,
+          boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
+          border: `5px solid ${COMIC_COLORS.cyanDark}`,
+        }}>
+          {/* Pergunta */}
+          <div style={{
+            fontSize: (isLandscape ? 38 : 34) * baseScale,
+            fontWeight: 800,
+            color: COMIC_COLORS.black,
+            textAlign: 'center',
+            fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
+            marginBottom: 35 * baseScale,
+            lineHeight: 1.35,
+          }}>
+            {currentQuestion.question}
+          </div>
+          
+          {/* Opções */}
+          <div style={{
+            width: '100%',
+          }}>
+            {currentQuestion.options.map((option, index) => (
+              <QuizOption
+                key={index}
+                label={option}
+                index={index}
+                baseScale={baseScale * 0.95}
+                isCorrect={index === currentQuestion.correctIndex}
+                showAnswer={isShowingAnswer || false}
+                isVisible={isShowingOptions || false}
+                delay={10 + index * 6}
+                primaryColor={primaryColor}
+                secondaryColor={secondaryColor}
+              />
+            ))}
+          </div>
+          
+          {/* Explicação */}
+          {isShowingAnswer && currentQuestion.explanation && (
+            <div style={{
+              marginTop: 30 * baseScale,
+              padding: `${20 * baseScale}px ${28 * baseScale}px`,
+              borderRadius: 20 * baseScale,
+              backgroundColor: COMIC_COLORS.cyan + '20',
+              border: `3px solid ${COMIC_COLORS.cyanDark}`,
+              transform: `translateY(${interpolate(
+                spring({
+                  frame: frame - ((currentQuestion.answerRevealTime || 0) * fps) - 10,
+                  fps,
+                  config: { damping: 15 },
+                }),
+                [0, 1],
+                [20, 0]
+              )}px)`,
+              opacity: spring({
+                frame: frame - ((currentQuestion.answerRevealTime || 0) * fps) - 10,
+                fps,
+                config: { damping: 15 },
+              }),
+            }}>
+              <div style={{
+                fontSize: 18 * baseScale,
+                color: COMIC_COLORS.cyanDark,
+                fontWeight: 800,
+                marginBottom: 8 * baseScale,
+                fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
+              }}>
+                💡 Explicação
+              </div>
+              <div style={{
+                fontSize: 22 * baseScale,
+                color: COMIC_COLORS.black,
+                fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
+                lineHeight: 1.5,
+                fontWeight: 600,
+              }}>
+                {currentQuestion.explanation}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      
+      {/* Mão decorativa (canto inferior) */}
+      <div style={{
+        position: 'absolute',
+        bottom: height * 0.02,
+        left: -30 * baseScale,
+        fontSize: 140 * baseScale,
+        transform: 'rotate(25deg)',
+        filter: 'drop-shadow(5px 5px 10px rgba(0,0,0,0.15))',
+        zIndex: 5,
+      }}>
+        ✌️
+      </div>
+      
+      {/* Elemento decorativo direita */}
+      <div style={{
+        position: 'absolute',
+        bottom: height * 0.05,
+        right: -20 * baseScale,
+        fontSize: 100 * baseScale,
+        transform: 'rotate(-15deg)',
+        filter: 'drop-shadow(5px 5px 10px rgba(0,0,0,0.15))',
+        zIndex: 5,
+      }}>
+        🌟
       </div>
     </AbsoluteFill>
   );
@@ -921,6 +1600,7 @@ export const defaultSyncedQuizProps: QuizVideoSyncedProps = {
   primaryColor: '#8B5CF6',
   secondaryColor: '#EC4899',
   backgroundColor: '#0a0a0f',
+  visualTheme: 'comics',
   audioDuration: 30,
   thinkingSilenceSeconds: 3,
 };
