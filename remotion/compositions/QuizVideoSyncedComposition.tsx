@@ -972,7 +972,7 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
         {/* Balão explosivo QUIZ! */}
         <div style={{
           position: 'absolute',
-          top: height * 0.08,
+          top: height * 0.02,
           left: '50%',
           transform: `translateX(-50%) scale(${bounceAnim * titleScale})`,
           display: 'flex',
@@ -986,21 +986,22 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
             viewBox="0 0 450 350" 
             style={{
               position: 'absolute',
-              top: -20 * baseScale,
+              top: 0,
               filter: 'drop-shadow(0 10px 30px rgba(0,0,0,0.2))',
+              overflow: 'visible',
             }}
           >
             {/* Balão explosivo estilo comic */}
             <path
-              d="M225,20 
-                 L260,50 L290,15 L295,60 L340,40 L320,85 
-                 L370,80 L340,120 L400,130 L350,165 
-                 L420,190 L355,210 L400,250 L340,250 
-                 L360,300 L300,275 L290,330 L240,290 
-                 L200,330 L195,280 L140,310 L160,260 
-                 L90,270 L130,225 L50,220 L110,180 
-                 L30,165 L95,135 L40,100 L110,100 
-                 L70,55 L140,75 L130,30 L190,60 L185,20 Z"
+              d="M225,40 
+                 L260,65 L290,35 L295,75 L340,60 L320,100 
+                 L370,95 L340,135 L400,145 L350,175 
+                 L420,200 L355,215 L400,255 L340,255 
+                 L360,300 L300,280 L290,325 L240,290 
+                 L200,325 L195,280 L140,305 L160,260 
+                 L90,270 L130,230 L50,225 L110,190 
+                 L30,175 L95,150 L40,120 L110,120 
+                 L70,80 L140,95 L130,55 L190,80 L185,40 Z"
               fill={COMIC_COLORS.pink}
               stroke={COMIC_COLORS.pinkDark}
               strokeWidth="4"
@@ -1011,7 +1012,7 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
                 <circle cx="7.5" cy="7.5" r="4" fill="rgba(255,255,255,0.25)" />
               </pattern>
             </defs>
-            <ellipse cx="225" cy="180" rx="130" ry="90" fill="url(#halftone)" />
+            <ellipse cx="225" cy="185" rx="130" ry="90" fill="url(#halftone)" />
           </svg>
           
           {/* Texto QUIZ! */}
@@ -1029,7 +1030,7 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
               6px 6px 0 ${COMIC_COLORS.pinkDark}
             `,
             letterSpacing: '4px',
-            marginTop: 60 * baseScale,
+            marginTop: 80 * baseScale,
             zIndex: 10,
           }}>
             QUIZ!
@@ -1043,20 +1044,21 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           left: '50%',
           transform: `translate(-50%, -30%) scale(${subtitleOpacity})`,
           backgroundColor: COMIC_COLORS.white,
-          borderRadius: 40 * baseScale,
-          padding: `${50 * baseScale}px ${60 * baseScale}px`,
-          boxShadow: '0 15px 40px rgba(0,0,0,0.2)',
-          border: `5px solid ${COMIC_COLORS.cyanDark}`,
-          maxWidth: width * 0.85,
+          borderRadius: 50 * baseScale,
+          padding: `${70 * baseScale}px ${80 * baseScale}px`,
+          boxShadow: '0 20px 50px rgba(0,0,0,0.25)',
+          border: `6px solid ${COMIC_COLORS.cyanDark}`,
+          maxWidth: width * 0.92,
+          minWidth: width * 0.75,
           textAlign: 'center',
         }}>
           <div style={{
-            fontSize: 42 * baseScale,
+            fontSize: 52 * baseScale,
             fontWeight: 800,
             color: COMIC_COLORS.black,
             fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
             lineHeight: 1.4,
-            marginBottom: 30 * baseScale,
+            marginBottom: 40 * baseScale,
           }}>
             {theme}
           </div>
@@ -1064,15 +1066,15 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           <div style={{
             display: 'inline-flex',
             alignItems: 'center',
-            gap: 12 * baseScale,
-            padding: `${16 * baseScale}px ${32 * baseScale}px`,
+            gap: 14 * baseScale,
+            padding: `${20 * baseScale}px ${40 * baseScale}px`,
             borderRadius: 50 * baseScale,
             backgroundColor: COMIC_COLORS.pink,
-            fontSize: 24 * baseScale,
+            fontSize: 30 * baseScale,
             fontWeight: 700,
             color: COMIC_COLORS.yellow,
             fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
-            boxShadow: `0 4px 0 ${COMIC_COLORS.pinkDark}`,
+            boxShadow: `0 5px 0 ${COMIC_COLORS.pinkDark}`,
           }}>
             🎯 {questions.length} questões
           </div>
@@ -1457,26 +1459,28 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
       {currentQuestion && (
         <div style={{
           position: 'absolute',
-          top: isLandscape ? '15%' : '20%',
+          top: isLandscape ? '10%' : '22%',
           left: '50%',
           transform: `translateX(-50%) scale(${questionScale})`,
-          width: isLandscape ? '90%' : '88%',
-          maxWidth: 1000 * baseScale,
+          width: isLandscape ? '92%' : '94%',
+          maxWidth: isLandscape ? 1300 * baseScale : 1100 * baseScale,
           backgroundColor: COMIC_COLORS.white,
-          borderRadius: 40 * baseScale,
-          padding: `${40 * baseScale}px ${50 * baseScale}px`,
-          boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
-          border: `5px solid ${COMIC_COLORS.cyanDark}`,
+          borderRadius: (isLandscape ? 35 : 50) * baseScale,
+          padding: isLandscape 
+            ? `${30 * baseScale}px ${45 * baseScale}px`
+            : `${55 * baseScale}px ${60 * baseScale}px`,
+          boxShadow: '0 25px 70px rgba(0,0,0,0.18)',
+          border: `${isLandscape ? 5 : 7}px solid ${COMIC_COLORS.cyanDark}`,
         }}>
           {/* Pergunta */}
           <div style={{
-            fontSize: (isLandscape ? 38 : 34) * baseScale,
+            fontSize: (isLandscape ? 42 : 52) * baseScale,
             fontWeight: 800,
             color: COMIC_COLORS.black,
             textAlign: 'center',
             fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
-            marginBottom: 35 * baseScale,
-            lineHeight: 1.35,
+            marginBottom: (isLandscape ? 25 : 50) * baseScale,
+            lineHeight: 1.3,
           }}>
             {currentQuestion.question}
           </div>
@@ -1490,7 +1494,7 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
                 key={index}
                 label={option}
                 index={index}
-                baseScale={baseScale * 0.95}
+                baseScale={isLandscape ? baseScale * 0.88 : baseScale * 1.1}
                 isCorrect={index === currentQuestion.correctIndex}
                 showAnswer={isShowingAnswer || false}
                 isVisible={isShowingOptions || false}
@@ -1504,11 +1508,13 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           {/* Explicação */}
           {isShowingAnswer && currentQuestion.explanation && (
             <div style={{
-              marginTop: 30 * baseScale,
-              padding: `${20 * baseScale}px ${28 * baseScale}px`,
-              borderRadius: 20 * baseScale,
+              marginTop: (isLandscape ? 18 : 40) * baseScale,
+              padding: isLandscape 
+                ? `${15 * baseScale}px ${24 * baseScale}px`
+                : `${28 * baseScale}px ${35 * baseScale}px`,
+              borderRadius: (isLandscape ? 15 : 25) * baseScale,
               backgroundColor: COMIC_COLORS.cyan + '20',
-              border: `3px solid ${COMIC_COLORS.cyanDark}`,
+              border: `${isLandscape ? 3 : 4}px solid ${COMIC_COLORS.cyanDark}`,
               transform: `translateY(${interpolate(
                 spring({
                   frame: frame - ((currentQuestion.answerRevealTime || 0) * fps) - 10,
@@ -1525,19 +1531,19 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
               }),
             }}>
               <div style={{
-                fontSize: 18 * baseScale,
+                fontSize: (isLandscape ? 16 : 24) * baseScale,
                 color: COMIC_COLORS.cyanDark,
                 fontWeight: 800,
-                marginBottom: 8 * baseScale,
+                marginBottom: (isLandscape ? 6 : 12) * baseScale,
                 fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
               }}>
                 💡 Explicação
               </div>
               <div style={{
-                fontSize: 22 * baseScale,
+                fontSize: (isLandscape ? 20 : 32) * baseScale,
                 color: COMIC_COLORS.black,
                 fontFamily: "'Nunito', 'Comic Sans MS', sans-serif",
-                lineHeight: 1.5,
+                lineHeight: 1.45,
                 fontWeight: 600,
               }}>
                 {currentQuestion.explanation}
