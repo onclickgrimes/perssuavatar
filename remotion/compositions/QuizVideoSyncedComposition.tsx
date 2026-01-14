@@ -15,6 +15,7 @@ import {
   spring,
   Audio,
   Sequence,
+  staticFile,
 } from 'remotion';
 import { z } from 'zod';
 
@@ -1442,6 +1443,30 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
             <Audio src={audioUrl} volume={1} />
           </Sequence>
         )}
+
+        {/* Áudio de Tic-Tac (Pensando) */}
+        {timedQuestions.map((q, i) => {
+          const endThinking = q.answerRevealTime || 0;
+          // Adiciona margem de segurança de 1.0s para evitar sensação de atraso
+          const extraMargin = 1.0;
+          const calculatedStart = endThinking - thinkingSilenceSeconds - extraMargin;
+          
+          // Garante que não comece antes das opções aparecerem
+          const startTicTac = Math.max(q.optionsStartTime || 0, calculatedStart);
+          const duration = endThinking - startTicTac;
+          
+          if (duration <= 0) return null;
+
+          return (
+            <Sequence
+              key={`tictac-${i}`}
+              from={Math.floor(startTicTac * fps)}
+              durationInFrames={Math.floor(duration * fps)}
+            >
+              <Audio src={staticFile('sounds/tic_tac.mp3')} volume={0.5} />
+            </Sequence>
+          );
+        })}
         
         {/* Fundo de pergaminho */}
         <div style={{
@@ -1668,6 +1693,30 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           <Audio src={audioUrl} volume={1} />
         </Sequence>
       )}
+
+      {/* Áudio de Tic-Tac (Pensando) */}
+      {timedQuestions.map((q, i) => {
+        const endThinking = q.answerRevealTime || 0;
+        // Adiciona margem de segurança de 1.0s para evitar sensação de atraso
+        const extraMargin = 1.0;
+        const calculatedStart = endThinking - thinkingSilenceSeconds - extraMargin;
+        
+        // Garante que não comece antes das opções aparecerem
+        const startTicTac = Math.max(q.optionsStartTime || 0, calculatedStart);
+        const duration = endThinking - startTicTac;
+        
+        if (duration <= 0) return null;
+
+        return (
+          <Sequence
+            key={`tictac-${i}`}
+            from={Math.floor(startTicTac * fps)}
+            durationInFrames={Math.floor(duration * fps)}
+          >
+            <Audio src={staticFile('sounds/tic_tac.mp3')} volume={0.5} />
+          </Sequence>
+        );
+      })}
       
       {/* Fundo dividido - Turquesa + Amarelo */}
       <div style={{
