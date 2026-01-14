@@ -547,6 +547,134 @@ const ShootingStar: React.FC<{
 // Componente Star legado (alias para compatibilidade)
 const Star = AnimatedStar;
 
+// Componente de Legenda Dinâmica - Palavra por palavra
+const DynamicCaption: React.FC<{
+  audioSegments: AudioSegment[];
+  currentTime: number; // tempo atual em segundos (já com offset aplicado)
+  audioOffset: number; // offset do áudio em segundos
+  baseScale: number;
+  style?: 'comics' | 'vintage';
+  isLandscape?: boolean; // Se é 16:9 (landscape) ou 9:16 (portrait)
+}> = ({ audioSegments, currentTime, audioOffset, baseScale, style = 'comics', isLandscape = false }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  
+  // Tempo real no áudio (sem o offset visual)
+  const audioTime = currentTime - audioOffset;
+  
+  // Se o áudio ainda não começou, não mostra legenda
+  if (audioTime < 0 || !audioSegments || audioSegments.length === 0) {
+    return null;
+  }
+  
+  // Encontra o segmento atual
+  const currentSegment = audioSegments.find(
+    seg => audioTime >= seg.start && audioTime <= seg.end
+  );
+  
+  if (!currentSegment) {
+    return null;
+  }
+  
+  // Cores baseadas no estilo
+  const isComics = style === 'comics';
+  const bgColor = isComics ? 'rgba(0, 0, 0, 0.8)' : 'rgba(93, 64, 55, 0.9)';
+  const textColor = isComics ? '#FFFFFF' : '#FFF8E7';
+  const highlightColor = isComics ? COMIC_COLORS.yellow : '#C9A227';
+  const fontFamily = isComics 
+    ? "'Nunito', 'Comic Sans MS', sans-serif" 
+    : "'Cinzel', 'Times New Roman', serif";
+  
+  // Posição baseada na proporção
+  // Portrait (9:16): acima do card (top: 38%)
+  // Landscape (16:9): abaixo do card (bottom: 8%)
+  const positionStyle = isLandscape 
+    ? { bottom: '8%', top: 'auto' }
+    : { top: '38%', bottom: 'auto' };
+  
+  // Se temos timestamps de palavras, mostramos UMA palavra por vez
+  if (currentSegment.words && currentSegment.words.length > 0) {
+    // Encontra a palavra atual sendo falada
+    const currentWordData = currentSegment.words.find(
+      w => audioTime >= w.start && audioTime <= w.end
+    );
+    
+    // Se não há palavra sendo falada no momento, não mostra nada
+    if (!currentWordData) {
+      return null;
+    }
+    
+    // Animação de entrada para a palavra atual
+    const wordFrame = Math.floor((audioTime - currentWordData.start) * fps);
+    const wordScale = spring({
+      frame: wordFrame,
+      fps,
+      config: { damping: 10, stiffness: 180 },
+    });
+    
+    return (
+      <div style={{
+        position: 'absolute',
+        ...positionStyle,
+        left: '50%',
+        transform: `translateX(-50%) scale(${wordScale})`,
+        padding: `${(isLandscape ? 16 : 20) * baseScale}px ${(isLandscape ? 36 : 44) * baseScale}px`,
+        borderRadius: (isLandscape ? 18 : 24) * baseScale,
+        backgroundColor: bgColor,
+        backdropFilter: 'blur(12px)',
+        textAlign: 'center',
+        boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
+        zIndex: 1000,
+      }}>
+        <div style={{
+          fontSize: (isLandscape ? 38 : 48) * baseScale,
+          fontWeight: 900,
+          fontFamily,
+          lineHeight: 1.2,
+          color: highlightColor,
+          textShadow: `
+            0 0 20px ${highlightColor}, 
+            0 0 40px ${highlightColor}60, 
+            0 4px 8px rgba(0,0,0,0.5)
+          `,
+          letterSpacing: '2px',
+        }}>
+          {currentWordData.word}
+        </div>
+      </div>
+    );
+  }
+  
+  // Fallback: se não temos timestamps de palavras, mostra o texto completo
+  return (
+    <div style={{
+      position: 'absolute',
+      ...positionStyle,
+      left: '50%',
+      transform: 'translateX(-50%)',
+      padding: `${(isLandscape ? 14 : 18) * baseScale}px ${(isLandscape ? 28 : 32) * baseScale}px`,
+      borderRadius: (isLandscape ? 16 : 20) * baseScale,
+      backgroundColor: bgColor,
+      backdropFilter: 'blur(12px)',
+      maxWidth: '90%',
+      textAlign: 'center',
+      boxShadow: '0 10px 40px rgba(0,0,0,0.4)',
+      zIndex: 1000,
+    }}>
+      <div style={{
+        fontSize: (isLandscape ? 26 : 32) * baseScale,
+        fontWeight: 800,
+        fontFamily,
+        lineHeight: 1.5,
+        color: textColor,
+        textShadow: '0 2px 4px rgba(0,0,0,0.4)',
+      }}>
+        {currentSegment.text}
+      </div>
+    </div>
+  );
+};
+
 // Componente de Opção - Estilo Comics/Cartoon
 const QuizOption: React.FC<{
   label: string;
@@ -1228,6 +1356,16 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
             </div>
           );
         })()}
+        
+        {/* Legenda dinâmica sincronizada com o áudio */}
+        <DynamicCaption
+          audioSegments={audioSegments || []}
+          currentTime={currentTime}
+          audioOffset={visualIntroOffset}
+          baseScale={baseScale}
+          style="comics"
+          isLandscape={isLandscape}
+        />
       </AbsoluteFill>
     );
   }
