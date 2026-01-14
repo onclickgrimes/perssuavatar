@@ -405,28 +405,147 @@ const COMIC_COLORS = {
   red: '#E74C3C',         // Vermelho para resposta errada
 };
 
-// Componente de Estrela decorativa
-const Star: React.FC<{
+// Componente de Estrela decorativa ANIMADA
+const AnimatedStar: React.FC<{
   x: number;
   y: number;
   size: number;
   rotation?: number;
   color?: string;
-}> = ({ x, y, size, rotation = 0, color = COMIC_COLORS.black }) => (
-  <div style={{
-    position: 'absolute',
-    left: x,
-    top: y,
-    width: size,
-    height: size,
-    transform: `rotate(${rotation}deg)`,
-    fontSize: size,
-    color,
-    lineHeight: 1,
-  }}>
-    ★
-  </div>
-);
+  speed?: number; // Velocidade da animação (1 = normal)
+  floatRange?: number; // Quanto a estrela se move (em pixels)
+}> = ({ x, y, size, rotation = 0, color = COMIC_COLORS.black, speed = 1, floatRange = 10 }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+  
+  // Movimento de flutuação suave
+  const floatY = Math.sin((frame * speed) / (fps * 0.5)) * floatRange;
+  const floatX = Math.cos((frame * speed) / (fps * 0.7)) * (floatRange * 0.5);
+  
+  // Rotação lenta contínua
+  const animatedRotation = rotation + (frame * speed * 0.3);
+  
+  // Pulso de opacidade sutil
+  const pulse = 0.85 + Math.sin((frame * speed) / (fps * 0.3)) * 0.15;
+  
+  return (
+    <div style={{
+      position: 'absolute',
+      left: x + floatX,
+      top: y + floatY,
+      width: size,
+      height: size,
+      transform: `rotate(${animatedRotation}deg)`,
+      fontSize: size,
+      color,
+      lineHeight: 1,
+      opacity: pulse,
+      transition: 'transform 0.1s ease-out',
+    }}>
+      ★
+    </div>
+  );
+};
+
+// Componente de Estrela Cadente
+const ShootingStar: React.FC<{
+  startX: number;
+  startY: number;
+  endX: number;
+  endY: number;
+  startFrame: number;
+  durationFrames: number;
+  size?: number;
+}> = ({ startX, startY, endX, endY, startFrame, durationFrames, size = 20 }) => {
+  const frame = useCurrentFrame();
+  
+  // Calcula progresso da animação
+  const localFrame = frame - startFrame;
+  const progress = Math.max(0, Math.min(1, localFrame / durationFrames));
+  
+  // Se ainda não começou ou já terminou, não renderiza
+  if (localFrame < 0 || progress > 1) return null;
+  
+  // Posição atual com easing
+  const easeProgress = 1 - Math.pow(1 - progress, 2); // Ease out quad
+  const currentX = startX + (endX - startX) * easeProgress;
+  const currentY = startY + (endY - startY) * easeProgress;
+  
+  // Ângulo do movimento
+  const angle = Math.atan2(endY - startY, endX - startX) * (180 / Math.PI);
+  
+  // Opacidade com fade in/out
+  const opacity = progress < 0.1 
+    ? progress * 10 
+    : progress > 0.8 
+      ? (1 - progress) * 5 
+      : 1;
+  
+  // Tamanho do rastro
+  const tailLength = 80 + progress * 40;
+  
+  return (
+    <div style={{
+      position: 'absolute',
+      left: currentX,
+      top: currentY,
+      width: tailLength,
+      height: size,
+      transform: `rotate(${angle}deg)`,
+      transformOrigin: 'right center',
+      opacity,
+      pointerEvents: 'none',
+      zIndex: 100,
+    }}>
+      {/* Rastro da estrela */}
+      <div style={{
+        position: 'absolute',
+        right: 0,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: tailLength,
+        height: size * 0.3,
+        background: `linear-gradient(to left, 
+          rgba(255,255,255,1) 0%, 
+          rgba(255,255,200,0.8) 20%, 
+          rgba(255,220,100,0.4) 50%, 
+          rgba(255,200,50,0) 100%
+        )`,
+        borderRadius: size,
+        filter: 'blur(1px)',
+      }} />
+      
+      {/* Núcleo brilhante */}
+      <div style={{
+        position: 'absolute',
+        right: -size * 0.3,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        width: size,
+        height: size,
+        borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(255,255,255,1) 0%, rgba(255,255,200,0.8) 40%, rgba(255,220,100,0) 70%)',
+        boxShadow: '0 0 20px rgba(255,255,200,0.8), 0 0 40px rgba(255,220,100,0.4)',
+      }} />
+      
+      {/* Brilho extra */}
+      <div style={{
+        position: 'absolute',
+        right: -size * 0.15,
+        top: '50%',
+        transform: 'translateY(-50%)',
+        fontSize: size * 0.8,
+        color: 'white',
+        textShadow: '0 0 10px white, 0 0 20px rgba(255,255,200,0.8)',
+      }}>
+        ✦
+      </div>
+    </div>
+  );
+};
+
+// Componente Star legado (alias para compatibilidade)
+const Star = AnimatedStar;
 
 // Componente de Opção - Estilo Comics/Cartoon
 const QuizOption: React.FC<{
@@ -961,13 +1080,24 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           background: `linear-gradient(to bottom, ${COMIC_COLORS.cyan} 65%, ${COMIC_COLORS.yellowBg} 65%)`,
         }} />
         
-        {/* Estrelas decorativas */}
-        <Star x={width * 0.08} y={height * 0.15} size={30 * baseScale} rotation={15} />
-        <Star x={width * 0.85} y={height * 0.12} size={24 * baseScale} rotation={-10} />
-        <Star x={width * 0.12} y={height * 0.35} size={20 * baseScale} rotation={25} />
-        <Star x={width * 0.92} y={height * 0.28} size={18 * baseScale} rotation={-20} />
-        <Star x={width * 0.75} y={height * 0.18} size={22 * baseScale} rotation={5} />
-        <Star x={width * 0.88} y={height * 0.45} size={16 * baseScale} rotation={30} />
+        {/* Estrelas decorativas animadas */}
+        <Star x={width * 0.08} y={height * 0.15} size={30 * baseScale} rotation={15} speed={0.8} floatRange={12} />
+        <Star x={width * 0.85} y={height * 0.12} size={24 * baseScale} rotation={-10} speed={1.2} floatRange={8} />
+        <Star x={width * 0.12} y={height * 0.35} size={20 * baseScale} rotation={25} speed={0.6} floatRange={15} />
+        <Star x={width * 0.92} y={height * 0.28} size={18 * baseScale} rotation={-20} speed={1.0} floatRange={10} />
+        <Star x={width * 0.75} y={height * 0.18} size={22 * baseScale} rotation={5} speed={0.9} floatRange={14} />
+        <Star x={width * 0.88} y={height * 0.45} size={16 * baseScale} rotation={30} speed={1.1} floatRange={9} />
+        
+        {/* Estrela cadente atravessando a tela */}
+        <ShootingStar 
+          startX={width * 0.9}
+          startY={height * 0.05}
+          endX={width * 0.1}
+          endY={height * 0.4}
+          startFrame={Math.floor(fps * 0.5)}
+          durationFrames={Math.floor(fps * 1.8)}
+          size={24 * baseScale}
+        />
         
         {/* Balão explosivo QUIZ! */}
         <div style={{
@@ -1080,17 +1210,24 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           </div>
         </div>
         
-        {/* Mão decorativa (canto inferior esquerdo) */}
-        <div style={{
-          position: 'absolute',
-          bottom: height * 0.18,
-          left: -20 * baseScale,
-          fontSize: 180 * baseScale,
-          transform: `rotate(20deg) scale(${subtitleOpacity})`,
-          filter: 'drop-shadow(5px 5px 10px rgba(0,0,0,0.2))',
-        }}>
-          ✌️
-        </div>
+        {/* Mão decorativa (canto inferior esquerdo) - com balanço */}
+        {(() => {
+          // Animação de balanço suave
+          const swingAngle = Math.sin((frame / fps) * 2.5) * 15; // Oscila entre -15° e +15°
+          return (
+            <div style={{
+              position: 'absolute',
+              bottom: height * 0.18,
+              left: -20 * baseScale,
+              fontSize: 180 * baseScale,
+              transform: `rotate(${20 + swingAngle}deg) scale(${subtitleOpacity})`,
+              transformOrigin: 'bottom center',
+              filter: 'drop-shadow(5px 5px 10px rgba(0,0,0,0.2))',
+            }}>
+              ✌️
+            </div>
+          );
+        })()}
       </AbsoluteFill>
     );
   }
@@ -1553,31 +1690,46 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
         </div>
       )}
       
-      {/* Mão decorativa (canto inferior) */}
-      <div style={{
-        position: 'absolute',
-        bottom: height * 0.02,
-        left: -30 * baseScale,
-        fontSize: 140 * baseScale,
-        transform: 'rotate(25deg)',
-        filter: 'drop-shadow(5px 5px 10px rgba(0,0,0,0.15))',
-        zIndex: 5,
-      }}>
-        ✌️
-      </div>
+      {/* Mão decorativa (canto inferior) - com balanço suave */}
+      {(() => {
+        const swingAngle = Math.sin((frame / fps) * 1.5) * 8; // Movimento mais lento e suave
+        const floatY = Math.sin((frame / fps) * 1.2) * 5;
+        return (
+          <div style={{
+            position: 'absolute',
+            bottom: height * 0.02 + floatY,
+            left: -30 * baseScale,
+            fontSize: 140 * baseScale,
+            transform: `rotate(${25 + swingAngle}deg)`,
+            transformOrigin: 'bottom center',
+            filter: 'drop-shadow(5px 5px 10px rgba(0,0,0,0.15))',
+            zIndex: 5,
+          }}>
+            ✌️
+          </div>
+        );
+      })()}
       
-      {/* Elemento decorativo direita */}
-      <div style={{
-        position: 'absolute',
-        bottom: height * 0.05,
-        right: -20 * baseScale,
-        fontSize: 100 * baseScale,
-        transform: 'rotate(-15deg)',
-        filter: 'drop-shadow(5px 5px 10px rgba(0,0,0,0.15))',
-        zIndex: 5,
-      }}>
-        🌟
-      </div>
+      {/* Elemento decorativo direita - com flutuação e pulso */}
+      {(() => {
+        const floatY = Math.sin((frame / fps) * 1.0) * 8;
+        const floatX = Math.cos((frame / fps) * 0.8) * 4;
+        const rotateAnim = Math.sin((frame / fps) * 0.6) * 10;
+        const scale = 1 + Math.sin((frame / fps) * 1.5) * 0.08;
+        return (
+          <div style={{
+            position: 'absolute',
+            bottom: height * 0.05 + floatY,
+            right: -20 * baseScale + floatX,
+            fontSize: 100 * baseScale,
+            transform: `rotate(${-15 + rotateAnim}deg) scale(${scale})`,
+            filter: 'drop-shadow(5px 5px 10px rgba(0,0,0,0.15))',
+            zIndex: 5,
+          }}>
+            🌟
+          </div>
+        );
+      })()}
     </AbsoluteFill>
   );
 };
