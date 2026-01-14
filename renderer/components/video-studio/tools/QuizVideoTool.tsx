@@ -109,6 +109,7 @@ interface QuizProfile {
   // Configurações de vídeo
   aspectRatio: '9:16' | '16:9';
   visualTheme: 'comics' | 'vintage';
+  watermark?: string; // Marca d'água personalizada
   // Histórico de perguntas geradas (para evitar repetição)
   questionHistory?: string[];
   createdAt: string;
@@ -724,6 +725,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   // Configuração de Vídeo
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
   const [visualTheme, setVisualTheme] = useState<'comics' | 'vintage'>('comics');
+  const [watermark, setWatermark] = useState('');
   const [voiceName, setVoiceName] = useState('Achernar');
 
   // Estados de Perfis/Nichos
@@ -1148,6 +1150,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       secondaryColor: config.secondaryColor,
       backgroundColor: '#0a0a0f',
       visualTheme,
+      watermark: watermark || undefined, // Marca d'água
       audioUrl,
     };
     
@@ -1523,6 +1526,21 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Marca d'água */}
+      <div>
+        <label className="block text-sm font-medium text-white/70 mb-2">
+          💧 Marca d'água <span className="text-white/40">(opcional)</span>
+        </label>
+        <input
+          type="text"
+          value={watermark}
+          onChange={(e) => setWatermark(e.target.value)}
+          className="w-full px-4 py-2 bg-black/30 border border-white/10 rounded-lg text-white focus:border-purple-500 focus:outline-none"
+          placeholder="@seucanal ou texto personalizado"
+        />
+        <p className="text-white/40 text-xs mt-1">Aparece no canto inferior direito do vídeo</p>
       </div>
 
       {/* Info de duração estimada */}

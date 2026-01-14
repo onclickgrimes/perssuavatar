@@ -69,6 +69,8 @@ export const quizVideoSyncedSchema = z.object({
   })).optional(),
   // Tempo extra após cada pergunta (para "pensar")
   thinkingSilenceSeconds: z.number().default(3),
+  // Marca d'água personalizada
+  watermark: z.string().optional(),
 });
 
 export type AudioSegment = z.infer<typeof audioSegmentSchema>;
@@ -675,6 +677,58 @@ const DynamicCaption: React.FC<{
   );
 };
 
+// Componente de Marca d'água
+const Watermark: React.FC<{
+  text: string;
+  baseScale: number;
+  style?: 'comics' | 'vintage';
+  position?: 'bottom-right' | 'bottom-left' | 'top-right' | 'top-left';
+  isLandscape?: boolean;
+}> = ({ text, baseScale, style = 'comics', position = 'bottom-right', isLandscape = false }) => {
+  if (!text || text.trim() === '') {
+    return null;
+  }
+  
+  const isComics = style === 'comics';
+  const fontFamily = isComics 
+    ? "'Nunito', 'Comic Sans MS', sans-serif" 
+    : "'Cinzel', 'Times New Roman', serif";
+  
+  // Tamanho base aumentado: +50% para landscape (18 * 1.5 = 27), +250% para portrait (18 * 3.5 = 63)
+  const fontSizeMultiplier = isLandscape ? 1.5 : 3.5;
+  const fontSize = 18 * fontSizeMultiplier * baseScale;
+  
+  // Posicionamento baseado na prop position (também aumentado proporcionalmente)
+  const positionMultiplier = isLandscape ? 1.2 : 1.5;
+  const positionStyles: Record<string, React.CSSProperties> = {
+    'bottom-right': { bottom: 15 * positionMultiplier * baseScale, right: 20 * positionMultiplier * baseScale },
+    'bottom-left': { bottom: 15 * positionMultiplier * baseScale, left: 20 * positionMultiplier * baseScale },
+    'top-right': { top: 15 * positionMultiplier * baseScale, right: 20 * positionMultiplier * baseScale },
+    'top-left': { top: 15 * positionMultiplier * baseScale, left: 20 * positionMultiplier * baseScale },
+  };
+  
+  return (
+    <div style={{
+      position: 'absolute',
+      ...positionStyles[position],
+      zIndex: 999,
+      pointerEvents: 'none',
+    }}>
+      <div style={{
+        fontSize,
+        fontWeight: 700,
+        fontFamily,
+        color: 'rgba(255, 255, 255, 0.6)',
+        textShadow: '0 2px 4px rgba(0, 0, 0, 0.4), 0 0 8px rgba(0, 0, 0, 0.2)',
+        letterSpacing: isLandscape ? '1px' : '2px',
+        textTransform: 'uppercase',
+      }}>
+        {text}
+      </div>
+    </div>
+  );
+};
+
 // Componente de Opção - Estilo Comics/Cartoon
 const QuizOption: React.FC<{
   label: string;
@@ -966,6 +1020,7 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
   audioSegments = [],
   questionTimestamps, // Timestamps precisos (nova geração)
   thinkingSilenceSeconds = 3,
+  watermark, // Marca d'água personalizada
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames, width, height } = useVideoConfig(); // Adicionado width/height
@@ -1366,6 +1421,11 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           style="comics"
           isLandscape={isLandscape}
         />
+        
+        {/* Marca d'água */}
+        {watermark && (
+          <Watermark text={watermark} baseScale={baseScale} style="comics" isLandscape={isLandscape} />
+        )}
       </AbsoluteFill>
     );
   }
@@ -1587,6 +1647,11 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
             PRÓXIMA
           </span>
         </div>
+        
+        {/* Marca d'água */}
+        {watermark && (
+          <Watermark text={watermark} baseScale={baseScale} style="vintage" isLandscape={isLandscape} />
+        )}
       </AbsoluteFill>
     );
   }
@@ -1868,6 +1933,11 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
           </div>
         );
       })()}
+      
+      {/* Marca d'água */}
+      {watermark && (
+        <Watermark text={watermark} baseScale={baseScale} style="comics" isLandscape={isLandscape} />
+      )}
     </AbsoluteFill>
   );
 };
