@@ -16,6 +16,7 @@ import {
   Audio,
   Sequence,
   staticFile,
+  Img,
 } from 'remotion';
 import { z } from 'zod';
 
@@ -72,6 +73,8 @@ export const quizVideoSyncedSchema = z.object({
   thinkingSilenceSeconds: z.number().default(3),
   // Marca d'água personalizada
   watermark: z.string().optional(),
+  // Imagem de introdução (canto inferior direito)
+  introImage: z.string().optional(),
 });
 
 export type AudioSegment = z.infer<typeof audioSegmentSchema>;
@@ -1022,6 +1025,7 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
   questionTimestamps, // Timestamps precisos (nova geração)
   thinkingSilenceSeconds = 3,
   watermark, // Marca d'água personalizada
+  introImage, // Imagem de intro
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames, width, height } = useVideoConfig(); // Adicionado width/height
@@ -1427,6 +1431,27 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
         {watermark && (
           <Watermark text={watermark} baseScale={baseScale} style="comics" isLandscape={isLandscape} />
         )}
+        
+        {/* Imagem de Introdução (Personalizada) */}
+        {introImage && (
+          <Img 
+            src={introImage}
+            style={{
+              position: 'absolute',
+              bottom: 40 * baseScale, // Bem na borda (igual ao landscape)
+              right: 40 * baseScale,
+              width: isLandscape ? 500 * baseScale : 750 * baseScale, // +100% em Landscape, +200% em Portrait
+              height: 'auto',
+              maxHeight: isLandscape ? 500 * baseScale : 800 * baseScale,
+              borderRadius: 20 * baseScale,
+              objectFit: 'contain',
+              boxShadow: '0 8px 24px rgba(0,0,0,0.3)',
+              transform: `rotate(-5deg)`,
+              border: `5px solid white`,
+              zIndex: 20, // Acima de outros elementos
+            }}
+          />
+        )}
       </AbsoluteFill>
     );
   }
@@ -1463,7 +1488,23 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
               from={Math.floor(startTicTac * fps)}
               durationInFrames={Math.floor(duration * fps)}
             >
-              <Audio src={staticFile('sounds/tic_tac.mp3')} volume={0.5} />
+              <Audio src="http://localhost:9999/sounds/tic_tac.mp3" volume={0.5} />
+            </Sequence>
+          );
+        })}
+
+        {/* Áudio de Resposta Certa */}
+        {timedQuestions.map((q, i) => {
+          const revealTime = q.answerRevealTime || 0;
+          if (revealTime <= 0) return null;
+
+          return (
+            <Sequence
+              key={`correct-sound-${i}`}
+              from={Math.floor(revealTime * fps)}
+              durationInFrames={60} // 2 segundos, suficiente para o efeito
+            >
+              <Audio src="http://localhost:9999/sounds/certo.mp3" volume={0.6} />
             </Sequence>
           );
         })}
@@ -1713,7 +1754,23 @@ export const QuizVideoSyncedComposition: React.FC<QuizVideoSyncedProps> = ({
             from={Math.floor(startTicTac * fps)}
             durationInFrames={Math.floor(duration * fps)}
           >
-            <Audio src={staticFile('sounds/tic_tac.mp3')} volume={0.5} />
+            <Audio src="http://localhost:9999/sounds/tic_tac.mp3" volume={0.5} />
+          </Sequence>
+        );
+      })}
+
+      {/* Áudio de Resposta Certa */}
+      {timedQuestions.map((q, i) => {
+        const revealTime = q.answerRevealTime || 0;
+        if (revealTime <= 0) return null;
+
+        return (
+          <Sequence
+            key={`correct-sound-${i}`}
+            from={Math.floor(revealTime * fps)}
+            durationInFrames={60} // 2 segundos
+          >
+            <Audio src="http://localhost:9999/sounds/certo.mp3" volume={0.6} />
           </Sequence>
         );
       })}

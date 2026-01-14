@@ -491,6 +491,8 @@ const handler = {
         endTime: number;
       }>;
       visualTheme?: 'comics' | 'vintage';
+      watermark?: string;
+      introImage?: string;
       width?: number;
       height?: number;
     }) => ipcRenderer.invoke('quiz:render', options),

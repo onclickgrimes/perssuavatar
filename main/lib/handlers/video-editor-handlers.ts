@@ -338,7 +338,7 @@ Responda com um JSON no seguinte formato:
 }
 
 Lembre-se:
-- correctIndex é o índice (0-based) da opção correta
+- correctIndex é o índice da opção correta. Evite repetir os índices das opções em sequência. 
 - difficulty deve ser "easy", "medium" ou "hard"
 - Garanta que o JSON seja válido`;
 
@@ -993,6 +993,8 @@ Lembre-se:
         endTime: number;
       }>;
       visualTheme?: 'comics' | 'vintage';
+      watermark?: string;
+      introImage?: string;
       width?: number;
       height?: number;
     }
@@ -1069,6 +1071,8 @@ Lembre-se:
           audioSegments: options.audioSegments || [],
           questionTimestamps: options.questionTimestamps, // Timestamps precisos!
           thinkingSilenceSeconds: 3, // Buffer de silêncio para "pensar"
+          watermark: options.watermark,
+          introImage: options.introImage,
         };
         
         console.log(`🎯 [Quiz] quizProps.audioSegments: ${quizProps.audioSegments.length} segments`);
@@ -1096,6 +1100,8 @@ Lembre-se:
           secondaryColor: options.secondaryColor || '#EC4899',
           backgroundColor: options.backgroundColor || '#0a0a0f',
           visualTheme: options.visualTheme || 'comics',
+          watermark: options.watermark,
+          introImage: options.introImage,
           audioUrl,
         };
       }

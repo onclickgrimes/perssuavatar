@@ -6,7 +6,7 @@
  * Suporta: Gemini, OpenAI e DeepSeek.
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, DragEvent } from 'react';
 import { QuizPreviewPlayer } from '../QuizPreviewPlayer';
 
 type QuizStep = 'config' | 'preview' | 'rendering' | 'complete';
@@ -117,6 +117,18 @@ interface QuizProfile {
 }
 
 const QUIZ_PROFILES_STORAGE_KEY = 'quiz-video-profiles';
+
+// Helper para converter caminhos locais em URLs do servidor local
+const getLocalUrl = (path: string) => {
+  if (!path) return '';
+  if (path.startsWith('http') || path.startsWith('blob:') || path.startsWith('data:')) return path;
+  
+  // Normaliza o path (substitui contra-barras por barras)
+  const normalized = path.replace(/\\/g, '/');
+  
+  // Usa o servidor local na porta 9999 que serve arquivos estáticos absolutos
+  return `http://localhost:9999/absolute/${encodeURIComponent(normalized)}`;
+};
 
 // Componente de formulário para editar/criar perfil
 interface ProfileEditFormProps {
@@ -726,7 +738,69 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   const [aspectRatio, setAspectRatio] = useState<'9:16' | '16:9'>('9:16');
   const [visualTheme, setVisualTheme] = useState<'comics' | 'vintage'>('comics');
   const [watermark, setWatermark] = useState('');
+  const [introImage, setIntroImage] = useState(''); // Estado para imagem de intro
   const [voiceName, setVoiceName] = useState('Achernar');
+
+  // Refs e Handlers para Drag & Drop da Imagem
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragging, setIsDragging] = useState(false);
+
+  const handleDragOver = (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      const file = e.dataTransfer.files[0];
+      
+      // Priorizar caminho absoluto (Electron) para evitar strings Base64 gigantes no render
+      // @ts-ignore
+      if (file.path) {
+        // @ts-ignore
+        setIntroImage(file.path);
+      } else {
+        // Fallback para Base64 (navegador puro)
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          if (ev.target?.result) {
+            setIntroImage(ev.target.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const file = e.target.files[0];
+      
+      // Priorizar caminho absoluto (Electron)
+      // @ts-ignore
+      if (file.path) {
+        // @ts-ignore
+        setIntroImage(file.path);
+      } else {
+        // Fallback Base64
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          if (ev.target?.result) {
+            setIntroImage(ev.target.result as string);
+          }
+        };
+        reader.readAsDataURL(file);
+      }
+    }
+  };
 
   // Estados de Perfis/Nichos
   const [profiles, setProfiles] = useState<QuizProfile[]>([]);
@@ -1137,11 +1211,10 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
   // Props do Quiz para preview
   const getQuizProps = () => {
     // Converter caminho do áudio para URL HTTP (servidor local)
-    let audioUrl: string | undefined;
-    if (audioOutputDir) {
-      const normalizedPath = audioOutputDir.replace(/\\/g, '/');
-      audioUrl = `http://localhost:9999/absolute/${encodeURIComponent(normalizedPath)}`;
-    }
+    const audioUrl = audioOutputDir ? getLocalUrl(audioOutputDir) : undefined;
+    
+    // Processar imagem de intro
+    const finalIntroImage = introImage ? getLocalUrl(introImage) : undefined;
     
     const baseProps = {
       theme: config.theme,
@@ -1151,6 +1224,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       backgroundColor: '#0a0a0f',
       visualTheme,
       watermark: watermark || undefined, // Marca d'água
+      introImage: finalIntroImage, // Imagem de intro processada
       audioUrl,
     };
     
@@ -1203,6 +1277,8 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
         visualTheme, // Tema visual selecionado
         width: getDimensions().width,
         height: getDimensions().height,
+        watermark: watermark || undefined,
+        introImage: introImage ? getLocalUrl(introImage) : undefined, // Envia URL do servidor local
         audioPath: audioOutputDir || undefined,
         // Dados de sincronização de áudio
         audioDuration: audioDuration || undefined,
@@ -1541,6 +1617,76 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
           placeholder="@seucanal ou texto personalizado"
         />
         <p className="text-white/40 text-xs mt-1">Aparece no canto inferior direito do vídeo</p>
+      </div>
+
+      {/* Imagem de Intro */}
+      {/* Imagem de Intro (Drag & Drop) */}
+      <div className="p-4 bg-white/5 border border-white/10 rounded-xl space-y-3">
+        <label className="block text-sm font-medium text-white/80">
+          🖼️ Imagem da Intro <span className="text-white/40 text-xs font-normal">(opcional)</span>
+        </label>
+        
+        <div
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
+          onClick={() => fileInputRef.current?.click()}
+          className={`
+            relative w-full h-32 border-2 border-dashed rounded-xl flex flex-col items-center justify-center cursor-pointer transition-all group overflow-hidden
+            ${isDragging 
+              ? 'border-purple-500 bg-purple-500/20' 
+              : introImage 
+                ? 'border-purple-500/50 bg-purple-500/10' 
+                : 'border-white/20 hover:border-white/40 hover:bg-white/5'}
+          `}
+        >
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileSelect}
+            className="hidden"
+            accept="image/*"
+          />
+
+          {introImage ? (
+            <div className="relative w-full h-full group-hover:opacity-50 transition-opacity">
+              <img 
+                src={getLocalUrl(introImage)} 
+                alt="Preview" 
+                className="w-full h-full object-contain p-2"
+              />
+              <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                <span className="text-white font-medium bg-black/50 px-3 py-1 rounded-lg">Trocar Imagem</span>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center p-4">
+              <span className="text-3xl mb-2 block opacity-50">☁️</span>
+              <p className="text-sm font-medium text-white/70">
+                Arraste uma imagem ou <span className="text-purple-400">clique para selecionar</span>
+              </p>
+              <p className="text-xs text-white/30 mt-1">PNG, JPG, WEBP</p>
+            </div>
+          )}
+        </div>
+        
+        {introImage && (
+          <div className="flex items-center justify-between bg-black/20 p-2 rounded-lg">
+            <p className="text-xs text-white/50 truncate flex-1 font-mono px-2">
+              {introImage}
+            </p>
+            <button 
+              onClick={(e) => {
+                e.stopPropagation();
+                setIntroImage('');
+                if (fileInputRef.current) fileInputRef.current.value = '';
+              }}
+              className="text-xs text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 px-3 py-1.5 rounded transition-colors"
+            >
+              Remover
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Info de duração estimada */}
