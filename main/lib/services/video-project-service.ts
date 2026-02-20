@@ -519,7 +519,7 @@ export class VideoProjectService extends EventEmitter {
     /**
      * Converte caminho de arquivo local para URL HTTP servida pelo servidor local
      */
-    private convertToHttpUrl(filePath: string | undefined): string {
+    public convertToHttpUrl(filePath: string | undefined): string {
         if (!filePath) return '';
 
         // Se já é uma URL HTTP, retornar como está
@@ -855,6 +855,9 @@ export class VideoProjectService extends EventEmitter {
                             // Se falhar, não quebra o fluxo - apenas não terá mídia
                         }
                     }
+
+                    // video_vo3 é tratado sob demanda pelo usuário na tela de ImagesStep
+                    // (botão "Gerar com IA"), não automaticamente na análise
 
                     return merged;
                 }

@@ -409,7 +409,25 @@ const handler = {
       const subscription = (_: any, data: { percent: number; frame: number; totalFrames: number }) => callback(data);
       ipcRenderer.on('video-project:render-progress', subscription);
       return () => ipcRenderer.removeListener('video-project:render-progress', subscription);
-    }
+    },
+
+    // Gerar vídeo via Google Flow (Veo 3)
+    generateVo3: (options: {
+      prompt: string;
+      aspectRatio?: string;
+      geminiProviderId?: string;
+      headless?: boolean;
+    }) => ipcRenderer.invoke('video-project:generate-vo3', options),
+
+    // Consultar créditos do Flow (Veo 3)
+    getVo3Credits: () => ipcRenderer.invoke('video-project:get-vo3-credits'),
+
+    // Listener para progresso da geração Veo 3
+    onVo3Progress: (callback: (data: { stage: string; message: string; percent?: number }) => void) => {
+      const subscription = (_: any, data: { stage: string; message: string; percent?: number }) => callback(data);
+      ipcRenderer.on('video-project:vo3-progress', subscription);
+      return () => ipcRenderer.removeListener('video-project:vo3-progress', subscription);
+    },
   },
   
   // ========================================

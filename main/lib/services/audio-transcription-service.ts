@@ -121,7 +121,7 @@ export class AudioTranscriptionService {
         audioBuffer,
         {
           model: 'nova-3',
-          language: 'multi',
+          language: 'pt-BR', //'multi',
           smart_format: true,
           diarize: true,
           punctuate: true,

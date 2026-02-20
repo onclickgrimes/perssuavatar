@@ -261,14 +261,22 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   const handleUpdateImage = useCallback((segmentId: number, imageUrl: string) => {
     setProject(prev => ({
       ...prev,
-      segments: prev.segments.map(seg =>
-        seg.id === segmentId ? { 
-          ...seg, 
-          imageUrl,
-          // Se estamos definindo uma imagem, garantir que o tipo seja compatível (evita erro de <Video> com PNG)
-          assetType: imageUrl ? 'image_static' : seg.assetType
-        } : seg
-      ),
+      segments: prev.segments.map(seg => {
+        if (seg.id !== segmentId) return seg;
+        
+        // Determinar assetType baseado no conteúdo
+        let assetType = seg.assetType;
+        if (imageUrl) {
+          const isVideoFile = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']
+            .some(ext => imageUrl.toLowerCase().endsWith(ext));
+          // Só força image_static se é realmente uma imagem (não vídeo)
+          if (!isVideoFile && assetType !== 'video_vo3') {
+            assetType = 'image_static';
+          }
+        }
+        
+        return { ...seg, imageUrl, assetType };
+      }),
     }));
   }, []);
 
@@ -404,6 +412,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             onUpdateImage={handleUpdateImage}
             onContinue={() => setCurrentStep('preview')}
             onBack={() => setCurrentStep('prompts')}
+            aspectRatio={project.selectedAspectRatios?.[0] || '9:16'}
           />
         );
       

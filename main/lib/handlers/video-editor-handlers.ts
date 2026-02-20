@@ -1138,5 +1138,92 @@ Lembre-se:
     }
   });
 
+  // Handler para gerar vídeo via Google Flow (Veo 3)
+  ipcMain.handle('video-project:generate-vo3', async (
+    event,
+    options: {
+      prompt: string;
+      aspectRatio?: string;
+      geminiProviderId?: string;
+      headless?: boolean;
+    }
+  ) => {
+    try {
+      console.log(`🌊 [Flow/Veo3] Generating video with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'})`);
+
+      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
+      const flowProvider = getFlowVideoProvider({
+        headless: options.headless ?? false,
+        geminiProviderId: options.geminiProviderId,
+      });
+
+      const window = getWindowFn?.();
+
+      const result = await flowProvider.generateVideo(
+        options.prompt,
+        (progress: any) => {
+          // Envia progresso para a janela do Video Studio
+          if (window && !window.isDestroyed()) {
+            window.webContents.send('video-project:vo3-progress', progress);
+          }
+        },
+        options.aspectRatio
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Erro desconhecido na geração do vídeo');
+      }
+
+      // Converter caminho para URL HTTP para preview no frontend
+      let httpUrl = result.videoPath;
+      if (videoProjectService && result.videoPath) {
+        httpUrl = videoProjectService.convertToHttpUrl(result.videoPath);
+      }
+
+      console.log(`✅ [Flow/Veo3] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
+
+      return {
+        success: true,
+        videoPath: result.videoPath,
+        httpUrl,
+        credits: result.credits,
+        durationMs: result.durationMs,
+      };
+
+    } catch (error: any) {
+      console.error('❌ [Flow/Veo3] Generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler para consultar créditos do Flow (sem gerar vídeo)
+  ipcMain.handle('video-project:get-vo3-credits', async () => {
+    try {
+      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
+      const flowProvider = getFlowVideoProvider({ headless: false });
+      
+      // Inicializar browser se necessário
+      if (!flowProvider.isBrowserAlive()) {
+        await flowProvider.init();
+      }
+      
+      // Navegar para Flow se não estiver lá
+      const page = flowProvider.getPage();
+      if (page) {
+        const url = page.url();
+        if (!url.includes('labs.google')) {
+          await page.goto('https://labs.google/fx/flow', { waitUntil: 'networkidle2', timeout: 30000 });
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
+      
+      const credits = await flowProvider.getCredits();
+      return { success: true, credits };
+    } catch (error: any) {
+      console.error('❌ [Flow/Veo3] Credits check error:', error);
+      return { success: false, credits: null, error: error.message };
+    }
+  });
+
   console.log('✅ [VideoEditor] Handlers registered');
 }

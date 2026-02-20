@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
 
 interface ImagesStepProps {
@@ -6,6 +6,7 @@ interface ImagesStepProps {
   onUpdateImage: (id: number, imageUrl: string) => void;
   onContinue: () => void;
   onBack: () => void;
+  aspectRatio?: string;
 }
 
 export function ImagesStep({
@@ -13,6 +14,7 @@ export function ImagesStep({
   onUpdateImage,
   onContinue,
   onBack,
+  aspectRatio,
 }: ImagesStepProps) {
   // Helper para converter caminho de arquivo em URL para preview
   const getMediaSrc = (mediaPath: string | undefined): string => {
@@ -34,10 +36,49 @@ export function ImagesStep({
     return videoExtensions.some(ext => url.toLowerCase().endsWith(ext));
   };
   
-  const [approvedSegments, setApprovedSegments] = useState<Set<number>>(new Set());
   const [generatingSegments, setGeneratingSegments] = useState<Set<number>>(new Set());
   const [uploadingSegments, setUploadingSegments] = useState<Set<number>>(new Set());
+  const [vo3Progress, setVo3Progress] = useState<Record<number, string>>({});
+  const [vo3Credits, setVo3Credits] = useState<number | null>(null);
+  const [isCheckingCredits, setIsCheckingCredits] = useState<boolean>(false);
   
+  // Buscar créditos iniciais
+  useEffect(() => {
+    const fetchCredits = async () => {
+      // Se tiver pelo menos um segmento vo3, buscar os créditos iniciais
+      const hasVo3 = segments.some(s => s.assetType === 'video_vo3');
+      if (hasVo3) {
+        setIsCheckingCredits(true);
+        try {
+          const result = await window.electron?.videoProject?.getVo3Credits?.();
+          if (result?.success && result.credits !== null) {
+            setVo3Credits(result.credits);
+          }
+        } catch (error) {
+          console.error('Erro ao buscar créditos Flow:', error);
+        } finally {
+          setIsCheckingCredits(false);
+        }
+      }
+    };
+    fetchCredits();
+  }, [segments]);
+
+  // Listener de progresso Veo3
+  useEffect(() => {
+    const cleanup = window.electron?.videoProject?.onVo3Progress?.((data) => {
+      // Atualiza mensagem de progresso para todos os segmentos gerando
+      setVo3Progress(prev => {
+        const next = { ...prev };
+        generatingSegments.forEach(segId => {
+          next[segId] = data.message;
+        });
+        return next;
+      });
+    });
+    return () => { cleanup?.(); };
+  }, [generatingSegments]);
+
   // Handler para upload de mídia (imagem ou vídeo) - salva no disco
   const handleMediaUpload = async (segmentId: number, file: File) => {
     setUploadingSegments(prev => new Set([...prev, segmentId]));
@@ -68,9 +109,6 @@ export function ImagesStep({
           onUpdateImage(segmentId, mediaUrl);
         }
       }
-      
-      // Auto-aprovar quando faz upload manual
-      setApprovedSegments(prev => new Set([...prev, segmentId]));
     } catch (error) {
       console.error('Error uploading media:', error);
     } finally {
@@ -82,47 +120,90 @@ export function ImagesStep({
     }
   };
 
-  // Handler para aprovar imagem
-  const handleApprove = (segmentId: number) => {
-    setApprovedSegments(prev => new Set([...prev, segmentId]));
-  };
 
-  // Handler para refazer imagem (simula regeneração)
+
+  // Handler para gerar mídia com IA
   const handleRegenerate = async (segmentId: number) => {
+    const segment = segments.find(s => s.id === segmentId);
+    if (!segment) return;
+
     setGeneratingSegments(prev => new Set([...prev, segmentId]));
-    setApprovedSegments(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(segmentId);
-      return newSet;
-    });
-    
-    // TODO: Chamar API de geração de imagem
-    await new Promise(resolve => setTimeout(resolve, 2000));
-    
-    setGeneratingSegments(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(segmentId);
-      return newSet;
-    });
+
+
+    try {
+      // Se o assetType é video_vo3, usar Google Flow (Veo 3)
+      if (segment.assetType === 'video_vo3' && segment.imagePrompt) {
+        
+        // Verificar limite de créditos (assumindo custo base de 20 por vídeo)
+        if (vo3Credits !== null && vo3Credits < 20) {
+          alert(`Créditos insuficientes! Você tem ${vo3Credits} créditos e precisa de pelo menos 20 para gerar um vídeo no Flow.`);
+          setGeneratingSegments(prev => {
+            const next = new Set(prev);
+            next.delete(segmentId);
+            return next;
+          });
+          return;
+        }
+
+        console.log(`🌊 [Veo3] Gerando vídeo para segmento ${segmentId}...`);
+        setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração...' }));
+
+        const result = await window.electron?.videoProject?.generateVo3({
+          prompt: segment.imagePrompt,
+          aspectRatio: aspectRatio,
+        });
+
+        if (result?.success && (result.httpUrl || result.videoPath)) {
+          const mediaUrl = result.httpUrl || result.videoPath;
+          console.log(`✅ [Veo3] Vídeo gerado: ${mediaUrl}`);
+          onUpdateImage(segmentId, mediaUrl);
+          // Atualiza créditos se retornado pelo backend
+          if (result.credits !== undefined) {
+            setVo3Credits(result.credits);
+          }
+        } else {
+          console.error(`❌ [Veo3] Falha:`, result?.error);
+          alert(`Falha na geração: ${result?.error}`);
+        }
+      } else {
+        // TODO: Implementar geração de outros tipos de mídia (Flux, Kling, etc.)
+        console.log(`⏳ Geração para assetType "${segment.assetType}" ainda não implementada`);
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    } catch (error) {
+      console.error('Erro ao gerar mídia:', error);
+    } finally {
+      setGeneratingSegments(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(segmentId);
+        return newSet;
+      });
+      setVo3Progress(prev => {
+        const next = { ...prev };
+        delete next[segmentId];
+        return next;
+      });
+    }
   };
 
   // Handler para remover imagem
   const handleRemoveImage = (segmentId: number) => {
     onUpdateImage(segmentId, '');
-    setApprovedSegments(prev => {
-      const newSet = new Set(prev);
-      newSet.delete(segmentId);
-      return newSet;
-    });
   };
 
-  const allApproved = segments.every(seg => approvedSegments.has(seg.id));
   const segmentsWithMedia = segments.filter(seg => !!seg.imageUrl);
-  
-  // Handler para aprovar todas as mídias de uma vez
-  const handleApproveAll = () => {
-    const allSegmentIds = segments.map(seg => seg.id);
-    setApprovedSegments(new Set(allSegmentIds));
+
+  // Helper para label do botão "Gerar com IA" baseado no assetType
+  const getGenerateLabel = (segment: TranscriptionSegment, isGenerating: boolean): string => {
+    if (isGenerating) {
+      const progress = vo3Progress[segment.id];
+      if (progress) return progress;
+      return '...';
+    }
+    if (segment.assetType === 'video_vo3') return '🌊 Gerar com Veo 3';
+    if (segment.assetType?.startsWith('video_kling')) return '🎬 Gerar com Kling';
+    if (segment.assetType?.startsWith('video_runway')) return '🎥 Gerar com Runway';
+    return '↻ Gerar com IA';
   };
 
   return (
@@ -130,7 +211,7 @@ export function ImagesStep({
       <div className="flex items-center justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">Imagens e Vídeos das Cenas</h2>
-          <p className="text-white/60">Aprove, refaça ou faça upload das suas próprias imagens ou vídeos (opcional)</p>
+          <p className="text-white/60">Refaça ou faça upload das suas próprias imagens ou vídeos (opcional)</p>
         </div>
         <div className="flex gap-3">
           <button
@@ -139,15 +220,7 @@ export function ImagesStep({
           >
             ← Voltar
           </button>
-          {/* Botão de aprovar todas */}
-          {segmentsWithMedia.length > 0 && !allApproved && (
-            <button
-              onClick={handleApproveAll}
-              className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 rounded-lg transition-all font-medium flex items-center gap-2"
-            >
-              ✓ Aprovar Todas
-            </button>
-          )}
+
           <button
             onClick={onContinue}
             className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all"
@@ -162,7 +235,7 @@ export function ImagesStep({
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500"></div>
           <span className="text-white/60 text-sm">
-            {approvedSegments.size} de {segments.length} aprovadas
+            {segmentsWithMedia.length} de {segments.length} prontas
           </span>
         </div>
         {segmentsWithMedia.length === 0 && (
@@ -170,16 +243,21 @@ export function ImagesStep({
             ℹ️ Você pode renderizar sem mídias (apenas texto/legendas)
           </span>
         )}
-        {segmentsWithMedia.length > 0 && !allApproved && (
-          <span className="text-orange-400 text-sm">
-            ⚠️ Algumas mídias ainda não foram aprovadas
-          </span>
+
+
+        {/* Mostra créditos do Veo 3 se existir algum segmento configurado */}
+        {segments.some(s => s.assetType === 'video_vo3') && (
+          <div className="ml-auto flex items-center gap-2 px-3 py-1 bg-[#1a73e8]/20 rounded-full border border-[#1a73e8]/30">
+            <span className="text-xl">✨</span>
+            <span className="text-[#8ab4f8] font-medium text-sm">
+              {isCheckingCredits ? 'Verificando créditos...' : vo3Credits !== null ? `${vo3Credits} Créditos Flow` : 'Créditos indisponíveis'}
+            </span>
+          </div>
         )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {segments.map((segment) => {
-          const isApproved = approvedSegments.has(segment.id);
           const isGenerating = generatingSegments.has(segment.id);
           const isUploading = uploadingSegments.has(segment.id);
           const hasImage = !!segment.imageUrl;
@@ -187,9 +265,7 @@ export function ImagesStep({
           return (
             <div
               key={segment.id}
-              className={`bg-white/5 border rounded-xl overflow-hidden transition-all ${
-                isApproved ? 'border-green-500/50' : 'border-white/10'
-              }`}
+              className="bg-white/5 border border-white/10 rounded-xl overflow-hidden transition-all"
             >
               {/* Preview de imagem ou área de upload */}
               <div className="aspect-video relative group">
@@ -197,7 +273,9 @@ export function ImagesStep({
                   <div className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-purple-500/10 flex items-center justify-center">
                     <div className="text-center">
                       <div className="w-10 h-10 mx-auto mb-2 border-2 border-pink-500/30 border-t-pink-500 rounded-full animate-spin" />
-                      <p className="text-white/60 text-sm">{isUploading ? 'Enviando...' : 'Gerando...'}</p>
+                      <p className="text-white/60 text-sm">
+                        {isUploading ? 'Enviando...' : (vo3Progress[segment.id] || 'Gerando...')}
+                      </p>
                     </div>
                   </div>
                 ) : hasImage ? (
@@ -239,12 +317,7 @@ export function ImagesStep({
                         />
                       </label>
                     </div>
-                    {/* Badge de aprovado */}
-                    {isApproved && (
-                      <div className="absolute top-2 right-2 px-2 py-1 bg-green-500 text-white text-xs rounded-full">
-                        ✓ Aprovada
-                      </div>
-                    )}
+
                   </>
                 ) : (
                   <label 
@@ -300,29 +373,37 @@ export function ImagesStep({
                   <span className="px-2 py-0.5 bg-white/10 text-white/50 rounded text-xs">
                     {segment.emotion}
                   </span>
+                  {segment.assetType && (
+                    <span className={`px-2 py-0.5 rounded text-xs ${
+                      segment.assetType === 'video_vo3' 
+                        ? 'bg-cyan-500/20 text-cyan-300' 
+                        : 'bg-purple-500/20 text-purple-300'
+                    }`}>
+                      {segment.assetType}
+                    </span>
+                  )}
                 </div>
-                <p className="text-white/80 text-sm line-clamp-2 mb-3">{segment.text}</p>
+                <p className="text-white/80 text-sm line-clamp-2 mb-1">{segment.text}</p>
+                {segment.imagePrompt && (
+                  <p className="text-white/40 text-xs line-clamp-1 mb-3 italic">
+                    Prompt: {segment.imagePrompt}
+                  </p>
+                )}
                 
                 {/* Botões de ação */}
                 <div className="flex gap-2">
-                  {hasImage && !isApproved && (
-                    <button
-                      onClick={() => handleApprove(segment.id)}
-                      className="flex-1 py-2 bg-green-500/20 hover:bg-green-500/30 text-green-300 rounded-lg text-sm transition-all"
-                    >
-                      ✓ Aprovar
-                    </button>
-                  )}
                   <button
                     onClick={() => handleRegenerate(segment.id)}
                     disabled={isGenerating}
                     className={`flex-1 py-2 rounded-lg text-sm transition-all ${
                       isGenerating
                         ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                        : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
+                        : segment.assetType === 'video_vo3'
+                          ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300'
+                          : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
                     }`}
                   >
-                    {isGenerating ? '...' : '↻ Gerar com IA'}
+                    {getGenerateLabel(segment, isGenerating)}
                   </button>
                 </div>
               </div>

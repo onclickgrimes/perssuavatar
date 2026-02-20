@@ -141,13 +141,13 @@ export class NicheService {
             prompt += `\n\n⚠️ IMPORTANTE: Para cada cena, você DEVE escolher o "assetType" mais apropriado dentre os listados acima.`;
             prompt += `\nNÃO use tipos que não estejam nesta lista.`;
             
-            // Se video_stock está disponível, dar contexto adicional
-            if (niche.asset_types.includes('video_stock')) {
-                prompt += `\n\n📹 QUANDO USAR video_stock:`;
-                prompt += `\n- Use video_stock quando a cena descrever ações, pessoas, lugares ou movimentos que são facilmente encontrados em banco de vídeos stock`;
-                prompt += `\n- Escreva o imagePrompt em inglês com palavras-chave descritivas para busca semântica`;
-                prompt += `\n- Exemplo: "businessman working on laptop in modern office" ou "aerial view of ocean waves at sunset"`;
-            }
+            // // Se video_stock está disponível, dar contexto adicional
+            // if (niche.asset_types.includes('video_stock')) {
+            //     prompt += `\n\n📹 QUANDO USAR video_stock:`;
+            //     prompt += `\n- Use video_stock quando a cena descrever ações, pessoas, lugares ou movimentos que são facilmente encontrados em banco de vídeos stock`;
+            //     prompt += `\n- Escreva o imagePrompt em inglês com palavras-chave descritivas para busca semântica`;
+            //     prompt += `\n- Exemplo: "businessman working on laptop in modern office" ou "aerial view of ocean waves at sunset"`;
+            // }
         }
 
         // Adicionar emoções preferidas
@@ -253,7 +253,7 @@ export class NicheService {
             emotion: niche.emotions && niche.emotions.length > 0 
                 ? niche.emotions[0] 
                 : 'emoção adequada',
-            imagePrompt: 'detailed visual prompt in English...',
+            imagePrompt: 'Prompt in English regarding the chosen asset type.',
             assetType: niche.asset_types && niche.asset_types.length > 0 
                 ? niche.asset_types.join(' | ') 
                 : 'image_flux',
