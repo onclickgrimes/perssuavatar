@@ -630,6 +630,7 @@ export class VideoProjectService extends EventEmitter {
         options?: {
             provider?: AIProvider;
             nichePrompt?: string;
+            model?: string;
         }
     ): Promise<AnalysisResult> {
         // Suportar tanto projeto completo quanto array de segments (compatibilidade)
@@ -640,7 +641,7 @@ export class VideoProjectService extends EventEmitter {
         console.log('🔍 [VideoProjectService] options:', options);
 
         const provider = options?.provider || 'gemini';
-        console.log(`🤖 Using AI provider: ${provider}`);
+        console.log(`🤖 Using AI provider: ${provider} - ${options?.model}`);
 
         this.emit('status', { stage: 'analyzing', message: `Analisando com ${provider}...` });
 
@@ -674,11 +675,12 @@ export class VideoProjectService extends EventEmitter {
             }>;
 
 
-            const systemMsg = 'You are a video editor AI. Respond ONLY with a valid JSON array of segments.';
+            const systemMsg = 'You are a video editor AI. Respond ONLY with a valid JSON object containing a "segments" array.';
 
             if (provider === 'gemini') {
                 if (!this.geminiService) throw new Error('Gemini API not configured');
                 console.log('⏳ [VideoProject] Sending request to GeminiService...');
+                if (options?.model) this.geminiService.setModel(options.model);
                 analyzedSegments = await this.geminiService.getChatVideoAnalysis([
                     { role: 'system', content: systemMsg },
                     { role: 'user', content: prompt }
@@ -687,6 +689,7 @@ export class VideoProjectService extends EventEmitter {
             } else if (provider === 'openai') {
                 if (!this.openAIService) throw new Error('OpenAI API not configured');
                 console.log('⏳ [VideoProject] Sending request to OpenAI...');
+                if (options?.model) this.openAIService.setModel(options.model);
                 analyzedSegments = await this.openAIService.getChatVideoAnalysis([
                     { role: 'system', content: systemMsg },
                     { role: 'user', content: prompt }
@@ -695,6 +698,7 @@ export class VideoProjectService extends EventEmitter {
             } else if (provider === 'deepseek') {
                 if (!this.deepSeekService) throw new Error('DeepSeek API not configured');
                 console.log('⏳ [VideoProject] Sending request to DeepSeek...');
+                if (options?.model) this.deepSeekService.setModel(options.model);
                 analyzedSegments = await this.deepSeekService.getChatVideoAnalysis([
                     { role: 'system', content: systemMsg },
                     { role: 'user', content: prompt }
@@ -1021,31 +1025,33 @@ ${exitAnimInstructions}
 SEGMENTOS:
 ${segmentsList}
 
-Responda APENAS com um array JSON válido no formato:
-[
-  {
-    "id": 1,
-    "emotion": "surpresa",
-    "imagePrompt": "detailed prompt in English...",
-    "assetType": "image_flux",
-    "cameraMovement": "zoom_in_slow",
-    "transition": "fade",
-    "highlightWords": [
-      {
-        "text": "palavra importante",
-        "duration": 1.5,
-        "entryAnimation": "pop",
-        "exitAnimation": "evaporate",
-        "size": "large",
-        "position": "center",
-        "effect": "glow",
-        "color": "#FFD700",
-        "fontWeight": "bold"
-      }
-    ]
-  },
-  ...
-]`;
+Responda APENAS com um objeto JSON válido no formato:
+{
+  "segments": [
+    {
+      "id": 1,
+      "emotion": "surpresa",
+      "imagePrompt": "detailed prompt in English...",
+      "assetType": "image_flux",
+      "cameraMovement": "zoom_in_slow",
+      "transition": "fade",
+      "highlightWords": [
+        {
+          "text": "palavra importante",
+          "duration": 1.5,
+          "entryAnimation": "pop",
+          "exitAnimation": "evaporate",
+          "size": "large",
+          "position": "center",
+          "effect": "glow",
+          "color": "#FFD700",
+          "fontWeight": "bold"
+        }
+      ]
+    },
+    ...
+  ]
+}`;
     }
 
 

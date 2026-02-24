@@ -366,7 +366,7 @@ const handler = {
       ipcRenderer.invoke('video-project:transcribe', audioPath),
     
     // Analisar segmentos com IA (aceita projeto completo ou array de segments)
-    analyze: (projectOrSegments: any, options?: { provider?: 'gemini' | 'openai' | 'deepseek', nichePrompt?: string }) => 
+    analyze: (projectOrSegments: any, options?: { provider?: 'gemini' | 'openai' | 'deepseek', nichePrompt?: string, model?: string }) => 
       ipcRenderer.invoke('video-project:analyze', projectOrSegments, options),
     
     // Converter projeto para formato Remotion

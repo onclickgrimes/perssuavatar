@@ -45,6 +45,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   const [savedProjects, setSavedProjects] = useState<any[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'openai' | 'deepseek'>('gemini');
+  const [selectedModel, setSelectedModel] = useState<string>('gemini-3-flash-preview');
 
   // Carregar lista de projetos
   const loadProjectsList = useCallback(async () => {
@@ -217,6 +218,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         {
           provider: selectedProvider,
           nichePrompt,
+          model: selectedModel,
         }
       );
 
@@ -235,7 +237,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     } finally {
       setIsProcessing(false);
     }
-  }, [project.segments, selectedProvider, selectedNiche]);
+  }, [project, selectedProvider, selectedModel, selectedNiche]);
 
   // Handler para atualizar emoção de um segmento
   const handleUpdateEmotion = useCallback((segmentId: number, emotion: string) => {
@@ -390,7 +392,14 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             onContinue={handleAnalyzeWithAI}
             onBack={() => setCurrentStep('upload')}
             provider={selectedProvider}
-            onProviderChange={(p: any) => setSelectedProvider(p)}
+            onProviderChange={(p: any) => {
+              setSelectedProvider(p);
+              if (p === 'gemini') setSelectedModel('gemini-3-flash-preview');
+              else if (p === 'openai') setSelectedModel('gpt-5-mini-2025-08-07');
+              else if (p === 'deepseek') setSelectedModel('deepseek-chat');
+            }}
+            providerModel={selectedModel}
+            onProviderModelChange={(m: string) => setSelectedModel(m)}
           />
         );
       
@@ -413,6 +422,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             onContinue={() => setCurrentStep('preview')}
             onBack={() => setCurrentStep('prompts')}
             aspectRatio={project.selectedAspectRatios?.[0] || '9:16'}
+            onAspectRatioChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: [value] }))}
           />
         );
       

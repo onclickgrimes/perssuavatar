@@ -26,6 +26,7 @@ export interface GeminiChatResponse {
 export class GeminiService extends EventEmitter {
     private genAI: GoogleGenerativeAI;
     private model: any;
+    private modelName: string = "gemini-2.5-flash-lite";
     private chatModel: any;
 
     constructor() {
@@ -181,6 +182,12 @@ export class GeminiService extends EventEmitter {
         }
     }
 
+    public setModel(modelName: string) {
+        this.modelName = modelName;
+        this.model = this.genAI.getGenerativeModel({ model: modelName });
+        this.chatModel = this.genAI.getGenerativeModel({ model: modelName });
+    }
+
     /**
      * Specialized method for video/project analysis returning JSON
      */
@@ -200,7 +207,7 @@ export class GeminiService extends EventEmitter {
 
             // Use generation config for JSON
             const model = this.genAI.getGenerativeModel({
-                model: "gemini-2.5-flash-lite", // or gemini-1.5-flash
+                model: this.modelName, // use dynamic model name
                 systemInstruction: systemInstruction,
             });
 

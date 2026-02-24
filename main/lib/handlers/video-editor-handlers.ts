@@ -125,6 +125,7 @@ export function registerVideoEditorHandlers(): void {
     options?: { 
       provider?: 'gemini' | 'openai' | 'deepseek';
       nichePrompt?: string;
+      model?: string;
     }
   ) => {
     try {

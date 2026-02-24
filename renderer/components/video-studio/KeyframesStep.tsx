@@ -8,6 +8,8 @@ interface KeyframesStepProps {
   onBack: () => void;
   provider?: 'gemini' | 'openai' | 'deepseek';
   onProviderChange?: (p: 'gemini' | 'openai' | 'deepseek') => void;
+  providerModel?: string;
+  onProviderModelChange?: (m: string) => void;
 }
 
 export function KeyframesStep({
@@ -17,6 +19,8 @@ export function KeyframesStep({
   onBack,
   provider = 'gemini',
   onProviderChange,
+  providerModel,
+  onProviderModelChange,
 }: KeyframesStepProps) {
   const emotions = ['surpresa', 'empolgação', 'nostalgia', 'seriedade', 'alegria', 'tristeza', 'raiva', 'medo', 'neutro'];
 
@@ -36,9 +40,39 @@ export function KeyframesStep({
                  className="bg-black/30 border border-white/10 rounded-lg px-3 py-1 text-white text-sm focus:border-pink-500 focus:outline-none"
                >
                  <option value="gemini">Google Gemini</option>
-                 <option value="openai">OpenAI (GPT-4)</option>
+                 <option value="openai">OpenAI</option>
                  <option value="deepseek">DeepSeek V3</option>
                </select>
+
+               {onProviderModelChange && (
+                 <>
+                   <span className="text-white/60 text-sm ml-2">Modelo:</span>
+                   <select
+                     value={providerModel || ''}
+                     onChange={(e) => onProviderModelChange(e.target.value)}
+                     className="bg-black/30 border border-white/10 rounded-lg px-3 py-1 text-white text-sm focus:border-pink-500 focus:outline-none"
+                   >
+                     {provider === 'gemini' && (
+                       <>
+                         <option value="gemini-3-flash-preview">Gemini 3 Flash Preview ($0.50 inputs / $3 outputs)</option>
+                         <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview ($2 inputs / $12 outputs)</option>
+                       </>
+                     )}
+                     {provider === 'openai' && (
+                       <>
+                         <option value="gpt-5-mini-2025-08-07">GPT 5 Mini ($0.25 inputs / $2 outputs)</option>
+                         <option value="gpt-5.2-2025-12-11">GPT 5.2 ($1.75 inputs / $14 outputs)</option>
+                       </>
+                     )}
+                     {provider === 'deepseek' && (
+                       <>
+                         <option value="deepseek-chat">DeepSeek Chat V3</option>
+                         <option value="deepseek-reasoner">DeepSeek Reasoner R1</option>
+                       </>
+                     )}
+                   </select>
+                 </>
+               )}
             </div>
           )}
         </div>

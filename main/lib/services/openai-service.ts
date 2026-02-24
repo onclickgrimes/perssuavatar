@@ -16,6 +16,11 @@ export class OpenAIService {
         this.openai = new OpenAI({ apiKey: apiKey });
     }
 
+    public setModel(model: string) {
+        this.model = model;
+        console.log(`OpenAIService: Model changed to ${model}`);
+    }
+
     public async getChatCompletion(messages: any[], tools?: ChatCompletionTool[]) {
         try {
             const response = await this.openai.chat.completions.create({

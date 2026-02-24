@@ -452,6 +452,10 @@ export class FlowVideoProvider {
       emitProgress('submitting', 'Localizando campo de prompt...');
       await this.randomDelay(1000, 2000);
 
+      // Coletar as URLs dos vídeos já existentes na página antes de gerar
+      const knownVideoUrls = await this.getExistingVideoUrls();
+      emitProgress('submitting', `Verificadas ${knownVideoUrls.length} mídias anteriores...`);
+
       // Tentar encontrar o campo de prompt de diversas formas
       const promptSubmitted = await this.submitPrompt(prompt);
       
@@ -466,6 +470,7 @@ export class FlowVideoProvider {
       
       const videoUrl = await this.waitForVideoGeneration(
         this.config.generationTimeoutMs!,
+        knownVideoUrls,
         (percent) => {
           emitProgress('generating', `Gerando vídeo... ${percent}%`, percent);
         }
@@ -627,8 +632,9 @@ export class FlowVideoProvider {
     if (!this.page) return;
 
     const isPortrait = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '3:4';
-    const targetIcon = isPortrait ? 'crop_portrait' : 'crop_landscape';
-    const targetLabel = isPortrait ? 'Retrato (9:16)' : 'Paisagem (16:9)';
+    const isSquare = aspectRatio === '1:1';
+    const targetIcon = isPortrait ? 'crop_portrait' : (isSquare ? 'crop_square' : 'crop_landscape');
+    const targetLabel = isPortrait ? 'Retrato (9:16)' : (isSquare ? 'Quadrado (1:1)' : 'Paisagem (16:9)');
 
     try {
       // 1. Abrir painel de Configurações clicando no botão com ícone "tune"
@@ -674,7 +680,7 @@ export class FlowVideoProvider {
           const icons = await combo.$$('i');
           for (const icon of icons) {
             const iconText = (await this.getTextContent(icon)).trim();
-            if (iconText === 'crop_portrait' || iconText === 'crop_landscape') {
+            if (iconText === 'crop_portrait' || iconText === 'crop_landscape' || iconText === 'crop_square') {
               currentIcon = iconText;
               break;
             }
@@ -686,7 +692,7 @@ export class FlowVideoProvider {
         const icons = await combo.$$('i');
         for (const icon of icons) {
           const iconText = (await this.getTextContent(icon)).trim();
-          if (iconText === 'crop_portrait' || iconText === 'crop_landscape') {
+          if (iconText === 'crop_portrait' || iconText === 'crop_landscape' || iconText === 'crop_square') {
             ratioCombo = combo;
             currentIcon = iconText;
             break;
@@ -1031,6 +1037,7 @@ export class FlowVideoProvider {
    */
   private async waitForVideoGeneration(
     timeoutMs: number,
+    knownVideoUrls: string[],
     onPercent?: (percent: number) => void
   ): Promise<string | null> {
     if (!this.page) return null;
@@ -1048,7 +1055,7 @@ export class FlowVideoProvider {
         for (const v of videos) {
           const srcProp = await v.getProperty('src');
           const src = (await srcProp.jsonValue()) as string;
-          if (src && (src.includes('.mp4') || src.includes('blob:') || src.includes('video') || src.includes('googleusercontent') || src.includes('storage.googleapis'))) {
+          if (src && !knownVideoUrls.includes(src) && (src.includes('.mp4') || src.includes('blob:') || src.includes('video') || src.includes('googleusercontent') || src.includes('storage.googleapis'))) {
             console.log(`✅ [Flow] Vídeo encontrado! URL: ${src.substring(0, 100)}`);
             return src;
           }
@@ -1059,7 +1066,7 @@ export class FlowVideoProvider {
         for (const link of downloadLinks) {
           const hrefProp = await link.getProperty('href');
           const href = (await hrefProp.jsonValue()) as string;
-          if (href) {
+          if (href && !knownVideoUrls.includes(href)) {
             console.log(`✅ [Flow] Link de download encontrado: ${href.substring(0, 100)}`);
             return href;
           }
@@ -1248,6 +1255,35 @@ export class FlowVideoProvider {
 
   getPage(): Page | null {
     return this.page;
+  }
+
+  /**
+   * Obtém as URLs dos vídeos que já existem na página.
+   * Útil para evitar pegar resultados antigos em vez da geração atual.
+   */
+  private async getExistingVideoUrls(): Promise<string[]> {
+    if (!this.page) return [];
+    
+    const existingUrls: string[] = [];
+    try {
+      const videos = await this.page.$$('video[src], video source[src]');
+      for (const v of videos) {
+        const srcProp = await v.getProperty('src');
+        const src = (await srcProp.jsonValue()) as string;
+        if (src) existingUrls.push(src);
+      }
+      
+      const downloadLinks = await this.page.$$('a[download], a[href*=".mp4"], a[href*="download"]');
+      for (const link of downloadLinks) {
+        const hrefProp = await link.getProperty('href');
+        const href = (await hrefProp.jsonValue()) as string;
+        if (href) existingUrls.push(href);
+      }
+    } catch (e: any) {
+      console.warn('⚠️ [Flow] Erro ao buscar URLs existentes:', e.message);
+    }
+    
+    return existingUrls;
   }
 
   getBrowser(): Browser | null {

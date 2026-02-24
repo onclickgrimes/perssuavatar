@@ -7,6 +7,7 @@ interface ImagesStepProps {
   onContinue: () => void;
   onBack: () => void;
   aspectRatio?: string;
+  onAspectRatioChange?: (value: string) => void;
 }
 
 export function ImagesStep({
@@ -15,6 +16,7 @@ export function ImagesStep({
   onContinue,
   onBack,
   aspectRatio,
+  onAspectRatioChange,
 }: ImagesStepProps) {
   // Helper para converter caminho de arquivo em URL para preview
   const getMediaSrc = (mediaPath: string | undefined): string => {
@@ -242,6 +244,22 @@ export function ImagesStep({
           <span className="text-blue-400 text-sm">
             ℹ️ Você pode renderizar sem mídias (apenas texto/legendas)
           </span>
+        )}
+
+        {/* Aspect Ratio Selector */}
+        {onAspectRatioChange && (
+          <div className="flex items-center gap-2 ml-4 border-l border-white/10 pl-4">
+            <span className="text-white/60 text-sm">Formato:</span>
+            <select
+              value={aspectRatio || '9:16'}
+              onChange={(e) => onAspectRatioChange(e.target.value)}
+              className="bg-black/30 border border-white/10 rounded-lg px-2 py-1 text-white text-sm focus:border-pink-500 focus:outline-none"
+            >
+              <option value="9:16">Vertical (9:16)</option>
+              <option value="16:9">Horizontal (16:9)</option>
+              <option value="1:1">Quadrado (1:1)</option>
+            </select>
+          </div>
         )}
 
 

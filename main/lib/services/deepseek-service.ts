@@ -226,7 +226,7 @@ export class DeepSeekService {
                 model: this.model,
                 messages: messages as any,
                 temperature: 0.3, // Lower temperature for more deterministic JSON
-                max_tokens: 2000,
+                max_tokens: 8192,
                 response_format: { type: 'json_object' } // Try to force JSON mode if supported
             });
 
