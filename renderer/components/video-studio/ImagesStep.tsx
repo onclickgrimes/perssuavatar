@@ -133,6 +133,23 @@ export function ImagesStep({
 
 
 
+  // Helper para extrair o prompt como string (suporta objeto JSON estruturado do video_veo2)
+  const extractPromptString = (imagePrompt: unknown): string => {
+    if (!imagePrompt) return '';
+    if (typeof imagePrompt === 'string') return imagePrompt;
+    if (typeof imagePrompt === 'object' && imagePrompt !== null) {
+      // Tentar extrair main_text_prompt da estrutura do video_veo2
+      const structured = imagePrompt as Record<string, unknown>;
+      const vgp = structured.video_generation_prompt as Record<string, unknown> | undefined;
+      if (vgp?.main_text_prompt && typeof vgp.main_text_prompt === 'string') {
+        return vgp.main_text_prompt;
+      }
+      // Fallback: serializar o objeto
+      return JSON.stringify(imagePrompt);
+    }
+    return String(imagePrompt);
+  };
+
   // Handler para gerar mídia com IA
   const handleRegenerate = async (segmentId: number) => {
     const segment = segments.find(s => s.id === segmentId);
@@ -156,7 +173,7 @@ export function ImagesStep({
         setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração...' }));
 
         const result = await window.electron?.videoProject?.generateVo3({
-          prompt: segment.imagePrompt,
+          prompt: extractPromptString(segment.imagePrompt),
           aspectRatio: aspectRatio,
         });
 
@@ -177,7 +194,7 @@ export function ImagesStep({
         setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 2...' }));
 
         const result = await window.electron?.videoProject?.generateVeo2({
-          prompt: segment.imagePrompt,
+          prompt: extractPromptString(segment.imagePrompt),
           aspectRatio: aspectRatio,
         });
 
@@ -428,7 +445,7 @@ export function ImagesStep({
                 <p className="text-white/80 text-sm line-clamp-2 mb-1">{segment.text}</p>
                 {segment.imagePrompt && (
                   <p className="text-white/40 text-xs line-clamp-1 mb-3 italic">
-                    Prompt: {segment.imagePrompt}
+                    Prompt: {extractPromptString(segment.imagePrompt)}
                   </p>
                 )}
                 

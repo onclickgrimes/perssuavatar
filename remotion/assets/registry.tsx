@@ -9,7 +9,7 @@
  * 2. Crie o componente aqui e adicione ao ASSET_COMPONENTS
  */
 import React from 'react';
-import { AbsoluteFill, Img, OffthreadVideo, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Img, Video, useVideoConfig } from 'remotion';
 import { ASSET_DEFINITIONS, type AssetType } from './definitions';
 import { GeometricPatterns } from '../components/GeometricPatterns';
 import { WavyGrid } from '../components/WavyGrid';
@@ -107,7 +107,7 @@ const VideoAsset: AssetComponent = ({ scene }) => {
   
   return (
     <AbsoluteFill>
-      <OffthreadVideo
+      <Video
         src={scene.asset_url}
         style={{
           width,

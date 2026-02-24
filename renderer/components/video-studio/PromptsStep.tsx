@@ -126,9 +126,15 @@ export function PromptsStep({
               </div>
               <p className="text-white/80 text-sm mb-4 italic">"{segment.text}"</p>
               <textarea
-                value={segment.imagePrompt || `${segment.emotion} scene depicting: ${segment.text}`}
+                value={(() => {
+                  const prompt = segment.imagePrompt;
+                  if (!prompt) return `${segment.emotion} scene depicting: ${segment.text}`;
+                  if (typeof prompt === 'string') return prompt;
+                  return JSON.stringify(prompt, null, 2);
+                })()}
                 onChange={(e) => onUpdatePrompt(segment.id, e.target.value)}
-                className="w-full h-24 p-4 bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-none"
+                className="w-full bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-none p-4"
+                style={{ minHeight: typeof segment.imagePrompt === 'object' && segment.imagePrompt !== null ? '240px' : '96px' }}
                 placeholder="Descreva a cena visual em detalhes..."
               />
               

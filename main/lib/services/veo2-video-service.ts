@@ -95,6 +95,7 @@ export class Veo2VideoService {
         config: {
           numberOfVideos: 1,
           aspectRatio,
+          negativePrompt: "Watermark, text, logo, bad quality, low quality",
           resolution: '720p',
           personGeneration: 'dont_allow',
           durationSeconds: Math.min(durationSeconds, 8),
