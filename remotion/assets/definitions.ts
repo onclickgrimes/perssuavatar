@@ -94,6 +94,13 @@ export const ASSET_DEFINITIONS = {
     badgeColor: 'bg-sky-500/20 text-sky-300',
     aiDescription: 'Vídeo cinematográfico gerado pelo Google Veo 3 (alta qualidade, movimentos naturais, iluminação realista). Crie prompts detalhados em inglês para o modelo Veo 3 Pro, para vídeos **com duração máxima de 8 segundos**. O prompt deve ser relativamente extenso. IMPORTANTE: Para manter consistência visual em múltiplas cenas, você deve repetir **exatamente as mesmas descrições detalhadas** dos personagens e do ambiente em **todos** os prompts, mesmo se a cena for diferente. Isso garante continuidade visual no Veo 3. Descreva o ambiente completo: - Local, horário, iluminação (ex: dia claro, luz natural) - Elementos do cenário e sons de fundo, se houver (ex: som de trânsito, barulho de natureza) - Descreva a cena — o que os personagens fazem, sua interação. Estilo de filmagem (ex: câmera fixa, câmera na mão, ângulo da câmera). Repita todos os detalhes dos personagens e do ambiente em todas as cenas.',
   },
+  video_veo2: {
+    label: 'Vídeo (Veo 2)',
+    description: 'Vídeo gerado pelo Google Veo 2 (API oficial, sem áudio)',
+    icon: '🌊',
+    badgeColor: 'bg-blue-500/20 text-blue-300',
+    aiDescription: 'Vídeo cinematográfico gerado pelo Google Veo 2 via API oficial (sem áudio gerado). Alta qualidade visual, movimentos naturais, até 8 segundos de duração. Crie prompts detalhados em inglês descrevendo a cena, câmera, iluminação, personagens e ações. Ideal quando não é necessário áudio no clípe gerado (a trilha sonora virá da narração já existente).',
+  },
   video_static: {
     label: 'Vídeo Estático',
     description: 'Vídeo já existente (upload ou URL)',

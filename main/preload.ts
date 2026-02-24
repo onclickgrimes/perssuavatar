@@ -428,6 +428,20 @@ const handler = {
       ipcRenderer.on('video-project:vo3-progress', subscription);
       return () => ipcRenderer.removeListener('video-project:vo3-progress', subscription);
     },
+
+    // Gerar vídeo via Google Veo 2 (API oficial, sem áudio)
+    generateVeo2: (options: {
+      prompt: string;
+      aspectRatio?: string;
+      durationSeconds?: number;
+    }) => ipcRenderer.invoke('video-project:generate-veo2', options),
+
+    // Listener para progresso da geração Veo 2
+    onVeo2Progress: (callback: (data: { stage: string; message: string; percent?: number }) => void) => {
+      const subscription = (_: any, data: { stage: string; message: string; percent?: number }) => callback(data);
+      ipcRenderer.on('video-project:veo2-progress', subscription);
+      return () => ipcRenderer.removeListener('video-project:veo2-progress', subscription);
+    },
   },
   
   // ========================================

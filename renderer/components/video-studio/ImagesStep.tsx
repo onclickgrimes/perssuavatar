@@ -69,12 +69,21 @@ export function ImagesStep({
   // Listener de progresso Veo3
   useEffect(() => {
     const cleanup = window.electron?.videoProject?.onVo3Progress?.((data) => {
-      // Atualiza mensagem de progresso para todos os segmentos gerando
       setVo3Progress(prev => {
         const next = { ...prev };
-        generatingSegments.forEach(segId => {
-          next[segId] = data.message;
-        });
+        generatingSegments.forEach(segId => { next[segId] = data.message; });
+        return next;
+      });
+    });
+    return () => { cleanup?.(); };
+  }, [generatingSegments]);
+
+  // Listener de progresso Veo2
+  useEffect(() => {
+    const cleanup = window.electron?.videoProject?.onVeo2Progress?.((data) => {
+      setVo3Progress(prev => {
+        const next = { ...prev };
+        generatingSegments.forEach(segId => { next[segId] = data.message; });
         return next;
       });
     });
@@ -133,17 +142,13 @@ export function ImagesStep({
 
 
     try {
-      // Se o assetType é video_vo3, usar Google Flow (Veo 3)
+      // video_vo3: Google Flow (Veo 3) via Puppeteer
       if (segment.assetType === 'video_vo3' && segment.imagePrompt) {
         
         // Verificar limite de créditos (assumindo custo base de 20 por vídeo)
         if (vo3Credits !== null && vo3Credits < 20) {
           alert(`Créditos insuficientes! Você tem ${vo3Credits} créditos e precisa de pelo menos 20 para gerar um vídeo no Flow.`);
-          setGeneratingSegments(prev => {
-            const next = new Set(prev);
-            next.delete(segmentId);
-            return next;
-          });
+          setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
           return;
         }
 
@@ -159,14 +164,32 @@ export function ImagesStep({
           const mediaUrl = result.httpUrl || result.videoPath;
           console.log(`✅ [Veo3] Vídeo gerado: ${mediaUrl}`);
           onUpdateImage(segmentId, mediaUrl);
-          // Atualiza créditos se retornado pelo backend
-          if (result.credits !== undefined) {
-            setVo3Credits(result.credits);
-          }
+          if (result.credits !== undefined) setVo3Credits(result.credits);
         } else {
           console.error(`❌ [Veo3] Falha:`, result?.error);
           alert(`Falha na geração: ${result?.error}`);
         }
+
+      // video_veo2: Google Veo 2 via API oficial (sem áudio)
+      } else if (segment.assetType === 'video_veo2' && segment.imagePrompt) {
+
+        console.log(`🌊 [Veo2] Gerando vídeo para segmento ${segmentId}...`);
+        setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 2...' }));
+
+        const result = await window.electron?.videoProject?.generateVeo2({
+          prompt: segment.imagePrompt,
+          aspectRatio: aspectRatio,
+        });
+
+        if (result?.success && (result.httpUrl || result.videoPath)) {
+          const mediaUrl = result.httpUrl || result.videoPath;
+          console.log(`✅ [Veo2] Vídeo gerado: ${mediaUrl}`);
+          onUpdateImage(segmentId, mediaUrl);
+        } else {
+          console.error(`❌ [Veo2] Falha:`, result?.error);
+          alert(`Falha na geração Veo 2: ${result?.error}`);
+        }
+
       } else {
         // TODO: Implementar geração de outros tipos de mídia (Flux, Kling, etc.)
         console.log(`⏳ Geração para assetType "${segment.assetType}" ainda não implementada`);
@@ -203,6 +226,7 @@ export function ImagesStep({
       return '...';
     }
     if (segment.assetType === 'video_vo3') return '🌊 Gerar com Veo 3';
+    if (segment.assetType === 'video_veo2') return '🌊 Gerar com Veo 2';
     if (segment.assetType?.startsWith('video_kling')) return '🎬 Gerar com Kling';
     if (segment.assetType?.startsWith('video_runway')) return '🎥 Gerar com Runway';
     return '↻ Gerar com IA';
@@ -393,7 +417,7 @@ export function ImagesStep({
                   </span>
                   {segment.assetType && (
                     <span className={`px-2 py-0.5 rounded text-xs ${
-                      segment.assetType === 'video_vo3' 
+                      segment.assetType === 'video_vo3' || segment.assetType === 'video_veo2'
                         ? 'bg-cyan-500/20 text-cyan-300' 
                         : 'bg-purple-500/20 text-purple-300'
                     }`}>

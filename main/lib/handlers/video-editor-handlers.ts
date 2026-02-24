@@ -1226,5 +1226,49 @@ Lembre-se:
     }
   });
 
+  // Handler para gerar vídeo via Google Veo 2 (API oficial)
+  ipcMain.handle('video-project:generate-veo2', async (event, options: {
+    prompt: string;
+    aspectRatio?: string;
+    durationSeconds?: number;
+  }) => {
+    try {
+      const { getVeo2VideoService } = require('../services/veo2-video-service');
+      const veo2Service = getVeo2VideoService();
+
+      const result = await veo2Service.generateVideo({
+        prompt: options.prompt,
+        aspectRatio: (options.aspectRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16',
+        durationSeconds: options.durationSeconds || 8,
+        onProgress: (percent: number, message: string) => {
+          event.sender.send('video-project:veo2-progress', { percent, message, stage: 'generating' });
+        },
+      });
+
+      if (!result.success) {
+        return { success: false, error: result.error };
+      }
+
+      // Converter para HTTP URL para preview no frontend
+      let httpUrl = result.videoPath;
+      if (videoProjectService && result.videoPath) {
+        httpUrl = videoProjectService.convertToHttpUrl(result.videoPath);
+      }
+
+      console.log(`✅ [Veo2] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
+
+      return {
+        success: true,
+        videoPath: result.videoPath,
+        httpUrl,
+        durationMs: result.durationMs,
+      };
+
+    } catch (error: any) {
+      console.error('❌ [Veo2] Generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   console.log('✅ [VideoEditor] Handlers registered');
 }
