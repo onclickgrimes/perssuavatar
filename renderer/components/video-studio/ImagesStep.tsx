@@ -259,6 +259,7 @@ export function ImagesStep({
         const result = await window.electron?.videoProject?.generateFlowImage({
           prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
           count,
+          aspectRatio,
         });
 
         if (result?.success && result.httpUrls?.length > 0) {

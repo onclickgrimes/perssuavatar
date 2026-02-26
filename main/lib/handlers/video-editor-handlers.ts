@@ -1283,12 +1283,13 @@ Lembre-se:
   ipcMain.handle('video-project:generate-flow-image', async (event, options: {
     prompt: string;
     count?: number;
+    aspectRatio?: string;
     geminiProviderId?: string;
     headless?: boolean;
   }) => {
     try {
       const count = Math.min(options.count || 1, 4);
-      console.log(`🖼️ [Flow/Img] Gerando ${count} imagem(ns) com prompt: "${options.prompt.substring(0, 80)}..."`);
+      console.log(`🖼️ [Flow/Img] Gerando ${count} imagem(ns) (ratio: ${options.aspectRatio || 'default'}) com prompt: "${options.prompt.substring(0, 80)}..."`);
 
       const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
       const flowProvider = getFlowVideoProvider({
@@ -1302,7 +1303,8 @@ Lembre-se:
         (progress: any) => {
           event.sender.send('video-project:flow-image-progress', progress);
         },
-        '🍌 Nano Banana Pro'
+        '🍌 Nano Banana Pro',
+        options.aspectRatio
       );
 
       if (!result.success || !result.imagePaths?.length) {

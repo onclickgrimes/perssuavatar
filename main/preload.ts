@@ -466,6 +466,7 @@ const handler = {
     generateFlowImage: (options: {
       prompt: string;
       count?: number;
+      aspectRatio?: string;
       geminiProviderId?: string;
       headless?: boolean;
     }) => ipcRenderer.invoke('video-project:generate-flow-image', options),

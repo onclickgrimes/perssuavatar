@@ -258,12 +258,124 @@ export class FlowVideoProvider {
   // ========================================
 
   /**
-   * Inicializa o navegador usando os cookies do provider Gemini logado.
-   * 
-   * Estratégia:
-   * 1. Tenta reusar o browser já aberto do GeminiProvider (nova aba)
-   * 2. Se não disponível, abre novo browser com o mesmo userDataDir
+   * Injeta JavaScript de stealth na página para evitar deteção pelo reCAPTCHA Enterprise do Google.
+   * Deve ser chamado logo após criar uma nova página, ANTES de navegar.
    */
+  private async injectPageStealth(page: import('puppeteer').Page): Promise<void> {
+    // 1. User-Agent do Chrome 131 real no Windows 10
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    );
+
+    // 2. Viewport realistéco
+    await page.setViewport({ width: 1366, height: 768, deviceScaleFactor: 1 });
+
+    // 3. HTTP Headers
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+    });
+
+    // 4. Stealth JavaScript injetado antes de qualquer script da página
+    await page.evaluateOnNewDocument(() => {
+      // -- navigator.webdriver --
+      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+      // -- chrome runtime (páginas Google esperam isso) --
+      // @ts-ignore
+      if (!window.chrome) window.chrome = {};
+      // @ts-ignore
+      if (!window.chrome.runtime) window.chrome.runtime = {
+        connect: () => {},
+        sendMessage: () => {},
+        PlatformOs: { MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd' },
+      };
+
+      // -- Plugins (Chrome real tem vários plugins) --
+      const fakePlugin = (name: string, filename: string, mimeTypes: string[]) => ({
+        name, filename,
+        description: name,
+        length: mimeTypes.length,
+        item: (i: number) => ({ type: mimeTypes[i] }),
+        namedItem: (n: string) => ({ type: n }),
+        [Symbol.iterator]: function* () { for (const m of mimeTypes) yield { type: m }; },
+      });
+      const fakeMimeTypes: any = [
+        { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: { name: 'PDF Viewer' } },
+      ];
+
+      Object.defineProperty(navigator, 'plugins', {
+        get: () => {
+          const arr = [
+            fakePlugin('PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+            fakePlugin('Chrome PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+            fakePlugin('Chromium PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+            fakePlugin('Microsoft Edge PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+            fakePlugin('WebKit built-in PDF', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+          ] as any;
+          arr.length = 5;
+          arr.item = (i: number) => arr[i];
+          arr.namedItem = (name: string) => arr.find((p: any) => p.name === name);
+          arr.refresh = () => {};
+          return arr;
+        },
+      });
+
+      Object.defineProperty(navigator, 'mimeTypes', { get: () => fakeMimeTypes });
+
+      // -- Languages --
+      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+      Object.defineProperty(navigator, 'language',  { get: () => 'en-US' });
+
+      // -- deviceMemory / hardwareConcurrency --
+      Object.defineProperty(navigator, 'deviceMemory',       { get: () => 8 });
+      Object.defineProperty(navigator, 'hardwareConcurrency',{ get: () => 8 });
+
+      // -- outerWidth / outerHeight (deve bater com o viewport) --
+      Object.defineProperty(window, 'outerWidth',  { get: () => 1366 });
+      Object.defineProperty(window, 'outerHeight', { get: () => 768 });
+
+      // -- Permissions API (reCAPTCHA pergunta sobre 'notifications') --
+      const origQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
+      window.navigator.permissions.query = (params: PermissionDescriptor) =>
+        params.name === 'notifications'
+          ? Promise.resolve({ state: Notification.permission, onchange: null } as PermissionStatus)
+          : origQuery(params);
+
+      // -- Remover traços de CDP / automation --
+      // @ts-ignore
+      delete window.__nightmare;
+      // @ts-ignore
+      delete window._phantom;
+      // @ts-ignore
+      delete window.callPhantom;
+      // @ts-ignore
+      delete window.__selenium_evaluate;
+      // @ts-ignore
+      delete window.__webdriver_evaluate;
+      // @ts-ignore
+      delete window.__driver_evaluate;
+      // @ts-ignore
+      delete window.__webdriver_script_func;
+      // @ts-ignore
+      delete window.__webdriver_script_fn;
+      // @ts-ignore
+      delete window.__fxdriver_evaluate;
+      // @ts-ignore
+      delete document.$cdc_asdjflasutopfhvcZLmcfl_;
+
+      // -- Screen --
+      Object.defineProperty(screen, 'width',       { get: () => 1366 });
+      Object.defineProperty(screen, 'height',      { get: () => 768 });
+      Object.defineProperty(screen, 'availWidth',  { get: () => 1366 });
+      Object.defineProperty(screen, 'availHeight', { get: () => 728 });
+      Object.defineProperty(screen, 'colorDepth',  { get: () => 24 });
+      Object.defineProperty(screen, 'pixelDepth',  { get: () => 24 });
+    });
+  }
+
   async init(): Promise<void> {
     // Verifica se o browser/page REALMENTE estão vivos
     if (this.isBrowserAlive()) {
@@ -287,19 +399,7 @@ export class FlowVideoProvider {
         if (reused && this.browser) {
           // Abre nova aba no browser existente
           this.page = await this.browser.newPage();
-          
-          await this.page.evaluateOnNewDocument(() => {
-            Object.defineProperty(navigator, 'webdriver', {
-              get: () => undefined,
-            });
-            // @ts-ignore
-            window.navigator.chrome = { runtime: {} };
-          });
-
-          await this.page.setExtraHTTPHeaders({
-            'Accept-Language': 'en-US,en;q=0.9',
-          });
-
+          await this.injectPageStealth(this.page);
           console.log(`✅ [Flow] Nova aba aberta no browser do Gemini (cookies compartilhados)`);
           return;
         }
@@ -321,12 +421,12 @@ export class FlowVideoProvider {
         headless: this.config.headless,
         userDataDir: geminiData.userDataDir,
         args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
+          // '--no-sandbox',
+          // '--disable-setuid-sandbox',
+          // '--disable-gpu',
+          '--window-size=1366,768',
           '--disable-dev-shm-usage',
           '--disable-accelerated-2d-canvas',
-          '--disable-gpu',
-          '--window-size=1366,768',
           '--lang=en-US',
           '--disable-blink-features=AutomationControlled',
           '--disable-features=IsolateOrigins,site-per-process',
@@ -334,7 +434,7 @@ export class FlowVideoProvider {
           '--disable-infobars',
         ],
         ignoreDefaultArgs: ['--enable-automation'],
-        defaultViewport: { width: 1366, height: 768 },
+        defaultViewport: null, // deixar o window-size controlar
       };
 
       if (chromePath) {
@@ -347,18 +447,7 @@ export class FlowVideoProvider {
       const pages = await this.browser.pages();
       this.page = pages[0] || await this.browser.newPage();
 
-      // Remove webdriver property
-      await this.page.evaluateOnNewDocument(() => {
-        Object.defineProperty(navigator, 'webdriver', {
-          get: () => undefined,
-        });
-        // @ts-ignore
-        window.navigator.chrome = { runtime: {} };
-      });
-
-      await this.page.setExtraHTTPHeaders({
-        'Accept-Language': 'en-US,en;q=0.9',
-      });
+      await this.injectPageStealth(this.page);
 
       console.log(`✅ [Flow] Navegador inicializado com cookies do Gemini (provider: ${geminiData.providerId})`);
     } catch (error) {
@@ -375,6 +464,100 @@ export class FlowVideoProvider {
    * @param aspectRatio - Proporção do vídeo ('9:16' para portrait, '16:9' para landscape)
    * @returns Resultado com caminho do vídeo baixado
    */
+  /**
+   * Abre o menu "settings_2" (configurações da grade de blocos) e garante:
+   * - View Mode: Batch
+   * - Tamanho da grade: S
+   * - Som ao passar o cursor: Desativado
+   * - Mostrar detalhes do bloco: Desativado
+   * - Limpar comando ao enviar: Desativado
+   *
+   * Deve ser chamado após a abertura do projeto e ANTES de configureFlowDropdown.
+   */
+  private async configureProjectDisplaySettings(): Promise<void> {
+    if (!this.page) return;
+    if (!this.page.url().includes('/project/')) return;
+
+    try {
+      // 1. Encontrar e clicar no botão settings_2
+      let settingsBtn: import('puppeteer').ElementHandle | null = null;
+      const buttons = await this.page.$$('button');
+      for (const btn of buttons) {
+        if (!(await this.isVisible(btn))) continue;
+        const icons = await btn.$$('i');
+        for (const icon of icons) {
+          if ((await this.getTextContent(icon)).trim() === 'settings_2') {
+            settingsBtn = btn;
+            break;
+          }
+        }
+        if (settingsBtn) break;
+      }
+
+      if (!settingsBtn) {
+        console.warn('⚠️ [Flow] Botão settings_2 não encontrado');
+        return;
+      }
+
+      await settingsBtn.click();
+      await this.randomDelay(500, 800);
+
+      // 2. Verificar se o menu abriu
+      const menu = await this.page.$('[role="menu"]');
+      if (!menu) {
+        console.warn('⚠️ [Flow] Menu de configurações da grade não abriu');
+        return;
+      }
+      console.log('✅ [Flow] Menu settings_2 aberto');
+
+      // 3. Aplicar todas as configurações de uma vez via page.evaluate (string para evitar transpile do Babel)
+      await this.page.evaluate(`(function() {
+        function ensureTabByControls(key) {
+          var tabs = document.querySelectorAll('button[role="tab"]');
+          for (var i = 0; i < tabs.length; i++) {
+            var tab = tabs[i];
+            var c = tab.getAttribute('aria-controls') || '';
+            if (c.toLowerCase().indexOf(key.toLowerCase()) !== -1) {
+              if (tab.getAttribute('aria-selected') !== 'true') tab.click();
+              break;
+            }
+          }
+        }
+        function ensureToggle(icon, label) {
+          var divs = document.querySelectorAll('div');
+          for (var d = 0; d < divs.length; d++) {
+            var di = divs[d].querySelector(':scope > i');
+            if (!di || (di.textContent || '').trim() !== icon) continue;
+            var tabs = divs[d].querySelectorAll('button[role="tab"]');
+            for (var t = 0; t < tabs.length; t++) {
+              if (tabs[t].getAttribute('aria-label') === label) {
+                if (tabs[t].getAttribute('aria-selected') !== 'true') tabs[t].click();
+                break;
+              }
+            }
+            break;
+          }
+        }
+        ensureTabByControls('batch');
+        ensureTabByControls('SMALL');
+        ensureToggle('volume_up', 'Desativado');
+        ensureToggle('visibility', 'Desativado');
+        ensureToggle('ink_eraser', 'Desativado');
+      })()`);
+
+      await this.randomDelay(300, 500);
+
+      // 4. Fechar o menu
+      await this.page.keyboard.press('Escape');
+      await this.randomDelay(300, 500);
+      console.log('✅ [Flow] Configurações da grade aplicadas');
+
+    } catch (err: any) {
+      console.warn('⚠️ [Flow] Erro ao configurar display settings:', err.message);
+      try { await this.page.keyboard.press('Escape'); } catch {}
+    }
+  }
+
   async generateVideo(
     prompt: string,
     onProgress?: FlowProgressCallback,
@@ -446,24 +629,19 @@ export class FlowVideoProvider {
         }
       }
 
-      // 4. Definir modelo via menu dropdown
-      emitProgress('submitting', `Selecionando modelo "${model}"...`);
-      await this.setFlowModel(model, 'video');
-      await this.randomDelay(300, 500);
+      // 4a. Configurar exibição da grade (View Mode, tamanho, toggles)
+      emitProgress('submitting', 'Configurando exibição do projeto...');
+      await this.configureProjectDisplaySettings();
 
-      // 5. Definir aspect ratio via menu dropdown
-      if (aspectRatio) {
-        emitProgress('submitting', `Definindo proporção ${aspectRatio}...`);
-        await this.setAspectRatio(aspectRatio);
-        await this.randomDelay(300, 500);
-      }
-
-      // 5b. Definir quantidade de vídeos por geração
-      if (count > 1) {
-        emitProgress('submitting', `Definindo ${count} vídeos por geração...`);
-        await this.setResponseCount(count);
-        await this.randomDelay(300, 500);
-      }
+      // 4b. Configurar todas as opções de geração em uma única sessão de dropdown
+      emitProgress('submitting', `Configurando modelo, proporção e quantidade...`);
+      await this.configureFlowDropdown({
+        mediaType: 'video',
+        model,
+        aspectRatio,
+        count,
+      });
+      await this.randomDelay(400, 700);
 
       // 6. Procurar e submeter o prompt
       emitProgress('submitting', 'Localizando campo de prompt...');
@@ -472,6 +650,18 @@ export class FlowVideoProvider {
       // Coletar as URLs dos vídeos já existentes na página antes de gerar
       const knownVideoUrls = await this.getExistingVideoUrls();
       emitProgress('submitting', `Verificadas ${knownVideoUrls.length} mídias anteriores...`);
+
+      // Capturar tile IDs existentes ANTES de submeter (para detectar apenas tiles novas depois)
+      const knownTileIds = await this.page.evaluate(`(function() {
+        var els = document.querySelectorAll('[data-tile-id]');
+        var ids = [];
+        for (var i = 0; i < els.length; i++) {
+          var id = els[i].getAttribute('data-tile-id');
+          if (id) ids.push(id);
+        }
+        return ids;
+      })()`) as string[];
+      console.log(`📋 [Flow] ${knownTileIds.length} tile(s) existente(s) registrada(s) antes do submit`);
 
       // Tentar encontrar o campo de prompt de diversas formas
       const promptSubmitted = await this.submitPrompt(prompt);
@@ -488,6 +678,7 @@ export class FlowVideoProvider {
       const videoUrl = await this.waitForVideoGeneration(
         this.config.generationTimeoutMs!,
         knownVideoUrls,
+        knownTileIds,
         (percent) => {
           emitProgress('generating', `Gerando vídeo... ${percent}%`, percent);
         }
@@ -744,25 +935,143 @@ export class FlowVideoProvider {
   }
 
   /**
-   * Define o aspect ratio via o menu dropdown de configurações.
-   * Tabs: crop_16_9 = Paisagem, crop_9_16 = Retrato
+   * Configura TODAS as opções via dropdown numa única sessão:
+   * - Tab de mídia (image / video)
+   * - Aspect ratio (crop_16_9 / crop_9_16) — apenas para vídeo
+   * - Quantidade de respostas (x1 / x2 / x3 / x4)
+   * - Modelo (ex: 'Veo 2 - Fast', '🍌 Nano Banana Pro')
+   *
+   * Abre o dropdown UMA VEZ e faz tudo sem fechar entre etapas.
    */
-  private async setAspectRatio(aspectRatio: string): Promise<void> {
-    const isPortrait = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '3:4';
-    const targetIcon = isPortrait ? 'crop_9_16' : 'crop_16_9';
-    const label = isPortrait ? 'Retrato (9:16)' : 'Paisagem (16:9)';
+  private async configureFlowDropdown(options: {
+    mediaType: 'video' | 'image';
+    model: string;
+    aspectRatio?: string;
+    count: number;
+  }): Promise<void> {
+    if (!this.page) return;
+    const { mediaType, model, aspectRatio, count } = options;
+    const clampedCount = Math.max(1, Math.min(4, count));
+
     try {
+      // 1. Abrir o dropdown de configurações
       const opened = await this.openSettingsDropdownMenu();
       if (!opened) {
-        console.warn('⚠️ [Flow] Não foi possível abrir menu para definir aspect ratio');
+        console.warn('⚠️ [Flow] Não foi possível abrir menu de configurações');
         return;
       }
-      await this.clickMenuTab(undefined, targetIcon);
+
+      // 2. Selecionar tab de mídia (image / video) via aria-controls
+      const tabs = await this.page.$$('button[role="tab"]');
+      let tabClicked = false;
+      for (const tab of tabs) {
+        if (!(await this.isVisible(tab))) continue;
+        const ariaControlsProp = await tab.getProperty('ariaControls');
+        const ariaControls = ((await ariaControlsProp?.jsonValue()) as string || '').toUpperCase();
+        const isTarget = mediaType === 'video'
+          ? ariaControls.includes('VIDEO')
+          : ariaControls.includes('IMAGE');
+        if (isTarget) {
+          const stateProp = await tab.getProperty('ariaSelected');
+          const isSelected = (await stateProp?.jsonValue()) === 'true';
+          if (!isSelected) {
+            await tab.click();
+            await this.randomDelay(400, 600);
+            console.log(`✅ [Flow] Tab "${mediaType}" selecionado`);
+          } else {
+            console.log(`ℹ️ [Flow] Tab "${mediaType}" já estava ativo`);
+          }
+          tabClicked = true;
+          break;
+        }
+      }
+      if (!tabClicked) {
+        // Fallback por ícone
+        const tabIcon = mediaType === 'video' ? 'videocam' : 'image';
+        await this.clickMenuTab(undefined, tabIcon);
+        await this.randomDelay(400, 600);
+      }
+
+      // 3. Aspect ratio (imagem e vídeo)
+      if (aspectRatio) {
+        const isPortrait = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '3:4';
+        const cropIcon = isPortrait ? 'crop_9_16' : 'crop_16_9';
+        await this.clickMenuTab(undefined, cropIcon);
+        await this.randomDelay(300, 500);
+        console.log(`✅ [Flow] Aspect ratio: ${aspectRatio} (${cropIcon})`);
+      }
+
+      // 4. Quantidade de respostas (x1 / x2 / x3 / x4)
+      await this.clickMenuTab(`x${clampedCount}`);
       await this.randomDelay(300, 500);
-      await this.closeSettingsDropdownMenu();
-      console.log(`✅ [Flow] Aspect ratio definido: ${label}`);
+
+      // 5. Selecionar modelo — clica no botão de modelo (arrow_drop_down) para abrir submenu
+      let modelBtn: import('puppeteer').ElementHandle | null = null;
+      const menuBtns = await this.page.$$('button[aria-haspopup="menu"]');
+      for (const btn of menuBtns) {
+        if (!(await this.isVisible(btn))) continue;
+        const icons = await btn.$$('i');
+        let hasArrow = false;
+        for (const icon of icons) {
+          if ((await this.getTextContent(icon)).trim() === 'arrow_drop_down') {
+            hasArrow = true;
+            break;
+          }
+        }
+        if (hasArrow) {
+          modelBtn = btn;
+          const currentModel = (await this.getTextContent(btn)).replace('arrow_drop_down', '').trim();
+          console.log(`🔍 [Flow] Modelo atual: "${currentModel}"`);
+          if (currentModel.includes(model) || currentModel === model) {
+            console.log(`✅ [Flow] Modelo já é "${model}"`);
+            await this.closeSettingsDropdownMenu();
+            return;
+          }
+          break;
+        }
+      }
+
+      if (!modelBtn) {
+        console.warn('⚠️ [Flow] Botão de modelo não encontrado no menu');
+        await this.closeSettingsDropdownMenu();
+        return;
+      }
+
+      // 5b. Clicar botão do modelo → abre submenu
+      await modelBtn.click();
+      await this.randomDelay(500, 800);
+
+      // 5c. Selecionar modelo no submenu
+      const optionSelectors = ['[role="menuitem"]', '[role="menuitemradio"]', '[role="option"]'];
+      let modelSelected = false;
+      for (const selector of optionSelectors) {
+        const optionEls = await this.page.$$(selector);
+        for (const opt of optionEls) {
+          if (!(await this.isVisible(opt))) continue;
+          const optText = (await this.getTextContent(opt)).trim();
+          if (optText.includes(model) || optText === model) {
+            await opt.click();
+            modelSelected = true;
+            console.log(`✅ [Flow] Modelo selecionado: "${model}"`);
+            break;
+          }
+        }
+        if (modelSelected) break;
+      }
+
+      if (!modelSelected) {
+        console.warn(`⚠️ [Flow] Modelo "${model}" não encontrado no submenu`);
+      }
+
+      await this.randomDelay(300, 500);
+      // Garantir que todos os menus estão fechados
+      await this.page.keyboard.press('Escape').catch(() => {});
+      await this.randomDelay(200, 300);
+      await this.page.keyboard.press('Escape').catch(() => {});
+
     } catch (err: any) {
-      console.warn('⚠️ [Flow] Erro ao definir aspect ratio:', err.message);
+      console.warn('⚠️ [Flow] Erro em configureFlowDropdown:', err.message);
+      try { await this.page.keyboard.press('Escape'); } catch {}
     }
   }
 
@@ -1070,15 +1379,21 @@ export class FlowVideoProvider {
 
       console.log(`✅ [Flow] Campo de prompt encontrado: ${usedSelector}`);
 
-      // Clicar, selecionar tudo e digitar
+      // Colocar prompt no clipboard e colar via Ctrl+V (mais rápido que keyboard.type)
+      const { clipboard } = require('electron');
+      clipboard.writeText(prompt);
+
       await inputElement.click();
-      await this.randomDelay(300, 600);
+      await this.randomDelay(300, 500);
+      // Selecionar tudo e substituir pelo conteúdo do clipboard
       await this.page.keyboard.down('Control');
       await this.page.keyboard.press('A');
       await this.page.keyboard.up('Control');
       await this.randomDelay(100, 200);
-      await this.page.keyboard.type(prompt, { delay: 15 });
-      await this.randomDelay(500, 1000);
+      await this.page.keyboard.down('Control');
+      await this.page.keyboard.press('V');
+      await this.page.keyboard.up('Control');
+      await this.randomDelay(500, 800);
 
       console.log(`📝 [Flow] Prompt digitado: "${prompt.substring(0, 80)}..."`);
 
@@ -1126,6 +1441,7 @@ export class FlowVideoProvider {
   private async waitForVideoGeneration(
     timeoutMs: number,
     knownVideoUrls: string[],
+    knownTileIds: string[],
     onPercent?: (percent: number) => void
   ): Promise<string | null> {
     if (!this.page) return null;
@@ -1181,20 +1497,50 @@ export class FlowVideoProvider {
           }
         }
 
-        // 3b. Verificar card de falha (ícone 'warning' + "Falha" / "Algo deu errado")
-        const warningIcons = await this.page.$$('i');
-        for (const icon of warningIcons) {
-          if ((await this.getTextContent(icon)).trim() !== 'warning') continue;
-          if (!(await this.isVisible(icon))) continue;
-          const parentProp = await this.page.evaluateHandle(
-            (el: Element) => el.closest('[class*="f112b7ef"]') || el.parentElement?.parentElement || el.parentElement,
-            icon
-          );
-          const parentText = parentProp
-            ? (await this.getTextContent(parentProp as any)).trim()
-            : '';
-          console.error(`❌ [Flow] Card de falha detectado na geração de vídeo: "${parentText.substring(0, 100)}"`);
-          throw new Error(`Flow retornou falha: ${parentText.substring(0, 150) || 'Algo deu errado.'}`);
+        // 3b. Verificar card de falha SOMENTE se não houver tiles novas com progresso ativo
+        const knownIdsJson = JSON.stringify(knownTileIds);
+        const tileStatus = await this.page.evaluate(`(function() {
+          var knownIds = ${knownIdsJson};
+          var allTiles = document.querySelectorAll('[data-tile-id]');
+          var hasAnyActive = false;
+          var failedText = null;
+
+          for (var ti = 0; ti < allTiles.length; ti++) {
+            var tile = allTiles[ti];
+            var tileId = tile.getAttribute('data-tile-id') || '';
+            var isKnown = false;
+            for (var ki = 0; ki < knownIds.length; ki++) {
+              if (knownIds[ki] === tileId) { isKnown = true; break; }
+            }
+            if (isKnown) continue;
+
+            var tileText = tile.textContent || '';
+            var icons = tile.querySelectorAll('i');
+            var hasWarning = false;
+            var hasVideocam = false;
+            var hasPct = tileText.indexOf('%') !== -1;
+
+            for (var ii = 0; ii < icons.length; ii++) {
+              var it = (icons[ii].textContent || '').trim();
+              if (it === 'warning') hasWarning = true;
+              if (it === 'videocam' || it === 'image') hasVideocam = true;
+            }
+            if (hasVideocam && (hasPct || !hasWarning)) { hasAnyActive = true; }
+            if (hasWarning && !hasVideocam && !hasPct && failedText === null) {
+              failedText = tileText.trim().substring(0, 120);
+            }
+          }
+
+          if (failedText !== null && !hasAnyActive) { return { failed: true, text: failedText }; }
+          return { failed: false, text: null };
+        })()`) as { failed: boolean; text: string | null };
+
+        if (tileStatus.failed) {
+          console.error(`❌ [Flow] Card de falha detectado na geração de vídeo: "${(tileStatus.text || '').substring(0, 100)}"`);
+          throw new Error(`Flow retornou falha: ${tileStatus.text || 'Algo deu errado.'}`);
+        }
+        if (tileStatus.text !== null) {
+          console.warn(`⚠️ [Flow] Warning em tile nova ignorado — geração ativa em outra tile`);
         }
 
         // 4. Ler progresso real do Flow (elemento com texto "%")
@@ -1410,10 +1756,6 @@ export class FlowVideoProvider {
   private async setResponseCount(target: number): Promise<void> {
     if (!this.page) return;
     const clampedTarget = Math.max(1, Math.min(4, target));
-    if (clampedTarget === 1) {
-      console.log(`ℹ️ [Flow/Img] Quantidade já é 1 (padrão), pulando ajuste`);
-      return;
-    }
 
     try {
       // 1. Abrir painel tune
@@ -1647,6 +1989,171 @@ export class FlowVideoProvider {
   }
 
   /**
+   * Aguarda um novo arquivo aparecer no diretório (excluindo .crdownload/.tmp)
+   */
+  private async waitForNewFile(dir: string, knownFiles: Set<string>, timeoutMs = 30000): Promise<string | null> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      await new Promise(r => setTimeout(r, 600));
+      try {
+        const files = fs.readdirSync(dir);
+        for (const file of files) {
+          if (!knownFiles.has(file) && !file.endsWith('.crdownload') && !file.endsWith('.tmp')) {
+            return path.join(dir, file);
+          }
+        }
+      } catch {}
+    }
+    return null;
+  }
+
+  /**
+   * Clica no botão more_vert de um tile, abre menu, hover em Baixar e clica na qualidade.
+   * Usa page.evaluate string para evitar transpile do Babel.
+   */
+  private async downloadTileByClick(tileId: string): Promise<boolean> {
+    if (!this.page) return false;
+    try {
+      // 1. Hover no tile para revelar botões
+      const tileEl = await this.page.$(`[data-tile-id="${tileId}"]`);
+      if (!tileEl) { console.warn(`⚠️ [Flow/Img] Tile não encontrado: ${tileId}`); return false; }
+      await tileEl.hover();
+      await this.randomDelay(600, 900);
+
+      // 2. Encontrar e clicar no botão "Mais" (more_vert) do tile
+      // O botão correto tem: <i>more_vert</i> + <span>Mais</span> (visually hidden)
+      // Usar evaluate string para evitar transpile do Babel
+      const tileIdJson = JSON.stringify(tileId);
+      const moreVertClicked = await this.page.evaluate(`(function() {
+        // Buscar dentro do tile especificado (ou próximo)
+        var tiles = document.querySelectorAll('[data-tile-id]');
+        var container = null;
+        for (var i = 0; i < tiles.length; i++) {
+          if (tiles[i].getAttribute('data-tile-id') === ${tileIdJson}) {
+            container = tiles[i];
+            break;
+          }
+        }
+        // Buscar o botão com ícone more_vert + span "Mais" no container OU na página
+        var searchRoot = container ? container.closest('[class*="sc-5c6add13"]') || container.parentElement || document : document;
+        var btns = searchRoot.querySelectorAll('button');
+        for (var i = 0; i < btns.length; i++) {
+          var btn = btns[i];
+          var rect = btn.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          // Verificar ícone more_vert
+          var icons = btn.querySelectorAll('i');
+          var hasMV = false;
+          for (var j = 0; j < icons.length; j++) {
+            if ((icons[j].textContent || '').trim() === 'more_vert') { hasMV = true; break; }
+          }
+          if (!hasMV) continue;
+          // Verificar span com texto "Mais" (diferencia do outro more_vert)
+          var spans = btn.querySelectorAll('span');
+          for (var s = 0; s < spans.length; s++) {
+            var spanText = (spans[s].textContent || '').trim();
+            if (spanText === 'Mais' || spanText === 'More') {
+              btn.click();
+              return true;
+            }
+          }
+        }
+        return false;
+      })()`) as boolean;
+
+      if (!moreVertClicked) {
+        console.warn(`⚠️ [Flow/Img] Botão "Mais" (more_vert) não encontrado no tile ${tileId}`);
+        return false;
+      }
+      console.log(`✅ [Flow/Img] Botão "Mais" clicado`);
+
+      // 3. Esperar o menu abrir
+      const menu = await this.page.waitForSelector('[role="menu"]', { timeout: 5000 }).catch(() => null);
+      if (!menu) { console.warn(`⚠️ [Flow/Img] Menu de contexto não abriu`); return false; }
+      await this.randomDelay(400, 600);
+
+      // 4. Clicar em "Baixar" via evaluate string (rótulo do item com ícone download)
+      const clickedBaixar = await this.page.evaluate(`(function() {
+        var items = document.querySelectorAll('[role="menuitem"]');
+        for (var i = 0; i < items.length; i++) {
+          var el = items[i];
+          var rect = el.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          var icons = el.querySelectorAll('i');
+          for (var j = 0; j < icons.length; j++) {
+            if ((icons[j].textContent || '').trim() === 'download') {
+              el.dispatchEvent(new MouseEvent('mouseenter', {bubbles: true}));
+              el.dispatchEvent(new MouseEvent('mouseover', {bubbles: true}));
+              return true;
+            }
+          }
+        }
+        return false;
+      })()`) as boolean;
+
+      if (!clickedBaixar) {
+        console.warn(`⚠️ [Flow/Img] Item "Baixar" não encontrado no menu`);
+        await this.page.keyboard.press('Escape');
+        return false;
+      }
+      console.log(`✅ [Flow/Img] Hover em "Baixar" disparado`);
+      await this.randomDelay(700, 1000);
+
+      // 5. Clicar na qualidade: prefer 2K Upscaled, fallback 1K Original
+      const clickedQuality = await this.page.evaluate(`(function() {
+        // Procura div com texto contendo "2K" + "Upscaled"
+        var allDivs = document.querySelectorAll('div');
+        for (var i = 0; i < allDivs.length; i++) {
+          var el = allDivs[i];
+          var rect = el.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          var txt = (el.textContent || '').trim();
+          if (txt.indexOf('2K') !== -1 && txt.length < 20) {
+            el.click();
+            return '2K';
+          }
+        }
+        // Fallback: 1K Original
+        for (var i = 0; i < allDivs.length; i++) {
+          var el = allDivs[i];
+          var rect = el.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          var txt = (el.textContent || '').trim();
+          if (txt.indexOf('1K') !== -1 && txt.length < 20) {
+            el.click();
+            return '1K';
+          }
+        }
+        // Fallback final: clicar no próprio item Baixar
+        var items = document.querySelectorAll('[role="menuitem"]');
+        for (var i = 0; i < items.length; i++) {
+          var icons = items[i].querySelectorAll('i');
+          for (var j = 0; j < icons.length; j++) {
+            if ((icons[j].textContent || '').trim() === 'download') {
+              items[i].click();
+              return 'direct';
+            }
+          }
+        }
+        return null;
+      })()`) as string | null;
+
+      if (!clickedQuality) {
+        console.warn(`⚠️ [Flow/Img] Opção de qualidade não encontrada`);
+        await this.page.keyboard.press('Escape');
+        return false;
+      }
+      console.log(`✅ [Flow/Img] Download disparado (${clickedQuality})`);
+      await this.randomDelay(300, 500);
+      return true;
+    } catch (err: any) {
+      console.warn(`⚠️ [Flow/Img] Erro em downloadTileByClick:`, err.message);
+      try { await this.page.keyboard.press('Escape'); } catch {}
+      return false;
+    }
+  }
+
+  /**
    * Gera imagens usando o Google Flow no modo "Criar imagens".
    * Retorna até `count` imagens baixadas como arquivos locais.
    */
@@ -1654,7 +2161,8 @@ export class FlowVideoProvider {
     prompt: string,
     count: number = 1,
     onProgress?: FlowProgressCallback,
-    model: string = '🍌 Nano Banana Pro'
+    model: string = '🍌 Nano Banana Pro',
+    aspectRatio?: string
   ): Promise<FlowImageResult> {
     const startTime = Date.now();
 
@@ -1695,21 +2203,31 @@ export class FlowVideoProvider {
         if (!opened) throw new Error('Não foi possível abrir um novo projeto no Flow.');
       }
 
-      // 3. Selecionar modelo
-      emit('submitting', `Selecionando modelo "${model}"...`, 4);
-      await this.setFlowModel(model, 'image');
-      await this.randomDelay(300, 500);
+      // 3a. Configurar exibição da grade
+      emit('submitting', 'Configurando exibição do projeto...', 2);
+      await this.configureProjectDisplaySettings();
 
-      // 3b. Definir quantidade de respostas
-      if (count > 1) {
-        emit('submitting', `Definindo ${count} imagens por geração...`, 8);
-        await this.setResponseCount(count);
-        await this.randomDelay(500, 800);
-      }
+      // 3b. Configurar modelo e quantidade em uma única sessão de dropdown
+      emit('submitting', `Configurando modelo e quantidade...`, 4);
+      await this.configureFlowDropdown({
+        mediaType: 'image',
+        model,
+        aspectRatio,
+        count,
+      });
+      await this.randomDelay(400, 600);
 
-      // 5. Capturar imagens existentes (para detectar as novas)
-      const knownImageUrls = await this.getExistingImageUrls();
-      emit('submitting', `${knownImageUrls.length} imagens anteriores detectadas`, 15);
+      // 5. Capturar tile IDs existentes ANTES de submeter (para identificar tiles novos depois)
+      const knownTileIds = await this.page!.evaluate(`(function() {
+        var els = document.querySelectorAll('[data-tile-id]');
+        var ids = [];
+        for (var i = 0; i < els.length; i++) {
+          var id = els[i].getAttribute('data-tile-id');
+          if (id) ids.push(id);
+        }
+        return ids;
+      })()`) as string[];
+      emit('submitting', `${knownTileIds.length} tile(s) anteriores registrados`, 15);
 
       // 6. Submeter prompt
       emit('submitting', 'Digitando prompt...', 20);
@@ -1717,67 +2235,119 @@ export class FlowVideoProvider {
       if (!submitted) throw new Error('Não foi possível localizar o campo de prompt no Flow.');
       emit('generating', 'Prompt enviado! Aguardando geração...', 25);
 
-      // 7. Aguardar novas imagens aparecerem no DOM
+      // 7. Polling: aguarda tiles com nosso prompt completarem
       const timeoutMs = this.config.generationTimeoutMs!;
       const pollInterval = 2000;
       let elapsed = 0;
       let newImageUrls: string[] = [];
+      // Primeiros 120 chars do prompt para match (sem ser sensível a case/whitespace)
+      const promptFragment = prompt.substring(0, 120).trim();
 
       while (elapsed < timeoutMs) {
         await new Promise(r => setTimeout(r, pollInterval));
         elapsed += pollInterval;
 
-        // Ler progresso real do DOM
-        // Layout 2: div com texto '8%' é irmão do <i>image</i> ou <i>videocam</i>
-        // Layout 1: div isolado com texto '36%'
-        let realPercent = 0;
         try {
-          const allDivs = await this.page!.$$('div');
-          for (const div of allDivs) {
-            const text = (await this.getTextContent(div)).trim();
-            const match = text.match(/^(\d{1,3})%$/);
-            if (match) {
-              const val = parseInt(match[1], 10);
-              if (val > realPercent) realPercent = val;
+          // Usar string literal para page.evaluate — o Babel não transpila strings em runtime
+          const fragment60 = JSON.stringify(promptFragment.substring(0, 60));
+          const knownIdsJson = JSON.stringify(knownTileIds);
+          const result = await this.page!.evaluate(`(function() {
+            var pFrag = ${fragment60};
+            var knownIds = ${knownIdsJson};
+            var allTiles = document.querySelectorAll('[data-tile-id]');
+            var completed = [];
+            var maxProgress = 0;
+            var matchingTileCount = 0;
+            var failedMatchingTile = false;
+
+            for (var ti = 0; ti < allTiles.length; ti++) {
+              var tile = allTiles[ti];
+              var tileId = tile.getAttribute('data-tile-id') || '';
+              var isKnown = false;
+              for (var ki = 0; ki < knownIds.length; ki++) {
+                if (knownIds[ki] === tileId) { isKnown = true; break; }
+              }
+              if (isKnown) continue;
+
+              var tileText = tile.textContent || '';
+              var tileHasPrompt = tileText.indexOf(pFrag) !== -1;
+
+              // -- Tracking de progresso e falha: somente em tiles que ainda têm o prompt visível (durante geração) --
+              if (tileHasPrompt) {
+                matchingTileCount++;
+
+                // Ler progresso (XX%)
+                var pctIdx = tileText.indexOf('%');
+                if (pctIdx > 0) {
+                  var pctStr = '';
+                  for (var pc = pctIdx - 1; pc >= 0 && pc >= pctIdx - 3; pc--) {
+                    var ch = tileText[pc];
+                    if (ch >= '0' && ch <= '9') pctStr = ch + pctStr;
+                    else break;
+                  }
+                  if (pctStr.length > 0) {
+                    var v = parseInt(pctStr, 10);
+                    if (v > maxProgress) maxProgress = v;
+                  }
+                }
+
+                // Checar falha (warning sem progresso no tile)
+                var icons = tile.querySelectorAll('i');
+                var hasWarning = false;
+                var hasProgressIcon = false;
+                for (var ii = 0; ii < icons.length; ii++) {
+                  var iconText = (icons[ii].textContent || '').trim();
+                  if (iconText === 'warning') hasWarning = true;
+                  if (iconText === 'image' || iconText === 'videocam') hasProgressIcon = true;
+                }
+                if (hasWarning && !hasProgressIcon) { failedMatchingTile = true; }
+              }
+
+              // -- Coleta de imagens: em QUALQUER tile nova (prompt sai do tile após conclusão) --
+              var imgs = tile.querySelectorAll('img');
+              for (var im = 0; im < imgs.length; im++) {
+                var s = imgs[im].src;
+                if (
+                  s && s.indexOf('https://') === 0 && s.indexOf('.svg') === -1 && s.indexOf('data:image') === -1 &&
+                  (
+                    s.indexOf('googleusercontent') !== -1 || s.indexOf('googleapis') !== -1 ||
+                    s.indexOf('usercontent') !== -1    || s.indexOf('getMediaUrlRedirect') !== -1 ||
+                    s.indexOf('labs.google') !== -1    ||
+                    s.indexOf('.jpg') !== -1 || s.indexOf('.jpeg') !== -1 ||
+                    s.indexOf('.png') !== -1 || s.indexOf('.webp') !== -1
+                  )
+                ) {
+                  var dup = false;
+                  for (var ci = 0; ci < completed.length; ci++) { if (completed[ci] === s) { dup = true; break; } }
+                  if (!dup) completed.push(s);
+                }
+              }
             }
-          }
-        } catch {}
+            return { completed: completed, maxProgress: maxProgress, matchingTileCount: matchingTileCount, failedMatchingTile: failedMatchingTile };
+          })()`) as { completed: string[]; maxProgress: number; matchingTileCount: number; failedMatchingTile: boolean };
 
-        if (realPercent > 0) {
-          // Mapeia 0-100% do Flow para 25-85% da nossa barra de progresso
-          const mappedPercent = Math.min(85, 25 + Math.round(realPercent * 0.6));
-          emit('generating', `Gerando imagens... ${realPercent}%`, mappedPercent);
-        } else {
-          // Fallback: estimativa por tempo decorrido
-          const percent = Math.min(85, 25 + Math.round((elapsed / timeoutMs) * 60));
-          emit('generating', `Gerando imagens... (${Math.round(elapsed / 1000)}s)`, percent);
-        }
-
-        try {
-          const allImgs = await this.page!.$$('img[src]');
-          const newUrls: string[] = [];
-          for (const img of allImgs) {
-            const srcProp = await img.getProperty('src');
-            const src = (await srcProp.jsonValue()) as string;
-            // Filtra: URL HTTP que não era conhecida antes, que parece ser imagem gerada
-            if (
-              src &&
-              !knownImageUrls.includes(src) &&
-              (src.includes('googleusercontent') || src.includes('storage.googleapis') ||
-               src.includes('usercontent') || src.includes('blob:') ||
-               /\.(jpg|jpeg|png|webp)/i.test(src))
-            ) {
-              if (!newUrls.includes(src)) newUrls.push(src);
-            }
+          // Reportar progresso
+          if (result.maxProgress > 0) {
+            const mapped = Math.min(85, 25 + Math.round(result.maxProgress * 0.6));
+            emit('generating', `Gerando imagens... ${result.maxProgress}%`, mapped);
+          } else {
+            const pct = Math.min(85, 25 + Math.round((elapsed / timeoutMs) * 60));
+            emit('generating', `Gerando imagens... (${Math.round(elapsed / 1000)}s)`, pct);
           }
 
-          if (newUrls.length > 0) {
-            console.log(`✅ [Flow/Img] ${newUrls.length} nova(s) imagem(ns) detectada(s)!`);
-            newImageUrls = newUrls.slice(0, Math.max(count, 4)); // até max 4
+          // Tiles com nosso prompt concluídos → terminar
+          if (result.completed.length > 0) {
+            console.log(`✅ [Flow/Img] ${result.completed.length} imagem(ns) concluída(s) por match de prompt`);
+            newImageUrls = result.completed.slice(0, Math.max(count, 4));
             break;
           }
 
-          // Verificar erros por toast (ícone 'error')
+          // Se TODOS os tiles do nosso prompt falharam (e nenhum com progresso), lançar erro
+          if (result.failedMatchingTile && result.matchingTileCount > 0 && result.maxProgress === 0) {
+            throw new Error('Flow retornou falha: todos os tiles com o prompt atual falharam.');
+          }
+
+          // Verificar toast de erro
           const toasts = await this.page!.$$('li[data-sonner-toast]');
           for (const toast of toasts) {
             const icons = await toast.$$('i');
@@ -1789,85 +2359,133 @@ export class FlowVideoProvider {
             }
           }
 
-          // Verificar card de falha (ícone 'warning' + "Falha" / "Algo deu errado")
-          // Estrutura: <i>warning</i> + <div>Falha</div> + <div>Algo deu errado.</div>
-          const warningIcons = await this.page!.$$('i');
-          for (const icon of warningIcons) {
-            if ((await this.getTextContent(icon)).trim() !== 'warning') continue;
-            if (!(await this.isVisible(icon))) continue;
-            // Ler o texto do container pai para pegar a mensagem de erro
-            const parentProp = await this.page!.evaluateHandle(
-              (el: Element) => el.closest('[class*="f112b7ef"]') || el.parentElement?.parentElement || el.parentElement,
-              icon
-            );
-            const parentText = parentProp
-              ? (await this.getTextContent(parentProp as any)).trim()
-              : '';
-            console.error(`❌ [Flow/Img] Card de falha detectado: "${parentText.substring(0, 100)}"`);
-            throw new Error(`Flow retornou falha: ${parentText.substring(0, 150) || 'Algo deu errado.'}`);
-          }
         } catch (err: any) {
           if (err.message.includes('Flow reportou erro') || err.message.includes('Flow retornou falha')) throw err;
-          console.warn(`⚠️ [Flow/Img] Erro ao verificar imagens:`, err.message);
+          console.warn(`⚠️ [Flow/Img] Erro no polling:`, err.message);
         }
       }
+
 
       if (newImageUrls.length === 0) {
         throw new Error('Timeout: nenhuma imagem foi gerada no tempo limite.');
       }
 
-      // 8. Baixar imagens para disco
-      emit('downloading', `Baixando ${newImageUrls.length} imagem(ns)...`, 90);
+      // 8. Baixar imagens via URL assinada do GCS
+      // Estratégia: match prompt → batch item → img UUID → seguir redirect → URL assinada GCS → https.get
+      emit('downloading', `Localizando imagens geradas...`, 87);
+
+      // 8a. Encontrar batch item que corresponde ao nosso prompt e coletar URLs de redirect
+      const promptFrag50 = JSON.stringify(prompt.substring(0, 50));
+      const mediaRedirectUrls = await this.page!.evaluate(`(function() {
+        var results = [];
+        // Buscar todos os batch containers sc-5c6add13-0
+        var batches = document.querySelectorAll('.sc-5c6add13-0');
+        for (var b = 0; b < batches.length; b++) {
+          var batch = batches[b];
+          // Verificar se o texto do prompt neste batch corresponde ao nosso
+          var promptEl = batch.querySelector('.sc-21e778e8-1');
+          if (!promptEl) continue;
+          var batchPrompt = (promptEl.textContent || '').trim();
+          if (batchPrompt.indexOf(${promptFrag50}) === -1) continue;
+          // Coletar img[src] deste batch
+          var imgs = batch.querySelectorAll('img[src]');
+          for (var i = 0; i < imgs.length; i++) {
+            var src = imgs[i].getAttribute('src') || '';
+            // Aceitar src relativo ou absoluto com getMediaUrlRedirect
+            if (src.indexOf('getMediaUrlRedirect') !== -1 || src.indexOf('/fx/api/trpc/media') !== -1) {
+              // Garantir URL absoluta
+              var abs = src.indexOf('http') === 0 ? src : 'https://labs.google' + src;
+              var dup = false;
+              for (var d = 0; d < results.length; d++) { if (results[d] === abs) { dup = true; break; } }
+              if (!dup) results.push(abs);
+            }
+          }
+        }
+        return results;
+      })()`) as string[];
+
+      console.log(`🔍 [Flow/Img] ${mediaRedirectUrls.length} URL(s) de redirect encontrada(s) pelo match de prompt`);
+
+      // Fallback: usar as URLs do polling se o match de prompt não retornou nada
+      const urlsToProcess = mediaRedirectUrls.length > 0
+        ? mediaRedirectUrls.slice(0, count)
+        : newImageUrls.slice(0, count);
+
+      emit('downloading', `Baixando ${urlsToProcess.length} imagem(ns)...`, 90);
       const localPaths: string[] = [];
 
-      for (let i = 0; i < newImageUrls.length; i++) {
-        const imgUrl = newImageUrls[i];
-        const ext = imgUrl.includes('.png') ? '.png' : imgUrl.includes('.webp') ? '.webp' : '.jpg';
-        const filename = `flow-image-${Date.now()}-${i + 1}${ext}`;
-        const outputPath = path.join(imgOutputDir, filename);
+      for (let i = 0; i < urlsToProcess.length; i++) {
+        const redirectUrl = urlsToProcess[i];
+        emit('downloading', `Baixando imagem ${i + 1} de ${urlsToProcess.length}...`, 90 + Math.round((i / urlsToProcess.length) * 8));
 
         try {
-          if (imgUrl.startsWith('blob:')) {
-            // Baixar blob via página
-            const base64 = await this.page!.evaluate(`
-              (async function() {
-                var imgs = document.querySelectorAll('img[src^="blob:"]');
-                var img = imgs[${i}];
-                if (!img) return null;
-                try {
-                  var res = await fetch(img.src);
-                  var blob = await res.blob();
-                  return new Promise(function(resolve) {
-                    var reader = new FileReader();
-                    reader.onloadend = function() { resolve(reader.result.split(',')[1]); };
-                    reader.readAsDataURL(blob);
-                  });
-                } catch(e) { return null; }
-              })()
-            `) as string | null;
-            if (base64) {
-              fs.writeFileSync(outputPath, Buffer.from(base64, 'base64'));
-              localPaths.push(outputPath);
-            }
-          } else {
-            // Download HTTP
-            await new Promise<void>((resolve, reject) => {
-              const protocol = imgUrl.startsWith('https') ? https : http;
-              const file = fs.createWriteStream(outputPath);
-              protocol.get(imgUrl, (res) => {
-                if (res.statusCode && res.statusCode >= 400) {
-                  reject(new Error(`HTTP ${res.statusCode} ao baixar imagem`));
-                  return;
-                }
-                res.pipe(file);
-                file.on('finish', () => { file.close(); resolve(); });
-              }).on('error', reject);
+          // 8b. Seguir redirect via page.evaluate para obter URL assinada do GCS
+          // A URL assinada (storage.googleapis.com) é pública (não precisa de cookies)
+          const redirectUrlJson = JSON.stringify(redirectUrl);
+          // Tentar obter URL assinada do GCS seguindo o redirect via 3 estratégias
+          const signedUrl = await this.page!.evaluate(`(function() {
+            var url = ${redirectUrlJson};
+            return new Promise(function(resolve) {
+              // Estratégia 1: fetch com credentials same-origin
+              // (envia cookies para labs.google, omite para GCS cross-origin — resolve CORS)
+              fetch(url, { credentials: 'same-origin', redirect: 'follow' })
+                .then(function(res) {
+                  if (res.url && res.url !== url) { resolve(res.url); return; }
+                  resolve(null);
+                })
+                .catch(function(e1) {
+                  // Estratégia 2: XHR — withCredentials=true, responseURL após redirect
+                  try {
+                    var xhr = new XMLHttpRequest();
+                    xhr.withCredentials = true;
+                    xhr.onload = function() { resolve(xhr.responseURL && xhr.responseURL !== url ? xhr.responseURL : null); };
+                    xhr.onerror = function() {
+                      // Estratégia 3: fetch sem credentials
+                      fetch(url, { redirect: 'follow' })
+                        .then(function(res) { resolve(res.url !== url ? res.url : null); })
+                        .catch(function() { resolve(null); });
+                    };
+                    xhr.open('GET', url, true);
+                    xhr.send();
+                  } catch(e2) { resolve(null); }
+                });
             });
-            const stats = fs.statSync(outputPath);
-            if (stats.size > 1000) { // arquivo válido (> 1 KB)
-              localPaths.push(outputPath);
-              console.log(`✅ [Flow/Img] Imagem ${i + 1} baixada: ${outputPath} (${Math.round(stats.size / 1024)} KB)`);
-            }
+          })()`) as string | null;
+
+          if (!signedUrl || signedUrl === redirectUrl) {
+            console.warn(`⚠️ [Flow/Img] Redirect não resolveu URL assinada para imagem ${i + 1}: ${signedUrl}`);
+            continue;
+          }
+          console.log(`✅ [Flow/Img] URL assinada obtida: ${signedUrl.substring(0, 80)}...`);
+
+          // 8c. Download direto da URL assinada com https.get (sem cookies necessário)
+          const filename = `flow-image-${Date.now()}-${i + 1}.jpg`;
+          const outputPath = path.join(imgOutputDir, filename);
+
+          await new Promise<void>((resolve, reject) => {
+            const file = fs.createWriteStream(outputPath);
+            const req = https.get(signedUrl, (res) => {
+              if (res.statusCode && res.statusCode >= 400) {
+                file.close();
+                reject(new Error(`HTTP ${res.statusCode} ao baixar imagem`));
+                return;
+              }
+              res.pipe(file);
+              file.on('finish', () => {
+                file.close();
+                resolve();
+              });
+            });
+            req.on('error', (e) => { file.close(); reject(e); });
+          });
+
+          const size = fs.statSync(outputPath).size;
+          if (size > 500) {
+            localPaths.push(outputPath);
+            console.log(`✅ [Flow/Img] Imagem ${i + 1} salva: ${outputPath} (${Math.round(size / 1024)} KB)`);
+          } else {
+            console.warn(`⚠️ [Flow/Img] Arquivo vazio, ignorando: ${outputPath}`);
+            fs.unlinkSync(outputPath);
           }
         } catch (dlErr: any) {
           console.warn(`⚠️ [Flow/Img] Erro ao baixar imagem ${i + 1}:`, dlErr.message);
