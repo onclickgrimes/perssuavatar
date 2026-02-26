@@ -43,6 +43,15 @@ export function ImagesStep({
   const [vo3Progress, setVo3Progress] = useState<Record<number, string>>({});
   const [vo3Credits, setVo3Credits] = useState<number | null>(null);
   const [isCheckingCredits, setIsCheckingCredits] = useState<boolean>(false);
+  // Serviço de geração selecionado por segmento (padrão: usa assetType do segmento)
+  const [selectedService, setSelectedService] = useState<Record<number, string>>({});
+  // Dropdown aberto para qual segmento
+  const [openDropdown, setOpenDropdown] = useState<number | null>(null);
+  // Quantidade de imagens a gerar por segmento (só relevante para flow-image)
+  const [imageCount, setImageCount] = useState<Record<number, number>>({});
+  // Picker de imagem quando o Flow gera múltiplas imagens
+  const [imagePicker, setImagePicker] = useState<{ segmentId: number; httpUrls: string[] } | null>(null);
+  const [pickerSelectedIdx, setPickerSelectedIdx] = useState<number>(0);
   
   // Buscar créditos iniciais
   useEffect(() => {
@@ -78,7 +87,19 @@ export function ImagesStep({
     return () => { cleanup?.(); };
   }, [generatingSegments]);
 
-  // Listener de progresso Veo2
+  // Listener de progresso Veo2 Flow (via puppeteer)
+  useEffect(() => {
+    const cleanup = window.electron?.videoProject?.onVo2FlowProgress?.((data) => {
+      setVo3Progress(prev => {
+        const next = { ...prev };
+        generatingSegments.forEach(segId => { next[segId] = data.message; });
+        return next;
+      });
+    });
+    return () => { cleanup?.(); };
+  }, [generatingSegments]);
+
+  // Listener de progresso Veo2 (API oficial)
   useEffect(() => {
     const cleanup = window.electron?.videoProject?.onVeo2Progress?.((data) => {
       setVo3Progress(prev => {
@@ -150,67 +171,133 @@ export function ImagesStep({
     return String(imagePrompt);
   };
 
+  // Serviços disponíveis para geração
+  const GENERATION_SERVICES = [
+    { id: 'veo3',       label: 'Veo 3 (Flow)',     icon: '🌊', description: 'Google Veo 3.1 via Google Flow' },
+    { id: 'veo2-flow',  label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Google Veo 2 Fast via Google Flow' },
+    { id: 'flow-image', label: 'Imagem (Flow)',    icon: '🖼️', description: 'Gerar imagem com Google Flow' },
+    { id: 'veo2',       label: 'Veo 2 (API)',      icon: '🌊', description: 'Google Veo 2 via API oficial' },
+  ];
+
+  // Obtém o serviço efetivo a usar para um segmento
+  const getEffectiveService = (segment: TranscriptionSegment): string => {
+    if (selectedService[segment.id]) return selectedService[segment.id];
+    if (segment.assetType === 'video_vo3') return 'veo3';
+    return 'veo2-flow'; // padrão
+  };
+
   // Handler para gerar mídia com IA
-  const handleRegenerate = async (segmentId: number) => {
+  const handleRegenerate = async (segmentId: number, forceService?: string) => {
     const segment = segments.find(s => s.id === segmentId);
     if (!segment) return;
 
+    const service = forceService || getEffectiveService(segment);
     setGeneratingSegments(prev => new Set([...prev, segmentId]));
 
-
     try {
-      // video_vo3: Google Flow (Veo 3) via Puppeteer
-      if (segment.assetType === 'video_vo3' && segment.imagePrompt) {
-        
-        // Verificar limite de créditos (assumindo custo base de 20 por vídeo)
+      // ── VEO 2 FLOW (Google Flow via Puppeteer, modelo Veo 2 - Fast) ──
+      if (service === 'veo2-flow') {
+        const count = imageCount[segmentId] ?? 1;
+        console.log(`🌊 [Veo2Flow] Gerando ${count} vídeo(s) para segmento ${segmentId}...`);
+        setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 2 Flow...' }));
+
+        const veo2FlowTimeoutMs = 10 * 60 * 1000;
+        const veo2FlowPromise = window.electron?.videoProject?.generateVo2Flow?.({
+          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
+          aspectRatio: aspectRatio,
+          count,
+        });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout: geração Veo 2 Flow excedeu 10 minutos.')), veo2FlowTimeoutMs)
+        );
+        const result = await Promise.race([veo2FlowPromise, timeoutPromise]) as any;
+
+        if (result?.success && (result.httpUrl || result.videoPath)) {
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath);
+        } else {
+          console.error(`❌ [Veo2Flow] Falha:`, result?.error);
+          alert(`Falha na geração Veo 2 Flow: ${result?.error}`);
+        }
+
+      // ── VEO 3 (Google Flow via Puppeteer) ──
+      } else if (service === 'veo3') {
+        const count = imageCount[segmentId] ?? 1;
         if (vo3Credits !== null && vo3Credits < 20) {
           alert(`Créditos insuficientes! Você tem ${vo3Credits} créditos e precisa de pelo menos 20 para gerar um vídeo no Flow.`);
           setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
           return;
         }
+        console.log(`🌊 [Veo3] Gerando ${count} vídeo(s) para segmento ${segmentId}...`);
+        setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 3...' }));
 
-        console.log(`🌊 [Veo3] Gerando vídeo para segmento ${segmentId}...`);
-        setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração...' }));
-
-        const result = await window.electron?.videoProject?.generateVo3({
-          prompt: extractPromptString(segment.imagePrompt),
+        // Timeout de 12 min para Veo3
+        const veo3TimeoutMs = 12 * 60 * 1000;
+        const veo3Promise = window.electron?.videoProject?.generateVo3({
+          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
           aspectRatio: aspectRatio,
+          count,
         });
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout: geração Veo 3 excedeu 12 minutos. Verifique se o navegador do Flow está aberto.')), veo3TimeoutMs)
+        );
+        const result = await Promise.race([veo3Promise, timeoutPromise]) as any;
 
         if (result?.success && (result.httpUrl || result.videoPath)) {
-          const mediaUrl = result.httpUrl || result.videoPath;
-          console.log(`✅ [Veo3] Vídeo gerado: ${mediaUrl}`);
-          onUpdateImage(segmentId, mediaUrl);
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath);
           if (result.credits !== undefined) setVo3Credits(result.credits);
         } else {
           console.error(`❌ [Veo3] Falha:`, result?.error);
-          alert(`Falha na geração: ${result?.error}`);
+          alert(`Falha na geração Veo 3: ${result?.error}`);
         }
 
-      // video_veo2: Google Veo 2 via API oficial (sem áudio)
-      } else if (segment.assetType === 'video_veo2' && segment.imagePrompt) {
+      // ── FLOW IMAGE (Google Flow modo "Criar imagens") ──
+      } else if (service === 'flow-image') {
+        console.log(`🖼️ [FlowImg] Gerando imagem para segmento ${segmentId}...`);
+        const count = imageCount[segmentId] ?? 1;
+        setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando ${count} imagem(ns) com Flow...` }));
 
-        console.log(`🌊 [Veo2] Gerando vídeo para segmento ${segmentId}...`);
-        setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 2...' }));
-
-        const result = await window.electron?.videoProject?.generateVeo2({
-          prompt: extractPromptString(segment.imagePrompt),
-          aspectRatio: aspectRatio,
+        const result = await window.electron?.videoProject?.generateFlowImage({
+          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
+          count,
         });
 
+        if (result?.success && result.httpUrls?.length > 0) {
+          if (result.httpUrls.length === 1) {
+            onUpdateImage(segmentId, result.httpUrls[0]);
+          } else {
+            setImagePicker({ segmentId, httpUrls: result.httpUrls });
+            setPickerSelectedIdx(0);
+          }
+        } else {
+          console.error(`❌ [FlowImg] Falha:`, result?.error);
+          alert(`Falha na geração de imagem via Flow: ${result?.error}`);
+        }
+
+      // ── VEO 2 (API oficial) ──
+      } else {
+        console.log(`🌊 [Veo2] Gerando vídeo para segmento ${segmentId}...`);
+
+        // Se já existe uma imagem (não vídeo), usa como referência
+        const isExistingVideo = isVideo(segment.imageUrl);
+        const referenceImagePath = (segment.imageUrl && !isExistingVideo) ? segment.imageUrl : undefined;
+
+        if (referenceImagePath) {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: 'Animando imagem com Veo 2...' }));
+        } else {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: 'Gerando vídeo com Veo 2...' }));
+        }
+
+        const result = await window.electron?.videoProject?.generateVeo2({
+          prompt: extractPromptString(segment.imagePrompt) || `Cinematic animation of the scene: ${segment.text}`,
+          aspectRatio: aspectRatio,
+          referenceImagePath,
+        });
         if (result?.success && (result.httpUrl || result.videoPath)) {
-          const mediaUrl = result.httpUrl || result.videoPath;
-          console.log(`✅ [Veo2] Vídeo gerado: ${mediaUrl}`);
-          onUpdateImage(segmentId, mediaUrl);
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath);
         } else {
           console.error(`❌ [Veo2] Falha:`, result?.error);
           alert(`Falha na geração Veo 2: ${result?.error}`);
         }
-
-      } else {
-        // TODO: Implementar geração de outros tipos de mídia (Flux, Kling, etc.)
-        console.log(`⏳ Geração para assetType "${segment.assetType}" ainda não implementada`);
-        await new Promise(resolve => setTimeout(resolve, 2000));
       }
     } catch (error) {
       console.error('Erro ao gerar mídia:', error);
@@ -235,18 +322,26 @@ export function ImagesStep({
 
   const segmentsWithMedia = segments.filter(seg => !!seg.imageUrl);
 
-  // Helper para label do botão "Gerar com IA" baseado no assetType
+  // Helper para label do botão principal
   const getGenerateLabel = (segment: TranscriptionSegment, isGenerating: boolean): string => {
     if (isGenerating) {
       const progress = vo3Progress[segment.id];
       if (progress) return progress;
       return '...';
     }
-    if (segment.assetType === 'video_vo3') return '🌊 Gerar com Veo 3';
-    if (segment.assetType === 'video_veo2') return '🌊 Gerar com Veo 2';
-    if (segment.assetType?.startsWith('video_kling')) return '🎬 Gerar com Kling';
-    if (segment.assetType?.startsWith('video_runway')) return '🎥 Gerar com Runway';
-    return '↻ Gerar com IA';
+    // Se já tem vídeo → "Gerar novamente"
+    if (isVideo(segment.imageUrl)) return '↻ Gerar novamente';
+    // Se tem imagem (não vídeo) → label depende do serviço
+    const svc = getEffectiveService(segment);
+    if (segment.imageUrl && !isVideo(segment.imageUrl)) {
+      if (svc === 'flow-image') return '🖼️ Gerar nova Imagem';
+      return '🖼️ Animar Imagem';
+    }
+    // Sem mídia → label baseado no serviço
+    if (svc === 'veo3') return '🌊 Gerar com Veo 3';
+    if (svc === 'veo2-flow') return '🌊 Gerar com Veo 2 Flow';
+    if (svc === 'flow-image') return '🖼️ Imagem com Flow';
+    return '🌊 Gerar com Veo 2';
   };
 
   return (
@@ -328,6 +423,42 @@ export function ImagesStep({
             >
               {/* Preview de imagem ou área de upload */}
               <div className="aspect-video relative group">
+
+                {/* Mini-select de quantidade (Flow Image) */}
+                {getEffectiveService(segment) === 'flow-image' && !isGenerating && (
+                  <div className="absolute top-2 right-2 z-10">
+                    <select
+                      value={imageCount[segment.id] ?? 1}
+                      onChange={e => setImageCount(prev => ({ ...prev, [segment.id]: Number(e.target.value) }))}
+                      onClick={e => e.stopPropagation()}
+                      title="Quantidade de imagens a gerar"
+                      className="bg-black/60 border border-white/20 text-white text-xs rounded-md px-1.5 py-0.5 backdrop-blur-sm cursor-pointer focus:outline-none focus:border-pink-500 hover:border-white/40 transition-all"
+                    >
+                      <option value={1}>1 imagem</option>
+                      <option value={2}>2 imagens</option>
+                      <option value={3}>3 imagens</option>
+                      <option value={4}>4 imagens</option>
+                    </select>
+                  </div>
+                )}
+
+                {/* Mini-select de quantidade (Vídeo Flow: veo3 / veo2-flow) */}
+                {(getEffectiveService(segment) === 'veo3' || getEffectiveService(segment) === 'veo2-flow') && !isGenerating && (
+                  <div className="absolute top-2 right-2 z-10">
+                    <select
+                      value={imageCount[segment.id] ?? 1}
+                      onChange={e => setImageCount(prev => ({ ...prev, [segment.id]: Number(e.target.value) }))}
+                      onClick={e => e.stopPropagation()}
+                      title="Quantidade de vídeos a gerar"
+                      className="bg-black/60 border border-cyan-500/30 text-cyan-200 text-xs rounded-md px-1.5 py-0.5 backdrop-blur-sm cursor-pointer focus:outline-none focus:border-cyan-400 hover:border-cyan-400/50 transition-all"
+                    >
+                      <option value={1}>1 vídeo</option>
+                      <option value={2}>2 vídeos</option>
+                      <option value={3}>3 vídeos</option>
+                      <option value={4}>4 vídeos</option>
+                    </select>
+                  </div>
+                )}
                 {(isGenerating || isUploading) ? (
                   <div className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-purple-500/10 flex items-center justify-center">
                     <div className="text-center">
@@ -449,27 +580,159 @@ export function ImagesStep({
                   </p>
                 )}
                 
-                {/* Botões de ação */}
-                <div className="flex gap-2">
+                {/* Botão de geração com dropdown de serviço */}
+                <div className="flex gap-0 relative">
+                  {/* Botão principal */}
                   <button
                     onClick={() => handleRegenerate(segment.id)}
                     disabled={isGenerating}
-                    className={`flex-1 py-2 rounded-lg text-sm transition-all ${
+                    className={`flex-1 py-2 px-3 rounded-l-lg text-sm transition-all ${
                       isGenerating
                         ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                        : segment.assetType === 'video_vo3'
+                        : getEffectiveService(segment) === 'veo3'
                           ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300'
                           : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
                     }`}
                   >
                     {getGenerateLabel(segment, isGenerating)}
                   </button>
+
+                  {/* Separador | */}
+                  <div className={`self-stretch w-px opacity-40 ${
+                    isGenerating ? 'bg-white/20' :
+                    getEffectiveService(segment) === 'veo3' ? 'bg-cyan-400' : 'bg-orange-400'
+                  }`} />
+
+                  {/* Botão: ✕ para cancelar se travado, ▼ para dropdown quando ocioso */}
+                  {isGenerating ? (
+                    <button
+                      title="Cancelar geração"
+                      onClick={() => {
+                        setGeneratingSegments(prev => { const s = new Set(prev); s.delete(segment.id); return s; });
+                        setVo3Progress(prev => { const n = { ...prev }; delete n[segment.id]; return n; });
+                      }}
+                      className="px-2.5 py-2 rounded-r-lg text-sm bg-red-500/20 hover:bg-red-500/40 text-red-400 transition-all"
+                    >
+                      ✕
+                    </button>
+                  ) : (
+                    <>
+                      <button
+                        onClick={() => setOpenDropdown(openDropdown === segment.id ? null : segment.id)}
+                        className={`px-2 py-2 rounded-r-lg text-sm transition-all ${
+                          getEffectiveService(segment) === 'veo3'
+                            ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300'
+                            : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
+                        }`}
+                      >
+                        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                          <path d="M6 8L1 3h10z"/>
+                        </svg>
+                      </button>
+
+                      {/* Dropdown de serviços */}
+                      {openDropdown === segment.id && (
+                        <div
+                          className="absolute bottom-full right-0 mb-1 z-50 bg-[#1a1a2e] border border-white/10 rounded-lg shadow-xl overflow-hidden min-w-[180px]"
+                          onMouseLeave={() => setOpenDropdown(null)}
+                        >
+                          <div className="px-3 py-2 text-white/40 text-xs border-b border-white/10 uppercase tracking-wider">
+                            Serviço de geração
+                          </div>
+                          {GENERATION_SERVICES.map(svc => {
+                            const isActive = getEffectiveService(segment) === svc.id;
+                            return (
+                              <button
+                                key={svc.id}
+                                onClick={() => {
+                                  setSelectedService(prev => ({ ...prev, [segment.id]: svc.id }));
+                                  // Resetar count para 1 ao trocar para serviço de vídeo
+                                  if (svc.id === 'veo3' || svc.id === 'veo2-flow') {
+                                    setImageCount(prev => ({ ...prev, [segment.id]: 1 }));
+                                  }
+                                  setOpenDropdown(null);
+                                }}
+                                className={`w-full flex items-center gap-2 px-3 py-2.5 text-left text-sm transition-all hover:bg-white/10 ${
+                                  isActive ? 'text-white bg-white/5' : 'text-white/70'
+                                }`}
+                              >
+                                <span>{svc.icon}</span>
+                                <div>
+                                  <div className="font-medium">{svc.label}</div>
+                                  <div className="text-white/40 text-xs">{svc.description}</div>
+                                </div>
+                                {isActive && (
+                                  <span className="ml-auto text-green-400 text-xs">✓</span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  )}
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+
+      {/* Modal picker de imagens geradas pelo Flow */}
+      {imagePicker && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl">
+            <h3 className="text-white font-bold text-lg mb-1">🖼️ Escolha uma imagem</h3>
+            <p className="text-white/50 text-sm mb-4">Clique na imagem desejada para selecioná-la para a cena.</p>
+
+            <div className="grid grid-cols-2 gap-3 mb-5">
+              {imagePicker.httpUrls.map((url, idx) => (
+                <button
+                  key={idx}
+                  onClick={() => setPickerSelectedIdx(idx)}
+                  className={`relative rounded-xl overflow-hidden border-2 transition-all ${
+                    pickerSelectedIdx === idx
+                      ? 'border-pink-500 ring-2 ring-pink-500/40'
+                      : 'border-white/10 hover:border-white/30'
+                  }`}
+                >
+                  <img
+                    src={getMediaSrc(url)}
+                    alt={`Opção ${idx + 1}`}
+                    className="w-full aspect-video object-cover"
+                  />
+                  {pickerSelectedIdx === idx && (
+                    <div className="absolute top-2 right-2 w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center">
+                      <span className="text-white text-xs font-bold">✓</span>
+                    </div>
+                  )}
+                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 py-1 text-center text-white/70 text-xs">
+                    Opção {idx + 1}
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  onUpdateImage(imagePicker.segmentId, imagePicker.httpUrls[pickerSelectedIdx]);
+                  setImagePicker(null);
+                }}
+                className="flex-1 py-2.5 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-xl font-medium transition-all"
+              >
+                Usar esta imagem
+              </button>
+              <button
+                onClick={() => setImagePicker(null)}
+                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
+              >
+                Cancelar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

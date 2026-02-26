@@ -54,6 +54,14 @@ export interface FlowGenerationResult {
   credits?: number;
 }
 
+export interface FlowImageResult {
+  success: boolean;
+  /** Caminhos locais das imagens geradas (até 4) */
+  imagePaths?: string[];
+  error?: string;
+  durationMs?: number;
+}
+
 export type FlowProgressCallback = (progress: {
   stage: 'opening' | 'navigating' | 'submitting' | 'generating' | 'downloading' | 'complete' | 'error';
   message: string;
@@ -370,7 +378,9 @@ export class FlowVideoProvider {
   async generateVideo(
     prompt: string,
     onProgress?: FlowProgressCallback,
-    aspectRatio?: string
+    aspectRatio?: string,
+    model: string = 'Veo 3.1 - Fast',
+    count: number = 1
   ): Promise<FlowGenerationResult> {
     const startTime = Date.now();
 
@@ -436,19 +446,26 @@ export class FlowVideoProvider {
         }
       }
 
-      // 4. Garantir que o modo "Texto para vídeo" está selecionado
-      emitProgress('submitting', 'Verificando modo de geração...');
-      await this.ensureTextToVideo();
-      await this.randomDelay(500, 1000);
+      // 4. Definir modelo via menu dropdown
+      emitProgress('submitting', `Selecionando modelo "${model}"...`);
+      await this.setFlowModel(model, 'video');
+      await this.randomDelay(300, 500);
 
-      // 4b. Definir aspect ratio
+      // 5. Definir aspect ratio via menu dropdown
       if (aspectRatio) {
         emitProgress('submitting', `Definindo proporção ${aspectRatio}...`);
-        await this.ensureAspectRatio(aspectRatio);
+        await this.setAspectRatio(aspectRatio);
         await this.randomDelay(300, 500);
       }
 
-      // 5. Procurar e submeter o prompt
+      // 5b. Definir quantidade de vídeos por geração
+      if (count > 1) {
+        emitProgress('submitting', `Definindo ${count} vídeos por geração...`);
+        await this.setResponseCount(count);
+        await this.randomDelay(300, 500);
+      }
+
+      // 6. Procurar e submeter o prompt
       emitProgress('submitting', 'Localizando campo de prompt...');
       await this.randomDelay(1000, 2000);
 
@@ -624,206 +641,251 @@ export class FlowVideoProvider {
     }
   }
 
+  // ========================================
+  // CONFIGURAÇÕES VIA MENU DROPDOWN
+  // ========================================
+
   /**
-   * Seleciona o aspect ratio no Flow (portrait 9:16 ou landscape 16:9)
-   * O dropdown de proporção fica dentro do painel de Configurações (ícone tune).
+   * Abre o dropdown de configurações.
+   * O botão correto tem aria-haspopup="menu" e contém ícone crop_* ou texto xN.
+   * Ignora o botão "Ordenar e filtrar" (ícone filter_list).
    */
-  private async ensureAspectRatio(aspectRatio: string): Promise<void> {
-    if (!this.page) return;
-
-    const isPortrait = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '3:4';
-    const isSquare = aspectRatio === '1:1';
-    const targetIcon = isPortrait ? 'crop_portrait' : (isSquare ? 'crop_square' : 'crop_landscape');
-    const targetLabel = isPortrait ? 'Retrato (9:16)' : (isSquare ? 'Quadrado (1:1)' : 'Paisagem (16:9)');
-
+  private async openSettingsDropdownMenu(): Promise<boolean> {
+    if (!this.page) return false;
     try {
-      // 1. Abrir painel de Configurações clicando no botão com ícone "tune"
-      let settingsBtn: import('puppeteer').ElementHandle | null = null;
-      const buttons = await this.page.$$('button');
-      for (const btn of buttons) {
+      const menuBtns = await this.page.$$('button[aria-haspopup="menu"]');
+      for (const btn of menuBtns) {
+        if (!(await this.isVisible(btn))) continue;
+
         const icons = await btn.$$('i');
+        let isFilterBtn = false;
+        let hasSettingsIcon = false;
         for (const icon of icons) {
           const iconText = (await this.getTextContent(icon)).trim();
-          if (iconText === 'tune') {
-            if (await this.isVisible(btn)) {
-              settingsBtn = btn;
-              break;
+          if (iconText === 'filter_list') { isFilterBtn = true; break; }
+          if (iconText.startsWith('crop_') || iconText === 'arrow_drop_down') {
+            hasSettingsIcon = true;
+          }
+        }
+        if (isFilterBtn) continue;
+
+        const btnText = (await this.getTextContent(btn)).trim();
+        const hasCount = /x[1-4]/.test(btnText);
+
+        if (hasSettingsIcon || hasCount) {
+          await btn.click();
+          await this.randomDelay(500, 900);
+          const menu = await this.page.$('[role="menu"]');
+          if (menu) {
+            const box = await (menu as any).boundingBox();
+            if (box && box.width > 0) {
+              console.log('✅ [Flow] Dropdown de configurações aberto');
+              return true;
             }
           }
         }
-        if (settingsBtn) break;
       }
+      return false;
+    } catch (err: any) {
+      console.warn('⚠️ [Flow] Erro ao abrir dropdown:', err.message);
+      return false;
+    }
+  }
 
-      if (!settingsBtn) {
-        console.warn('⚠️ [Flow] Botão de Configurações (tune) não encontrado');
-        return;
-      }
+  /** Fecha o dropdown de configurações (Escape) */
+  private async closeSettingsDropdownMenu(): Promise<void> {
+    if (!this.page) return;
+    try {
+      await this.page.keyboard.press('Escape');
+      await this.randomDelay(300, 500);
+    } catch {}
+  }
 
-      console.log('🔧 [Flow] Abrindo painel de Configurações...');
-      await settingsBtn.click();
-      await this.randomDelay(800, 1200);
+  /**
+   * Clica em um button[role="tab"] dentro do menu dropdown aberto.
+   * matchIcon: valor do ícone (ex: 'crop_16_9', 'crop_9_16')
+   * matchText:  texto exato (ex: 'x1', 'x2', 'x3', 'x4')
+   */
+  private async clickMenuTab(matchText?: string, matchIcon?: string): Promise<boolean> {
+    if (!this.page) return false;
+    try {
+      const tabs = await this.page.$$('button[role="tab"]');
+      for (const tab of tabs) {
+        if (!(await this.isVisible(tab))) continue;
 
-      // 2. Dentro do painel, procurar o combobox de Proporção
-      //    Ele contém um ícone crop_landscape ou crop_portrait e texto "Proporção"
-      const comboboxes = await this.page.$$('button[role="combobox"]');
-      let ratioCombo: import('puppeteer').ElementHandle | null = null;
-      let currentIcon = '';
-
-      for (const combo of comboboxes) {
-        if (!(await this.isVisible(combo))) continue;
-
-        const comboText = (await this.getTextContent(combo)).toLowerCase();
-        // Verificar se contém "proporção" / "aspect" OU ícone crop_*
-        if (comboText.includes('proporção') || comboText.includes('aspect') || comboText.includes('ratio')) {
-          ratioCombo = combo;
-          // Descobrir qual ícone está ativo
-          const icons = await combo.$$('i');
+        if (matchIcon) {
+          const icons = await tab.$$('i');
           for (const icon of icons) {
-            const iconText = (await this.getTextContent(icon)).trim();
-            if (iconText === 'crop_portrait' || iconText === 'crop_landscape' || iconText === 'crop_square') {
-              currentIcon = iconText;
-              break;
-            }
-          }
-          break;
-        }
-
-        // Fallback: buscar pelo ícone crop_*
-        const icons = await combo.$$('i');
-        for (const icon of icons) {
-          const iconText = (await this.getTextContent(icon)).trim();
-          if (iconText === 'crop_portrait' || iconText === 'crop_landscape' || iconText === 'crop_square') {
-            ratioCombo = combo;
-            currentIcon = iconText;
-            break;
-          }
-        }
-        if (ratioCombo) break;
-      }
-
-      if (!ratioCombo) {
-        console.warn('⚠️ [Flow] Combobox de Proporção não encontrado no painel');
-        // Fechar configurações
-        await settingsBtn.click().catch(() => {});
-        return;
-      }
-
-      // Já está correto?
-      if (currentIcon === targetIcon) {
-        console.log(`✅ [Flow] Aspect ratio já é ${targetLabel}`);
-        // Fechar configurações
-        await settingsBtn.click().catch(() => {});
-        return;
-      }
-
-      // 3. Abrir dropdown e selecionar a opção correta
-      console.log(`⚠️ [Flow] Proporção atual: ${currentIcon || 'desconhecida'}, trocando para ${targetLabel}...`);
-      await ratioCombo.click();
-      await this.randomDelay(500, 800);
-
-      const options = await this.page.$$('div[role="option"]');
-      let optionClicked = false;
-
-      for (const opt of options) {
-        const optIcons = await opt.$$('i');
-        for (const optIcon of optIcons) {
-          const optIconText = (await this.getTextContent(optIcon)).trim();
-          if (optIconText === targetIcon) {
-            if (await this.isVisible(opt)) {
-              await opt.click();
-              optionClicked = true;
-              console.log(`✅ [Flow] Proporção definida para ${targetLabel}`);
-              break;
+            if ((await this.getTextContent(icon)).trim() === matchIcon) {
+              await tab.click();
+              await this.randomDelay(200, 400);
+              console.log(`✅ [Flow] Tab "${matchIcon}" clicado`);
+              return true;
             }
           }
         }
-        if (optionClicked) break;
+
+        if (matchText) {
+          const tabText = (await this.getTextContent(tab)).trim();
+          if (tabText === matchText) {
+            await tab.click();
+            await this.randomDelay(200, 400);
+            console.log(`✅ [Flow] Tab "${matchText}" clicado`);
+            return true;
+          }
+        }
       }
-
-      if (!optionClicked) {
-        console.warn(`⚠️ [Flow] Opção ${targetLabel} não encontrada no menu`);
-        await this.page.keyboard.press('Escape');
-      }
-
-      await this.randomDelay(300, 500);
-
-      // 4. Fechar painel de Configurações
-      await settingsBtn.click().catch(() => {});
-      await this.randomDelay(300, 500);
-
-    } catch (error: any) {
-      console.warn(`⚠️ [Flow] Erro ao definir aspect ratio:`, error.message);
+      console.warn(`⚠️ [Flow] Tab não encontrado (icon=${matchIcon}, text=${matchText})`);
+      return false;
+    } catch (err: any) {
+      console.warn('⚠️ [Flow] Erro ao clicar tab:', err.message);
+      return false;
     }
   }
 
   /**
-   * Garante que o combobox do Flow está no modo "Texto para vídeo" / "Text to video"
+   * Define o aspect ratio via o menu dropdown de configurações.
+   * Tabs: crop_16_9 = Paisagem, crop_9_16 = Retrato
    */
-  private async ensureTextToVideo(): Promise<void> {
-    if (!this.page) return;
-
+  private async setAspectRatio(aspectRatio: string): Promise<void> {
+    const isPortrait = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '3:4';
+    const targetIcon = isPortrait ? 'crop_9_16' : 'crop_16_9';
+    const label = isPortrait ? 'Retrato (9:16)' : 'Paisagem (16:9)';
     try {
-      // Procurar o combobox (role="combobox")
-      const comboboxes = await this.page.$$('button[role="combobox"]');
+      const opened = await this.openSettingsDropdownMenu();
+      if (!opened) {
+        console.warn('⚠️ [Flow] Não foi possível abrir menu para definir aspect ratio');
+        return;
+      }
+      await this.clickMenuTab(undefined, targetIcon);
+      await this.randomDelay(300, 500);
+      await this.closeSettingsDropdownMenu();
+      console.log(`✅ [Flow] Aspect ratio definido: ${label}`);
+    } catch (err: any) {
+      console.warn('⚠️ [Flow] Erro ao definir aspect ratio:', err.message);
+    }
+  }
 
-      for (const combo of comboboxes) {
-        if (!(await this.isVisible(combo))) continue;
-
-        const text = (await this.getTextContent(combo)).toLowerCase();
-        console.log(`🔍 [Flow] Combobox encontrado: "${text}"`);
-
-        // Já está no modo correto
-        if (text.includes('texto para vídeo') || text.includes('text to video')) {
-          console.log(`✅ [Flow] Modo já é "Texto para vídeo"`);
-          return;
-        }
-
-        // Precisa trocar — clicar para abrir o dropdown
-        console.log(`⚠️ [Flow] Modo atual: "${text}", trocando para "Texto para vídeo"...`);
-        await combo.click();
-        await this.randomDelay(500, 1000);
-
-        // Procurar a opção "Texto para vídeo" no menu aberto
-        // O Radix UI usa div[role="option"] ou div[data-radix-collection-item]
-        const optionSelectors = [
-          '[role="option"]',
-          '[role="listbox"] [role="option"]',
-          '[data-radix-collection-item]',
-          '[role="menuitem"]',
-          '[role="menuitemradio"]',
-        ];
-
-        let optionClicked = false;
-
-        for (const selector of optionSelectors) {
-          const options = await this.page.$$(selector);
-          for (const opt of options) {
-            const optText = (await this.getTextContent(opt)).toLowerCase();
-            if (optText.includes('texto para vídeo') || optText.includes('text to video')) {
-              if (await this.isVisible(opt)) {
-                await opt.click();
-                optionClicked = true;
-                console.log(`✅ [Flow] Opção "Texto para vídeo" selecionada`);
-                break;
-              }
-            }
-          }
-          if (optionClicked) break;
-        }
-
-        if (!optionClicked) {
-          console.warn(`⚠️ [Flow] Opção "Texto para vídeo" não encontrada no menu, tentando fechar...`);
-          // Pressionar Escape para fechar o dropdown
-          await this.page.keyboard.press('Escape');
-        }
-
-        await this.randomDelay(300, 500);
+  /**
+   * Seleciona o tipo de mídia e o modelo dentro do dropdown de configurações.
+   *
+   * mediaType: 'video' → clica no tab Video (ícone videocam) antes de selecionar o modelo
+   *            'image' → clica no tab Image (ícone image)
+   *
+   * modelLabel exemplos:
+   *   - 'Veo 2 - Fast'       → vídeo
+   *   - 'Veo 3.1 - Fast'     → vídeo
+   *   - '🍌 Nano Banana Pro'  → imagem
+   */
+  private async setFlowModel(modelLabel: string, mediaType: 'video' | 'image' = 'image'): Promise<void> {
+    if (!this.page) return;
+    try {
+      // 1. Abrir o menu de configurações principal
+      const opened = await this.openSettingsDropdownMenu();
+      if (!opened) {
+        console.warn('⚠️ [Flow] Não foi possível abrir menu para definir modelo');
         return;
       }
 
-      console.log(`ℹ️ [Flow] Nenhum combobox de modo encontrado (pode já estar no modo correto)`);
-    } catch (error: any) {
-      console.warn(`⚠️ [Flow] Erro ao verificar modo:`, error.message);
+      // 2. Selecionar o tab de mídia correto (Image ou Video)
+      //    Os tabs têm aria-controls contendo 'IMAGE' ou 'VIDEO'
+      const tabIcon = mediaType === 'video' ? 'videocam' : 'image';
+      const tabs = await this.page.$$('button[role="tab"]');
+      let tabClicked = false;
+      for (const tab of tabs) {
+        if (!(await this.isVisible(tab))) continue;
+        const ariaControlsProp = await tab.getProperty('ariaControls');
+        const ariaControls = ((await ariaControlsProp?.jsonValue()) as string || '').toUpperCase();
+        const isCorrectTab = mediaType === 'video'
+          ? ariaControls.includes('VIDEO')
+          : ariaControls.includes('IMAGE');
+
+        if (isCorrectTab) {
+          // Verificar se já está ativo
+          const stateProp = await tab.getProperty('ariaSelected');
+          const isSelected = (await stateProp?.jsonValue()) === 'true';
+          if (!isSelected) {
+            await tab.click();
+            await this.randomDelay(400, 600);
+            console.log(`✅ [Flow] Tab "${mediaType}" selecionado`);
+          } else {
+            console.log(`ℹ️ [Flow] Tab "${mediaType}" já estava ativo`);
+          }
+          tabClicked = true;
+          break;
+        }
+      }
+      if (!tabClicked) {
+        // Fallback: buscar por ícone
+        await this.clickMenuTab(undefined, tabIcon);
+        await this.randomDelay(400, 600);
+      }
+
+      // 3. Encontrar o botão do modelo (tem aria-haspopup="menu" e arrow_drop_down)
+      let modelBtn: import('puppeteer').ElementHandle | null = null;
+      const menuBtns = await this.page.$$('button[aria-haspopup="menu"]');
+      for (const btn of menuBtns) {
+        if (!(await this.isVisible(btn))) continue;
+        const icons = await btn.$$('i');
+        let hasArrow = false;
+        for (const icon of icons) {
+          if ((await this.getTextContent(icon)).trim() === 'arrow_drop_down') {
+            hasArrow = true;
+            break;
+          }
+        }
+        if (hasArrow) {
+          modelBtn = btn;
+          const currentModel = (await this.getTextContent(btn)).replace('arrow_drop_down', '').trim();
+          console.log(`🔍 [Flow] Modelo atual: "${currentModel}"`);
+          if (currentModel.includes(modelLabel) || currentModel === modelLabel) {
+            console.log(`✅ [Flow] Modelo já é "${modelLabel}"`);
+            await this.closeSettingsDropdownMenu();
+            return;
+          }
+          break;
+        }
+      }
+
+      if (!modelBtn) {
+        console.warn('⚠️ [Flow] Botão de modelo não encontrado no menu');
+        await this.closeSettingsDropdownMenu();
+        return;
+      }
+
+      // 4. Clicar no botão do modelo → abre submenu
+      await modelBtn.click();
+      await this.randomDelay(500, 800);
+
+      // 5. Selecionar o modelo alvo
+      const optionSelectors = ['[role="menuitem"]', '[role="menuitemradio"]', '[role="option"]'];
+      let modelSelected = false;
+      for (const selector of optionSelectors) {
+        const options = await this.page.$$(selector);
+        for (const opt of options) {
+          if (!(await this.isVisible(opt))) continue;
+          const optText = (await this.getTextContent(opt)).trim();
+          if (optText.includes(modelLabel) || optText === modelLabel) {
+            await opt.click();
+            modelSelected = true;
+            console.log(`✅ [Flow] Modelo selecionado: "${modelLabel}"`);
+            break;
+          }
+        }
+        if (modelSelected) break;
+      }
+
+      if (!modelSelected) {
+        console.warn(`⚠️ [Flow] Modelo "${modelLabel}" não encontrado no submenu`);
+        await this.page.keyboard.press('Escape');
+      }
+
+      await this.randomDelay(300, 500);
+      await this.page.keyboard.press('Escape').catch(() => {});
+
+    } catch (err: any) {
+      console.warn('⚠️ [Flow] Erro ao definir modelo:', err.message);
+      try { await this.page.keyboard.press('Escape'); } catch {}
     }
   }
 
@@ -901,27 +963,53 @@ export class FlowVideoProvider {
         return false;
       }
 
-      console.log(`✅ [Flow] Botão clicado, aguardando 5 segundos...`);
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      console.log(`✅ [Flow] Botão clicado, aguardando página de projeto carregar...`);
 
-      // Verificar se está na rota /project/
-      const newUrl = this.page.url();
-      if (newUrl.includes('/project/')) {
-        console.log(`✅ [Flow] Navegou para página de projeto: ${newUrl}`);
+      // Espera dinâmica: polling até o botão "filter_list" (Ordenar e filtrar) aparecer,
+      // que é um indicador confiável de que a página de projeto foi carregada.
+      const projectReadyTimeoutMs = 20000;
+      const pollIntervalMs = 500;
+      const projectReadyStart = Date.now();
+      let projectReady = false;
+
+      while (Date.now() - projectReadyStart < projectReadyTimeoutMs) {
+        // Critério 1: URL contém /project/
+        const currentUrl = this.page.url();
+        if (currentUrl.includes('/project/')) {
+          // Critério 2: botão filter_list está visível (página totalmente carregada)
+          try {
+            const filterBtns = await this.page.$$('button');
+            for (const btn of filterBtns) {
+              const icons = await btn.$$('i');
+              for (const icon of icons) {
+                if ((await this.getTextContent(icon)).trim() === 'filter_list') {
+                  if (await this.isVisible(btn)) {
+                    projectReady = true;
+                    break;
+                  }
+                }
+              }
+              if (projectReady) break;
+            }
+          } catch {}
+
+          if (projectReady) {
+            const elapsed = Math.round((Date.now() - projectReadyStart) / 100) / 10;
+            console.log(`✅ [Flow] Página de projeto pronta em ${elapsed}s: ${currentUrl}`);
+            return true;
+          }
+        }
+        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+      }
+
+      // Timeout: verificar mesmo sem o filter_list (pode ter mudado o layout)
+      const finalUrl = this.page.url();
+      if (finalUrl.includes('/project/')) {
+        console.warn(`⚠️ [Flow] Projeto aberto mas filter_list não encontrado: ${finalUrl}`);
         return true;
       }
 
-      // Retry após mais 3 segundos
-      console.warn(`⚠️ [Flow] URL atual não contém /project/: ${newUrl}`);
-      await new Promise(resolve => setTimeout(resolve, 3000));
-      
-      const retryUrl = this.page.url();
-      if (retryUrl.includes('/project/')) {
-        console.log(`✅ [Flow] Navegou para projeto (após retry): ${retryUrl}`);
-        return true;
-      }
-
-      console.error(`❌ [Flow] URL não contém /project/: ${retryUrl}`);
+      console.error(`❌ [Flow] Timeout: URL não contém /project/ após ${projectReadyTimeoutMs / 1000}s: ${finalUrl}`);
       try {
         const debugPath = path.join(this.outputDir, `flow-route-debug-${Date.now()}.png`);
         await this.page.screenshot({ path: debugPath, fullPage: true });
@@ -1093,6 +1181,22 @@ export class FlowVideoProvider {
           }
         }
 
+        // 3b. Verificar card de falha (ícone 'warning' + "Falha" / "Algo deu errado")
+        const warningIcons = await this.page.$$('i');
+        for (const icon of warningIcons) {
+          if ((await this.getTextContent(icon)).trim() !== 'warning') continue;
+          if (!(await this.isVisible(icon))) continue;
+          const parentProp = await this.page.evaluateHandle(
+            (el: Element) => el.closest('[class*="f112b7ef"]') || el.parentElement?.parentElement || el.parentElement,
+            icon
+          );
+          const parentText = parentProp
+            ? (await this.getTextContent(parentProp as any)).trim()
+            : '';
+          console.error(`❌ [Flow] Card de falha detectado na geração de vídeo: "${parentText.substring(0, 100)}"`);
+          throw new Error(`Flow retornou falha: ${parentText.substring(0, 150) || 'Algo deu errado.'}`);
+        }
+
         // 4. Ler progresso real do Flow (elemento com texto "%")
         let realPercent = 0;
         const allElements = await this.page.$$('div');
@@ -1120,7 +1224,7 @@ export class FlowVideoProvider {
         }
 
       } catch (err: any) {
-        if (err.message.includes('Flow reportou erro') || err.message.includes('Rate limit')) {
+        if (err.message.includes('Flow reportou erro') || err.message.includes('Rate limit') || err.message.includes('Flow retornou falha')) {
           throw err;
         }
         console.warn(`⚠️ [Flow] Erro ao verificar status:`, err.message);
@@ -1292,6 +1396,499 @@ export class FlowVideoProvider {
 
   getOutputDir(): string {
     return this.outputDir;
+  }
+
+  // ========================================
+  // GERAÇÃO DE IMAGENS VIA FLOW
+  // ========================================
+
+  /**
+   * Define a quantidade de respostas por comando dentro do painel tune.
+   * "Respostas por comando" é um combobox com opções 1, 2, 3, 4.
+   * Mesmo painel de configurações do aspect ratio (botão 'tune').
+   */
+  private async setResponseCount(target: number): Promise<void> {
+    if (!this.page) return;
+    const clampedTarget = Math.max(1, Math.min(4, target));
+    if (clampedTarget === 1) {
+      console.log(`ℹ️ [Flow/Img] Quantidade já é 1 (padrão), pulando ajuste`);
+      return;
+    }
+
+    try {
+      // 1. Abrir painel tune
+      let settingsBtn: import('puppeteer').ElementHandle | null = null;
+      const buttons = await this.page.$$('button');
+      for (const btn of buttons) {
+        const icons = await btn.$$('i');
+        for (const icon of icons) {
+          if ((await this.getTextContent(icon)).trim() === 'tune' && (await this.isVisible(btn))) {
+            settingsBtn = btn;
+            break;
+          }
+        }
+        if (settingsBtn) break;
+      }
+
+      if (!settingsBtn) {
+        console.warn('⚠️ [Flow/Img] Botão tune não encontrado — tentando layout 2 para responseCount...');
+        try {
+          const opened = await this.openSettingsDropdownMenu();
+          if (opened) {
+            // No layout 2 a contagem usa tabs com texto 'x1', 'x2', 'x3', 'x4'
+            await this.clickMenuTab(`x${clampedTarget}`);
+            await this.randomDelay(300, 500);
+            await this.closeSettingsDropdownMenu();
+          }
+        } catch {}
+        return;
+      }
+
+      await settingsBtn.click();
+      await this.randomDelay(800, 1200);
+      console.log(`🔧 [Flow/Img] Painel tune aberto → definindo responseCount=${clampedTarget}`);
+
+      // 2. Encontrar o combobox de "Respostas por comando"
+      //    Ele contém o texto da label + o número atual (ex: "Respostas por comando1")
+      //    O div com pointer-events:none está DENTRO do button[role="combobox"]
+      let responseCombo: import('puppeteer').ElementHandle | null = null;
+
+      const comboboxes = await this.page.$$('button[role="combobox"]');
+      for (const combo of comboboxes) {
+        if (!(await this.isVisible(combo))) continue;
+        const comboText = (await this.getTextContent(combo)).toLowerCase();
+        console.log(`🔍 [Flow/Img] Combobox no tune: "${comboText}"`);
+
+        if (
+          comboText.includes('respostas por comando') ||
+          comboText.includes('responses per prompt') ||
+          comboText.includes('respostas') ||
+          comboText.includes('responses')
+        ) {
+          responseCombo = combo;
+          break;
+        }
+      }
+
+      if (!responseCombo) {
+        console.warn('⚠️ [Flow/Img] Combobox "Respostas por comando" não encontrado no painel');
+        await settingsBtn.click().catch(() => {});
+        return;
+      }
+
+      // 3. Verificar o valor atual (evitar clique desnecessário)
+      const comboText = (await this.getTextContent(responseCombo)).trim();
+      const currentMatch = comboText.match(/(\d+)\s*$/);
+      const currentCount = currentMatch ? parseInt(currentMatch[1], 10) : 1;
+      console.log(`🔢 [Flow/Img] Valor atual: ${currentCount}, target: ${clampedTarget}`);
+
+      if (currentCount === clampedTarget) {
+        console.log(`✅ [Flow/Img] Quantidade já é ${clampedTarget}`);
+        await settingsBtn.click().catch(() => {});
+        return;
+      }
+
+      // 4. Abrir dropdown do combobox
+      await responseCombo.click();
+      await this.randomDelay(400, 700);
+
+      // 5. Selecionar a opção com o número alvo
+      //    Opções são div[role="option"] com texto "1", "2", "3" ou "4"
+      const options = await this.page.$$('div[role="option"]');
+      let optionClicked = false;
+
+      for (const opt of options) {
+        if (!(await this.isVisible(opt))) continue;
+        const optText = (await this.getTextContent(opt)).trim();
+        // Texto exato do número: "1", "2", "3" ou "4"
+        if (optText === String(clampedTarget)) {
+          await opt.click();
+          optionClicked = true;
+          console.log(`✅ [Flow/Img] Opção "${clampedTarget}" selecionada em Respostas por comando`);
+          break;
+        }
+      }
+
+      if (!optionClicked) {
+        console.warn(`⚠️ [Flow/Img] Opção "${clampedTarget}" não encontrada no dropdown`);
+        await this.page.keyboard.press('Escape');
+      }
+
+      await this.randomDelay(300, 500);
+
+      // 6. Fechar painel tune
+      await settingsBtn.click().catch(() => {});
+      await this.randomDelay(300, 500);
+
+    } catch (error: any) {
+      console.warn(`⚠️ [Flow/Img] Erro em setResponseCount:`, error.message);
+      try { await this.page.keyboard.press('Escape'); } catch {}
+    }
+  }
+
+
+  /**
+   * Garante que o combobox do Flow está no modo "Criar imagens" / "Create images"
+   */
+  private async ensureCreateImages(): Promise<void> {
+    if (!this.page) return;
+    try {
+      const comboboxes = await this.page.$$('button[role="combobox"]');
+      for (const combo of comboboxes) {
+        if (!(await this.isVisible(combo))) continue;
+        const text = (await this.getTextContent(combo)).toLowerCase();
+        console.log(`🔍 [Flow/Img] Combobox encontrado: "${text}"`);
+
+        if (text.includes('criar imagens') || text.includes('create images')) {
+          console.log(`✅ [Flow/Img] Modo já é "Criar imagens"`);
+          return;
+        }
+
+        // Abrir dropdown e selecionar "Criar imagens"
+        console.log(`⚠️ [Flow/Img] Modo atual: "${text}", trocando para "Criar imagens"...`);
+        await combo.click();
+        await this.randomDelay(500, 1000);
+
+        const optionSelectors = ['[role="option"]', '[data-radix-collection-item]', '[role="menuitem"]'];
+        let optionClicked = false;
+        for (const selector of optionSelectors) {
+          const options = await this.page!.$$(selector);
+          for (const opt of options) {
+            const optText = (await this.getTextContent(opt)).toLowerCase();
+            if (optText.includes('criar imagens') || optText.includes('create images')) {
+              if (await this.isVisible(opt)) {
+                await opt.click();
+                optionClicked = true;
+                console.log(`✅ [Flow/Img] Opção "Criar imagens" selecionada`);
+                break;
+              }
+            }
+          }
+          if (optionClicked) break;
+        }
+
+        if (!optionClicked) {
+          console.warn(`⚠️ [Flow/Img] Opção "Criar imagens" não encontrada, fechando dropdown...`);
+          await this.page!.keyboard.press('Escape');
+        }
+
+        await this.randomDelay(300, 500);
+        return;
+      }
+      console.log(`ℹ️ [Flow/Img] Nenhum combobox encontrado — tentando layout 2 (menu dropdown)...`);
+      // Layout 2: abre o dropdown e clica no tab "Image"
+      const opened = await this.openSettingsDropdownMenu();
+      if (opened) {
+        await this.clickMenuTab(undefined, 'image');
+        await this.randomDelay(300, 500);
+        await this.closeSettingsDropdownMenu();
+      }
+    } catch (error: any) {
+      console.warn(`⚠️ [Flow/Img] Erro ao trocar modo:`, error.message);
+    }
+  }
+
+  /**
+   * Navega para o tab "Imagens" na página de projeto do Flow
+   */
+  private async clickImagesTab(): Promise<void> {
+    if (!this.page) return;
+    try {
+      // Grupo de tabs [Vídeos | Imagens] usando role="group" com buttons radio
+      const buttons = await this.page.$$('button[role="radio"]');
+      for (const btn of buttons) {
+        if (!(await this.isVisible(btn))) continue;
+        const text = (await this.getTextContent(btn)).trim().toLowerCase();
+        // Procura o botão que contenha o ícone "image" ou texto "imagens"/"images"
+        const icons = await btn.$$('i');
+        for (const icon of icons) {
+          const iconText = (await this.getTextContent(icon)).trim();
+          if (iconText === 'image') {
+            await btn.click();
+            console.log(`✅ [Flow/Img] Tab "Imagens" clicado`);
+            await this.randomDelay(500, 1000);
+            return;
+          }
+        }
+        if (text.includes('imagens') || text.includes('images')) {
+          await btn.click();
+          console.log(`✅ [Flow/Img] Tab "Imagens" clicado pelo texto`);
+          await this.randomDelay(500, 1000);
+          return;
+        }
+      }
+      console.warn(`⚠️ [Flow/Img] Tab "Imagens" não encontrado via radio — tentando layout 2...`);
+      // Layout 2: no dropdown menu o tab Imagens usa button[role="tab"] com ícone 'image'
+      // (o menu já pode estar aberto ou não)
+      await this.clickMenuTab(undefined, 'image');
+      await this.randomDelay(200, 400);
+    } catch (err: any) {
+      console.warn(`⚠️ [Flow/Img] Erro ao clicar no tab Imagens:`, err.message);
+    }
+  }
+
+  /**
+   * Coleta as src/href de imagens já presentes na página (para comparar antes/depois)
+   */
+  private async getExistingImageUrls(): Promise<string[]> {
+    if (!this.page) return [];
+    const urls: string[] = [];
+    try {
+      const imgs = await this.page.$$('img[src]');
+      for (const img of imgs) {
+        const srcProp = await img.getProperty('src');
+        const src = (await srcProp.jsonValue()) as string;
+        if (src && (src.startsWith('http') || src.startsWith('blob'))) {
+          urls.push(src);
+        }
+      }
+    } catch {}
+    return urls;
+  }
+
+  /**
+   * Gera imagens usando o Google Flow no modo "Criar imagens".
+   * Retorna até `count` imagens baixadas como arquivos locais.
+   */
+  async generateImages(
+    prompt: string,
+    count: number = 1,
+    onProgress?: FlowProgressCallback,
+    model: string = '🍌 Nano Banana Pro'
+  ): Promise<FlowImageResult> {
+    const startTime = Date.now();
+
+    const emit = (stage: any, message: string, percent?: number) => {
+      console.log(`🖼️ [Flow/Img] ${message}`);
+      onProgress?.({ stage, message, percent });
+    };
+
+    // Diretório de imagens
+    const imgOutputDir = path.join(this.outputDir, 'flow-images');
+    if (!fs.existsSync(imgOutputDir)) {
+      fs.mkdirSync(imgOutputDir, { recursive: true });
+    }
+
+    try {
+      // 1. Inicializar navegador
+      if (!this.isBrowserAlive()) {
+        emit('opening', 'Abrindo navegador...');
+        await this.init();
+      }
+      if (!this.page) throw new Error('Página não disponível');
+
+      // 2. Navegar para o Flow se necessário
+      const currentUrl = this.page.url();
+      const alreadyInProject = currentUrl.includes('/project/');
+
+      if (!alreadyInProject) {
+        emit('navigating', 'Navegando para o Google Flow...');
+        await this.page.goto(FlowVideoProvider.FLOW_URL, { waitUntil: 'networkidle2', timeout: 30000 });
+        await this.randomDelay(2000, 4000);
+
+        if (this.page.url().includes('accounts.google.com')) {
+          throw new Error('Usuário não está logado. Faça login pelo GeminiProvider primeiro.');
+        }
+
+        emit('navigating', 'Abrindo novo projeto...');
+        const opened = await this.clickNewProject();
+        if (!opened) throw new Error('Não foi possível abrir um novo projeto no Flow.');
+      }
+
+      // 3. Selecionar modelo
+      emit('submitting', `Selecionando modelo "${model}"...`, 4);
+      await this.setFlowModel(model, 'image');
+      await this.randomDelay(300, 500);
+
+      // 3b. Definir quantidade de respostas
+      if (count > 1) {
+        emit('submitting', `Definindo ${count} imagens por geração...`, 8);
+        await this.setResponseCount(count);
+        await this.randomDelay(500, 800);
+      }
+
+      // 5. Capturar imagens existentes (para detectar as novas)
+      const knownImageUrls = await this.getExistingImageUrls();
+      emit('submitting', `${knownImageUrls.length} imagens anteriores detectadas`, 15);
+
+      // 6. Submeter prompt
+      emit('submitting', 'Digitando prompt...', 20);
+      const submitted = await this.submitPrompt(prompt);
+      if (!submitted) throw new Error('Não foi possível localizar o campo de prompt no Flow.');
+      emit('generating', 'Prompt enviado! Aguardando geração...', 25);
+
+      // 7. Aguardar novas imagens aparecerem no DOM
+      const timeoutMs = this.config.generationTimeoutMs!;
+      const pollInterval = 2000;
+      let elapsed = 0;
+      let newImageUrls: string[] = [];
+
+      while (elapsed < timeoutMs) {
+        await new Promise(r => setTimeout(r, pollInterval));
+        elapsed += pollInterval;
+
+        // Ler progresso real do DOM
+        // Layout 2: div com texto '8%' é irmão do <i>image</i> ou <i>videocam</i>
+        // Layout 1: div isolado com texto '36%'
+        let realPercent = 0;
+        try {
+          const allDivs = await this.page!.$$('div');
+          for (const div of allDivs) {
+            const text = (await this.getTextContent(div)).trim();
+            const match = text.match(/^(\d{1,3})%$/);
+            if (match) {
+              const val = parseInt(match[1], 10);
+              if (val > realPercent) realPercent = val;
+            }
+          }
+        } catch {}
+
+        if (realPercent > 0) {
+          // Mapeia 0-100% do Flow para 25-85% da nossa barra de progresso
+          const mappedPercent = Math.min(85, 25 + Math.round(realPercent * 0.6));
+          emit('generating', `Gerando imagens... ${realPercent}%`, mappedPercent);
+        } else {
+          // Fallback: estimativa por tempo decorrido
+          const percent = Math.min(85, 25 + Math.round((elapsed / timeoutMs) * 60));
+          emit('generating', `Gerando imagens... (${Math.round(elapsed / 1000)}s)`, percent);
+        }
+
+        try {
+          const allImgs = await this.page!.$$('img[src]');
+          const newUrls: string[] = [];
+          for (const img of allImgs) {
+            const srcProp = await img.getProperty('src');
+            const src = (await srcProp.jsonValue()) as string;
+            // Filtra: URL HTTP que não era conhecida antes, que parece ser imagem gerada
+            if (
+              src &&
+              !knownImageUrls.includes(src) &&
+              (src.includes('googleusercontent') || src.includes('storage.googleapis') ||
+               src.includes('usercontent') || src.includes('blob:') ||
+               /\.(jpg|jpeg|png|webp)/i.test(src))
+            ) {
+              if (!newUrls.includes(src)) newUrls.push(src);
+            }
+          }
+
+          if (newUrls.length > 0) {
+            console.log(`✅ [Flow/Img] ${newUrls.length} nova(s) imagem(ns) detectada(s)!`);
+            newImageUrls = newUrls.slice(0, Math.max(count, 4)); // até max 4
+            break;
+          }
+
+          // Verificar erros por toast (ícone 'error')
+          const toasts = await this.page!.$$('li[data-sonner-toast]');
+          for (const toast of toasts) {
+            const icons = await toast.$$('i');
+            for (const icon of icons) {
+              if ((await this.getTextContent(icon)).trim() === 'error') {
+                const msg = await this.getTextContent(toast);
+                throw new Error(`Flow reportou erro: ${msg.substring(0, 200)}`);
+              }
+            }
+          }
+
+          // Verificar card de falha (ícone 'warning' + "Falha" / "Algo deu errado")
+          // Estrutura: <i>warning</i> + <div>Falha</div> + <div>Algo deu errado.</div>
+          const warningIcons = await this.page!.$$('i');
+          for (const icon of warningIcons) {
+            if ((await this.getTextContent(icon)).trim() !== 'warning') continue;
+            if (!(await this.isVisible(icon))) continue;
+            // Ler o texto do container pai para pegar a mensagem de erro
+            const parentProp = await this.page!.evaluateHandle(
+              (el: Element) => el.closest('[class*="f112b7ef"]') || el.parentElement?.parentElement || el.parentElement,
+              icon
+            );
+            const parentText = parentProp
+              ? (await this.getTextContent(parentProp as any)).trim()
+              : '';
+            console.error(`❌ [Flow/Img] Card de falha detectado: "${parentText.substring(0, 100)}"`);
+            throw new Error(`Flow retornou falha: ${parentText.substring(0, 150) || 'Algo deu errado.'}`);
+          }
+        } catch (err: any) {
+          if (err.message.includes('Flow reportou erro') || err.message.includes('Flow retornou falha')) throw err;
+          console.warn(`⚠️ [Flow/Img] Erro ao verificar imagens:`, err.message);
+        }
+      }
+
+      if (newImageUrls.length === 0) {
+        throw new Error('Timeout: nenhuma imagem foi gerada no tempo limite.');
+      }
+
+      // 8. Baixar imagens para disco
+      emit('downloading', `Baixando ${newImageUrls.length} imagem(ns)...`, 90);
+      const localPaths: string[] = [];
+
+      for (let i = 0; i < newImageUrls.length; i++) {
+        const imgUrl = newImageUrls[i];
+        const ext = imgUrl.includes('.png') ? '.png' : imgUrl.includes('.webp') ? '.webp' : '.jpg';
+        const filename = `flow-image-${Date.now()}-${i + 1}${ext}`;
+        const outputPath = path.join(imgOutputDir, filename);
+
+        try {
+          if (imgUrl.startsWith('blob:')) {
+            // Baixar blob via página
+            const base64 = await this.page!.evaluate(`
+              (async function() {
+                var imgs = document.querySelectorAll('img[src^="blob:"]');
+                var img = imgs[${i}];
+                if (!img) return null;
+                try {
+                  var res = await fetch(img.src);
+                  var blob = await res.blob();
+                  return new Promise(function(resolve) {
+                    var reader = new FileReader();
+                    reader.onloadend = function() { resolve(reader.result.split(',')[1]); };
+                    reader.readAsDataURL(blob);
+                  });
+                } catch(e) { return null; }
+              })()
+            `) as string | null;
+            if (base64) {
+              fs.writeFileSync(outputPath, Buffer.from(base64, 'base64'));
+              localPaths.push(outputPath);
+            }
+          } else {
+            // Download HTTP
+            await new Promise<void>((resolve, reject) => {
+              const protocol = imgUrl.startsWith('https') ? https : http;
+              const file = fs.createWriteStream(outputPath);
+              protocol.get(imgUrl, (res) => {
+                if (res.statusCode && res.statusCode >= 400) {
+                  reject(new Error(`HTTP ${res.statusCode} ao baixar imagem`));
+                  return;
+                }
+                res.pipe(file);
+                file.on('finish', () => { file.close(); resolve(); });
+              }).on('error', reject);
+            });
+            const stats = fs.statSync(outputPath);
+            if (stats.size > 1000) { // arquivo válido (> 1 KB)
+              localPaths.push(outputPath);
+              console.log(`✅ [Flow/Img] Imagem ${i + 1} baixada: ${outputPath} (${Math.round(stats.size / 1024)} KB)`);
+            }
+          }
+        } catch (dlErr: any) {
+          console.warn(`⚠️ [Flow/Img] Erro ao baixar imagem ${i + 1}:`, dlErr.message);
+        }
+      }
+
+      if (localPaths.length === 0) {
+        throw new Error('Imagens detectadas mas não foi possível baixá-las.');
+      }
+
+      const durationMs = Date.now() - startTime;
+      emit('complete', `${localPaths.length} imagem(ns) gerada(s) com sucesso!`, 100);
+
+      return { success: true, imagePaths: localPaths, durationMs };
+
+    } catch (error: any) {
+      const durationMs = Date.now() - startTime;
+      emit('error', `Erro: ${error.message}`);
+      console.error(`❌ [Flow/Img] Erro na geração:`, error);
+      return { success: false, error: error.message, durationMs };
+    }
   }
 }
 

@@ -30,6 +30,8 @@ export interface Veo2GenerationOptions {
   durationSeconds?: number;
   /** Chave de API do Gemini (usa GEMINI_API_KEY do env por padrão) */
   apiKey?: string;
+  /** Caminho local ou URL HTTP de uma imagem de referência para image-to-video */
+  referenceImagePath?: string;
   /** Callback de progresso (0-100) */
   onProgress?: (percent: number, message: string) => void;
 }
@@ -86,18 +88,76 @@ export class Veo2VideoService {
 
       emit(5, 'Iniciando geração Veo 2...');
 
+      // Preparar imagem de referência (se fornecida)
+      let imageInput: { imageBytes: string; mimeType: string } | undefined;
+      if (options.referenceImagePath) {
+        emit(7, 'Carregando imagem de referência...');
+        try {
+          let imageBuffer: Buffer;
+          const refPath = options.referenceImagePath;
+
+          if (refPath.startsWith('http://') || refPath.startsWith('https://')) {
+            // Baixar imagem da URL HTTP (ex: servidor local do projeto)
+            imageBuffer = await new Promise<Buffer>((resolve, reject) => {
+              const protocol = refPath.startsWith('https://') ? https : http;
+              const chunks: Buffer[] = [];
+              protocol.get(refPath, (res) => {
+                res.on('data', (chunk) => chunks.push(chunk));
+                res.on('end', () => resolve(Buffer.concat(chunks)));
+                res.on('error', reject);
+              }).on('error', reject);
+            });
+          } else {
+            // Ler do disco
+            imageBuffer = fs.readFileSync(refPath);
+          }
+
+          // Detectar MIME type pela extensão
+          const ext = refPath.toLowerCase().split('.').pop() || 'jpg';
+          const mimeMap: Record<string, string> = {
+            jpg: 'image/jpeg', jpeg: 'image/jpeg',
+            png: 'image/png', webp: 'image/webp',
+            gif: 'image/gif',
+          };
+          const mimeType = mimeMap[ext] || 'image/jpeg';
+
+          imageInput = {
+            imageBytes: imageBuffer.toString('base64'),
+            mimeType,
+          };
+          emit(9, `Imagem de referência carregada (${Math.round(imageBuffer.length / 1024)} KB, ${mimeType})`);
+        } catch (imgErr: any) {
+          console.warn(`[Veo2] Falha ao carregar imagem de referência: ${imgErr.message}. Gerando apenas com texto.`);
+        }
+      }
+
       // 1. Submeter operação de geração
+      // NOTA: personGeneration 'dont_allow' bloqueia silenciosamente quando há pessoas
+      // na imagem de referência → usar 'allow_adult' para image-to-video
+      const personGen = imageInput ? 'allow_adult' : 'dont_allow';
+
+      // Log completo do que está sendo enviado para a API
+      console.log('[Veo2] ======= PAYLOAD DA REQUISIÇÃO =======');
+      console.log(`[Veo2] model        : veo-2.0-generate-001`);
+      console.log(`[Veo2] mode         : ${imageInput ? 'image-to-video' : 'text-to-video'}`);
+      console.log(`[Veo2] prompt       : ${prompt}`);
+      console.log(`[Veo2] image        : ${imageInput ? `✅ ${Math.round(imageInput.imageBytes.length * 3/4 / 1024)} KB (${imageInput.mimeType})` : '❌ (nenhuma imagem)'}`);
+      console.log(`[Veo2] aspectRatio  : ${aspectRatio}`);
+      console.log(`[Veo2] personGen    : ${personGen}`);
+      console.log(`[Veo2] resolution   : ${imageInput ? '(omitida no image-to-video)' : '720p'}`);
+      console.log(`[Veo2] duration     : ${Math.min(durationSeconds, 8)}s`);
+      console.log('[Veo2] ==========================================');
+
       let operation = await ai.models.generateVideos({
         model: 'veo-2.0-generate-001',
-        source: {
-          prompt,
-        },
+        prompt,
+        ...(imageInput ? { image: imageInput } : {}),
         config: {
           numberOfVideos: 1,
           aspectRatio,
           negativePrompt: "Watermark, text, logo, bad quality, low quality",
-          resolution: '720p',
-          personGeneration: 'dont_allow',
+          ...(imageInput ? {} : { resolution: '720p' }), // resolution pode conflitar com image-to-video
+          personGeneration: personGen,
           durationSeconds: Math.min(durationSeconds, 8),
         },
       });
@@ -129,8 +189,14 @@ export class Veo2VideoService {
 
       // 3. Extrair URI do vídeo gerado
       const generatedVideos = operation.response?.generatedVideos;
+
+      // Log detalhado para diagnóstico quando a API retorna 0 vídeos
       if (!generatedVideos || generatedVideos.length === 0) {
-        throw new Error('Nenhum vídeo foi gerado pela API Veo 2.');
+        console.error('[Veo2] ❌ API retornou generatedVideos vazio. Resposta completa:');
+        console.error(JSON.stringify(operation.response, null, 2));
+        const raiReasons = (operation.response as any)?.raiMediaFilteredReasons;
+        const raiMsg = raiReasons ? ` | Motivo (filtro RAI): ${JSON.stringify(raiReasons)}` : '';
+        throw new Error(`Nenhum vídeo foi gerado pela API Veo 2.${raiMsg}`);
       }
 
       const videoUri = generatedVideos[0]?.video?.uri;

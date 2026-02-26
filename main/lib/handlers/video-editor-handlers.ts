@@ -1147,10 +1147,13 @@ Lembre-se:
       aspectRatio?: string;
       geminiProviderId?: string;
       headless?: boolean;
+      model?: string;
+      count?: number;
     }
   ) => {
     try {
-      console.log(`🌊 [Flow/Veo3] Generating video with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'})`);
+      const count = Math.min(options.count || 1, 4);
+      console.log(`🌊 [Flow/Veo3] Generating ${count} video(s) with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'}, model: ${options.model || 'Veo 3.1 - Fast'})`);
 
       const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
       const flowProvider = getFlowVideoProvider({
@@ -1163,12 +1166,13 @@ Lembre-se:
       const result = await flowProvider.generateVideo(
         options.prompt,
         (progress: any) => {
-          // Envia progresso para a janela do Video Studio
           if (window && !window.isDestroyed()) {
             window.webContents.send('video-project:vo3-progress', progress);
           }
         },
-        options.aspectRatio
+        options.aspectRatio,
+        options.model || 'Veo 3.1 - Fast',
+        count
       );
 
       if (!result.success) {
@@ -1231,15 +1235,20 @@ Lembre-se:
     prompt: string;
     aspectRatio?: string;
     durationSeconds?: number;
+    referenceImagePath?: string;
   }) => {
     try {
       const { getVeo2VideoService } = require('../services/veo2-video-service');
       const veo2Service = getVeo2VideoService();
 
+      const mode = options.referenceImagePath ? 'image-to-video' : 'text-to-video';
+      console.log(`🌊 [Veo2] Starting ${mode} generation (ratio: ${options.aspectRatio || '16:9'})`);
+
       const result = await veo2Service.generateVideo({
         prompt: options.prompt,
         aspectRatio: (options.aspectRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16',
         durationSeconds: options.durationSeconds || 8,
+        referenceImagePath: options.referenceImagePath,
         onProgress: (percent: number, message: string) => {
           event.sender.send('video-project:veo2-progress', { percent, message, stage: 'generating' });
         },
@@ -1255,7 +1264,7 @@ Lembre-se:
         httpUrl = videoProjectService.convertToHttpUrl(result.videoPath);
       }
 
-      console.log(`✅ [Veo2] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
+      console.log(`✅ [Veo2] Video generated (${mode}): ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
 
       return {
         success: true,
@@ -1266,6 +1275,109 @@ Lembre-se:
 
     } catch (error: any) {
       console.error('❌ [Veo2] Generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler para gerar IMAGEM via Google Flow ("Criar imagens")
+  ipcMain.handle('video-project:generate-flow-image', async (event, options: {
+    prompt: string;
+    count?: number;
+    geminiProviderId?: string;
+    headless?: boolean;
+  }) => {
+    try {
+      const count = Math.min(options.count || 1, 4);
+      console.log(`🖼️ [Flow/Img] Gerando ${count} imagem(ns) com prompt: "${options.prompt.substring(0, 80)}..."`);
+
+      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
+      const flowProvider = getFlowVideoProvider({
+        headless: options.headless ?? false,
+        geminiProviderId: options.geminiProviderId,
+      });
+
+      const result = await flowProvider.generateImages(
+        options.prompt,
+        count,
+        (progress: any) => {
+          event.sender.send('video-project:flow-image-progress', progress);
+        },
+        '🍌 Nano Banana Pro'
+      );
+
+      if (!result.success || !result.imagePaths?.length) {
+        return { success: false, error: result.error };
+      }
+
+      const httpUrls = result.imagePaths.map((p: string) =>
+        videoProjectService ? videoProjectService.convertToHttpUrl(p) : p
+      );
+
+      console.log(`✅ [Flow/Img] ${result.imagePaths.length} imagem(ns) gerada(s)`);
+      return {
+        success: true,
+        imagePaths: result.imagePaths,
+        httpUrls,
+        durationMs: result.durationMs,
+      };
+
+    } catch (error: any) {
+      console.error('❌ [Flow/Img] Erro:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
+  // Handler para gerar VÍDEO via Google Flow com Veo 2
+  ipcMain.handle('video-project:generate-vo2-flow', async (event, options: {
+    prompt: string;
+    aspectRatio?: string;
+    geminiProviderId?: string;
+    headless?: boolean;
+    count?: number;
+  }) => {
+    try {
+      const count = Math.min(options.count || 1, 4);
+      console.log(`🌊 [Flow/Veo2] Generating ${count} video(s) with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'})`);
+
+      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
+      const flowProvider = getFlowVideoProvider({
+        headless: options.headless ?? false,
+        geminiProviderId: options.geminiProviderId,
+      });
+
+      const window = getWindowFn?.();
+
+      const result = await flowProvider.generateVideo(
+        options.prompt,
+        (progress: any) => {
+          if (window && !window.isDestroyed()) {
+            window.webContents.send('video-project:vo2-flow-progress', progress);
+          }
+        },
+        options.aspectRatio,
+        'Veo 2 - Fast',
+        count
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Erro desconhecido na geração do vídeo Veo 2');
+      }
+
+      let httpUrl = result.videoPath;
+      if (videoProjectService && result.videoPath) {
+        httpUrl = videoProjectService.convertToHttpUrl(result.videoPath);
+      }
+
+      console.log(`✅ [Flow/Veo2] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
+      return {
+        success: true,
+        videoPath: result.videoPath,
+        httpUrl,
+        durationMs: result.durationMs,
+      };
+
+    } catch (error: any) {
+      console.error('❌ [Flow/Veo2] Generation error:', error);
       return { success: false, error: error.message };
     }
   });

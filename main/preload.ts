@@ -417,6 +417,8 @@ const handler = {
       aspectRatio?: string;
       geminiProviderId?: string;
       headless?: boolean;
+      model?: string;
+      count?: number;
     }) => ipcRenderer.invoke('video-project:generate-vo3', options),
 
     // Consultar créditos do Flow (Veo 3)
@@ -429,11 +431,28 @@ const handler = {
       return () => ipcRenderer.removeListener('video-project:vo3-progress', subscription);
     },
 
+    // Gerar vídeo via Google Flow (Veo 2 - Fast)
+    generateVo2Flow: (options: {
+      prompt: string;
+      aspectRatio?: string;
+      geminiProviderId?: string;
+      headless?: boolean;
+      count?: number;
+    }) => ipcRenderer.invoke('video-project:generate-vo2-flow', options),
+
+    // Listener para progresso da geração Veo 2 Flow
+    onVo2FlowProgress: (callback: (data: { stage: string; message: string; percent?: number }) => void) => {
+      const subscription = (_: any, data: { stage: string; message: string; percent?: number }) => callback(data);
+      ipcRenderer.on('video-project:vo2-flow-progress', subscription);
+      return () => ipcRenderer.removeListener('video-project:vo2-flow-progress', subscription);
+    },
+
     // Gerar vídeo via Google Veo 2 (API oficial, sem áudio)
     generateVeo2: (options: {
       prompt: string;
       aspectRatio?: string;
       durationSeconds?: number;
+      referenceImagePath?: string;
     }) => ipcRenderer.invoke('video-project:generate-veo2', options),
 
     // Listener para progresso da geração Veo 2
@@ -441,6 +460,21 @@ const handler = {
       const subscription = (_: any, data: { stage: string; message: string; percent?: number }) => callback(data);
       ipcRenderer.on('video-project:veo2-progress', subscription);
       return () => ipcRenderer.removeListener('video-project:veo2-progress', subscription);
+    },
+
+    // Gerar IMAGEM via Google Flow ("Criar imagens")
+    generateFlowImage: (options: {
+      prompt: string;
+      count?: number;
+      geminiProviderId?: string;
+      headless?: boolean;
+    }) => ipcRenderer.invoke('video-project:generate-flow-image', options),
+
+    // Listener para progresso da geração de imagem via Flow
+    onFlowImageProgress: (callback: (data: { stage: string; message: string; percent?: number }) => void) => {
+      const subscription = (_: any, data: { stage: string; message: string; percent?: number }) => callback(data);
+      ipcRenderer.on('video-project:flow-image-progress', subscription);
+      return () => ipcRenderer.removeListener('video-project:flow-image-progress', subscription);
     },
   },
   
