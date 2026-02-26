@@ -1454,26 +1454,56 @@ export class FlowVideoProvider {
 
     while (Date.now() - startTime < timeoutMs) {
       try {
-        // 1. Procurar <video> com src (vídeo pronto)
-        const videos = await this.page.$$('video[src], video source[src]');
-        for (const v of videos) {
-          const srcProp = await v.getProperty('src');
-          const src = (await srcProp.jsonValue()) as string;
-          if (src && !knownVideoUrls.includes(src) && (src.includes('.mp4') || src.includes('blob:') || src.includes('video') || src.includes('googleusercontent') || src.includes('storage.googleapis'))) {
-            console.log(`✅ [Flow] Vídeo encontrado! URL: ${src.substring(0, 100)}`);
-            return src;
-          }
-        }
+        // 1 & 2. Procurar vídeo concluído em tiles NOVAS
+        const knownIdsJsonVideo = JSON.stringify(knownTileIds);
+        const completedVideoUrl = await this.page.evaluate(`(function() {
+          var knownIds = ${knownIdsJsonVideo};
+          var allTiles = document.querySelectorAll('[data-tile-id]');
+          
+          for (var ti = 0; ti < allTiles.length; ti++) {
+            var tile = allTiles[ti];
+            var tileId = tile.getAttribute('data-tile-id') || '';
+            
+            var isKnown = false;
+            for (var ki = 0; ki < knownIds.length; ki++) {
+              if (knownIds[ki] === tileId) { isKnown = true; break; }
+            }
+            if (isKnown) continue;
 
-        // 2. Procurar link de download
-        const downloadLinks = await this.page.$$('a[download], a[href*=".mp4"], a[href*="download"]');
-        for (const link of downloadLinks) {
-          const hrefProp = await link.getProperty('href');
-          const href = (await hrefProp.jsonValue()) as string;
-          if (href && !knownVideoUrls.includes(href)) {
-            console.log(`✅ [Flow] Link de download encontrado: ${href.substring(0, 100)}`);
-            return href;
+            // Verificar se ainda está gerando (tem %)
+            var tileText = tile.textContent || '';
+            if (tileText.indexOf('%') !== -1) continue;
+
+            // Procurar mídia concluída na tile
+            var mediaNodes = tile.querySelectorAll('video, video source, a[download], a[href], img');
+            for (var m = 0; m < mediaNodes.length; m++) {
+              var el = mediaNodes[m];
+              var src = el.getAttribute('src') || el.getAttribute('href') || '';
+              
+              if (
+                src.indexOf('getMediaUrlRedirect') !== -1 || 
+                src.indexOf('/fx/api/trpc/media') !== -1 ||
+                src.indexOf('.mp4') !== -1 ||
+                src.indexOf('blob:') === 0 ||
+                src.indexOf('googleusercontent') !== -1 ||
+                src.indexOf('storage.googleapis') !== -1
+              ) {
+                // Se for URL relativa, transforma em absoluta
+                if (src.indexOf('/') === 0) src = 'https://labs.google' + src;
+                
+                // Evitar SVG e placeholders base64
+                if (src.indexOf('.svg') === -1 && src.indexOf('data:image') === -1) {
+                  return src;
+                }
+              }
+            }
           }
+          return null;
+        })()`) as string | null;
+
+        if (completedVideoUrl) {
+          console.log(`✅ [Flow] Vídeo encontrado na nova tile! URL: ${completedVideoUrl.substring(0, 80)}`);
+          return completedVideoUrl;
         }
 
         // 3. Verificar erros via toasts (policy error, rate limit, queue full)
@@ -1592,15 +1622,63 @@ export class FlowVideoProvider {
       return;
     }
 
+    // Se for URL do labs.google (getMediaUrlRedirect), precisa dos cookies da sessão
+    // para resolver o redirect e pegar a URL assinada pública (GCS)
+    let finalUrl = videoUrl;
+    if (videoUrl.includes('labs.google') || videoUrl.includes('getMediaUrlRedirect')) {
+      if (!this.page) throw new Error('Página não disponível para resolver URL do vídeo');
+      console.log(`🔍 [Flow/Video] Resolvendo URL autenticada do vídeo via browser...`);
+      
+      const urlJson = JSON.stringify(videoUrl);
+      const signedUrl = await this.page.evaluate(`(function() {
+        var url = ${urlJson};
+        return new Promise(function(resolve) {
+          fetch(url, { credentials: 'same-origin', redirect: 'follow' })
+            .then(function(res) {
+              if (res.url && res.url !== url) { resolve(res.url); return; }
+              resolve(null);
+            })
+            .catch(function(e1) {
+              try {
+                var xhr = new XMLHttpRequest();
+                xhr.withCredentials = true;
+                xhr.onload = function() { resolve(xhr.responseURL && xhr.responseURL !== url ? xhr.responseURL : null); };
+                xhr.onerror = function() {
+                  fetch(url, { redirect: 'follow' })
+                    .then(function(res) { resolve(res.url !== url ? res.url : null); })
+                    .catch(function() { resolve(null); });
+                };
+                xhr.open('GET', url, true);
+                xhr.send();
+              } catch(e2) { resolve(null); }
+            });
+        });
+      })()`) as string | null;
+
+      if (signedUrl && signedUrl !== videoUrl) {
+        console.log(`✅ [Flow/Video] URL assinada obtida: ${signedUrl.substring(0, 80)}...`);
+        finalUrl = signedUrl;
+      } else {
+        console.warn(`⚠️ [Flow/Video] Não foi possível resolver URL assinada do vídeo. Tentando acesso direto...`);
+      }
+    }
+
     return new Promise((resolve, reject) => {
-      const protocol = videoUrl.startsWith('https') ? https : http;
+      const protocol = finalUrl.startsWith('https') ? https : http;
       const file = fs.createWriteStream(outputPath);
       
-      protocol.get(videoUrl, (response) => {
+      protocol.get(finalUrl, (response) => {
         if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           file.close();
           fs.unlinkSync(outputPath);
           this.downloadVideo(response.headers.location, outputPath).then(resolve).catch(reject);
+          return;
+        }
+
+        if (response.statusCode && response.statusCode >= 400) {
+          file.close();
+          if (fs.existsSync(outputPath)) fs.unlinkSync(outputPath);
+          reject(new Error(`HTTP ${response.statusCode} - não foi possível baixar o vídeo`));
           return;
         }
 
