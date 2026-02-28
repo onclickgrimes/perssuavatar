@@ -563,7 +563,8 @@ export class FlowVideoProvider {
     onProgress?: FlowProgressCallback,
     aspectRatio?: string,
     model: string = 'Veo 3.1 - Fast',
-    count: number = 1
+    count: number = 1,
+    referenceImagePath?: string
   ): Promise<FlowGenerationResult> {
     const startTime = Date.now();
 
@@ -643,6 +644,16 @@ export class FlowVideoProvider {
       });
       await this.randomDelay(400, 700);
 
+      // 5. Upload de imagem de referência, se fornecida
+      if (referenceImagePath) {
+        emitProgress('submitting', 'Enviando imagem de referência...');
+        const uploaded = await this.uploadReferenceImage(referenceImagePath);
+        if (!uploaded) {
+          throw new Error('Falha ao enviar a imagem de referência para animação no Flow.');
+        }
+      }
+      
+
       // 6. Procurar e submeter o prompt
       emitProgress('submitting', 'Localizando campo de prompt...');
       await this.randomDelay(1000, 2000);
@@ -671,6 +682,9 @@ export class FlowVideoProvider {
       }
 
       emitProgress('submitting', 'Prompt enviado! Aguardando geração...');
+
+      // Limpa os campos visuais do prompt (imagem de referência Inicial e texto)
+      await this.clearPromptPanel();
 
       // 4. Aguardar geração do vídeo
       emitProgress('generating', 'Gerando vídeo com Veo 3...', 10);
@@ -1435,6 +1449,252 @@ export class FlowVideoProvider {
   }
 
   /**
+   * Limpa o painel de prompt ("Apagar comando") e remove a imagem de referência do "Inicial", se houver.
+   */
+  private async clearPromptPanel(): Promise<void> {
+    if (!this.page) return;
+    try {
+      console.log(`🧹 [Flow] Limpando quadro Inicial e campo de prompt...`);
+      await this.page.evaluate(`(function() {
+        var buttons = document.querySelectorAll('button');
+        // 1. Procurar e clicar no botão "Apagar comando"
+        for (var i = 0; i < buttons.length; i++) {
+          var btn = buttons[i];
+          var text = (btn.innerText || btn.textContent || '').toLowerCase();
+          if (text.indexOf('apagar comando') !== -1 || text.indexOf('clear command') !== -1) {
+            btn.click();
+            return;
+          }
+          // Procurar children spans
+          var spans = btn.querySelectorAll('span');
+          for (var j = 0; j < spans.length; j++) {
+             var spText = (spans[j].innerText || spans[j].textContent || '').toLowerCase();
+             if (spText.indexOf('apagar comando') !== -1 || spText.indexOf('clear command') !== -1) {
+                btn.click();
+                return;
+             }
+          }
+        }
+
+        // 2. Fallback: fecha imagem manualmente (click no X/cancel) e limpa textarea
+        var imgs = document.querySelectorAll('img[src*="/fx/api/trpc/media"]');
+        if (imgs.length > 0) {
+          for (var i=0; i<imgs.length; i++) {
+             var img = imgs[i];
+             var parent = img.parentElement;
+             while(parent && parent.tagName !== 'BUTTON' && parent.tagName !== 'DIV') {
+                if (parent.tagName === 'BODY') break;
+                parent = parent.parentElement;
+             }
+             if (parent && parent.tagName === 'BUTTON') {
+                if(parent.innerHTML.indexOf('cancel') !== -1 || parent.innerHTML.indexOf('close') !== -1) {
+                   parent.click();
+                }
+             }
+          }
+        }
+        
+        var textareas = document.querySelectorAll('textarea, div[contenteditable="true"]');
+        for (var i=0; i<textareas.length; i++) {
+           var ta = textareas[i];
+           var ariaVal = ta.getAttribute('aria-label') || '';
+           if (ariaVal.toLowerCase().indexOf('prompt') !== -1 || ariaVal.toLowerCase().indexOf('describe') !== -1 || ta.tagName === 'DIV') {
+              if (ta.tagName === 'DIV' && ta.getAttribute('role') === 'textbox') {
+                 ta.innerHTML = '<p><br></p>';
+              } else {
+                 ta.value = '';
+              }
+           }
+        }
+      })()`);
+      console.log(`✅ [Flow] Limpeza do prompt submetida com sucesso.`);
+      // Dar um fôlego para a UI renderizar a remoção
+      await this.randomDelay(400, 800);
+    } catch(e) {
+      console.warn(`⚠️ [Flow] Erro ao tentar limpar o prompt panel:`, e);
+    }
+  }
+
+  /**
+   * Envia uma imagem de referência para ser animada
+   */
+  private async uploadReferenceImage(imagePath: string): Promise<boolean> {
+    if (!this.page) return false;
+
+    try {
+      console.log(`🖼️ [Flow] Iniciando processamento de imagem de referência: ${imagePath}`);
+
+      // Normalizar caminho (Puppeteer precisa de caminho absoluto no OS e barra normal ou dupla)
+      let absPath = imagePath;
+      const pathModule = require('path');
+      const fs = require('fs');
+
+      if (absPath.startsWith('http://') || absPath.startsWith('https://')) {
+        console.log(`🖼️ [Flow] URL detectada, baixando temporariamente para upload...`);
+        const tempFilename = `temp_ref_${Date.now()}.jpg`;
+        const tempPath = pathModule.join(this.outputDir, tempFilename);
+        
+        await new Promise((resolve, reject) => {
+          const client = absPath.startsWith('https') ? require('https') : require('http');
+          const request = client.get(absPath, (response: any) => {
+            if (response.statusCode === 200) {
+              const fileStream = fs.createWriteStream(tempPath);
+              response.pipe(fileStream);
+              fileStream.on('finish', () => { fileStream.close(); resolve(true); });
+            } else {
+              reject(new Error(`Falha no download da referência: Status ${response.statusCode}`));
+            }
+          }).on('error', (err: any) => reject(err));
+        });
+        absPath = tempPath;
+      } else if (absPath.startsWith('file:///')) {
+        absPath = absPath.replace('file:///', '');
+      }
+      
+      absPath = pathModule.resolve(absPath);
+      console.log(`🖼️ [Flow] Caminho absoluto da imagem preparado: ${absPath}`);
+
+      // 1. O fluxo REQUER que pressionemos o botão "Inicial" para abrir a galeria no modo de "First Frame"
+      console.log(`🔎 [Flow] Buscando botão "Inicial" no painel principal ou abrindo interface...`);
+      try {
+        const preOpened = (await this.page.evaluate(`(function() {
+           var elements = document.querySelectorAll('div, button, span');
+           for (var i = 0; i < elements.length; i++) {
+              var el = elements[i];
+              if (el.innerText) {
+                 var tText = el.innerText.replace(/^\\s+|\\s+$/g, '');
+                 if (tText === 'Inicial') {
+                    el.click();
+                    return true;
+                 }
+              }
+           }
+           return false;
+        })()`)) as boolean;
+
+        if (preOpened) {
+          console.log(`✅ [Flow] Clicando na aba "Inicial" para abrir galeria ou trazer ao foco...`);
+          await this.randomDelay(1000, 1500);
+        } else {
+          console.log(`⚠️ [Flow] Botão "Inicial" não encontrado ou já estava aberto. Prosseguindo...`);
+        }
+      } catch (e) {
+        console.log(`⚠️ [Flow] Erro ao buscar aba Inicial pre-existente: ${e}`);
+      }
+
+      // 2. Agora precisamos fazer o upload.
+      // Vamos interceptar o seletor de arquivos do SO (File Chooser) para impedir que a janela do Windows abra.
+      let uploadSuccess = false;
+
+      try {
+        console.log(`🔎 [Flow] Preparando interceptador de File Chooser...`);
+        const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
+
+        let clickedUploadBtn = (await this.page.evaluate(`(function() {
+           var buttons = document.querySelectorAll('button');
+           for (var i = 0; i < buttons.length; i++) {
+              var el = buttons[i];
+              // O texto muitas vezes fica oculto visualmente mas presente no DOM (textContent)
+              var spans = el.querySelectorAll('span');
+              for (var j = 0; j < spans.length; j++) {
+                 var spanText = (spans[j].textContent || '').toLowerCase().trim();
+                 if (spanText === 'faça upload de uma imagem' || spanText.indexOf('upload an image') !== -1) {
+                    el.click();
+                    return true;
+                 }
+              }
+           }
+           return false;
+        })()`)) as boolean;
+
+        if (clickedUploadBtn) {
+          console.log(`✅ [Flow] Botão de upload clicado. Aguardando File Chooser interno...`);
+          const fileChooser = await futureFileChooser;
+          if (fileChooser) {
+             console.log(`✅ [Flow] File Chooser interceptado com sucesso! Injetando ${absPath}`);
+             await fileChooser.accept([absPath]);
+             uploadSuccess = true;
+          } else {
+             console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
+          }
+        }
+      } catch (e) {
+        console.warn(`⚠️ [Flow] Erro ao tentar interceptar File Chooser: ${e}`);
+      }
+
+      // Polling inteligente para aguardar o processamento da imagem
+      if (uploadSuccess) {
+        console.log(`⏳ [Flow] Aguardando processamento da imagem de referência...`);
+        const maxWaitMs = 60000; // Máximo de 60 segundos
+        const startWait = Date.now();
+        let isImageReady = false;
+
+        while (Date.now() - startWait < maxWaitMs) {
+          isImageReady = (await this.page.evaluate(`(function() {
+            var container = null;
+            var buttons = document.querySelectorAll('button');
+            
+            // Localiza o botão de swap (Trocar o primeiro e o último frame)
+            // O parentNode desse botão agrupa as divisões do Quadro Inicial e Quadro Final
+            for (var i = 0; i < buttons.length; i++) {
+              var btn = buttons[i];
+              var icons = btn.querySelectorAll('i');
+              for (var k = 0; k < icons.length; k++) {
+                if ((icons[k].textContent || '').trim() === 'swap_horiz') {
+                  container = btn.parentNode;
+                  break;
+                }
+              }
+              if (container) break;
+            }
+
+            if (container) {
+              // Pega a PRIMEIRA tag img deste container, que é o quadro "Inicial"
+              var firstImg = container.querySelector('img[alt*="mídia"], img[crossorigin="anonymous"]');
+              if (firstImg) {
+                var src = firstImg.getAttribute('src');
+                if (src && (src.indexOf('/fx/api/trpc/media') !== -1 || src.indexOf('blob:') === 0)) {
+                  // Opcional: checar se não é do quadro "Final"
+                  return true; 
+                }
+              }
+            } else {
+              // Fallback se o DOM mudar ou estiver no modo imagem única sem "Final frame"
+              var imgs = document.querySelectorAll('img[alt*="mídia"], img[crossorigin="anonymous"]');
+              for (var j = 0; j < imgs.length; j++) {
+                var imgFallback = imgs[j];
+                var srcF = imgFallback.getAttribute('src');
+                if (srcF && (srcF.indexOf('/fx/api/trpc/media') !== -1 || srcF.indexOf('blob:') === 0)) {
+                  // Pode gerar falso positivo se houver várias, mas salva de trava permanente
+                  return true;
+                }
+              }
+            }
+            return false;
+          })()`)) as boolean;
+
+          if (isImageReady) {
+            const elapsed = Math.round((Date.now() - startWait) / 1000);
+            console.log(`✅ [Flow] Imagem de referência carregada com sucesso! (${elapsed}s)`);
+            return true;
+          }
+
+          await this.randomDelay(1000, 1500);
+        }
+
+        console.warn(`⚠️ [Flow] Timeout ao aguardar processamento da imagem (60s).`);
+        return false;
+      }
+
+      return false;
+
+    } catch (error: any) {
+      console.error(`❌ [Flow] Erro ao enviar imagem de referência:`, error.message);
+      return false;
+    }
+  }
+
+  /**
    * Aguarda a geração do vídeo monitorando o DOM via APIs nativas do Puppeteer.
    * Lê o progresso real do Flow (ex: "36%") e sincroniza com o callback.
    */
@@ -1573,16 +1833,37 @@ export class FlowVideoProvider {
           console.warn(`⚠️ [Flow] Warning em tile nova ignorado — geração ativa em outra tile`);
         }
 
-        // 4. Ler progresso real do Flow (elemento com texto "%")
+        // 4. Ler progresso real do Flow EXCLUSIVAMENTE dentro das tiles novas
         let realPercent = 0;
-        const allElements = await this.page.$$('div');
-        for (const el of allElements) {
-          const text = (await this.getTextContent(el)).trim();
-          const percentMatch = text.match(/^(\d{1,3})%$/);
-          if (percentMatch) {
-            realPercent = parseInt(percentMatch[1], 10);
-            break;
+        const knownIdsJsonVideoScan = JSON.stringify(knownTileIds);
+        const activeTilePercent = await this.page.evaluate(`(function() {
+          var knownIds = ${knownIdsJsonVideoScan};
+          var allTiles = document.querySelectorAll('[data-tile-id]');
+          for (var ti = 0; ti < allTiles.length; ti++) {
+            var tile = allTiles[ti];
+            var tileId = tile.getAttribute('data-tile-id') || '';
+            
+            var isKnown = false;
+            for (var ki = 0; ki < knownIds.length; ki++) {
+              if (knownIds[ki] === tileId) { isKnown = true; break; }
+            }
+            if (!isKnown) {
+               // Nova tile gerando! Procurar % nela.
+               var spans = tile.querySelectorAll('div, span');
+               for(var s = 0; s < spans.length; s++){
+                  var t = (spans[s].innerText || '').trim();
+                  var m = t.match(/^(\\d{1,3})%$/);
+                  if (m) return parseInt(m[1], 10);
+               }
+               var fullMatch = (tile.innerText || '').match(/(\\d{1,3})%/);
+               if (fullMatch) return parseInt(fullMatch[1], 10);
+            }
           }
+          return 0;
+        })()`) as number;
+
+        if (activeTilePercent > 0) {
+           realPercent = activeTilePercent;
         }
 
         if (realPercent > 0 && realPercent > lastPercent) {

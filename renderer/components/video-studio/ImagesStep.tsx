@@ -159,13 +159,7 @@ export function ImagesStep({
     if (!imagePrompt) return '';
     if (typeof imagePrompt === 'string') return imagePrompt;
     if (typeof imagePrompt === 'object' && imagePrompt !== null) {
-      // Tentar extrair main_text_prompt da estrutura do video_veo2
-      const structured = imagePrompt as Record<string, unknown>;
-      const vgp = structured.video_generation_prompt as Record<string, unknown> | undefined;
-      if (vgp?.main_text_prompt && typeof vgp.main_text_prompt === 'string') {
-        return vgp.main_text_prompt;
-      }
-      // Fallback: serializar o objeto
+      // Retornar o JSON inteiro conforme solicitado
       return JSON.stringify(imagePrompt);
     }
     return String(imagePrompt);
@@ -195,17 +189,27 @@ export function ImagesStep({
     setGeneratingSegments(prev => new Set([...prev, segmentId]));
 
     try {
+      // Se já existe uma imagem (não vídeo), usa como referência
+      const isExistingVideo = isVideo(segment.imageUrl);
+      const referenceImagePath = (segment.imageUrl && !isExistingVideo) ? segment.imageUrl : undefined;
+
       // ── VEO 2 FLOW (Google Flow via Puppeteer, modelo Veo 2 - Fast) ──
       if (service === 'veo2-flow') {
         const count = imageCount[segmentId] ?? 1;
         console.log(`🌊 [Veo2Flow] Gerando ${count} vídeo(s) para segmento ${segmentId}...`);
-        setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 2 Flow...' }));
+        
+        if (referenceImagePath) {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: 'Animando imagem com Veo 2 Flow...' }));
+        } else {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 2 Flow...' }));
+        }
 
         const veo2FlowTimeoutMs = 10 * 60 * 1000;
         const veo2FlowPromise = window.electron?.videoProject?.generateVo2Flow?.({
           prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
           aspectRatio: aspectRatio,
           count,
+          referenceImagePath,
         });
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Timeout: geração Veo 2 Flow excedeu 10 minutos.')), veo2FlowTimeoutMs)
@@ -228,7 +232,12 @@ export function ImagesStep({
           return;
         }
         console.log(`🌊 [Veo3] Gerando ${count} vídeo(s) para segmento ${segmentId}...`);
-        setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 3...' }));
+        
+        if (referenceImagePath) {
+           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Animando imagem com Veo 3...' }));
+        } else {
+           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 3...' }));
+        }
 
         // Timeout de 12 min para Veo3
         const veo3TimeoutMs = 12 * 60 * 1000;
@@ -236,6 +245,7 @@ export function ImagesStep({
           prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
           aspectRatio: aspectRatio,
           count,
+          referenceImagePath,
         });
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Timeout: geração Veo 3 excedeu 12 minutos. Verifique se o navegador do Flow está aberto.')), veo3TimeoutMs)
@@ -278,9 +288,7 @@ export function ImagesStep({
       } else {
         console.log(`🌊 [Veo2] Gerando vídeo para segmento ${segmentId}...`);
 
-        // Se já existe uma imagem (não vídeo), usa como referência
-        const isExistingVideo = isVideo(segment.imageUrl);
-        const referenceImagePath = (segment.imageUrl && !isExistingVideo) ? segment.imageUrl : undefined;
+        // Usa a imagem de referência (calculada no início do bloco try)
 
         if (referenceImagePath) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Animando imagem com Veo 2...' }));

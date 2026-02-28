@@ -1149,6 +1149,7 @@ Lembre-se:
       headless?: boolean;
       model?: string;
       count?: number;
+      referenceImagePath?: string;
     }
   ) => {
     try {
@@ -1172,7 +1173,8 @@ Lembre-se:
         },
         options.aspectRatio,
         options.model || 'Veo 3.1 - Fast',
-        count
+        count,
+        options.referenceImagePath
       );
 
       if (!result.success) {
@@ -1336,6 +1338,7 @@ Lembre-se:
     geminiProviderId?: string;
     headless?: boolean;
     count?: number;
+    referenceImagePath?: string;
   }) => {
     try {
       const count = Math.min(options.count || 1, 4);
@@ -1358,7 +1361,8 @@ Lembre-se:
         },
         options.aspectRatio,
         'Veo 2 - Fast',
-        count
+        count,
+        options.referenceImagePath
       );
 
       if (!result.success) {
