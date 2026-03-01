@@ -52,6 +52,9 @@ export function ImagesStep({
   // Picker de imagem quando o Flow gera múltiplas imagens
   const [imagePicker, setImagePicker] = useState<{ segmentId: number; httpUrls: string[] } | null>(null);
   const [pickerSelectedIdx, setPickerSelectedIdx] = useState<number>(0);
+
+  const [finalImages, setFinalImages] = useState<Record<number, string>>({});
+  const [carouselIndices, setCarouselIndices] = useState<Record<number, number>>({});
   
   // Buscar créditos iniciais
   useEffect(() => {
@@ -154,6 +157,38 @@ export function ImagesStep({
 
 
 
+  const handleFinalMediaUpload = async (segmentId: number, file: File) => {
+    setUploadingSegments(prev => new Set([...prev, segmentId]));
+    try {
+      if (!window.electron?.videoProject?.saveImage) {
+        const mediaUrl = URL.createObjectURL(file);
+        setFinalImages(prev => ({ ...prev, [segmentId]: mediaUrl }));
+      } else {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.electron.videoProject.saveImage(arrayBuffer, `final_${file.name}`, segmentId);
+        if (result.success && result.httpUrl) {
+          setFinalImages(prev => ({ ...prev, [segmentId]: result.httpUrl }));
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading final media:', error);
+    } finally {
+      setUploadingSegments(prev => {
+        const next = new Set(prev);
+        next.delete(segmentId);
+        return next;
+      });
+    }
+  };
+
+  const handleRemoveFinalImage = (segmentId: number) => {
+    setFinalImages(prev => {
+      const next = { ...prev };
+      delete next[segmentId];
+      return next;
+    });
+  };
+
   // Helper para extrair o prompt como string (suporta objeto JSON estruturado do video_veo2)
   const extractPromptString = (imagePrompt: unknown): string => {
     if (!imagePrompt) return '';
@@ -192,6 +227,7 @@ export function ImagesStep({
       // Se já existe uma imagem (não vídeo), usa como referência
       const isExistingVideo = isVideo(segment.imageUrl);
       const referenceImagePath = (segment.imageUrl && !isExistingVideo) ? segment.imageUrl : undefined;
+      const finalImagePath = finalImages[segmentId];
 
       // ── VEO 2 FLOW (Google Flow via Puppeteer, modelo Veo 2 - Fast) ──
       if (service === 'veo2-flow') {
@@ -210,6 +246,7 @@ export function ImagesStep({
           aspectRatio: aspectRatio,
           count,
           referenceImagePath,
+          finalImagePath,
         });
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Timeout: geração Veo 2 Flow excedeu 10 minutos.')), veo2FlowTimeoutMs)
@@ -246,6 +283,7 @@ export function ImagesStep({
           aspectRatio: aspectRatio,
           count,
           referenceImagePath,
+          finalImagePath,
         });
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Timeout: geração Veo 3 excedeu 12 minutos. Verifique se o navegador do Flow está aberto.')), veo3TimeoutMs)
@@ -300,6 +338,7 @@ export function ImagesStep({
           prompt: extractPromptString(segment.imagePrompt) || `Cinematic animation of the scene: ${segment.text}`,
           aspectRatio: aspectRatio,
           referenceImagePath,
+          finalImagePath,
         });
         if (result?.success && (result.httpUrl || result.videoPath)) {
           onUpdateImage(segmentId, result.httpUrl || result.videoPath);
@@ -344,6 +383,7 @@ export function ImagesStep({
     const svc = getEffectiveService(segment);
     if (segment.imageUrl && !isVideo(segment.imageUrl)) {
       if (svc === 'flow-image') return '🖼️ Gerar nova Imagem';
+      if (finalImages[segment.id]) return '🎬 Gerar Cena';
       return '🖼️ Animar Imagem';
     }
     // Sem mídia → label baseado no serviço
@@ -468,43 +508,59 @@ export function ImagesStep({
                     </select>
                   </div>
                 )}
-                {(isGenerating || isUploading) ? (
-                  <div className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-purple-500/10 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="w-10 h-10 mx-auto mb-2 border-2 border-pink-500/30 border-t-pink-500 rounded-full animate-spin" />
-                      <p className="text-white/60 text-sm">
-                        {isUploading ? 'Enviando...' : (vo3Progress[segment.id] || 'Gerando...')}
-                      </p>
-                    </div>
-                  </div>
-                ) : hasImage ? (
-                  <>
-                    {isVideo(segment.imageUrl) ? (
-                      <video
-                        src={getMediaSrc(segment.imageUrl)}
-                        className="w-full h-full object-cover"
-                        autoPlay
-                        loop
-                        muted
-                        playsInline
-                      />
-                    ) : (
-                      <img
-                        src={getMediaSrc(segment.imageUrl)}
-                        alt={`Cena ${segment.id}`}
-                        className="w-full h-full object-cover"
-                      />
-                    )}
-                    {/* Overlay de ações */}
-                    <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
-                      <button
-                        onClick={() => handleRemoveImage(segment.id)}
-                        className="px-3 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg text-sm transition-all"
+                {(() => {
+                  if (isGenerating || isUploading) {
+                    return (
+                      <div className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-purple-500/10 flex items-center justify-center z-30">
+                        <div className="text-center">
+                          <div className="w-10 h-10 mx-auto mb-2 border-2 border-pink-500/30 border-t-pink-500 rounded-full animate-spin" />
+                          <p className="text-white/60 text-sm">
+                            {isUploading ? 'Enviando...' : (vo3Progress[segment.id] || 'Gerando...')}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  const svc = getEffectiveService(segment);
+                  const isVideoService = svc === 'veo3' || svc === 'veo2-flow' || svc === 'veo2';
+                  const showCarousel = isVideoService && hasImage && !isVideo(segment.imageUrl);
+                  const currentIndex = carouselIndices[segment.id] || 0;
+
+                  // 1. SEM IMAGEM (UPLOAD INICIAL)
+                  if (!hasImage) {
+                     return (
+                      <label 
+                        className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-purple-500/10 flex items-center justify-center cursor-pointer hover:from-pink-500/20 hover:to-purple-500/20 transition-all"
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.currentTarget.classList.add('from-pink-500/30', 'to-purple-500/30');
+                        }}
+                        onDragLeave={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.currentTarget.classList.remove('from-pink-500/30', 'to-purple-500/30');
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          e.currentTarget.classList.remove('from-pink-500/30', 'to-purple-500/30');
+                          const file = e.dataTransfer.files?.[0];
+                          if (file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
+                            handleMediaUpload(segment.id, file);
+                          }
+                        }}
                       >
-                        🗑️ Remover
-                      </button>
-                      <label className="px-3 py-2 bg-blue-500/80 hover:bg-blue-500 text-white rounded-lg text-sm cursor-pointer transition-all">
-                        📁 Trocar
+                        <div className="text-center pointer-events-none">
+                          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mx-auto mb-2 text-white/40">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                            <polyline points="21 15 16 10 5 21"></polyline>
+                          </svg>
+                          <p className="text-white/60 text-sm mb-2">Arraste uma imagem ou vídeo aqui</p>
+                          <p className="text-white/40 text-xs">ou clique para selecionar</p>
+                        </div>
                         <input
                           type="file"
                           accept="image/*,video/*"
@@ -515,52 +571,100 @@ export function ImagesStep({
                           }}
                         />
                       </label>
-                    </div>
+                     );
+                  }
 
-                  </>
-                ) : (
-                  <label 
-                    className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-purple-500/10 flex items-center justify-center cursor-pointer hover:from-pink-500/20 hover:to-purple-500/20 transition-all"
-                    onDragOver={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.currentTarget.classList.add('from-pink-500/30', 'to-purple-500/30');
-                    }}
-                    onDragLeave={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.currentTarget.classList.remove('from-pink-500/30', 'to-purple-500/30');
-                    }}
-                    onDrop={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      e.currentTarget.classList.remove('from-pink-500/30', 'to-purple-500/30');
-                      const file = e.dataTransfer.files?.[0];
-                      if (file && (file.type.startsWith('image/') || file.type.startsWith('video/'))) {
-                        handleMediaUpload(segment.id, file);
-                      }
-                    }}
-                  >
-                    <div className="text-center pointer-events-none">
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1" className="mx-auto mb-2 text-white/40">
-                        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-                        <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                        <polyline points="21 15 16 10 5 21"></polyline>
-                      </svg>
-                      <p className="text-white/60 text-sm mb-2">Arraste uma imagem ou vídeo aqui</p>
-                      <p className="text-white/40 text-xs">ou clique para selecionar</p>
-                    </div>
-                    <input
-                      type="file"
-                      accept="image/*,video/*"
-                      className="hidden"
-                      onChange={(e) => {
-                        const file = e.target.files?.[0];
-                        if (file) handleMediaUpload(segment.id, file);
-                      }}
-                    />
-                  </label>
-                )}
+                  // 2. VÍDEO PRONTO
+                  if (isVideo(segment.imageUrl)) {
+                     return (
+                       <>
+                        <video
+                          src={getMediaSrc(segment.imageUrl)}
+                          className="w-full h-full object-cover"
+                          autoPlay
+                          loop
+                          muted
+                          playsInline
+                        />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-10">
+                          <button
+                            onClick={() => handleRemoveImage(segment.id)}
+                            className="px-3 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg text-sm transition-all"
+                          >
+                            🗑️ Remover
+                          </button>
+                        </div>
+                       </>
+                     );
+                  }
+
+                  // 3. CARROSSEL: QUADRO FINAL
+                  if (showCarousel && currentIndex === 1) {
+                     const finalImgUrl = finalImages[segment.id];
+                     if (finalImgUrl) {
+                        return (
+                          <>
+                            <img src={getMediaSrc(finalImgUrl)} className="w-full h-full object-cover" />
+                            <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded backdrop-blur-sm z-20 pointer-events-none">🎬 Final</div>
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 z-10 transition-opacity">
+                               <button onClick={() => handleRemoveFinalImage(segment.id)} className="px-3 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg text-sm transition-all shadow-md">🗑️ Remover</button>
+                               <label className="px-3 py-2 bg-blue-500/80 hover:bg-blue-500 text-white rounded-lg text-sm cursor-pointer transition-all shadow-md">
+                                 📁 Trocar
+                                 <input type="file" accept="image/*" className="hidden" onChange={e => {
+                                   const file = e.target.files?.[0];
+                                   if (file) handleFinalMediaUpload(segment.id, file);
+                                 }} />
+                               </label>
+                            </div>
+                            <button onClick={(e) => { e.stopPropagation(); setCarouselIndices(p => ({...p, [segment.id]: 0})); }} className="absolute left-2 top-1/2 -translate-y-1/2 z-30 rounded-full bg-black/50 text-white w-8 h-8 flex items-center justify-center hover:bg-black transition shadow-lg">◀</button>
+                          </>
+                        );
+                     } else {
+                        return (
+                          <label className="absolute inset-0 bg-gradient-to-br from-pink-500/10 to-purple-500/10 flex items-center justify-center cursor-pointer hover:from-pink-500/20 hover:to-purple-500/20 transition-all">
+                            <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded backdrop-blur-sm z-20 pointer-events-none">🎬 Final</div>
+                            <div className="text-center pointer-events-none">
+                              <div className="text-4xl mb-2 text-white/50">+</div>
+                              <p className="text-white/60 text-sm">Adicionar Quadro Final</p>
+                            </div>
+                            <input 
+                              type="file" 
+                              accept="image/*" 
+                              className="hidden" 
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleFinalMediaUpload(segment.id, file);
+                              }} 
+                            />
+                            <button onClick={(e) => { e.preventDefault(); e.stopPropagation(); setCarouselIndices(p => ({...p, [segment.id]: 0})); }} className="absolute left-2 top-1/2 -translate-y-1/2 z-30 rounded-full bg-black/50 text-white w-8 h-8 flex items-center justify-center hover:bg-black transition shadow-lg">◀</button>
+                          </label>
+                        );
+                     }
+                  }
+
+                  // 4. CARROSSEL: QUADRO INICIAL (com botão Right se for video service)
+                  return (
+                    <>
+                      <img src={getMediaSrc(segment.imageUrl)} className="w-full h-full object-cover" />
+                      {showCarousel && (
+                        <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded backdrop-blur-sm z-20 pointer-events-none">🎬 Inicial</div>
+                      )}
+                      <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 z-10 transition-opacity">
+                         <button onClick={() => { handleRemoveImage(segment.id); handleRemoveFinalImage(segment.id); }} className="px-3 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg text-sm transition-all shadow-md">🗑️ Remover</button>
+                         <label className="px-3 py-2 bg-blue-500/80 hover:bg-blue-500 text-white rounded-lg text-sm cursor-pointer transition-all shadow-md">
+                           📁 Trocar
+                           <input type="file" accept="image/*,video/*" className="hidden" onChange={e => {
+                             const file = e.target.files?.[0];
+                             if (file) handleMediaUpload(segment.id, file);
+                           }} />
+                         </label>
+                      </div>
+                      {showCarousel && (
+                         <button onClick={(e) => { e.stopPropagation(); setCarouselIndices(p => ({...p, [segment.id]: 1})); }} className="absolute right-2 top-1/2 -translate-y-1/2 z-30 rounded-full bg-black/50 text-white w-8 h-8 flex items-center justify-center hover:bg-black transition shadow-lg">▶</button>
+                      )}
+                    </>
+                  );
+                })()}
               </div>
 
               {/* Info do segmento */}

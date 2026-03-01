@@ -32,6 +32,7 @@ export interface Veo2GenerationOptions {
   apiKey?: string;
   /** Caminho local ou URL HTTP de uma imagem de referência para image-to-video */
   referenceImagePath?: string;
+  finalImagePath?: string;
   /** Callback de progresso (0-100) */
   onProgress?: (percent: number, message: string) => void;
 }
@@ -142,6 +143,9 @@ export class Veo2VideoService {
       console.log(`[Veo2] mode         : ${imageInput ? 'image-to-video' : 'text-to-video'}`);
       console.log(`[Veo2] prompt       : ${prompt}`);
       console.log(`[Veo2] image        : ${imageInput ? `✅ ${Math.round(imageInput.imageBytes.length * 3/4 / 1024)} KB (${imageInput.mimeType})` : '❌ (nenhuma imagem)'}`);
+      if (options.finalImagePath) {
+         console.log(`[Veo2] finalImage   : Ignorado pelo API Veo 2 (suportado apenas no Flow)`);
+      }
       console.log(`[Veo2] aspectRatio  : ${aspectRatio}`);
       console.log(`[Veo2] personGen    : ${personGen}`);
       console.log(`[Veo2] resolution   : ${imageInput ? '(omitida no image-to-video)' : '720p'}`);

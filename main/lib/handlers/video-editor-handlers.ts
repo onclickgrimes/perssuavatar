@@ -1150,6 +1150,7 @@ Lembre-se:
       model?: string;
       count?: number;
       referenceImagePath?: string;
+      finalImagePath?: string;
     }
   ) => {
     try {
@@ -1174,7 +1175,8 @@ Lembre-se:
         options.aspectRatio,
         options.model || 'Veo 3.1 - Fast',
         count,
-        options.referenceImagePath
+        options.referenceImagePath,
+        options.finalImagePath
       );
 
       if (!result.success) {
@@ -1238,6 +1240,7 @@ Lembre-se:
     aspectRatio?: string;
     durationSeconds?: number;
     referenceImagePath?: string;
+    finalImagePath?: string;
   }) => {
     try {
       const { getVeo2VideoService } = require('../services/veo2-video-service');
@@ -1251,6 +1254,7 @@ Lembre-se:
         aspectRatio: (options.aspectRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16',
         durationSeconds: options.durationSeconds || 8,
         referenceImagePath: options.referenceImagePath,
+        finalImagePath: options.finalImagePath,
         onProgress: (percent: number, message: string) => {
           event.sender.send('video-project:veo2-progress', { percent, message, stage: 'generating' });
         },
@@ -1339,6 +1343,7 @@ Lembre-se:
     headless?: boolean;
     count?: number;
     referenceImagePath?: string;
+    finalImagePath?: string;
   }) => {
     try {
       const count = Math.min(options.count || 1, 4);
@@ -1362,7 +1367,8 @@ Lembre-se:
         options.aspectRatio,
         'Veo 2 - Fast',
         count,
-        options.referenceImagePath
+        options.referenceImagePath,
+        options.finalImagePath
       );
 
       if (!result.success) {

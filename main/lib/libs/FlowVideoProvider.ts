@@ -564,7 +564,8 @@ export class FlowVideoProvider {
     aspectRatio?: string,
     model: string = 'Veo 3.1 - Fast',
     count: number = 1,
-    referenceImagePath?: string
+    referenceImagePath?: string,
+    finalImagePath?: string
   ): Promise<FlowGenerationResult> {
     const startTime = Date.now();
 
@@ -646,10 +647,19 @@ export class FlowVideoProvider {
 
       // 5. Upload de imagem de referência, se fornecida
       if (referenceImagePath) {
-        emitProgress('submitting', 'Enviando imagem de referência...');
-        const uploaded = await this.uploadReferenceImage(referenceImagePath);
+        emitProgress('submitting', 'Enviando imagem inicial de referência...');
+        const uploaded = await this.uploadImageFrame(referenceImagePath, 'Inicial');
         if (!uploaded) {
-          throw new Error('Falha ao enviar a imagem de referência para animação no Flow.');
+          console.warn('⚠️ [Flow] Falha ao enviar a imagem Inicial para animação no Flow. Prosseguindo...');
+        }
+      }
+      
+      // 5.5 Upload do quadro final, se fornecido
+      if (finalImagePath) {
+        emitProgress('submitting', 'Enviando imagem do quadro final...');
+        const uploadedFinal = await this.uploadImageFrame(finalImagePath, 'Final');
+        if (!uploadedFinal) {
+          console.warn('⚠️ [Flow] Falha ao enviar a imagem Final para animação no Flow. Prosseguindo...');
         }
       }
       
@@ -1516,13 +1526,13 @@ export class FlowVideoProvider {
   }
 
   /**
-   * Envia uma imagem de referência para ser animada
+   * Envia uma imagem de referência para ser animada no quadro Inicial ou Final
    */
-  private async uploadReferenceImage(imagePath: string): Promise<boolean> {
+  private async uploadImageFrame(imagePath: string, targetFrame: 'Inicial' | 'Final' = 'Inicial'): Promise<boolean> {
     if (!this.page) return false;
 
     try {
-      console.log(`🖼️ [Flow] Iniciando processamento de imagem de referência: ${imagePath}`);
+      console.log(`🖼️ [Flow] Iniciando processamento de imagem de referência (${targetFrame}): ${imagePath}`);
 
       // Normalizar caminho (Puppeteer precisa de caminho absoluto no OS e barra normal ou dupla)
       let absPath = imagePath;
@@ -1531,7 +1541,7 @@ export class FlowVideoProvider {
 
       if (absPath.startsWith('http://') || absPath.startsWith('https://')) {
         console.log(`🖼️ [Flow] URL detectada, baixando temporariamente para upload...`);
-        const tempFilename = `temp_ref_${Date.now()}.jpg`;
+        const tempFilename = `temp_ref_${targetFrame}_${Date.now()}.jpg`;
         const tempPath = pathModule.join(this.outputDir, tempFilename);
         
         await new Promise((resolve, reject) => {
@@ -1554,88 +1564,17 @@ export class FlowVideoProvider {
       absPath = pathModule.resolve(absPath);
       console.log(`🖼️ [Flow] Caminho absoluto da imagem preparado: ${absPath}`);
 
-      // 1. O fluxo REQUER que pressionemos o botão "Inicial" para abrir a galeria no modo de "First Frame"
-      console.log(`🔎 [Flow] Buscando botão "Inicial" no painel principal ou abrindo interface...`);
-      try {
-        const preOpened = (await this.page.evaluate(`(function() {
-           var elements = document.querySelectorAll('div, button, span');
-           for (var i = 0; i < elements.length; i++) {
-              var el = elements[i];
-              if (el.innerText) {
-                 var tText = el.innerText.replace(/^\\s+|\\s+$/g, '');
-                 if (tText === 'Inicial') {
-                    el.click();
-                    return true;
-                 }
-              }
-           }
-           return false;
-        })()`)) as boolean;
-
-        if (preOpened) {
-          console.log(`✅ [Flow] Clicando na aba "Inicial" para abrir galeria ou trazer ao foco...`);
-          await this.randomDelay(1000, 1500);
-        } else {
-          console.log(`⚠️ [Flow] Botão "Inicial" não encontrado ou já estava aberto. Prosseguindo...`);
-        }
-      } catch (e) {
-        console.log(`⚠️ [Flow] Erro ao buscar aba Inicial pre-existente: ${e}`);
-      }
-
-      // 2. Agora precisamos fazer o upload.
-      // Vamos interceptar o seletor de arquivos do SO (File Chooser) para impedir que a janela do Windows abra.
       let uploadSuccess = false;
 
       try {
-        console.log(`🔎 [Flow] Preparando interceptador de File Chooser...`);
-        const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
-
-        let clickedUploadBtn = (await this.page.evaluate(`(function() {
-           var buttons = document.querySelectorAll('button');
-           for (var i = 0; i < buttons.length; i++) {
-              var el = buttons[i];
-              // O texto muitas vezes fica oculto visualmente mas presente no DOM (textContent)
-              var spans = el.querySelectorAll('span');
-              for (var j = 0; j < spans.length; j++) {
-                 var spanText = (spans[j].textContent || '').toLowerCase().trim();
-                 if (spanText === 'faça upload de uma imagem' || spanText.indexOf('upload an image') !== -1) {
-                    el.click();
-                    return true;
-                 }
-              }
-           }
-           return false;
-        })()`)) as boolean;
-
-        if (clickedUploadBtn) {
-          console.log(`✅ [Flow] Botão de upload clicado. Aguardando File Chooser interno...`);
-          const fileChooser = await futureFileChooser;
-          if (fileChooser) {
-             console.log(`✅ [Flow] File Chooser interceptado com sucesso! Injetando ${absPath}`);
-             await fileChooser.accept([absPath]);
-             uploadSuccess = true;
-          } else {
-             console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
-          }
-        }
-      } catch (e) {
-        console.warn(`⚠️ [Flow] Erro ao tentar interceptar File Chooser: ${e}`);
-      }
-
-      // Polling inteligente para aguardar o processamento da imagem
-      if (uploadSuccess) {
-        console.log(`⏳ [Flow] Aguardando processamento da imagem de referência...`);
-        const maxWaitMs = 60000; // Máximo de 60 segundos
-        const startWait = Date.now();
-        let isImageReady = false;
-
-        while (Date.now() - startWait < maxWaitMs) {
-          isImageReady = (await this.page.evaluate(`(function() {
+        console.log(`🔎 [Flow] Buscando botão de upload para o quadro ${targetFrame}...`);
+        
+        // 1. Abre a galeria/modal clicando no slot correspondente (Inicial / Final)
+        let openedGallery = (await this.page.evaluate(`(function(targetFrame) {
             var container = null;
             var buttons = document.querySelectorAll('button');
             
-            // Localiza o botão de swap (Trocar o primeiro e o último frame)
-            // O parentNode desse botão agrupa as divisões do Quadro Inicial e Quadro Final
+            // Localiza o bloco pai agrupador procurando pelo botão swap_horiz
             for (var i = 0; i < buttons.length; i++) {
               var btn = buttons[i];
               var icons = btn.querySelectorAll('i');
@@ -1648,48 +1587,181 @@ export class FlowVideoProvider {
               if (container) break;
             }
 
+            if (!container) return false;
+
+            // Busca as divs contêiner dos quadros. Geralmente com classe sc-8f31d1ba-0 ou similares.
+            var frameDivs = Array.from(container.children).filter(function(el) {
+                if (el.tagName !== 'DIV') return false;
+                var hasSwap = el.querySelector('i');
+                if (hasSwap && hasSwap.textContent.trim() === 'swap_horiz') return false;
+                return true;
+            });
+
+            var targetDiv = null;
+            if (frameDivs.length >= 2) {
+              targetDiv = targetFrame === 'Inicial' ? frameDivs[0] : frameDivs[1];
+            } else if (frameDivs.length === 1 && targetFrame === 'Inicial') {
+               targetDiv = frameDivs[0];
+            } else if (frameDivs.length === 1 && targetFrame === 'Final') {
+               // Fallback caso a UI ainda mostre só 1 e a gente queira forçar Final (normalmente o flow exige adicionar um por vez ou já exibe o slot vazio adjacente)
+               return false;
+            }
+
+            if (!targetDiv) return false;
+
+            // Clica no targetDiv (seja ele a box vazia com texto 'Inicial', ou a box preenchida com botão de delete/swap internos)
+            // Se tiver botão clicável dentro (ex: a foto com botão cancel ou a própria foto envelopada), clica nela
+            var clickable = targetDiv.querySelector('button') || targetDiv;
+            clickable.click();
+            return true;
+        })('${targetFrame}')`)) as boolean;
+
+        if (openedGallery) {
+           console.log(`✅ [Flow] Modal de mídia do quadro ${targetFrame} aberto. Aguardando renderizar...`);
+           await this.randomDelay(800, 1200);
+
+           const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
+
+           // 2. Procura globalmente o botão de "upload" dentro da recém-aberta janela Modal
+           let clickedUploadBtn = (await this.page.evaluate(`(function() {
+              var uploadBtns = document.querySelectorAll('button');
+              // Como estamos iterando em todos, vamos processar de forma invertida para pegar portas modais renderizadas no final do body
+              for (var i = uploadBtns.length - 1; i >= 0; i--) {
+                 var btn = uploadBtns[i];
+                 
+                 // Impede clicar em botões escondidos (display: none ou opacidade 0 massiva)
+                 var rect = btn.getBoundingClientRect();
+                 if (rect.width === 0 || rect.height === 0) continue;
+
+                 var spans = btn.querySelectorAll('span');
+                 var hasUploadText = false;
+                 for (var j = 0; j < spans.length; j++) {
+                    var spanText = (spans[j].textContent || '').toLowerCase().trim();
+                    if (spanText === 'faça upload de uma imagem' || spanText.indexOf('upload') !== -1) {
+                       hasUploadText = true;
+                       break;
+                    }
+                 }
+                 var isIcon = btn.querySelector('i');
+                 var hasUploadIcon = isIcon && isIcon.textContent.trim() === 'upload';
+                 
+                 if (hasUploadText || hasUploadIcon) {
+                    btn.click();
+                    return true;
+                 }
+              }
+              return false;
+           })()`)) as boolean;
+
+           if (clickedUploadBtn) {
+             console.log(`✅ [Flow] Botão genérico de upload acionado. Interceptando File Chooser...`);
+             const fileChooser = await futureFileChooser;
+             if (fileChooser) {
+                console.log(`✅ [Flow] File Chooser interceptado com sucesso! Injetando ${absPath}`);
+                await fileChooser.accept([absPath]);
+                uploadSuccess = true;
+                await this.randomDelay(500, 1000); // dá um tempinho extra para fechar o modal solo
+             } else {
+                console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
+             }
+           } else {
+              console.warn(`⚠️ [Flow] Falha ao encontrar o Action Button de upload dentro do modal aberto.`);
+              try { await this.page.keyboard.press('Escape'); } catch {} // Força escape para destravar a tela
+           }
+        } else {
+           console.log(`⚠️ [Flow] Falha ao clicar no slot "${targetFrame}" inicial. A UI pode não comportar 2 quadros no momento ou estrutura mudou.`);
+        }
+      } catch (e) {
+        console.warn(`⚠️ [Flow] Erro ao tentar orquestrar clique e upload: ${e}`);
+      }
+
+      // Polling inteligente para aguardar o processamento da imagem
+      if (uploadSuccess) {
+        console.log(`⏳ [Flow] Aguardando processamento da imagem de referência (${targetFrame})...`);
+        const maxWaitMs = 60000; // Máximo de 60 segundos
+        const startWait = Date.now();
+        let isImageReady = false;
+
+        while (Date.now() - startWait < maxWaitMs) {
+          isImageReady = (await this.page.evaluate(`(function(targetFrame) {
+            var container = null;
+            var buttons = document.querySelectorAll('button');
+            
+            for (var i = 0; i < buttons.length; i++) {
+              var btn = buttons[i];
+              var icons = btn.querySelectorAll('i');
+              for (var k = 0; k < icons.length; k++) {
+                // swap_horiz é o indicador central dos dois quadros
+                if ((icons[k].textContent || '').trim() === 'swap_horiz') {
+                  container = btn.parentNode;
+                  break;
+                }
+              }
+              if (container) break;
+            }
+
             if (container) {
-              // Pega a PRIMEIRA tag img deste container, que é o quadro "Inicial"
-              var firstImg = container.querySelector('img[alt*="mídia"], img[crossorigin="anonymous"]');
-              if (firstImg) {
-                var src = firstImg.getAttribute('src');
-                if (src && (src.indexOf('/fx/api/trpc/media') !== -1 || src.indexOf('blob:') === 0)) {
-                  // Opcional: checar se não é do quadro "Final"
-                  return true; 
+              var frameDivs = Array.from(container.children).filter(function(el) {
+                 return el.tagName === 'DIV';
+              });
+              
+              var targetDiv = null;
+              if (frameDivs.length >= 2) {
+                targetDiv = targetFrame === 'Inicial' ? frameDivs[0] : frameDivs[1];
+              } else if (frameDivs.length === 1 && targetFrame === 'Inicial') {
+                 targetDiv = frameDivs[0];
+              }
+
+              if (targetDiv) {
+                // Procurar tag de imagem processada (não a desfocada em subida)
+                var firstImg = targetDiv.querySelector('img[alt*="mídia"], img[crossorigin="anonymous"]');
+                if (firstImg) {
+                  // O Google embaça a imagem no loading (opacity 0 ou blur na div pai) e depois opacity 1
+                  var style = window.getComputedStyle(firstImg);
+                  // Verifica container opacity se existir tbm
+                  var parentNode = firstImg.parentNode;
+                  var parentOpacity = parentNode ? window.getComputedStyle(parentNode).opacity : '1';
+                  
+                  var src = firstImg.getAttribute('src');
+                  // Blob ou trpc indica que concluiu o preview (opacity 1 total)
+                  if (src && (src.indexOf('/fx/api/trpc/media') !== -1 || src.indexOf('blob:') === 0) && style.opacity !== '0' && parentOpacity !== '0') {
+                     return true;
+                  }
                 }
               }
             } else {
-              // Fallback se o DOM mudar ou estiver no modo imagem única sem "Final frame"
-              var imgs = document.querySelectorAll('img[alt*="mídia"], img[crossorigin="anonymous"]');
-              for (var j = 0; j < imgs.length; j++) {
-                var imgFallback = imgs[j];
-                var srcF = imgFallback.getAttribute('src');
-                if (srcF && (srcF.indexOf('/fx/api/trpc/media') !== -1 || srcF.indexOf('blob:') === 0)) {
-                  // Pode gerar falso positivo se houver várias, mas salva de trava permanente
-                  return true;
-                }
-              }
+               // Fallback final: Pega qqr imagem válida
+               var imgs = document.querySelectorAll('img[alt*="mídia"], img[crossorigin="anonymous"]');
+               for (var j = 0; j < imgs.length; j++) {
+                  var imgFallback = imgs[j];
+                  var styleF = window.getComputedStyle(imgFallback);
+                  var srcF = imgFallback.getAttribute('src');
+                  if (srcF && (srcF.indexOf('/fx/api/trpc/media') !== -1 || srcF.indexOf('blob:') === 0) && styleF.opacity !== '0') {
+                    return true;
+                  }
+               }
             }
             return false;
-          })()`)) as boolean;
+          })('${targetFrame}')`)) as boolean;
 
           if (isImageReady) {
             const elapsed = Math.round((Date.now() - startWait) / 1000);
-            console.log(`✅ [Flow] Imagem de referência carregada com sucesso! (${elapsed}s)`);
+            console.log(`✅ [Flow] Imagem de referência (${targetFrame}) carregada com sucesso! (${elapsed}s)`);
             return true;
           }
 
-          await this.randomDelay(1000, 1500);
+          // Uma leve pausa na leitura de UI para não gargalar o puppeteer Evaluate
+          await new Promise(r => setTimeout(r, 600));
         }
 
-        console.warn(`⚠️ [Flow] Timeout ao aguardar processamento da imagem (60s).`);
+        console.warn(`⚠️ [Flow] Timeout aguardando o processamento do upload (${targetFrame}) (60s). Prosseguindo mesmo assim...`);
         return false;
       }
 
       return false;
 
     } catch (error: any) {
-      console.error(`❌ [Flow] Erro ao enviar imagem de referência:`, error.message);
+      console.error(`❌ [Flow] Erro ao enviar imagem de referência (${targetFrame}):`, error.message);
       return false;
     }
   }

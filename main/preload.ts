@@ -420,6 +420,7 @@ const handler = {
       model?: string;
       count?: number;
       referenceImagePath?: string;
+      finalImagePath?: string;
     }) => ipcRenderer.invoke('video-project:generate-vo3', options),
 
     // Consultar créditos do Flow (Veo 3)
@@ -440,6 +441,7 @@ const handler = {
       headless?: boolean;
       count?: number;
       referenceImagePath?: string;
+      finalImagePath?: string;
     }) => ipcRenderer.invoke('video-project:generate-vo2-flow', options),
 
     // Listener para progresso da geração Veo 2 Flow
@@ -455,6 +457,7 @@ const handler = {
       aspectRatio?: string;
       durationSeconds?: number;
       referenceImagePath?: string;
+      finalImagePath?: string;
     }) => ipcRenderer.invoke('video-project:generate-veo2', options),
 
     // Listener para progresso da geração Veo 2
