@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
 
 interface ImagesStepProps {
@@ -55,12 +55,34 @@ export function ImagesStep({
 
   const [finalImages, setFinalImages] = useState<Record<number, string>>({});
   const [carouselIndices, setCarouselIndices] = useState<Record<number, number>>({});
+
+  // ── Batch Processing (Processamento em lote) ──
+  // Por padrão, todas as cenas estão selecionadas
+  const [selectedScenes, setSelectedScenes] = useState<Set<number>>(() => new Set(segments.map(s => s.id)));
+  const [showBatchDropdown, setShowBatchDropdown] = useState(false);
+  const lastClickedSceneRef = useRef<number | null>(null);
+  const [batchProcessing, setBatchProcessing] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; currentSceneId: number | null }>({
+    current: 0, total: 0, currentSceneId: null,
+  });
+  const [batchResults, setBatchResults] = useState<Record<number, 'success' | 'error' | 'skipped'>>({});
+  const batchCancelledRef = useRef(false);
+  // Quando os segmentos mudam, atualizar a seleção para incluir novos segmentos
+  useEffect(() => {
+    setSelectedScenes(prev => {
+      const next = new Set(prev);
+      segments.forEach(s => {
+        if (!prev.has(s.id)) next.add(s.id);
+      });
+      return next;
+    });
+  }, [segments.length]);
   
   // Buscar créditos iniciais
   useEffect(() => {
     const fetchCredits = async () => {
       // Se tiver pelo menos um segmento vo3, buscar os créditos iniciais
-      const hasVo3 = segments.some(s => s.assetType === 'video_vo3');
+      const hasVo3 = segments.some(s => s.assetType === 'video_vo3' || s.assetType === 'video_veo2');
       if (hasVo3) {
         setIsCheckingCredits(true);
         try {
@@ -216,12 +238,14 @@ export function ImagesStep({
   };
 
   // Handler para gerar mídia com IA
-  const handleRegenerate = async (segmentId: number, forceService?: string) => {
+  // Retorna true se a geração foi bem-sucedida, false caso contrário
+  const handleRegenerate = async (segmentId: number, forceService?: string, silent = false): Promise<boolean> => {
     const segment = segments.find(s => s.id === segmentId);
-    if (!segment) return;
+    if (!segment) return false;
 
     const service = forceService || getEffectiveService(segment);
     setGeneratingSegments(prev => new Set([...prev, segmentId]));
+    let success = false;
 
     try {
       // Se já existe uma imagem (não vídeo), usa como referência
@@ -255,18 +279,19 @@ export function ImagesStep({
 
         if (result?.success && (result.httpUrl || result.videoPath)) {
           onUpdateImage(segmentId, result.httpUrl || result.videoPath);
+          success = true;
         } else {
           console.error(`❌ [Veo2Flow] Falha:`, result?.error);
-          alert(`Falha na geração Veo 2 Flow: ${result?.error}`);
+          if (!silent) alert(`Falha na geração Veo 2 Flow: ${result?.error}`);
         }
 
       // ── VEO 3 (Google Flow via Puppeteer) ──
       } else if (service === 'veo3') {
         const count = imageCount[segmentId] ?? 1;
         if (vo3Credits !== null && vo3Credits < 20) {
-          alert(`Créditos insuficientes! Você tem ${vo3Credits} créditos e precisa de pelo menos 20 para gerar um vídeo no Flow.`);
+          if (!silent) alert(`Créditos insuficientes! Você tem ${vo3Credits} créditos e precisa de pelo menos 20 para gerar um vídeo no Flow.`);
           setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
-          return;
+          return false;
         }
         console.log(`🌊 [Veo3] Gerando ${count} vídeo(s) para segmento ${segmentId}...`);
         
@@ -293,9 +318,10 @@ export function ImagesStep({
         if (result?.success && (result.httpUrl || result.videoPath)) {
           onUpdateImage(segmentId, result.httpUrl || result.videoPath);
           if (result.credits !== undefined) setVo3Credits(result.credits);
+          success = true;
         } else {
           console.error(`❌ [Veo3] Falha:`, result?.error);
-          alert(`Falha na geração Veo 3: ${result?.error}`);
+          if (!silent) alert(`Falha na geração Veo 3: ${result?.error}`);
         }
 
       // ── FLOW IMAGE (Google Flow modo "Criar imagens") ──
@@ -314,12 +340,18 @@ export function ImagesStep({
           if (result.httpUrls.length === 1) {
             onUpdateImage(segmentId, result.httpUrls[0]);
           } else {
-            setImagePicker({ segmentId, httpUrls: result.httpUrls });
-            setPickerSelectedIdx(0);
+            // No modo batch/silent, usar a primeira imagem automaticamente
+            if (silent) {
+              onUpdateImage(segmentId, result.httpUrls[0]);
+            } else {
+              setImagePicker({ segmentId, httpUrls: result.httpUrls });
+              setPickerSelectedIdx(0);
+            }
           }
+          success = true;
         } else {
           console.error(`❌ [FlowImg] Falha:`, result?.error);
-          alert(`Falha na geração de imagem via Flow: ${result?.error}`);
+          if (!silent) alert(`Falha na geração de imagem via Flow: ${result?.error}`);
         }
 
       // ── VEO 2 (API oficial) ──
@@ -342,9 +374,10 @@ export function ImagesStep({
         });
         if (result?.success && (result.httpUrl || result.videoPath)) {
           onUpdateImage(segmentId, result.httpUrl || result.videoPath);
+          success = true;
         } else {
           console.error(`❌ [Veo2] Falha:`, result?.error);
-          alert(`Falha na geração Veo 2: ${result?.error}`);
+          if (!silent) alert(`Falha na geração Veo 2: ${result?.error}`);
         }
       }
     } catch (error) {
@@ -361,6 +394,7 @@ export function ImagesStep({
         return next;
       });
     }
+    return success;
   };
 
   // Handler para remover imagem
@@ -369,6 +403,81 @@ export function ImagesStep({
   };
 
   const segmentsWithMedia = segments.filter(seg => !!seg.imageUrl);
+
+  // ── Funções de seleção de cenas ──
+  const handleToggleScene = useCallback((segmentId: number, event?: React.MouseEvent) => {
+    if (event?.shiftKey && lastClickedSceneRef.current !== null) {
+      // Shift+Click: selecionar range
+      const ids = segments.map(s => s.id);
+      const startIdx = ids.indexOf(lastClickedSceneRef.current);
+      const endIdx = ids.indexOf(segmentId);
+      if (startIdx !== -1 && endIdx !== -1) {
+        const from = Math.min(startIdx, endIdx);
+        const to = Math.max(startIdx, endIdx);
+        const rangeIds = ids.slice(from, to + 1);
+        setSelectedScenes(prev => {
+          const next = new Set(prev);
+          rangeIds.forEach(id => next.add(id));
+          return next;
+        });
+      }
+    } else {
+      // Click normal: toggle
+      setSelectedScenes(prev => {
+        const next = new Set(prev);
+        if (next.has(segmentId)) {
+          next.delete(segmentId);
+        } else {
+          next.add(segmentId);
+        }
+        return next;
+      });
+    }
+    lastClickedSceneRef.current = segmentId;
+  }, [segments]);
+
+  // ── Processamento em lote ──
+  const handleBatchProcess = useCallback(async () => {
+    const targetIds = segments
+      .filter(s => selectedScenes.has(s.id))
+      .map(s => s.id);
+
+    if (targetIds.length === 0) {
+      alert('Nenhuma cena selecionada para processar.');
+      return;
+    }
+
+    batchCancelledRef.current = false;
+    setBatchProcessing(true);
+    setBatchResults({});
+    setBatchProgress({ current: 0, total: targetIds.length, currentSceneId: null });
+
+    for (let i = 0; i < targetIds.length; i++) {
+      if (batchCancelledRef.current) break;
+
+      const segId = targetIds[i];
+      setBatchProgress({ current: i + 1, total: targetIds.length, currentSceneId: segId });
+
+      try {
+        const ok = await handleRegenerate(segId, undefined, true);
+        setBatchResults(prev => ({ ...prev, [segId]: ok ? 'success' : 'error' }));
+      } catch (err) {
+        console.error(`❌ Batch: erro na cena ${segId}:`, err);
+        setBatchResults(prev => ({ ...prev, [segId]: 'error' }));
+      }
+    }
+
+    setBatchProcessing(false);
+    setBatchProgress(prev => ({ ...prev, currentSceneId: null }));
+  }, [segments, selectedScenes, handleRegenerate]);
+
+  const handleBatchCancel = useCallback(() => {
+    batchCancelledRef.current = true;
+    // Limpar segmentos gerando para parar a animação
+    setGeneratingSegments(new Set());
+    setVo3Progress({});
+    setBatchProcessing(false);
+  }, []);
 
   // Helper para label do botão principal
   const getGenerateLabel = (segment: TranscriptionSegment, isGenerating: boolean): string => {
@@ -418,7 +527,7 @@ export function ImagesStep({
       </div>
 
       {/* Status */}
-      <div className="flex items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
+      <div className="flex flex-wrap items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500"></div>
           <span className="text-white/60 text-sm">
@@ -433,7 +542,7 @@ export function ImagesStep({
 
         {/* Aspect Ratio Selector */}
         {onAspectRatioChange && (
-          <div className="flex items-center gap-2 ml-4 border-l border-white/10 pl-4">
+          <div className="flex items-center gap-2 border-l border-white/10 pl-4">
             <span className="text-white/60 text-sm">Formato:</span>
             <select
               value={aspectRatio || '9:16'}
@@ -442,21 +551,156 @@ export function ImagesStep({
             >
               <option value="9:16">Vertical (9:16)</option>
               <option value="16:9">Horizontal (16:9)</option>
-              <option value="1:1">Quadrado (1:1)</option>
             </select>
           </div>
         )}
 
-
         {/* Mostra créditos do Veo 3 se existir algum segmento configurado */}
-        {segments.some(s => s.assetType === 'video_vo3') && (
-          <div className="ml-auto flex items-center gap-2 px-3 py-1 bg-[#1a73e8]/20 rounded-full border border-[#1a73e8]/30">
+        {segments.some(s => s.assetType === 'video_vo3' || s.assetType === 'video_veo2') && (
+          <div className="flex items-center gap-2 px-3 py-1 bg-[#1a73e8]/20 rounded-full border border-[#1a73e8]/30">
             <span className="text-xl">✨</span>
             <span className="text-[#8ab4f8] font-medium text-sm">
               {isCheckingCredits ? 'Verificando créditos...' : vo3Credits !== null ? `${vo3Credits} Créditos Flow` : 'Créditos indisponíveis'}
             </span>
           </div>
         )}
+
+        {/* ── Processamento em Lote ── */}
+        <div className="ml-auto flex items-center gap-2 border-l border-white/10 pl-4 relative">
+          {batchProcessing ? (
+            <>
+              <div className="w-4 h-4 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+              <span className="text-cyan-300 text-sm font-medium">
+                {batchProgress.current}/{batchProgress.total}
+              </span>
+              <div className="w-24 h-2 bg-white/10 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-gradient-to-r from-cyan-500 to-indigo-500 rounded-full transition-all duration-500"
+                  style={{ width: `${batchProgress.total > 0 ? (batchProgress.current / batchProgress.total) * 100 : 0}%` }}
+                />
+              </div>
+              <button
+                onClick={handleBatchCancel}
+                className="px-2.5 py-1.5 bg-red-500/20 hover:bg-red-500/30 text-red-400 rounded-lg text-xs font-medium transition-all"
+              >
+                ✕ Parar
+              </button>
+            </>
+          ) : (
+            <div className="flex gap-0 relative">
+              {/* Botão principal - Processar */}
+              <button
+                onClick={handleBatchProcess}
+                disabled={selectedScenes.size === 0}
+                className="py-1.5 px-4 rounded-l-lg text-xs font-bold transition-all bg-gradient-to-r from-indigo-500 to-cyan-500 hover:from-indigo-600 hover:to-cyan-600 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40"
+              >
+                🚀 Processar {selectedScenes.size === segments.length ? 'Todas' : `${selectedScenes.size} Cenas`}
+              </button>
+
+              {/* Separador */}
+              <div className="self-stretch w-px bg-white/30" />
+
+              {/* Botão dropdown ▼ */}
+              <button
+                onClick={() => setShowBatchDropdown(!showBatchDropdown)}
+                className="px-2 py-1.5 rounded-r-lg text-xs transition-all bg-gradient-to-r from-cyan-500 to-cyan-600 hover:from-cyan-600 hover:to-cyan-700 text-white shadow-lg shadow-indigo-500/20"
+              >
+                <svg width="10" height="10" viewBox="0 0 12 12" fill="currentColor">
+                  <path d="M6 8L1 3h10z"/>
+                </svg>
+              </button>
+
+              {/* Dropdown de seleção de cenas */}
+              {showBatchDropdown && (
+                <div
+                  className="absolute top-full right-0 mt-1 z-50 bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[220px] select-none"
+                  onMouseLeave={() => setShowBatchDropdown(false)}
+                >
+                  {/* Ações rápidas */}
+                  <div className="flex border-b border-white/10">
+                    <button
+                      onClick={() => setSelectedScenes(new Set(segments.map(s => s.id)))}
+                      className="flex-1 px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-white/5 transition-all outline-none"
+                    >
+                      ✓ Todas
+                    </button>
+                    <div className="w-px bg-white/10" />
+                    <button
+                      onClick={() => setSelectedScenes(new Set())}
+                      className="flex-1 px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-white/5 transition-all outline-none"
+                    >
+                      ✕ Nenhuma
+                    </button>
+                  </div>
+                  {/* Lista de cenas */}
+                  <div
+                    className="max-h-[240px] overflow-y-auto batch-dropdown-scroll"
+                    style={{ overscrollBehavior: 'contain' }}
+                    onWheel={(e) => {
+                      const el = e.currentTarget;
+                      const atTop = el.scrollTop === 0 && e.deltaY < 0;
+                      const atBottom = el.scrollTop + el.clientHeight >= el.scrollHeight && e.deltaY > 0;
+                      if (atTop || atBottom) {
+                        e.stopPropagation();
+                        e.preventDefault();
+                      }
+                    }}
+                  >
+                    {segments.map(seg => {
+                      const isChecked = selectedScenes.has(seg.id);
+                      return (
+                        <button
+                          key={seg.id}
+                          onClick={(e) => handleToggleScene(seg.id, e)}
+                          className={`w-full flex items-center gap-2.5 px-3 py-2 text-left text-sm transition-all hover:bg-white/5 outline-none ${
+                            isChecked ? 'text-white' : 'text-white/40'
+                          }`}
+                        >
+                          <div className={`w-4 h-4 rounded border flex-shrink-0 flex items-center justify-center transition-all ${
+                            isChecked
+                              ? 'bg-indigo-500 border-indigo-500'
+                              : 'border-white/30'
+                          }`}>
+                            {isChecked && (
+                              <svg width="10" height="10" viewBox="0 0 12 12" fill="white">
+                                <path d="M10.28 2.28a.75.75 0 00-1.06-1.06L4.5 5.94 2.78 4.22a.75.75 0 00-1.06 1.06l2.25 2.25a.75.75 0 001.06 0l5.25-5.25z"/>
+                              </svg>
+                            )}
+                          </div>
+                          <span className="truncate">Cena {seg.id}</span>
+                          {seg.imageUrl && (
+                            <span className="ml-auto text-green-400/60 text-xs">●</span>
+                          )}
+                          {batchResults[seg.id] === 'success' && <span className="ml-auto text-xs">✅</span>}
+                          {batchResults[seg.id] === 'error' && <span className="ml-auto text-xs">❌</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Resultado do batch */}
+          {!batchProcessing && Object.keys(batchResults).length > 0 && (
+            <div className="flex items-center gap-1.5">
+              {Object.values(batchResults).filter(r => r === 'success').length > 0 && (
+                <span className="text-green-400 text-xs">✅{Object.values(batchResults).filter(r => r === 'success').length}</span>
+              )}
+              {Object.values(batchResults).filter(r => r === 'error').length > 0 && (
+                <span className="text-red-400 text-xs">❌{Object.values(batchResults).filter(r => r === 'error').length}</span>
+              )}
+              <button
+                onClick={() => setBatchResults({})}
+                className="text-white/30 hover:text-white/60 text-xs transition-all"
+                title="Limpar resultados"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -464,11 +708,16 @@ export function ImagesStep({
           const isGenerating = generatingSegments.has(segment.id);
           const isUploading = uploadingSegments.has(segment.id);
           const hasImage = !!segment.imageUrl;
+          const isBatchActive = batchProcessing && batchProgress.currentSceneId === segment.id;
 
           return (
             <div
               key={segment.id}
-              className="bg-white/5 border border-white/10 rounded-xl overflow-hidden transition-all"
+              className={`bg-white/5 border rounded-xl overflow-hidden transition-all ${
+                isBatchActive
+                  ? 'border-cyan-400 ring-2 ring-cyan-400/30 shadow-lg shadow-cyan-500/10'
+                  : 'border-white/10'
+              }`}
             >
               {/* Preview de imagem ou área de upload */}
               <div className="aspect-video relative group">
