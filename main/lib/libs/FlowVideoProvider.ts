@@ -2222,8 +2222,11 @@ export class FlowVideoProvider {
             
             for (var pd = 0; pd < promptDivs.length; pd++) {
               var divText = (promptDivs[pd].textContent || '').trim().toLowerCase();
-              // Match: o texto do div começa com o prefixo do prompt ou contém o prefixo
-              if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefix.substring(0, 20)) !== -1) {
+              var cleanDiv = divText.replace(/\\s+/g, '');
+              var cleanPrefix = promptPrefix.replace(/\\s+/g, '');
+              var matchLen = Math.min(cleanPrefix.length, 120);
+              
+              if (cleanDiv.length > 0 && cleanDiv.indexOf(cleanPrefix.substring(0, matchLen)) !== -1) {
                 foundPrompt = true;
                 break;
               }
@@ -2283,7 +2286,11 @@ export class FlowVideoProvider {
             var dv = allTextDivs[td];
             var dvText = (dv.textContent || '').trim().toLowerCase();
             if (dvText.length < 2 || dvText.length > 500) continue;
-            if (dvText.substring(0, 40).indexOf(promptPrefix.substring(0, 20)) === -1) continue;
+            
+            var cDiv = dvText.replace(/\\s+/g, '');
+            var cPref = promptPrefix.replace(/\\s+/g, '');
+            var mLen = Math.min(cPref.length, 120);
+            if (cDiv.indexOf(cPref.substring(0, mLen)) === -1) continue;
             
             // Encontrou o div com o prompt, subir até o container [data-index]
             var parent = dv;
@@ -2373,7 +2380,10 @@ export class FlowVideoProvider {
             
             for (var pd = 0; pd < allDivs.length; pd++) {
               var divText = (allDivs[pd].textContent || '').trim().toLowerCase();
-              if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefix.substring(0, 20)) !== -1) {
+              var cleanDiv = divText.replace(/\\s+/g, '');
+              var cleanPrefix = promptPrefix.replace(/\\s+/g, '');
+              var matchLen = Math.min(cleanPrefix.length, 120);
+              if (cleanDiv.length > 0 && cleanDiv.indexOf(cleanPrefix.substring(0, matchLen)) !== -1) {
                 foundPrompt = true;
                 break;
               }
@@ -2427,7 +2437,10 @@ export class FlowVideoProvider {
             
             for (var pd = 0; pd < allDivs.length; pd++) {
               var divText = (allDivs[pd].textContent || '').trim().toLowerCase();
-              if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefix.substring(0, 20)) !== -1) {
+              var cleanDiv = divText.replace(/\\s+/g, '');
+              var cleanPrefix = promptPrefix.replace(/\\s+/g, '');
+              var matchLen = Math.min(cleanPrefix.length, 120);
+              if (cleanDiv.length > 0 && cleanDiv.indexOf(cleanPrefix.substring(0, matchLen)) !== -1) {
                 foundPrompt = true;
                 break;
               }
@@ -3234,8 +3247,10 @@ export class FlowVideoProvider {
               }
               for (var pd = 0; pd < promptDivs.length; pd++) {
                 var divText = (promptDivs[pd].textContent || '').trim().toLowerCase();
-                // Reduzido para length >= 2 para garantir que match de prompts curtos com menos de 10 caracteres funcione normalmente
-                if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefixStr.substring(0, 20)) !== -1) {
+                var cleanDiv = divText.replace(/\\s+/g, '');
+                var cleanPrefix = promptPrefixStr.replace(/\\s+/g, '');
+                var matchLen = Math.min(cleanPrefix.length, 120);
+                if (cleanDiv.length > 0 && cleanDiv.indexOf(cleanPrefix.substring(0, matchLen)) !== -1) {
                   foundPrompt = true;
                   break;
                 }
@@ -3369,8 +3384,10 @@ export class FlowVideoProvider {
           }
           for (var pd = 0; pd < promptDivs.length; pd++) {
             var divText = (promptDivs[pd].textContent || '').trim().toLowerCase();
-            // Match para prompts curtos sem travar na validação de tamanho mínimo > 10
-            if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefixStr.substring(0, 20)) !== -1) {
+            var cleanDiv = divText.replace(/\\s+/g, '');
+            var cleanPrefix = promptPrefixStr.replace(/\\s+/g, '');
+            var matchLen = Math.min(cleanPrefix.length, 120);
+            if (cleanDiv.length > 0 && cleanDiv.indexOf(cleanPrefix.substring(0, matchLen)) !== -1) {
               foundPrompt = true;
               break;
             }
