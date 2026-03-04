@@ -392,16 +392,16 @@ export function ImagesStep({
         });
 
         if (result?.success && result.httpUrls?.length > 0) {
-          if (result.httpUrls.length === 1) {
+          // Se pediu count > 1 e não é silent, sempre abrir modal de seleção
+          if (count > 1 && !silent) {
+            setImagePicker({ segmentId, httpUrls: result.httpUrls });
+            setPickerSelectedIdx(0);
+          } else if (silent) {
+            // Modo batch/silent: usar a primeira imagem automaticamente
             onUpdateImage(segmentId, result.httpUrls[0]);
           } else {
-            // No modo batch/silent, usar a primeira imagem automaticamente
-            if (silent) {
-              onUpdateImage(segmentId, result.httpUrls[0]);
-            } else {
-              setImagePicker({ segmentId, httpUrls: result.httpUrls });
-              setPickerSelectedIdx(0);
-            }
+            // count === 1 e não é silent: usar diretamente
+            onUpdateImage(segmentId, result.httpUrls[0]);
           }
           success = true;
         } else {
@@ -1196,9 +1196,13 @@ export function ImagesStep({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
           <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl">
             <h3 className="text-white font-bold text-lg mb-1">🖼️ Escolha uma imagem</h3>
-            <p className="text-white/50 text-sm mb-4">Clique na imagem desejada para selecioná-la para a cena.</p>
+            <p className="text-white/50 text-sm mb-4">
+              {imagePicker.httpUrls.length > 1
+                ? 'Clique na imagem desejada para selecioná-la para a cena.'
+                : 'Apenas 1 imagem foi gerada com sucesso. As demais falharam no Flow.'}
+            </p>
 
-            <div className="grid grid-cols-2 gap-3 mb-5">
+            <div className={`grid ${imagePicker.httpUrls.length === 1 ? 'grid-cols-1 max-w-[280px] mx-auto' : 'grid-cols-2'} gap-3 mb-5`}>
               {imagePicker.httpUrls.map((url, idx) => (
                 <button
                   key={idx}
@@ -1234,7 +1238,7 @@ export function ImagesStep({
                 }}
                 className="flex-1 py-2.5 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-xl font-medium transition-all"
               >
-                Usar esta imagem
+                {imagePicker.httpUrls.length === 1 ? 'Usar imagem' : 'Usar esta imagem'}
               </button>
               <button
                 onClick={() => setImagePicker(null)}
