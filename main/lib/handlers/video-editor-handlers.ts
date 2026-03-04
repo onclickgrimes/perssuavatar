@@ -1397,5 +1397,18 @@ Lembre-se:
     }
   });
 
+  // Handler para cancelar a fila de geração do Flow (esvazia mutex e slots)
+  ipcMain.handle('video-project:cancel-flow-queue', async () => {
+    try {
+      const { cancelFlowQueue } = require('../libs/FlowVideoProvider');
+      cancelFlowQueue();
+      console.log('⏹️ [Flow] Fila de geração cancelada pelo usuário.');
+      return { success: true };
+    } catch (err: any) {
+      console.error('❌ [Flow] Erro ao cancelar fila:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
   console.log('✅ [VideoEditor] Handlers registered');
 }

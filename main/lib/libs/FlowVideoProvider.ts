@@ -83,6 +83,80 @@ export class FlowVideoProvider {
   // URLs do Flow
   private static readonly FLOW_URL = 'https://labs.google/fx/flow';
 
+  // ── Controle de concorrência ──────────────────────────────────────────────
+  // O browser tem uma única página (this.page). As operações de navegação e
+  // submissão de prompt DEVEM ser serializadas (mutex). O polling de progresso
+  // pode correr em paralelo uma vez que o prompt foi submetido.
+  // Regra: máx. 4 gerações em andamento ao mesmo tempo (limitado pelo Flow).
+
+  private static readonly MAX_CONCURRENT = 4;
+
+  /** Mutex de submissão: garante que só 1 chamada navega/configura/submete por vez */
+  private static submitLocked = false;
+  private static submitQueue: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+
+  /** Contador de gerações em polling ativo (submetidas e aguardando conclusão) */
+  private static activeCount = 0;
+  private static activeQueue: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
+
+  /**
+   * Cancela toda a fila de espera do mutex e dos slots de polling.
+   * Chamadas que estão aguardando receberão um erro e poderão sair imediatamente.
+   */
+  static cancelQueue(): void {
+    const err = new Error('CANCELLED');
+    console.log(`⏹️ [Flow/Cancel] Cancelando fila: ${FlowVideoProvider.submitQueue.length} mutex + ${FlowVideoProvider.activeQueue.length} slots`);
+    // Rejeitar todos os waiters do mutex
+    const sq = FlowVideoProvider.submitQueue.splice(0);
+    sq.forEach(w => w.reject(err));
+    FlowVideoProvider.submitLocked = false;
+    // Rejeitar todos os waiters de slot
+    const aq = FlowVideoProvider.activeQueue.splice(0);
+    aq.forEach(w => w.reject(err));
+  }
+
+  /** Adquire o mutex de submissão (serializa acesso ao browser DOM). */
+  private static async acquireSubmitMutex(): Promise<void> {
+    if (!FlowVideoProvider.submitLocked) {
+      FlowVideoProvider.submitLocked = true;
+      return;
+    }
+    console.log(`⏸️ [Flow/Mutex] Aguardando vez de submeter… fila: ${FlowVideoProvider.submitQueue.length + 1}`);
+    await new Promise<void>((resolve, reject) => { FlowVideoProvider.submitQueue.push({ resolve, reject }); });
+    FlowVideoProvider.submitLocked = true;
+  }
+
+  /** Libera o mutex de submissão, desbloqueando o próximo na fila. */
+  private static releaseSubmitMutex(): void {
+    const next = FlowVideoProvider.submitQueue.shift();
+    if (next) {
+      next.resolve();
+    } else {
+      FlowVideoProvider.submitLocked = false;
+    }
+  }
+
+  /** Adquire um slot de polling ativo (máx. MAX_CONCURRENT). */
+  private static async acquireConcurrencySlot(): Promise<void> {
+    if (FlowVideoProvider.activeCount < FlowVideoProvider.MAX_CONCURRENT) {
+      FlowVideoProvider.activeCount++;
+      console.log(`🔒 [Flow/Slots] Slot adquirido. Ativos: ${FlowVideoProvider.activeCount}/${FlowVideoProvider.MAX_CONCURRENT}`);
+      return;
+    }
+    console.log(`⏸️ [Flow/Slots] Aguardando slot livre… Ativos: ${FlowVideoProvider.activeCount}/${FlowVideoProvider.MAX_CONCURRENT}`);
+    await new Promise<void>((resolve, reject) => { FlowVideoProvider.activeQueue.push({ resolve, reject }); });
+    FlowVideoProvider.activeCount++;
+    console.log(`🔒 [Flow/Slots] Slot adquirido (fila). Ativos: ${FlowVideoProvider.activeCount}/${FlowVideoProvider.MAX_CONCURRENT}`);
+  }
+
+  /** Libera um slot de polling ativo. */
+  private static releaseConcurrencySlot(): void {
+    FlowVideoProvider.activeCount = Math.max(0, FlowVideoProvider.activeCount - 1);
+    console.log(`🔓 [Flow/Slots] Slot liberado. Ativos: ${FlowVideoProvider.activeCount}/${FlowVideoProvider.MAX_CONCURRENT}`);
+    const next = FlowVideoProvider.activeQueue.shift();
+    if (next) next.resolve();
+  }
+
   constructor(config: FlowVideoConfig = {}) {
     this.config = {
       headless: config.headless ?? false,
@@ -575,6 +649,18 @@ export class FlowVideoProvider {
       onProgress?.({ stage, message, percent });
     };
 
+    // ── Passo 1: aguardar slot de polling (máx. 4 gerações simultâneas no Flow) ──
+    emitProgress('submitting', 'Aguardando slot de geração disponível...');
+    await FlowVideoProvider.acquireConcurrencySlot();
+    let slotReleased = false;
+    const releaseSlot = () => {
+      if (!slotReleased) { slotReleased = true; FlowVideoProvider.releaseConcurrencySlot(); }
+    };
+
+    // ── Passo 2: aguardar mutex de submissão (acesso exclusivo ao browser DOM) ──
+    emitProgress('submitting', 'Aguardando vez de submeter prompt no browser...');
+    await FlowVideoProvider.acquireSubmitMutex();
+
     try {
       // 1. Inicializar navegador se necessário (verifica se está vivo)
       if (!this.isBrowserAlive()) {
@@ -731,29 +817,29 @@ export class FlowVideoProvider {
         await this.randomDelay(500, 800);
       }
 
-      console.log('✅ [Flow] Imagens enviadas com sucesso!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
-      // Aguarda 100 segundos para o usuário interagir com o Flow para Teste
-      await this.randomDelay(100000, 200000);
-      
+      // console.log('✅ [Flow] Imagens enviadas com sucesso!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
+      // // Aguarda 100 segundos para o usuário interagir com o Flow para Teste
+      // await this.randomDelay(100000, 200000);
+
       // 6. Procurar e submeter o prompt
       emitProgress('submitting', 'Localizando campo de prompt...');
       await this.randomDelay(1000, 2000);
 
-      // Coletar as URLs dos vídeos já existentes na página antes de gerar
-      const knownVideoUrls = await this.getExistingVideoUrls();
-      emitProgress('submitting', `Verificadas ${knownVideoUrls.length} mídias anteriores...`);
+      // Guardar o prompt para fazer match via texto no DOM (ao invés de comparar tile IDs)
+      const searchPrompt = prompt;
+      emitProgress('submitting', 'Prompt será rastreado por match de texto...');
+      console.log(`🔍 [Flow] Match por prompt: "${searchPrompt.substring(0, 60)}..."`);
 
-      // Capturar tile IDs existentes ANTES de submeter (para detectar apenas tiles novas depois)
-      const knownTileIds = await this.page.evaluate(`(function() {
-        var els = document.querySelectorAll('[data-tile-id]');
-        var ids = [];
-        for (var i = 0; i < els.length; i++) {
-          var id = els[i].getAttribute('data-tile-id');
-          if (id) ids.push(id);
+      // Capturar tile IDs existentes ANTES de submeter para não confundir com mídias antigas do mesmo prompt
+      const knownTileIds = (await this.page!.evaluate(`(function() {
+        var arr = [];
+        var nodes = document.querySelectorAll('[data-tile-id]');
+        for (var i = 0; i < nodes.length; i++) {
+          var id = nodes[i].getAttribute('data-tile-id');
+          if (id) arr.push(id);
         }
-        return ids;
-      })()`) as string[];
-      console.log(`📋 [Flow] ${knownTileIds.length} tile(s) existente(s) registrada(s) antes do submit`);
+        return arr;
+      })()`)) as string[] || [];
 
       // Tentar encontrar o campo de prompt de diversas formas
       const promptSubmitted = await this.submitPrompt(prompt);
@@ -762,17 +848,16 @@ export class FlowVideoProvider {
         throw new Error('Não foi possível encontrar o campo de prompt no Flow. A interface pode ter mudado.');
       }
 
-      emitProgress('submitting', 'Prompt enviado! Aguardando geração...');
-
-      // Limpa os campos visuais do prompt (imagem de referência Inicial e texto)
+      // Submissao concluida — liberar o mutex para q o proximo prompt possa iniciar
       await this.clearPromptPanel();
+      FlowVideoProvider.releaseSubmitMutex();
 
-      // 4. Aguardar geração do vídeo
+      // ── Polling roda em paralelo com outras gerações ──
       emitProgress('generating', 'Gerando vídeo com Veo 3...', 10);
 
       const videoUrl = await this.waitForVideoGeneration(
         this.config.generationTimeoutMs!,
-        knownVideoUrls,
+        searchPrompt,
         knownTileIds,
         (percent) => {
           emitProgress('generating', `Gerando vídeo... ${percent}%`, percent);
@@ -801,6 +886,7 @@ export class FlowVideoProvider {
 
       emitProgress('complete', `Vídeo gerado com sucesso! (${Math.round(durationMs / 1000)}s)`, 100);
 
+      releaseSlot();
       return {
         success: true,
         videoPath: outputPath,
@@ -810,14 +896,12 @@ export class FlowVideoProvider {
 
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
+      // Garantir liberação do mutex e slot mesmo em caso de erro
+      FlowVideoProvider.releaseSubmitMutex();
+      releaseSlot();
       emitProgress('error', `Erro: ${error.message}`);
       console.error(`❌ [Flow] Erro na geração:`, error);
-
-      return {
-        success: false,
-        error: error.message,
-        durationMs,
-      };
+      return { success: false, error: error.message, durationMs };
     }
   }
 
@@ -2085,12 +2169,15 @@ export class FlowVideoProvider {
   }
 
   /**
-   * Aguarda a geração do vídeo monitorando o DOM via APIs nativas do Puppeteer.
-   * Lê o progresso real do Flow (ex: "36%") e sincroniza com o callback.
+   * Aguarda a geração do vídeo monitorando o DOM via match de prompt.
+   * Busca containers [data-index] cujo texto do prompt corresponde ao prompt enviado,
+   * e verifica se as tiles dentro dele têm mídia concluída.
+   * Isso permite processar múltiplas cenas em lote (4 por vez), pois cada resultado
+   * é associado ao seu prompt original pelo texto visível.
    */
   private async waitForVideoGeneration(
     timeoutMs: number,
-    knownVideoUrls: string[],
+    searchPrompt: string,
     knownTileIds: string[],
     onPercent?: (percent: number) => void
   ): Promise<string | null> {
@@ -2100,63 +2187,157 @@ export class FlowVideoProvider {
     const pollInterval = 3000;
     let lastPercent = 10;
 
-    console.log(`⏳ [Flow] Aguardando geração do vídeo (timeout: ${timeoutMs / 1000}s)...`);
+    // Normalizar o prompt para comparação: lowercase, sem espaços extras
+    const normalizedPrompt = searchPrompt.trim().toLowerCase();
+    // Usar os primeiros 40 chars do prompt para match (evita problemas com truncamento na UI)
+    const promptPrefix = normalizedPrompt.substring(0, 850);
+
+    console.log(`⏳ [Flow] Aguardando geração do vídeo por match de prompt (timeout: ${timeoutMs / 1000}s)...`);
+    console.log(`🔍 [Flow] Buscando prompt prefix: "${promptPrefix}"`);
 
     while (Date.now() - startTime < timeoutMs) {
       try {
-        // 1 & 2. Procurar vídeo concluído em tiles NOVAS
-        const knownIdsJsonVideo = JSON.stringify(knownTileIds);
+        // 1. Buscar mídia concluída no container cujo prompt corresponde
+        const promptPrefixEscaped = JSON.stringify(normalizedPrompt);
+        const knownTileIdsEscaped = JSON.stringify(knownTileIds);
         const completedVideoUrl = await this.page.evaluate(`(function() {
-          var knownIds = ${knownIdsJsonVideo};
-          var allTiles = document.querySelectorAll('[data-tile-id]');
+          var promptPrefix = ${promptPrefixEscaped};
+          var knownIds = ${knownTileIdsEscaped};
           
-          for (var ti = 0; ti < allTiles.length; ti++) {
-            var tile = allTiles[ti];
-            var tileId = tile.getAttribute('data-tile-id') || '';
+          // Estratégia 1: Encontrar containers [data-index] que contêm o prompt
+          var containers = document.querySelectorAll('[data-index]');
+          
+          for (var ci = 0; ci < containers.length; ci++) {
+            var container = containers[ci];
             
-            var isKnown = false;
-            for (var ki = 0; ki < knownIds.length; ki++) {
-              if (knownIds[ki] === tileId) { isKnown = true; break; }
+            // Buscar o texto do prompt dentro do container
+            // O prompt fica em divs com texto visível (ex: classe sc-21e778e8-1)
+            var promptDivs = container.querySelectorAll('div[class*="prompt"], div[data-allow-text-selection] div div');
+            var foundPrompt = false;
+            
+            // Fallback: buscar em todos os divs do container
+            if (promptDivs.length === 0) {
+              promptDivs = container.querySelectorAll('div');
             }
-            if (isKnown) continue;
-
-            // Verificar se ainda está gerando (tem %)
-            var tileText = tile.textContent || '';
-            if (tileText.indexOf('%') !== -1) continue;
-
-            // Procurar mídia concluída na tile
-            var mediaNodes = tile.querySelectorAll('video, video source, a[download], a[href], img');
-            for (var m = 0; m < mediaNodes.length; m++) {
-              var el = mediaNodes[m];
-              var src = el.getAttribute('src') || el.getAttribute('href') || '';
+            
+            for (var pd = 0; pd < promptDivs.length; pd++) {
+              var divText = (promptDivs[pd].textContent || '').trim().toLowerCase();
+              // Match: o texto do div começa com o prefixo do prompt ou contém o prefixo
+              if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefix.substring(0, 20)) !== -1) {
+                foundPrompt = true;
+                break;
+              }
+            }
+            
+            if (!foundPrompt) continue;
+            
+            // Encontrado! Agora verificar as tiles deste container
+            var tiles = container.querySelectorAll('[data-tile-id]');
+            for (var ti = 0; ti < tiles.length; ti++) {
+              var tile = tiles[ti];
+              var tileId = tile.getAttribute('data-tile-id');
               
-              if (
-                src.indexOf('getMediaUrlRedirect') !== -1 || 
-                src.indexOf('/fx/api/trpc/media') !== -1 ||
-                src.indexOf('.mp4') !== -1 ||
-                src.indexOf('blob:') === 0 ||
-                src.indexOf('googleusercontent') !== -1 ||
-                src.indexOf('storage.googleapis') !== -1
-              ) {
-                // Se for URL relativa, transforma em absoluta
-                if (src.indexOf('/') === 0) src = 'https://labs.google' + src;
+              // Ignorar tiles (mídias) que já existiam antes de submeter o prompt (mesmo que o prompt de texto match)
+              if (tileId && knownIds.indexOf(tileId) !== -1) continue;
+              
+              var tileText = tile.textContent || '';
+              
+              // Se ainda está gerando (tem %), pular
+              if (tileText.indexOf('%') !== -1) continue;
+              
+              // Verificar se tem ícone warning (falha)
+              var icons = tile.querySelectorAll('i');
+              var hasWarning = false;
+              for (var wi = 0; wi < icons.length; wi++) {
+                if ((icons[wi].textContent || '').trim() === 'warning') { hasWarning = true; break; }
+              }
+              if (hasWarning) continue;
+              
+              // Procurar mídia concluída na tile
+              var mediaNodes = tile.querySelectorAll('video, video source, a[download], a[href], img');
+              for (var m = 0; m < mediaNodes.length; m++) {
+                var el = mediaNodes[m];
+                var src = el.getAttribute('src') || el.getAttribute('href') || '';
                 
-                // Evitar SVG e placeholders base64
-                if (src.indexOf('.svg') === -1 && src.indexOf('data:image') === -1) {
-                  return src;
+                if (
+                  src.indexOf('getMediaUrlRedirect') !== -1 || 
+                  src.indexOf('/fx/api/trpc/media') !== -1 ||
+                  src.indexOf('.mp4') !== -1 ||
+                  src.indexOf('blob:') === 0 ||
+                  src.indexOf('googleusercontent') !== -1 ||
+                  src.indexOf('storage.googleapis') !== -1
+                ) {
+                  if (src.indexOf('/') === 0) src = 'https://labs.google' + src;
+                  if (src.indexOf('.svg') === -1 && src.indexOf('data:image') === -1) {
+                    return src;
+                  }
                 }
               }
             }
           }
+          
+          // Estratégia 2 (fallback): Se não encontrou container por [data-index],
+          // buscar pelo botão "reuse-prompt-button" próximo do texto do prompt
+          var allTextDivs = document.querySelectorAll('div');
+          for (var td = 0; td < allTextDivs.length; td++) {
+            var dv = allTextDivs[td];
+            var dvText = (dv.textContent || '').trim().toLowerCase();
+            if (dvText.length < 2 || dvText.length > 500) continue;
+            if (dvText.substring(0, 40).indexOf(promptPrefix.substring(0, 20)) === -1) continue;
+            
+            // Encontrou o div com o prompt, subir até o container [data-index]
+            var parent = dv;
+            for (var up = 0; up < 15; up++) {
+              parent = parent.parentElement;
+              if (!parent) break;
+              if (parent.hasAttribute('data-index')) break;
+            }
+            if (!parent || !parent.hasAttribute('data-index')) continue;
+            
+            var fallbackTiles = parent.querySelectorAll('[data-tile-id]');
+            for (var ft = 0; ft < fallbackTiles.length; ft++) {
+              var ftile = fallbackTiles[ft];
+              var ftileId = ftile.getAttribute('data-tile-id');
+              if (ftileId && knownIds.indexOf(ftileId) !== -1) continue;
+              
+              if ((ftile.textContent || '').indexOf('%') !== -1) continue;
+              
+              var fIcons = ftile.querySelectorAll('i');
+              var fHasWarn = false;
+              for (var fw = 0; fw < fIcons.length; fw++) {
+                if ((fIcons[fw].textContent || '').trim() === 'warning') { fHasWarn = true; break; }
+              }
+              if (fHasWarn) continue;
+              
+              var fMedia = ftile.querySelectorAll('video, video source, a[download], a[href], img');
+              for (var fm = 0; fm < fMedia.length; fm++) {
+                var fSrc = fMedia[fm].getAttribute('src') || fMedia[fm].getAttribute('href') || '';
+                if (
+                  fSrc.indexOf('getMediaUrlRedirect') !== -1 || 
+                  fSrc.indexOf('/fx/api/trpc/media') !== -1 ||
+                  fSrc.indexOf('.mp4') !== -1 ||
+                  fSrc.indexOf('blob:') === 0 ||
+                  fSrc.indexOf('googleusercontent') !== -1 ||
+                  fSrc.indexOf('storage.googleapis') !== -1
+                ) {
+                  if (fSrc.indexOf('/') === 0) fSrc = 'https://labs.google' + fSrc;
+                  if (fSrc.indexOf('.svg') === -1 && fSrc.indexOf('data:image') === -1) {
+                    return fSrc;
+                  }
+                }
+              }
+            }
+          }
+          
           return null;
         })()`) as string | null;
 
         if (completedVideoUrl) {
-          console.log(`✅ [Flow] Vídeo encontrado na nova tile! URL: ${completedVideoUrl.substring(0, 80)}`);
+          console.log(`✅ [Flow] Vídeo encontrado por match de prompt! URL: ${completedVideoUrl.substring(0, 80)}`);
           return completedVideoUrl;
         }
 
-        // 3. Verificar erros via toasts (policy error, rate limit, queue full)
+        // 2. Verificar erros via toasts (policy error, rate limit, queue full)
         const toasts = await this.page.$$('li[data-sonner-toast]');
         for (const toast of toasts) {
           const text = (await this.getTextContent(toast)).toLowerCase();
@@ -2177,37 +2358,46 @@ export class FlowVideoProvider {
           }
         }
 
-        // 3b. Verificar card de falha SOMENTE se não houver tiles novas com progresso ativo
-        const knownIdsJson = JSON.stringify(knownTileIds);
+        // 3. Verificar card de falha nos containers que matcham o prompt
+        const promptPrefixEscaped2 = JSON.stringify(promptPrefix);
         const tileStatus = await this.page.evaluate(`(function() {
-          var knownIds = ${knownIdsJson};
-          var allTiles = document.querySelectorAll('[data-tile-id]');
+          var promptPrefix = ${promptPrefixEscaped2};
+          var containers = document.querySelectorAll('[data-index]');
           var hasAnyActive = false;
           var failedText = null;
 
-          for (var ti = 0; ti < allTiles.length; ti++) {
-            var tile = allTiles[ti];
-            var tileId = tile.getAttribute('data-tile-id') || '';
-            var isKnown = false;
-            for (var ki = 0; ki < knownIds.length; ki++) {
-              if (knownIds[ki] === tileId) { isKnown = true; break; }
+          for (var ci = 0; ci < containers.length; ci++) {
+            var container = containers[ci];
+            var allDivs = container.querySelectorAll('div');
+            var foundPrompt = false;
+            
+            for (var pd = 0; pd < allDivs.length; pd++) {
+              var divText = (allDivs[pd].textContent || '').trim().toLowerCase();
+              if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefix.substring(0, 20)) !== -1) {
+                foundPrompt = true;
+                break;
+              }
             }
-            if (isKnown) continue;
+            if (!foundPrompt) continue;
+            
+            var tiles = container.querySelectorAll('[data-tile-id]');
+            for (var ti = 0; ti < tiles.length; ti++) {
+              var tile = tiles[ti];
+              var tileText = tile.textContent || '';
+              var icons = tile.querySelectorAll('i');
+              var hasWarning = false;
+              var hasVideocam = false;
+              var hasPct = tileText.indexOf('%') !== -1;
 
-            var tileText = tile.textContent || '';
-            var icons = tile.querySelectorAll('i');
-            var hasWarning = false;
-            var hasVideocam = false;
-            var hasPct = tileText.indexOf('%') !== -1;
-
-            for (var ii = 0; ii < icons.length; ii++) {
-              var it = (icons[ii].textContent || '').trim();
-              if (it === 'warning') hasWarning = true;
-              if (it === 'videocam' || it === 'image') hasVideocam = true;
-            }
-            if (hasVideocam && (hasPct || !hasWarning)) { hasAnyActive = true; }
-            if (hasWarning && !hasVideocam && !hasPct && failedText === null) {
-              failedText = tileText.trim().substring(0, 120);
+              for (var ii = 0; ii < icons.length; ii++) {
+                var it = (icons[ii].textContent || '').trim();
+                if (it === 'warning') hasWarning = true;
+                if (it === 'videocam' || it === 'image') hasVideocam = true;
+              }
+              if (hasVideocam && (hasPct || !hasWarning)) { hasAnyActive = true; }
+              if (hasWarning && !hasVideocam && !hasPct && failedText === null) {
+                failedText = tileText.trim().substring(0, 120);
+              }
             }
           }
 
@@ -2216,37 +2406,45 @@ export class FlowVideoProvider {
         })()`) as { failed: boolean; text: string | null };
 
         if (tileStatus.failed) {
-          console.error(`❌ [Flow] Card de falha detectado na geração de vídeo: "${(tileStatus.text || '').substring(0, 100)}"`);
+          console.error(`❌ [Flow] Card de falha detectado para prompt: "${(tileStatus.text || '').substring(0, 100)}"`);
           throw new Error(`Flow retornou falha: ${tileStatus.text || 'Algo deu errado.'}`);
         }
         if (tileStatus.text !== null) {
-          console.warn(`⚠️ [Flow] Warning em tile nova ignorado — geração ativa em outra tile`);
+          console.warn(`⚠️ [Flow] Warning em tile ignorado — geração ativa em outra tile`);
         }
 
-        // 4. Ler progresso real do Flow EXCLUSIVAMENTE dentro das tiles novas
+        // 4. Ler progresso real do Flow dentro do container que matcha o prompt
         let realPercent = 0;
-        const knownIdsJsonVideoScan = JSON.stringify(knownTileIds);
+        const promptPrefixEscaped3 = JSON.stringify(promptPrefix);
         const activeTilePercent = await this.page.evaluate(`(function() {
-          var knownIds = ${knownIdsJsonVideoScan};
-          var allTiles = document.querySelectorAll('[data-tile-id]');
-          for (var ti = 0; ti < allTiles.length; ti++) {
-            var tile = allTiles[ti];
-            var tileId = tile.getAttribute('data-tile-id') || '';
+          var promptPrefix = ${promptPrefixEscaped3};
+          var containers = document.querySelectorAll('[data-index]');
+          
+          for (var ci = 0; ci < containers.length; ci++) {
+            var container = containers[ci];
+            var allDivs = container.querySelectorAll('div');
+            var foundPrompt = false;
             
-            var isKnown = false;
-            for (var ki = 0; ki < knownIds.length; ki++) {
-              if (knownIds[ki] === tileId) { isKnown = true; break; }
+            for (var pd = 0; pd < allDivs.length; pd++) {
+              var divText = (allDivs[pd].textContent || '').trim().toLowerCase();
+              if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefix.substring(0, 20)) !== -1) {
+                foundPrompt = true;
+                break;
+              }
             }
-            if (!isKnown) {
-               // Nova tile gerando! Procurar % nela.
-               var spans = tile.querySelectorAll('div, span');
-               for(var s = 0; s < spans.length; s++){
-                  var t = (spans[s].innerText || '').trim();
-                  var m = t.match(/^(\\d{1,3})%$/);
-                  if (m) return parseInt(m[1], 10);
-               }
-               var fullMatch = (tile.innerText || '').match(/(\\d{1,3})%/);
-               if (fullMatch) return parseInt(fullMatch[1], 10);
+            if (!foundPrompt) continue;
+            
+            var tiles = container.querySelectorAll('[data-tile-id]');
+            for (var ti = 0; ti < tiles.length; ti++) {
+              var tile = tiles[ti];
+              var spans = tile.querySelectorAll('div, span');
+              for (var s = 0; s < spans.length; s++) {
+                var t = (spans[s].innerText || '').trim();
+                var m = t.match(/^(\\d{1,3})%$/);
+                if (m) return parseInt(m[1], 10);
+              }
+              var fullMatch = (tile.innerText || '').match(/(\\d{1,3})%/);
+              if (fullMatch) return parseInt(fullMatch[1], 10);
             }
           }
           return 0;
@@ -2920,6 +3118,18 @@ export class FlowVideoProvider {
       onProgress?.({ stage, message, percent });
     };
 
+    // ── Passo 1: aguardar slot de polling (máx. 4 gerações simultâneas no Flow) ──
+    emit('submitting', 'Aguardando slot de geração disponível...');
+    await FlowVideoProvider.acquireConcurrencySlot();
+    let slotReleased = false;
+    const releaseSlot = () => {
+      if (!slotReleased) { slotReleased = true; FlowVideoProvider.releaseConcurrencySlot(); }
+    };
+
+    // ── Passo 2: aguardar mutex de submissão (acesso exclusivo ao browser DOM) ──
+    emit('submitting', 'Aguardando vez de submeter prompt no browser...');
+    await FlowVideoProvider.acquireSubmitMutex();
+
     // Diretório de imagens
     const imgOutputDir = path.join(this.outputDir, 'flow-images');
     if (!fs.existsSync(imgOutputDir)) {
@@ -2966,66 +3176,83 @@ export class FlowVideoProvider {
       });
       await this.randomDelay(400, 600);
 
-      // 5. Capturar tile IDs existentes ANTES de submeter (para identificar tiles novos depois)
-      const knownTileIds = await this.page!.evaluate(`(function() {
-        var els = document.querySelectorAll('[data-tile-id]');
-        var ids = [];
-        for (var i = 0; i < els.length; i++) {
-          var id = els[i].getAttribute('data-tile-id');
-          if (id) ids.push(id);
+      // 5. Guardar o prompt e as tiles velhas para fazer match de mídias novas
+      const knownTileIds = (await this.page!.evaluate(`(function() {
+        var arr = [];
+        var nodes = document.querySelectorAll('[data-tile-id]');
+        for (var i = 0; i < nodes.length; i++) {
+          var id = nodes[i].getAttribute('data-tile-id');
+          if (id) arr.push(id);
         }
-        return ids;
-      })()`) as string[];
-      emit('submitting', `${knownTileIds.length} tile(s) anteriores registrados`, 15);
+        return arr;
+      })()`)) as string[] || [];
+      const searchPrompt = prompt;
+      emit('submitting', 'Prompt será rastreado por match de texto...', 15);
+      console.log(`🔍 [Flow/Img] Match por prompt: "${searchPrompt.substring(0, 60)}..."`);
 
       // 6. Submeter prompt
       emit('submitting', 'Digitando prompt...', 20);
       const submitted = await this.submitPrompt(prompt);
       if (!submitted) throw new Error('Não foi possível localizar o campo de prompt no Flow.');
-      emit('generating', 'Prompt enviado! Aguardando geração...', 25);
 
-      // 7. Polling: aguarda tiles com nosso prompt completarem
+      // Submissão concluída — liberar o mutex para que o próximo prompt possa iniciar
+      await this.clearPromptPanel();
+      FlowVideoProvider.releaseSubmitMutex();
+      emit('generating', 'Prompt enviado! Polling em paralelo...', 25);
+
+      // ── Polling roda em paralelo com outras gerações ──
       const timeoutMs = this.config.generationTimeoutMs!;
       const pollInterval = 2000;
       let elapsed = 0;
       let newImageUrls: string[] = [];
-      // Primeiros 120 chars do prompt para match (sem ser sensível a case/whitespace)
-      const promptFragment = prompt.substring(0, 120).trim();
+      const normalizedPrompt = searchPrompt.trim().toLowerCase();
+      const promptPrefix = normalizedPrompt.substring(0, 850);
 
       while (elapsed < timeoutMs) {
         await new Promise(r => setTimeout(r, pollInterval));
         elapsed += pollInterval;
 
         try {
-          // Usar string literal para page.evaluate — o Babel não transpila strings em runtime
-          const fragment60 = JSON.stringify(promptFragment.substring(0, 60));
-          const knownIdsJson = JSON.stringify(knownTileIds);
+          const promptPrefixEscaped = JSON.stringify(promptPrefix);
+          const knownTileIdsEscaped = JSON.stringify(knownTileIds);
           const result = await this.page!.evaluate(`(function() {
-            var pFrag = ${fragment60};
-            var knownIds = ${knownIdsJson};
-            var allTiles = document.querySelectorAll('[data-tile-id]');
+            var promptPrefixStr = ${promptPrefixEscaped};
+            var knownIds = ${knownTileIdsEscaped};
             var completed = [];
             var maxProgress = 0;
             var matchingTileCount = 0;
             var failedMatchingTile = false;
 
-            for (var ti = 0; ti < allTiles.length; ti++) {
-              var tile = allTiles[ti];
-              var tileId = tile.getAttribute('data-tile-id') || '';
-              var isKnown = false;
-              for (var ki = 0; ki < knownIds.length; ki++) {
-                if (knownIds[ki] === tileId) { isKnown = true; break; }
+            var containers = document.querySelectorAll('[data-index]');
+            for (var ci = 0; ci < containers.length; ci++) {
+              var container = containers[ci];
+              
+              var promptDivs = container.querySelectorAll('div[class*="prompt"], div[data-allow-text-selection] div div');
+              var foundPrompt = false;
+              if (promptDivs.length === 0) {
+                promptDivs = container.querySelectorAll('div');
               }
-              if (isKnown) continue;
-
-              var tileText = tile.textContent || '';
-              var tileHasPrompt = tileText.indexOf(pFrag) !== -1;
-
-              // -- Tracking de progresso e falha: somente em tiles que ainda têm o prompt visível (durante geração) --
-              if (tileHasPrompt) {
+              for (var pd = 0; pd < promptDivs.length; pd++) {
+                var divText = (promptDivs[pd].textContent || '').trim().toLowerCase();
+                // Reduzido para length >= 2 para garantir que match de prompts curtos com menos de 10 caracteres funcione normalmente
+                if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefixStr.substring(0, 20)) !== -1) {
+                  foundPrompt = true;
+                  break;
+                }
+              }
+              
+              if (!foundPrompt) continue;
+              
+              var tiles = container.querySelectorAll('[data-tile-id]');
+              for (var ti = 0; ti < tiles.length; ti++) {
+                var tile = tiles[ti];
+                var tileId = tile.getAttribute('data-tile-id');
+                if (tileId && knownIds.indexOf(tileId) !== -1) continue; // Pular tiles velhas
+                
                 matchingTileCount++;
+                var tileText = tile.textContent || '';
 
-                // Ler progresso (XX%)
+                // -- Tracking de progresso --
                 var pctIdx = tileText.indexOf('%');
                 if (pctIdx > 0) {
                   var pctStr = '';
@@ -3050,25 +3277,25 @@ export class FlowVideoProvider {
                   if (iconText === 'image' || iconText === 'videocam') hasProgressIcon = true;
                 }
                 if (hasWarning && !hasProgressIcon) { failedMatchingTile = true; }
-              }
 
-              // -- Coleta de imagens: em QUALQUER tile nova (prompt sai do tile após conclusão) --
-              var imgs = tile.querySelectorAll('img');
-              for (var im = 0; im < imgs.length; im++) {
-                var s = imgs[im].src;
-                if (
-                  s && s.indexOf('https://') === 0 && s.indexOf('.svg') === -1 && s.indexOf('data:image') === -1 &&
-                  (
-                    s.indexOf('googleusercontent') !== -1 || s.indexOf('googleapis') !== -1 ||
-                    s.indexOf('usercontent') !== -1    || s.indexOf('getMediaUrlRedirect') !== -1 ||
-                    s.indexOf('labs.google') !== -1    ||
-                    s.indexOf('.jpg') !== -1 || s.indexOf('.jpeg') !== -1 ||
-                    s.indexOf('.png') !== -1 || s.indexOf('.webp') !== -1
-                  )
-                ) {
-                  var dup = false;
-                  for (var ci = 0; ci < completed.length; ci++) { if (completed[ci] === s) { dup = true; break; } }
-                  if (!dup) completed.push(s);
+                // -- Coleta de imagens --
+                var imgs = tile.querySelectorAll('img');
+                for (var im = 0; im < imgs.length; im++) {
+                  var s = imgs[im].src;
+                  if (
+                    s && s.indexOf('https://') === 0 && s.indexOf('.svg') === -1 && s.indexOf('data:image') === -1 &&
+                    (
+                      s.indexOf('googleusercontent') !== -1 || s.indexOf('googleapis') !== -1 ||
+                      s.indexOf('usercontent') !== -1    || s.indexOf('getMediaUrlRedirect') !== -1 ||
+                      s.indexOf('labs.google') !== -1    ||
+                      s.indexOf('.jpg') !== -1 || s.indexOf('.jpeg') !== -1 ||
+                      s.indexOf('.png') !== -1 || s.indexOf('.webp') !== -1
+                    )
+                  ) {
+                    var dup = false;
+                    for (var ci2 = 0; ci2 < completed.length; ci2++) { if (completed[ci2] === s) { dup = true; break; } }
+                    if (!dup) completed.push(s);
+                  }
                 }
               }
             }
@@ -3124,20 +3351,45 @@ export class FlowVideoProvider {
       emit('downloading', `Localizando imagens geradas...`, 87);
 
       // 8a. Encontrar batch item que corresponde ao nosso prompt e coletar URLs de redirect
-      const promptFrag50 = JSON.stringify(prompt.substring(0, 50));
+      const promptPrefixEscaped2 = JSON.stringify(promptPrefix);
+      const knownTileIdsEscaped2 = JSON.stringify(knownTileIds);
       const mediaRedirectUrls = await this.page!.evaluate(`(function() {
         var results = [];
-        // Buscar todos os batch containers sc-5c6add13-0
-        var batches = document.querySelectorAll('.sc-5c6add13-0');
-        for (var b = 0; b < batches.length; b++) {
-          var batch = batches[b];
-          // Verificar se o texto do prompt neste batch corresponde ao nosso
-          var promptEl = batch.querySelector('.sc-21e778e8-1');
-          if (!promptEl) continue;
-          var batchPrompt = (promptEl.textContent || '').trim();
-          if (batchPrompt.indexOf(${promptFrag50}) === -1) continue;
+        var promptPrefixStr = ${promptPrefixEscaped2};
+        var knownIds = ${knownTileIdsEscaped2};
+        var containers = document.querySelectorAll('[data-index]');
+        
+        for (var b = 0; b < containers.length; b++) {
+          var container = containers[b];
+          
+          var promptDivs = container.querySelectorAll('div[class*="prompt"], div[data-allow-text-selection] div div');
+          var foundPrompt = false;
+          if (promptDivs.length === 0) {
+            promptDivs = container.querySelectorAll('div');
+          }
+          for (var pd = 0; pd < promptDivs.length; pd++) {
+            var divText = (promptDivs[pd].textContent || '').trim().toLowerCase();
+            // Match para prompts curtos sem travar na validação de tamanho mínimo > 10
+            if (divText.length >= 2 && divText.substring(0, 40).indexOf(promptPrefixStr.substring(0, 20)) !== -1) {
+              foundPrompt = true;
+              break;
+            }
+          }
+          if (!foundPrompt) continue;
+          
+          var isOldContainer = false;
+          var tiles = container.querySelectorAll('[data-tile-id]');
+          for (var t = 0; t < tiles.length; t++) {
+             var tId = tiles[t].getAttribute('data-tile-id');
+             if (tId && knownIds.indexOf(tId) !== -1) {
+                isOldContainer = true;
+                break;
+             }
+          }
+          if (isOldContainer) continue;
+          
           // Coletar img[src] deste batch
-          var imgs = batch.querySelectorAll('img[src]');
+          var imgs = container.querySelectorAll('img[src]');
           for (var i = 0; i < imgs.length; i++) {
             var src = imgs[i].getAttribute('src') || '';
             // Aceitar src relativo ou absoluto com getMediaUrlRedirect
@@ -3248,12 +3500,16 @@ export class FlowVideoProvider {
       const durationMs = Date.now() - startTime;
       emit('complete', `${localPaths.length} imagem(ns) gerada(s) com sucesso!`, 100);
 
+      releaseSlot();
       return { success: true, imagePaths: localPaths, durationMs };
 
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
+      // Garantir liberação do mutex e slot mesmo em caso de erro
+      FlowVideoProvider.releaseSubmitMutex();
+      releaseSlot();
       emit('error', `Erro: ${error.message}`);
-      console.error(`❌ [Flow/Img] Erro na geração:`, error);
+      console.error(`❌ [Flow/Img] Erro na geração:`, JSON.stringify(error));
       return { success: false, error: error.message, durationMs };
     }
   }
@@ -3281,4 +3537,13 @@ export async function destroyFlowVideoProvider(): Promise<void> {
     await flowProviderInstance.close();
     flowProviderInstance = null;
   }
+}
+
+/**
+ * Cancela todas as chamadas aguardando na fila do mutex de submissão
+ * e do semáforo de slots. As chamadas bloqueadas recebem um erro CANCELLED
+ * e podem encerrar imediatamente.
+ */
+export function cancelFlowQueue(): void {
+  FlowVideoProvider.cancelQueue();
 }

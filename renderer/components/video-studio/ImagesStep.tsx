@@ -491,7 +491,7 @@ export function ImagesStep({
     lastClickedSceneRef.current = segmentId;
   }, [segments]);
 
-  // ── Processamento em lote ──
+  // ── Processamento em lote — pool de workers paralelos (cancelável) ──
   const handleBatchProcess = useCallback(async () => {
     const targetIds = segments
       .filter(s => selectedScenes.has(s.id))
@@ -507,20 +507,33 @@ export function ImagesStep({
     setBatchResults({});
     setBatchProgress({ current: 0, total: targetIds.length, currentSceneId: null });
 
-    for (let i = 0; i < targetIds.length; i++) {
-      if (batchCancelledRef.current) break;
+    // Fila compartilhada entre workers
+    const queue = [...targetIds];
+    let completed = 0;
 
-      const segId = targetIds[i];
-      setBatchProgress({ current: i + 1, total: targetIds.length, currentSceneId: segId });
+    // Cada worker pega tarefas da fila enquanto houver e não estiver cancelado.
+    // Com BATCH_WORKERS = 4 workers em paralelo, há até 4 gerações simultâneas.
+    // O cancelamento para de alimentar novos itens — tarefas em andamento terminam.
+    const BATCH_WORKERS = 4;
+    const workers = Array.from({ length: BATCH_WORKERS }, async () => {
+      while (queue.length > 0 && !batchCancelledRef.current) {
+        const segId = queue.shift();
+        if (!segId) break;
 
-      try {
-        const ok = await handleRegenerate(segId, undefined, true);
-        setBatchResults(prev => ({ ...prev, [segId]: ok ? 'success' : 'error' }));
-      } catch (err) {
-        console.error(`❌ Batch: erro na cena ${segId}:`, err);
-        setBatchResults(prev => ({ ...prev, [segId]: 'error' }));
+        try {
+          const ok = await handleRegenerate(segId, undefined, true);
+          setBatchResults(prev => ({ ...prev, [segId]: ok ? 'success' : 'error' }));
+        } catch (err) {
+          console.error(`❌ Batch: erro na cena ${segId}:`, err);
+          setBatchResults(prev => ({ ...prev, [segId]: 'error' }));
+        } finally {
+          completed++;
+          setBatchProgress({ current: completed, total: targetIds.length, currentSceneId: null });
+        }
       }
-    }
+    });
+
+    await Promise.allSettled(workers);
 
     setBatchProcessing(false);
     setBatchProgress(prev => ({ ...prev, currentSceneId: null }));
@@ -528,10 +541,12 @@ export function ImagesStep({
 
   const handleBatchCancel = useCallback(() => {
     batchCancelledRef.current = true;
-    // Limpar segmentos gerando para parar a animação
+    // 1. Workers param de puxar novas tarefas imediatamente (frontend)
     setGeneratingSegments(new Set());
     setVo3Progress({});
     setBatchProcessing(false);
+    // 2. Esvaziar filas do backend (mutex + slots) para liberar chamadas em espera
+    window.electron?.videoProject?.cancelFlowQueue?.().catch?.(() => {});
   }, []);
 
   // Helper para label do botão principal

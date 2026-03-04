@@ -483,6 +483,9 @@ const handler = {
       ipcRenderer.on('video-project:flow-image-progress', subscription);
       return () => ipcRenderer.removeListener('video-project:flow-image-progress', subscription);
     },
+
+    // Cancelar fila de geração do Flow (esvazia mutex e semaphore no backend)
+    cancelFlowQueue: () => ipcRenderer.invoke('video-project:cancel-flow-queue'),
   },
   
   // ========================================
