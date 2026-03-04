@@ -174,9 +174,9 @@ export class FlowVideoProvider {
     try {
       const { getProviderManager } = require('./PuppeteerProvider');
       const manager = getProviderManager();
-      
+
       const geminiProviders = manager.listProvidersByPlatform('gemini');
-      
+
       if (geminiProviders.length === 0) {
         console.log('⚠️ [Flow] Nenhum provider Gemini encontrado no ProviderManager');
         return null;
@@ -184,7 +184,7 @@ export class FlowVideoProvider {
 
       // Prioriza: primeiro o ID específico (se configurado), depois o logado mais recente
       let targetProvider = geminiProviders[0];
-      
+
       if (this.config.geminiProviderId) {
         const specific = geminiProviders.find((p: any) => p.id === this.config.geminiProviderId);
         if (specific) {
@@ -226,17 +226,17 @@ export class FlowVideoProvider {
     try {
       const { getProviderManager } = require('./PuppeteerProvider');
       const manager = getProviderManager();
-      
+
       const geminiProviders = manager.listProvidersByPlatform('gemini');
-      
+
       // Procura um provider Gemini ativo (com browser aberto)
       for (const config of geminiProviders) {
         const providerId = this.config.geminiProviderId || config.id;
         const activeProvider = manager.getGeminiProvider(providerId);
-        
+
         if (activeProvider) {
           const existingBrowser = activeProvider.getBrowser?.();
-          
+
           if (existingBrowser && existingBrowser.isConnected()) {
             this.browser = existingBrowser;
             this.usingSharedBrowser = true;
@@ -245,7 +245,7 @@ export class FlowVideoProvider {
           }
         }
       }
-      
+
       return false;
     } catch (err: any) {
       console.warn('⚠️ [Flow] Erro ao tentar reutilizar browser:', err.message);
@@ -288,8 +288,8 @@ export class FlowVideoProvider {
       if (!window.chrome) window.chrome = {};
       // @ts-ignore
       if (!window.chrome.runtime) window.chrome.runtime = {
-        connect: () => {},
-        sendMessage: () => {},
+        connect: () => { },
+        sendMessage: () => { },
         PlatformOs: { MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd' },
       };
 
@@ -318,7 +318,7 @@ export class FlowVideoProvider {
           arr.length = 5;
           arr.item = (i: number) => arr[i];
           arr.namedItem = (name: string) => arr.find((p: any) => p.name === name);
-          arr.refresh = () => {};
+          arr.refresh = () => { };
           return arr;
         },
       });
@@ -327,14 +327,14 @@ export class FlowVideoProvider {
 
       // -- Languages --
       Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-      Object.defineProperty(navigator, 'language',  { get: () => 'en-US' });
+      Object.defineProperty(navigator, 'language', { get: () => 'en-US' });
 
       // -- deviceMemory / hardwareConcurrency --
-      Object.defineProperty(navigator, 'deviceMemory',       { get: () => 8 });
-      Object.defineProperty(navigator, 'hardwareConcurrency',{ get: () => 8 });
+      Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
+      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
 
       // -- outerWidth / outerHeight (deve bater com o viewport) --
-      Object.defineProperty(window, 'outerWidth',  { get: () => 1366 });
+      Object.defineProperty(window, 'outerWidth', { get: () => 1366 });
       Object.defineProperty(window, 'outerHeight', { get: () => 768 });
 
       // -- Permissions API (reCAPTCHA pergunta sobre 'notifications') --
@@ -367,12 +367,12 @@ export class FlowVideoProvider {
       delete document.$cdc_asdjflasutopfhvcZLmcfl_;
 
       // -- Screen --
-      Object.defineProperty(screen, 'width',       { get: () => 1366 });
-      Object.defineProperty(screen, 'height',      { get: () => 768 });
-      Object.defineProperty(screen, 'availWidth',  { get: () => 1366 });
+      Object.defineProperty(screen, 'width', { get: () => 1366 });
+      Object.defineProperty(screen, 'height', { get: () => 768 });
+      Object.defineProperty(screen, 'availWidth', { get: () => 1366 });
       Object.defineProperty(screen, 'availHeight', { get: () => 728 });
-      Object.defineProperty(screen, 'colorDepth',  { get: () => 24 });
-      Object.defineProperty(screen, 'pixelDepth',  { get: () => 24 });
+      Object.defineProperty(screen, 'colorDepth', { get: () => 24 });
+      Object.defineProperty(screen, 'pixelDepth', { get: () => 24 });
     });
   }
 
@@ -395,7 +395,7 @@ export class FlowVideoProvider {
       // ESTRATÉGIA 1: Reutilizar browser do GeminiProvider ativo
       if (!this.browser) {
         const reused = this.tryReuseGeminiBrowser();
-        
+
         if (reused && this.browser) {
           // Abre nova aba no browser existente
           this.page = await this.browser.newPage();
@@ -407,7 +407,7 @@ export class FlowVideoProvider {
 
       // ESTRATÉGIA 2: Abrir novo browser com o mesmo userDataDir do provider Gemini
       const geminiData = this.findGeminiUserDataDir();
-      
+
       if (!geminiData) {
         throw new Error(
           'Nenhum provider Gemini encontrado. Crie um provider Gemini e faça login na conta Google primeiro.'
@@ -554,7 +554,7 @@ export class FlowVideoProvider {
 
     } catch (err: any) {
       console.warn('⚠️ [Flow] Erro ao configurar display settings:', err.message);
-      try { await this.page.keyboard.press('Escape'); } catch {}
+      try { await this.page.keyboard.press('Escape'); } catch { }
     }
   }
 
@@ -626,7 +626,7 @@ export class FlowVideoProvider {
         // 3. Clicar em "Novo projeto" / "New Project" para abrir o editor
         emitProgress('navigating', 'Clicando em Novo Projeto...');
         const projectOpened = await this.clickNewProject();
-        
+
         if (!projectOpened) {
           throw new Error('Não foi possível abrir um novo projeto no Flow. A interface pode ter mudado.');
         }
@@ -637,17 +637,21 @@ export class FlowVideoProvider {
       await this.configureProjectDisplaySettings();
 
       // 4b. Configurar todas as opções de geração em uma única sessão de dropdown
+      const hasIngredients = ingredientImagePaths && ingredientImagePaths.length > 0;
       emitProgress('submitting', `Configurando modelo, proporção e quantidade...`);
       await this.configureFlowDropdown({
         mediaType: 'video',
         model,
         aspectRatio,
         count,
+        videoMode: hasIngredients ? 'ingredients' : 'frames',
       });
       await this.randomDelay(400, 700);
 
-      // 5. Upload de ingredientes OU frames (mutuamente exclusivos)
-      const hasIngredients = ingredientImagePaths && ingredientImagePaths.length > 0;
+      // 5. Limpar imagens existentes nos inputs e fazer upload
+      emitProgress('submitting', 'Limpando imagens anteriores...');
+      await this.clearExistingReferenceImages();
+      await this.randomDelay(300, 500);
 
       if (hasIngredients) {
         // Modo Ingredients: upload de até 3 imagens como ingredientes
@@ -670,7 +674,7 @@ export class FlowVideoProvider {
             console.warn('⚠️ [Flow] Falha ao enviar a imagem Inicial para animação no Flow. Prosseguindo...');
           }
         }
-        
+
         // 5.5 Upload do quadro final, se fornecido
         if (finalImagePath) {
           emitProgress('submitting', 'Enviando imagem do quadro final...');
@@ -680,10 +684,57 @@ export class FlowVideoProvider {
           }
         }
       }
-      
+
+      // 5.6 Aguardar todas as imagens serem processadas no Flow
+      const expectedCount = hasIngredients
+        ? ingredientImagePaths!.length
+        : (referenceImagePath ? 1 : 0) + (finalImagePath ? 1 : 0);
+
+      if (expectedCount > 0) {
+        emitProgress('submitting', `Aguardando processamento de ${expectedCount} imagem(ns)...`);
+        const maxWaitMs = 60000;
+        const startWait = Date.now();
+        let lastCount = 0;
+
+        while (Date.now() - startWait < maxWaitMs) {
+          // Contar imagens carregadas (com src válido e opacity 1)
+          const loadedCount = await this.page.evaluate(`(function() {
+            var imgs = document.querySelectorAll('button[data-card-open] img');
+            var count = 0;
+            for (var i = 0; i < imgs.length; i++) {
+              var src = imgs[i].getAttribute('src') || '';
+              var style = window.getComputedStyle(imgs[i]);
+              if (src && src.indexOf('media.getMediaUrlRedirect') !== -1 && style.opacity === '1') {
+                count++;
+              }
+            }
+            return count;
+          })()`) as number;
+
+          if (loadedCount !== lastCount) {
+            lastCount = loadedCount;
+            console.log(`🔄 [Flow] Imagens processadas: ${loadedCount}/${expectedCount}`);
+          }
+
+          if (loadedCount >= expectedCount) {
+            const elapsed = Math.round((Date.now() - startWait) / 1000);
+            console.log(`✅ [Flow] Todas as ${expectedCount} imagem(ns) carregadas com sucesso! (${elapsed}s)`);
+            break;
+          }
+
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        if (lastCount < expectedCount) {
+          console.warn(`⚠️ [Flow] Timeout: apenas ${lastCount}/${expectedCount} imagens carregadas após 60s. Prosseguindo...`);
+        }
+        await this.randomDelay(500, 800);
+      }
+
+      console.log('✅ [Flow] Imagens enviadas com sucesso!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!');
       // Aguarda 100 segundos para o usuário interagir com o Flow para Teste
       await this.randomDelay(100000, 200000);
-
+      
       // 6. Procurar e submeter o prompt
       emitProgress('submitting', 'Localizando campo de prompt...');
       await this.randomDelay(1000, 2000);
@@ -706,7 +757,7 @@ export class FlowVideoProvider {
 
       // Tentar encontrar o campo de prompt de diversas formas
       const promptSubmitted = await this.submitPrompt(prompt);
-      
+
       if (!promptSubmitted) {
         throw new Error('Não foi possível encontrar o campo de prompt no Flow. A interface pode ter mudado.');
       }
@@ -718,7 +769,7 @@ export class FlowVideoProvider {
 
       // 4. Aguardar geração do vídeo
       emitProgress('generating', 'Gerando vídeo com Veo 3...', 10);
-      
+
       const videoUrl = await this.waitForVideoGeneration(
         this.config.generationTimeoutMs!,
         knownVideoUrls,
@@ -734,20 +785,20 @@ export class FlowVideoProvider {
 
       // 5. Baixar o vídeo
       emitProgress('downloading', 'Baixando vídeo gerado...', 90);
-      
+
       const outputFileName = `veo3-${Date.now()}.mp4`;
       const outputPath = path.join(this.outputDir, outputFileName);
-      
+
       await this.downloadVideo(videoUrl, outputPath);
 
       const durationMs = Date.now() - startTime;
-      
+
       // Ler créditos restantes após geração
       const creditsAfter = await this.getCredits();
       if (creditsAfter !== null) {
         console.log(`💰 [Flow] Créditos restantes após geração: ${creditsAfter}`);
       }
-      
+
       emitProgress('complete', `Vídeo gerado com sucesso! (${Math.round(durationMs / 1000)}s)`, 100);
 
       return {
@@ -871,7 +922,7 @@ export class FlowVideoProvider {
     } catch (error: any) {
       console.warn(`⚠️ [Flow] Erro ao ler créditos:`, error.message);
       // Tentar fechar qualquer menu aberto
-      try { await this.page.keyboard.press('Escape'); } catch (_) {}
+      try { await this.page.keyboard.press('Escape'); } catch (_) { }
       return null;
     }
   }
@@ -933,7 +984,7 @@ export class FlowVideoProvider {
     try {
       await this.page.keyboard.press('Escape');
       await this.randomDelay(300, 500);
-    } catch {}
+    } catch { }
   }
 
   /**
@@ -981,6 +1032,7 @@ export class FlowVideoProvider {
   /**
    * Configura TODAS as opções via dropdown numa única sessão:
    * - Tab de mídia (image / video)
+   * - Video mode (frames / ingredients) — apenas para vídeo
    * - Aspect ratio (crop_16_9 / crop_9_16) — apenas para vídeo
    * - Quantidade de respostas (x1 / x2 / x3 / x4)
    * - Modelo (ex: 'Veo 2 - Fast', '🍌 Nano Banana Pro')
@@ -992,9 +1044,10 @@ export class FlowVideoProvider {
     model: string;
     aspectRatio?: string;
     count: number;
+    videoMode?: 'frames' | 'ingredients';
   }): Promise<void> {
     if (!this.page) return;
-    const { mediaType, model, aspectRatio, count } = options;
+    const { mediaType, model, aspectRatio, count, videoMode } = options;
     const clampedCount = Math.max(1, Math.min(4, count));
 
     try {
@@ -1036,7 +1089,22 @@ export class FlowVideoProvider {
         await this.randomDelay(400, 600);
       }
 
-      // 3. Aspect ratio (imagem e vídeo)
+      // 3. Video Mode: Frames ou Ingredients (só para vídeo)
+      if (mediaType === 'video' && videoMode) {
+        // Frames = ícone 'crop_free', Ingredients = ícone 'chrome_extension'
+        const modeIcon = videoMode === 'ingredients' ? 'chrome_extension' : 'crop_free';
+        const clicked = await this.clickMenuTab(undefined, modeIcon);
+        if (clicked) {
+          console.log(`✅ [Flow] Video mode: ${videoMode} (${modeIcon})`);
+        } else {
+          // Fallback: tentar por texto
+          const modeText = videoMode === 'ingredients' ? 'Ingredients' : 'Frames';
+          await this.clickMenuTab(modeText);
+        }
+        await this.randomDelay(300, 500);
+      }
+
+      // 4. Aspect ratio (imagem e vídeo)
       if (aspectRatio) {
         const isPortrait = aspectRatio === '9:16' || aspectRatio === '4:5' || aspectRatio === '3:4';
         const cropIcon = isPortrait ? 'crop_9_16' : 'crop_16_9';
@@ -1109,13 +1177,13 @@ export class FlowVideoProvider {
 
       await this.randomDelay(300, 500);
       // Garantir que todos os menus estão fechados
-      await this.page.keyboard.press('Escape').catch(() => {});
+      await this.page.keyboard.press('Escape').catch(() => { });
       await this.randomDelay(200, 300);
-      await this.page.keyboard.press('Escape').catch(() => {});
+      await this.page.keyboard.press('Escape').catch(() => { });
 
     } catch (err: any) {
       console.warn('⚠️ [Flow] Erro em configureFlowDropdown:', err.message);
-      try { await this.page.keyboard.press('Escape'); } catch {}
+      try { await this.page.keyboard.press('Escape'); } catch { }
     }
   }
 
@@ -1234,11 +1302,11 @@ export class FlowVideoProvider {
       }
 
       await this.randomDelay(300, 500);
-      await this.page.keyboard.press('Escape').catch(() => {});
+      await this.page.keyboard.press('Escape').catch(() => { });
 
     } catch (err: any) {
       console.warn('⚠️ [Flow] Erro ao definir modelo:', err.message);
-      try { await this.page.keyboard.press('Escape'); } catch {}
+      try { await this.page.keyboard.press('Escape'); } catch { }
     }
   }
 
@@ -1312,7 +1380,7 @@ export class FlowVideoProvider {
           const debugPath = path.join(this.outputDir, `flow-new-project-debug-${Date.now()}.png`);
           await this.page.screenshot({ path: debugPath, fullPage: true });
           console.log(`📸 [Flow] Screenshot de debug: ${debugPath}`);
-        } catch {}
+        } catch { }
         return false;
       }
 
@@ -1344,7 +1412,7 @@ export class FlowVideoProvider {
               }
               if (projectReady) break;
             }
-          } catch {}
+          } catch { }
 
           if (projectReady) {
             const elapsed = Math.round((Date.now() - projectReadyStart) / 100) / 10;
@@ -1367,7 +1435,7 @@ export class FlowVideoProvider {
         const debugPath = path.join(this.outputDir, `flow-route-debug-${Date.now()}.png`);
         await this.page.screenshot({ path: debugPath, fullPage: true });
         console.log(`📸 [Flow] Screenshot: ${debugPath}`);
-      } catch {}
+      } catch { }
       return false;
 
     } catch (error: any) {
@@ -1417,7 +1485,7 @@ export class FlowVideoProvider {
           const debugPath = path.join(this.outputDir, `flow-debug-${Date.now()}.png`);
           await this.page.screenshot({ path: debugPath, fullPage: true });
           console.log(`📸 [Flow] Screenshot: ${debugPath}`);
-        } catch {}
+        } catch { }
         return false;
       }
 
@@ -1540,7 +1608,7 @@ export class FlowVideoProvider {
       console.log(`✅ [Flow] Limpeza do prompt submetida com sucesso.`);
       // Dar um fôlego para a UI renderizar a remoção
       await this.randomDelay(400, 800);
-    } catch(e) {
+    } catch (e) {
       console.warn(`⚠️ [Flow] Erro ao tentar limpar o prompt panel:`, e);
     }
   }
@@ -1563,7 +1631,7 @@ export class FlowVideoProvider {
         console.log(`🖼️ [Flow] URL detectada, baixando temporariamente para upload...`);
         const tempFilename = `temp_ref_${targetFrame}_${Date.now()}.jpg`;
         const tempPath = pathModule.join(this.outputDir, tempFilename);
-        
+
         await new Promise((resolve, reject) => {
           const client = absPath.startsWith('https') ? require('https') : require('http');
           const request = client.get(absPath, (response: any) => {
@@ -1580,7 +1648,7 @@ export class FlowVideoProvider {
       } else if (absPath.startsWith('file:///')) {
         absPath = absPath.replace('file:///', '');
       }
-      
+
       absPath = pathModule.resolve(absPath);
       console.log(`🖼️ [Flow] Caminho absoluto da imagem preparado: ${absPath}`);
 
@@ -1588,7 +1656,7 @@ export class FlowVideoProvider {
 
       try {
         console.log(`🔎 [Flow] Buscando botão de upload para o quadro ${targetFrame}...`);
-        
+
         // 1. Abre a galeria/modal clicando no slot correspondente (Inicial / Final)
         let openedGallery = (await this.page.evaluate(`(function(targetFrame) {
             var container = null;
@@ -1637,13 +1705,13 @@ export class FlowVideoProvider {
         })('${targetFrame}')`)) as boolean;
 
         if (openedGallery) {
-           console.log(`✅ [Flow] Modal de mídia do quadro ${targetFrame} aberto. Aguardando renderizar...`);
-           await this.randomDelay(800, 1200);
+          console.log(`✅ [Flow] Modal de mídia do quadro ${targetFrame} aberto. Aguardando renderizar...`);
+          await this.randomDelay(800, 1200);
 
-           const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
+          const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
 
-           // 2. Procura globalmente o botão de "upload" dentro da recém-aberta janela Modal
-           let clickedUploadBtn = (await this.page.evaluate(`(function() {
+          // 2. Procura globalmente o botão de "upload" dentro da recém-aberta janela Modal
+          let clickedUploadBtn = (await this.page.evaluate(`(function() {
               var uploadBtns = document.querySelectorAll('button');
               // Como estamos iterando em todos, vamos processar de forma invertida para pegar portas modais renderizadas no final do body
               for (var i = uploadBtns.length - 1; i >= 0; i--) {
@@ -1673,23 +1741,23 @@ export class FlowVideoProvider {
               return false;
            })()`)) as boolean;
 
-           if (clickedUploadBtn) {
-             console.log(`✅ [Flow] Botão genérico de upload acionado. Interceptando File Chooser...`);
-             const fileChooser = await futureFileChooser;
-             if (fileChooser) {
-                console.log(`✅ [Flow] File Chooser interceptado com sucesso! Injetando ${absPath}`);
-                await fileChooser.accept([absPath]);
-                uploadSuccess = true;
-                await this.randomDelay(500, 1000); // dá um tempinho extra para fechar o modal solo
-             } else {
-                console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
-             }
-           } else {
-              console.warn(`⚠️ [Flow] Falha ao encontrar o Action Button de upload dentro do modal aberto.`);
-              try { await this.page.keyboard.press('Escape'); } catch {} // Força escape para destravar a tela
-           }
+          if (clickedUploadBtn) {
+            console.log(`✅ [Flow] Botão genérico de upload acionado. Interceptando File Chooser...`);
+            const fileChooser = await futureFileChooser;
+            if (fileChooser) {
+              console.log(`✅ [Flow] File Chooser interceptado com sucesso! Injetando ${absPath}`);
+              await fileChooser.accept([absPath]);
+              uploadSuccess = true;
+              await this.randomDelay(500, 1000); // dá um tempinho extra para fechar o modal solo
+            } else {
+              console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
+            }
+          } else {
+            console.warn(`⚠️ [Flow] Falha ao encontrar o Action Button de upload dentro do modal aberto.`);
+            try { await this.page.keyboard.press('Escape'); } catch { } // Força escape para destravar a tela
+          }
         } else {
-           console.log(`⚠️ [Flow] Falha ao clicar no slot "${targetFrame}" inicial. A UI pode não comportar 2 quadros no momento ou estrutura mudou.`);
+          console.log(`⚠️ [Flow] Falha ao clicar no slot "${targetFrame}" inicial. A UI pode não comportar 2 quadros no momento ou estrutura mudou.`);
         }
       } catch (e) {
         console.warn(`⚠️ [Flow] Erro ao tentar orquestrar clique e upload: ${e}`);
@@ -1787,12 +1855,78 @@ export class FlowVideoProvider {
   }
 
   /**
+   * Remove todas as imagens de referência existentes nos inputs do Flow
+   * (tanto Frames Inicial/Final quanto Ingredients).
+   * 
+   * Cada imagem no Flow possui um botão com ícone "cancel" que a remove.
+   * Este método encontra e clica em todos eles iterativamente.
+   */
+  private async clearExistingReferenceImages(): Promise<number> {
+    if (!this.page) return 0;
+
+    let removedCount = 0;
+    const maxIterations = 10; // Segurança: máximo de 10 remoções
+
+    try {
+      for (let iter = 0; iter < maxIterations; iter++) {
+        // Procurar botões com ícone "cancel" nas áreas de referência de imagem
+        const cancelButtons = await this.page.$$('button[data-card-open] i');
+        let foundCancel = false;
+
+        for (const icon of cancelButtons) {
+          if (!(await this.isVisible(icon))) continue;
+          const text = (await this.getTextContent(icon)).trim();
+          if (text === 'cancel') {
+            // Clicar no ícone cancel (ou no botão pai)
+            const parentBtn = await icon.evaluateHandle((el: any) => {
+              // Subir até o div que contém o cancel overlay, depois clicar no ícone
+              return el.closest('button') || el;
+            });
+
+            try {
+              await (parentBtn as any).click();
+              removedCount++;
+              foundCancel = true;
+              console.log(`🗑️ [Flow] Imagem de referência ${removedCount} removida`);
+              await this.randomDelay(400, 600);
+              break; // Recomeçar o loop (DOM mudou após remoção)
+            } catch (e) {
+              // Tentar clicar direto no ícone se o btn falhou
+              try {
+                await icon.click();
+                removedCount++;
+                foundCancel = true;
+                console.log(`🗑️ [Flow] Imagem de referência ${removedCount} removida (via ícone)`);
+                await this.randomDelay(400, 600);
+                break;
+              } catch (e2) { /* ignore */ }
+            }
+          }
+        }
+
+        if (!foundCancel) break; // Nenhum cancel encontrado, sair
+      }
+
+      if (removedCount > 0) {
+        console.log(`✅ [Flow] ${removedCount} imagem(ns) de referência anterior(es) removida(s)`);
+      } else {
+        console.log(`ℹ️ [Flow] Nenhuma imagem de referência anterior para remover`);
+      }
+
+    } catch (error: any) {
+      console.warn(`⚠️ [Flow] Erro ao limpar imagens de referência:`, error.message);
+    }
+
+    return removedCount;
+  }
+
+  /**
    * Envia uma imagem como ingrediente para a geração de vídeo no Flow.
    * 
-   * Ingredientes são imagens de referência que o modelo usa para compor a cena.
-   * Diferente dos frames (Inicial/Final), ingredientes são adicionados via 
-   * o botão "Ingredientes" no painel de prompt.
-   * Suporta até 3 imagens. Disponível apenas no modelo .1 - Fast.
+   * Após o configureFlowDropdown já ter selecionado o modo Ingredients,
+   * este método clica no botão "add_2" (que aparece na área de ingredients)
+   * para abrir o dialog de upload, e injeta a imagem via FileChooser.
+   * Suporta até 3 imagens. Disponível apenas no modelo 3.1 - Fast.
    */
   private async uploadIngredientImage(imagePath: string): Promise<boolean> {
     if (!this.page) return false;
@@ -1809,14 +1943,14 @@ export class FlowVideoProvider {
         console.log(`🧪 [Flow] URL detectada, baixando temporariamente para upload...`);
         const tempFilename = `temp_ingredient_${Date.now()}.jpg`;
         const tempPath = pathModule.join(this.outputDir, tempFilename);
-        
-        await new Promise((resolve, reject) => {
+
+        await new Promise<void>((resolve, reject) => {
           const client = absPath.startsWith('https') ? require('https') : require('http');
-          const request = client.get(absPath, (response: any) => {
+          client.get(absPath, (response: any) => {
             if (response.statusCode === 200) {
               const fileStream = fs.createWriteStream(tempPath);
               response.pipe(fileStream);
-              fileStream.on('finish', () => { fileStream.close(); resolve(true); });
+              fileStream.on('finish', () => { fileStream.close(); resolve(); });
             } else {
               reject(new Error(`Falha no download do ingrediente: Status ${response.statusCode}`));
             }
@@ -1826,167 +1960,123 @@ export class FlowVideoProvider {
       } else if (absPath.startsWith('file:///')) {
         absPath = absPath.replace('file:///', '');
       }
-      
+
       absPath = pathModule.resolve(absPath);
       console.log(`🧪 [Flow] Caminho absoluto do ingrediente: ${absPath}`);
 
-      // 1. Clicar no botão "Ingredientes" / "Ingredients" no painel de prompt
-      let clickedIngredients = (await this.page.evaluate(`(function() {
-        // Procurar botão que contenha texto "Ingredient" ou "Ingrediente" ou ícone específico
-        var buttons = document.querySelectorAll('button');
-        for (var i = 0; i < buttons.length; i++) {
-          var btn = buttons[i];
-          var rect = btn.getBoundingClientRect();
-          if (rect.width === 0 || rect.height === 0) continue;
-          
-          var text = (btn.textContent || '').toLowerCase().trim();
-          // Procurar por "ingredients", "ingredientes", ou ícone "add_photo_alternate"
-          if (text.indexOf('ingredient') !== -1 || text.indexOf('ingrediente') !== -1) {
-            btn.click();
-            return 'button';
-          }
-          
-          // Verificar ícones dentro do botão
-          var icons = btn.querySelectorAll('i');
-          for (var j = 0; j < icons.length; j++) {
-            var iconText = (icons[j].textContent || '').trim();
-            if (iconText === 'add_photo_alternate' || iconText === 'collections') {
-              btn.click();
-              return 'icon';
-            }
-          }
-        }
-        
-        // Fallback: procurar divs clicáveis com texto "Ingrediente"
-        var divs = document.querySelectorAll('div[role="button"], span[role="button"]');
-        for (var d = 0; d < divs.length; d++) {
-          var dText = (divs[d].textContent || '').toLowerCase().trim();
-          if (dText.indexOf('ingredient') !== -1) {
-            divs[d].click();
-            return 'div';
-          }
-        }
-        
-        return null;
-      })())`)) as string | null;
+      // 1. Encontrar e clicar no botão com ícone "add_2" (área de ingredients do Flow)
+      // Preparar FileChooser ANTES de clicar
+      const futureFileChooser = this.page.waitForFileChooser({ timeout: 10000 }).catch(() => null);
 
-      if (!clickedIngredients) {
-        console.warn(`⚠️ [Flow] Botão de Ingredientes não encontrado. Tentando via aria-label...`);
-        
-        // Fallback: procurar via aria-label
-        const allBtns = await this.page.$$('button');
-        for (const btn of allBtns) {
-          if (!(await this.isVisible(btn))) continue;
-          const ariaLabelProp = await btn.getProperty('ariaLabel');
-          const ariaLabel = ((await ariaLabelProp?.jsonValue()) as string || '').toLowerCase();
-          if (ariaLabel.includes('ingredient')) {
+      // Buscar botão add_2 via Puppeteer (API nativa, sem page.evaluate com string)
+      const allButtons = await this.page.$$('button');
+      let clickedAdd = false;
+      for (const btn of allButtons) {
+        if (!(await this.isVisible(btn))) continue;
+        const icons = await btn.$$('i');
+        for (const icon of icons) {
+          const iconText = (await this.getTextContent(icon)).trim();
+          if (iconText === 'add_2') {
             await btn.click();
-            clickedIngredients = 'aria';
+            clickedAdd = true;
+            console.log(`✅ [Flow] Botão add_2 (upload de ingrediente) clicado`);
             break;
           }
         }
+        if (clickedAdd) break;
       }
 
-      if (!clickedIngredients) {
-        console.warn(`⚠️ [Flow] Não foi possível encontrar o botão de Ingredientes.`);
-        return false;
-      }
-
-      console.log(`✅ [Flow] Botão de Ingredientes clicado (via ${clickedIngredients})`);
-      await this.randomDelay(800, 1200);
-
-      // 2. Interceptar FileChooser e procurar botão de upload no modal/painel
-      const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
-
-      let clickedUpload = (await this.page.evaluate(`(function() {
-        var buttons = document.querySelectorAll('button');
-        // Iterar de trás para frente (modais são renderizados no final do body)
-        for (var i = buttons.length - 1; i >= 0; i--) {
-          var btn = buttons[i];
-          var rect = btn.getBoundingClientRect();
-          if (rect.width === 0 || rect.height === 0) continue;
-          
-          // Procurar botão de upload 
-          var spans = btn.querySelectorAll('span');
-          var hasUploadText = false;
-          for (var j = 0; j < spans.length; j++) {
-            var spanText = (spans[j].textContent || '').toLowerCase().trim();
-            if (spanText === 'faça upload de uma imagem' || spanText.indexOf('upload') !== -1) {
-              hasUploadText = true;
+      if (!clickedAdd) {
+        console.warn(`⚠️ [Flow] Botão add_2 não encontrado. Tentando aria-haspopup="dialog"...`);
+        // Fallback: botao com aria-haspopup="dialog" dentro da area de ingredientes
+        const dialogBtns = await this.page.$$('button[aria-haspopup="dialog"]');
+        for (const btn of dialogBtns) {
+          if (!(await this.isVisible(btn))) continue;
+          const icons = await btn.$$('i');
+          for (const icon of icons) {
+            const iconText = (await this.getTextContent(icon)).trim();
+            if (iconText === 'add_2' || iconText === 'add') {
+              await btn.click();
+              clickedAdd = true;
+              console.log(`✅ [Flow] Botão dialog (${iconText}) clicado`);
               break;
             }
           }
-          
-          var iconEl = btn.querySelector('i');
-          var hasUploadIcon = iconEl && (iconEl.textContent || '').trim() === 'upload';
-          
-          if (hasUploadText || hasUploadIcon) {
-            btn.click();
-            return true;
-          }
+          if (clickedAdd) break;
         }
-        
-        // Fallback: procurar input[type="file"] visível
-        var inputs = document.querySelectorAll('input[type="file"]');
-        for (var k = inputs.length - 1; k >= 0; k--) {
-          var input = inputs[k];
-          // Tentar clicar no label pai
-          var parent = input.parentElement;
-          if (parent && parent.tagName === 'LABEL') {
-            parent.click();
-            return true;
-          }
-        }
-        
-        return false;
-      })())`)) as boolean;
-
-      if (clickedUpload) {
-        console.log(`✅ [Flow] Botão de upload de ingrediente acionado. Interceptando File Chooser...`);
-        const fileChooser = await futureFileChooser;
-        if (fileChooser) {
-          console.log(`✅ [Flow] File Chooser interceptado! Injetando ${absPath}`);
-          await fileChooser.accept([absPath]);
-          await this.randomDelay(1500, 2500);
-          
-          // Aguardar processamento (polling simples)
-          const maxWaitMs = 30000;
-          const startWait = Date.now();
-          while (Date.now() - startWait < maxWaitMs) {
-            // Verificar se a imagem foi processada (thumb apareceu no painel)
-            const processed = (await this.page.evaluate(`(function() {
-              // Procurar imagens carregadas no painel de ingredientes
-              var imgs = document.querySelectorAll('img[crossorigin="anonymous"], img[alt*="ingredient"], img[alt*="ingrediente"]');
-              for (var i = 0; i < imgs.length; i++) {
-                var src = imgs[i].getAttribute('src') || '';
-                var style = window.getComputedStyle(imgs[i]);
-                if (src && (src.indexOf('/fx/api/trpc/media') !== -1 || src.indexOf('blob:') === 0) && style.opacity !== '0') {
-                  return true;
-                }
-              }
-              return false;
-            })())`)) as boolean;
-            
-            if (processed) {
-              const elapsed = Math.round((Date.now() - startWait) / 1000);
-              console.log(`✅ [Flow] Ingrediente carregado com sucesso! (${elapsed}s)`);
-              return true;
-            }
-            await new Promise(r => setTimeout(r, 800));
-          }
-          
-          console.warn(`⚠️ [Flow] Timeout aguardando processamento do ingrediente (30s). Prosseguindo...`);
-          return true; // Considera sucesso parcial já que o upload foi aceito
-        } else {
-          console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
-        }
-      } else {
-        console.warn(`⚠️ [Flow] Botão de upload não encontrado no painel de ingredientes.`);
-        // Fechar qualquer modal aberto
-        try { await this.page.keyboard.press('Escape'); } catch {}
       }
 
-      return false;
+      if (!clickedAdd) {
+        console.warn(`⚠️ [Flow] Nenhum botão de upload de ingrediente encontrado.`);
+        return false;
+      }
+
+      await this.randomDelay(500, 800);
+
+      // 2. O clique no add_2 abre um dialog/popover. Procurar botão de upload dentro dele.
+      // Preparar segundo FileChooser caso o dialog tenha um botão de upload separado
+      const futureFileChooser2 = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
+
+      // Procurar botão "Faça upload" ou ícone "upload" no dialog
+      const uploadBtns = await this.page.$$('button');
+      let clickedUpload = false;
+      for (let i = uploadBtns.length - 1; i >= 0; i--) {
+        const btn = uploadBtns[i];
+        if (!(await this.isVisible(btn))) continue;
+        const text = (await this.getTextContent(btn)).toLowerCase().trim();
+        const icons = await btn.$$('i');
+        let hasUploadIcon = false;
+        for (const icon of icons) {
+          const iText = (await this.getTextContent(icon)).trim();
+          if (iText === 'upload' || iText === 'file_upload') {
+            hasUploadIcon = true;
+            break;
+          }
+        }
+        if (hasUploadIcon || text.includes('upload') || text.includes('fa\u00e7a upload')) {
+          await btn.click();
+          clickedUpload = true;
+          console.log(`✅ [Flow] Botão de upload clicado no dialog`);
+          break;
+        }
+      }
+
+      // 3. Interceptar FileChooser
+      let fileChooser = await futureFileChooser;
+      if (!fileChooser && clickedUpload) {
+        fileChooser = await futureFileChooser2;
+      }
+
+      // Se nenhum FileChooser até agora, talvez o add_2 já tenha aberto direto
+      if (!fileChooser) {
+        console.warn(`⚠️ [Flow] FileChooser não detectado. Tentando clicar add_2 novamente...`);
+        // Tentar novamente
+        const retry = this.page.waitForFileChooser({ timeout: 5000 }).catch(() => null);
+        // Clicar em qualquer input[type=file] visível
+        const fileInputs = await this.page.$$('input[type="file"]');
+        for (const fi of fileInputs) {
+          try {
+            await fi.evaluate((el: any) => el.click());
+            break;
+          } catch (e) { /* ignore */ }
+        }
+        fileChooser = await retry;
+      }
+
+      if (fileChooser) {
+        console.log(`✅ [Flow] FileChooser interceptado! Injetando ${absPath}`);
+        await fileChooser.accept([absPath]);
+
+        // Aguardar processamento (até 15s)
+        await this.randomDelay(2000, 3000);
+        console.log(`✅ [Flow] Ingrediente enviado com sucesso!`);
+        return true;
+      } else {
+        console.warn(`⚠️ [Flow] FileChooser não foi detectado após todas as tentativas.`);
+        // Fechar qualquer dialog aberto
+        try { await this.page.keyboard.press('Escape'); } catch (e) { /* ignore */ }
+        return false;
+      }
 
     } catch (error: any) {
       console.error(`❌ [Flow] Erro ao enviar ingrediente:`, error.message);
@@ -2163,7 +2253,7 @@ export class FlowVideoProvider {
         })()`) as number;
 
         if (activeTilePercent > 0) {
-           realPercent = activeTilePercent;
+          realPercent = activeTilePercent;
         }
 
         if (realPercent > 0 && realPercent > lastPercent) {
@@ -2209,7 +2299,7 @@ export class FlowVideoProvider {
     if (videoUrl.includes('labs.google') || videoUrl.includes('getMediaUrlRedirect')) {
       if (!this.page) throw new Error('Página não disponível para resolver URL do vídeo');
       console.log(`🔍 [Flow/Video] Resolvendo URL autenticada do vídeo via browser...`);
-      
+
       const urlJson = JSON.stringify(videoUrl);
       const signedUrl = await this.page.evaluate(`(function() {
         var url = ${urlJson};
@@ -2247,7 +2337,7 @@ export class FlowVideoProvider {
     return new Promise((resolve, reject) => {
       const protocol = finalUrl.startsWith('https') ? https : http;
       const file = fs.createWriteStream(outputPath);
-      
+
       protocol.get(finalUrl, (response) => {
         if (response.statusCode && response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
           file.close();
@@ -2347,7 +2437,7 @@ export class FlowVideoProvider {
             if (this.browser.isConnected()) {
               await this.browser.close();
             }
-          } catch {}
+          } catch { }
           this.browser = null;
           this.page = null;
           console.log(`🔌 [Flow] Navegador fechado`);
@@ -2372,7 +2462,7 @@ export class FlowVideoProvider {
    */
   private async getExistingVideoUrls(): Promise<string[]> {
     if (!this.page) return [];
-    
+
     const existingUrls: string[] = [];
     try {
       const videos = await this.page.$$('video[src], video source[src]');
@@ -2381,7 +2471,7 @@ export class FlowVideoProvider {
         const src = (await srcProp.jsonValue()) as string;
         if (src) existingUrls.push(src);
       }
-      
+
       const downloadLinks = await this.page.$$('a[download], a[href*=".mp4"], a[href*="download"]');
       for (const link of downloadLinks) {
         const hrefProp = await link.getProperty('href');
@@ -2391,7 +2481,7 @@ export class FlowVideoProvider {
     } catch (e: any) {
       console.warn('⚠️ [Flow] Erro ao buscar URLs existentes:', e.message);
     }
-    
+
     return existingUrls;
   }
 
@@ -2441,7 +2531,7 @@ export class FlowVideoProvider {
             await this.randomDelay(300, 500);
             await this.closeSettingsDropdownMenu();
           }
-        } catch {}
+        } catch { }
         return;
       }
 
@@ -2473,7 +2563,7 @@ export class FlowVideoProvider {
 
       if (!responseCombo) {
         console.warn('⚠️ [Flow/Img] Combobox "Respostas por comando" não encontrado no painel');
-        await settingsBtn.click().catch(() => {});
+        await settingsBtn.click().catch(() => { });
         return;
       }
 
@@ -2485,7 +2575,7 @@ export class FlowVideoProvider {
 
       if (currentCount === clampedTarget) {
         console.log(`✅ [Flow/Img] Quantidade já é ${clampedTarget}`);
-        await settingsBtn.click().catch(() => {});
+        await settingsBtn.click().catch(() => { });
         return;
       }
 
@@ -2518,12 +2608,12 @@ export class FlowVideoProvider {
       await this.randomDelay(300, 500);
 
       // 6. Fechar painel tune
-      await settingsBtn.click().catch(() => {});
+      await settingsBtn.click().catch(() => { });
       await this.randomDelay(300, 500);
 
     } catch (error: any) {
       console.warn(`⚠️ [Flow/Img] Erro em setResponseCount:`, error.message);
-      try { await this.page.keyboard.press('Escape'); } catch {}
+      try { await this.page.keyboard.press('Escape'); } catch { }
     }
   }
 
@@ -2643,7 +2733,7 @@ export class FlowVideoProvider {
           urls.push(src);
         }
       }
-    } catch {}
+    } catch { }
     return urls;
   }
 
@@ -2661,7 +2751,7 @@ export class FlowVideoProvider {
             return path.join(dir, file);
           }
         }
-      } catch {}
+      } catch { }
     }
     return null;
   }
@@ -2807,7 +2897,7 @@ export class FlowVideoProvider {
       return true;
     } catch (err: any) {
       console.warn(`⚠️ [Flow/Img] Erro em downloadTileByClick:`, err.message);
-      try { await this.page.keyboard.press('Escape'); } catch {}
+      try { await this.page.keyboard.press('Escape'); } catch { }
       return false;
     }
   }
