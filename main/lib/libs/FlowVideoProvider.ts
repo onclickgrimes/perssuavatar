@@ -565,7 +565,8 @@ export class FlowVideoProvider {
     model: string = 'Veo 3.1 - Fast',
     count: number = 1,
     referenceImagePath?: string,
-    finalImagePath?: string
+    finalImagePath?: string,
+    ingredientImagePaths?: string[]
   ): Promise<FlowGenerationResult> {
     const startTime = Date.now();
 
@@ -645,24 +646,43 @@ export class FlowVideoProvider {
       });
       await this.randomDelay(400, 700);
 
-      // 5. Upload de imagem de referência, se fornecida
-      if (referenceImagePath) {
-        emitProgress('submitting', 'Enviando imagem inicial de referência...');
-        const uploaded = await this.uploadImageFrame(referenceImagePath, 'Inicial');
-        if (!uploaded) {
-          console.warn('⚠️ [Flow] Falha ao enviar a imagem Inicial para animação no Flow. Prosseguindo...');
+      // 5. Upload de ingredientes OU frames (mutuamente exclusivos)
+      const hasIngredients = ingredientImagePaths && ingredientImagePaths.length > 0;
+
+      if (hasIngredients) {
+        // Modo Ingredients: upload de até 3 imagens como ingredientes
+        emitProgress('submitting', `Enviando ${ingredientImagePaths!.length} imagem(ns) de ingredientes...`);
+        for (let i = 0; i < ingredientImagePaths!.length; i++) {
+          const imgPath = ingredientImagePaths![i];
+          emitProgress('submitting', `Enviando ingrediente ${i + 1}/${ingredientImagePaths!.length}...`);
+          const uploaded = await this.uploadIngredientImage(imgPath);
+          if (!uploaded) {
+            console.warn(`⚠️ [Flow] Falha ao enviar ingrediente ${i + 1}. Prosseguindo...`);
+          }
+          await this.randomDelay(300, 600);
+        }
+      } else {
+        // Modo Frames: upload de imagem inicial e/ou final
+        if (referenceImagePath) {
+          emitProgress('submitting', 'Enviando imagem inicial de referência...');
+          const uploaded = await this.uploadImageFrame(referenceImagePath, 'Inicial');
+          if (!uploaded) {
+            console.warn('⚠️ [Flow] Falha ao enviar a imagem Inicial para animação no Flow. Prosseguindo...');
+          }
+        }
+        
+        // 5.5 Upload do quadro final, se fornecido
+        if (finalImagePath) {
+          emitProgress('submitting', 'Enviando imagem do quadro final...');
+          const uploadedFinal = await this.uploadImageFrame(finalImagePath, 'Final');
+          if (!uploadedFinal) {
+            console.warn('⚠️ [Flow] Falha ao enviar a imagem Final para animação no Flow. Prosseguindo...');
+          }
         }
       }
       
-      // 5.5 Upload do quadro final, se fornecido
-      if (finalImagePath) {
-        emitProgress('submitting', 'Enviando imagem do quadro final...');
-        const uploadedFinal = await this.uploadImageFrame(finalImagePath, 'Final');
-        if (!uploadedFinal) {
-          console.warn('⚠️ [Flow] Falha ao enviar a imagem Final para animação no Flow. Prosseguindo...');
-        }
-      }
-      
+      // Aguarda 100 segundos para o usuário interagir com o Flow para Teste
+      await this.randomDelay(100000, 200000);
 
       // 6. Procurar e submeter o prompt
       emitProgress('submitting', 'Localizando campo de prompt...');
@@ -1762,6 +1782,214 @@ export class FlowVideoProvider {
 
     } catch (error: any) {
       console.error(`❌ [Flow] Erro ao enviar imagem de referência (${targetFrame}):`, error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Envia uma imagem como ingrediente para a geração de vídeo no Flow.
+   * 
+   * Ingredientes são imagens de referência que o modelo usa para compor a cena.
+   * Diferente dos frames (Inicial/Final), ingredientes são adicionados via 
+   * o botão "Ingredientes" no painel de prompt.
+   * Suporta até 3 imagens. Disponível apenas no modelo .1 - Fast.
+   */
+  private async uploadIngredientImage(imagePath: string): Promise<boolean> {
+    if (!this.page) return false;
+
+    try {
+      console.log(`🧪 [Flow] Iniciando upload de ingrediente: ${imagePath}`);
+
+      // Normalizar caminho (download se for URL http)
+      let absPath = imagePath;
+      const pathModule = require('path');
+      const fs = require('fs');
+
+      if (absPath.startsWith('http://') || absPath.startsWith('https://')) {
+        console.log(`🧪 [Flow] URL detectada, baixando temporariamente para upload...`);
+        const tempFilename = `temp_ingredient_${Date.now()}.jpg`;
+        const tempPath = pathModule.join(this.outputDir, tempFilename);
+        
+        await new Promise((resolve, reject) => {
+          const client = absPath.startsWith('https') ? require('https') : require('http');
+          const request = client.get(absPath, (response: any) => {
+            if (response.statusCode === 200) {
+              const fileStream = fs.createWriteStream(tempPath);
+              response.pipe(fileStream);
+              fileStream.on('finish', () => { fileStream.close(); resolve(true); });
+            } else {
+              reject(new Error(`Falha no download do ingrediente: Status ${response.statusCode}`));
+            }
+          }).on('error', (err: any) => reject(err));
+        });
+        absPath = tempPath;
+      } else if (absPath.startsWith('file:///')) {
+        absPath = absPath.replace('file:///', '');
+      }
+      
+      absPath = pathModule.resolve(absPath);
+      console.log(`🧪 [Flow] Caminho absoluto do ingrediente: ${absPath}`);
+
+      // 1. Clicar no botão "Ingredientes" / "Ingredients" no painel de prompt
+      let clickedIngredients = (await this.page.evaluate(`(function() {
+        // Procurar botão que contenha texto "Ingredient" ou "Ingrediente" ou ícone específico
+        var buttons = document.querySelectorAll('button');
+        for (var i = 0; i < buttons.length; i++) {
+          var btn = buttons[i];
+          var rect = btn.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          
+          var text = (btn.textContent || '').toLowerCase().trim();
+          // Procurar por "ingredients", "ingredientes", ou ícone "add_photo_alternate"
+          if (text.indexOf('ingredient') !== -1 || text.indexOf('ingrediente') !== -1) {
+            btn.click();
+            return 'button';
+          }
+          
+          // Verificar ícones dentro do botão
+          var icons = btn.querySelectorAll('i');
+          for (var j = 0; j < icons.length; j++) {
+            var iconText = (icons[j].textContent || '').trim();
+            if (iconText === 'add_photo_alternate' || iconText === 'collections') {
+              btn.click();
+              return 'icon';
+            }
+          }
+        }
+        
+        // Fallback: procurar divs clicáveis com texto "Ingrediente"
+        var divs = document.querySelectorAll('div[role="button"], span[role="button"]');
+        for (var d = 0; d < divs.length; d++) {
+          var dText = (divs[d].textContent || '').toLowerCase().trim();
+          if (dText.indexOf('ingredient') !== -1) {
+            divs[d].click();
+            return 'div';
+          }
+        }
+        
+        return null;
+      })())`)) as string | null;
+
+      if (!clickedIngredients) {
+        console.warn(`⚠️ [Flow] Botão de Ingredientes não encontrado. Tentando via aria-label...`);
+        
+        // Fallback: procurar via aria-label
+        const allBtns = await this.page.$$('button');
+        for (const btn of allBtns) {
+          if (!(await this.isVisible(btn))) continue;
+          const ariaLabelProp = await btn.getProperty('ariaLabel');
+          const ariaLabel = ((await ariaLabelProp?.jsonValue()) as string || '').toLowerCase();
+          if (ariaLabel.includes('ingredient')) {
+            await btn.click();
+            clickedIngredients = 'aria';
+            break;
+          }
+        }
+      }
+
+      if (!clickedIngredients) {
+        console.warn(`⚠️ [Flow] Não foi possível encontrar o botão de Ingredientes.`);
+        return false;
+      }
+
+      console.log(`✅ [Flow] Botão de Ingredientes clicado (via ${clickedIngredients})`);
+      await this.randomDelay(800, 1200);
+
+      // 2. Interceptar FileChooser e procurar botão de upload no modal/painel
+      const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
+
+      let clickedUpload = (await this.page.evaluate(`(function() {
+        var buttons = document.querySelectorAll('button');
+        // Iterar de trás para frente (modais são renderizados no final do body)
+        for (var i = buttons.length - 1; i >= 0; i--) {
+          var btn = buttons[i];
+          var rect = btn.getBoundingClientRect();
+          if (rect.width === 0 || rect.height === 0) continue;
+          
+          // Procurar botão de upload 
+          var spans = btn.querySelectorAll('span');
+          var hasUploadText = false;
+          for (var j = 0; j < spans.length; j++) {
+            var spanText = (spans[j].textContent || '').toLowerCase().trim();
+            if (spanText === 'faça upload de uma imagem' || spanText.indexOf('upload') !== -1) {
+              hasUploadText = true;
+              break;
+            }
+          }
+          
+          var iconEl = btn.querySelector('i');
+          var hasUploadIcon = iconEl && (iconEl.textContent || '').trim() === 'upload';
+          
+          if (hasUploadText || hasUploadIcon) {
+            btn.click();
+            return true;
+          }
+        }
+        
+        // Fallback: procurar input[type="file"] visível
+        var inputs = document.querySelectorAll('input[type="file"]');
+        for (var k = inputs.length - 1; k >= 0; k--) {
+          var input = inputs[k];
+          // Tentar clicar no label pai
+          var parent = input.parentElement;
+          if (parent && parent.tagName === 'LABEL') {
+            parent.click();
+            return true;
+          }
+        }
+        
+        return false;
+      })())`)) as boolean;
+
+      if (clickedUpload) {
+        console.log(`✅ [Flow] Botão de upload de ingrediente acionado. Interceptando File Chooser...`);
+        const fileChooser = await futureFileChooser;
+        if (fileChooser) {
+          console.log(`✅ [Flow] File Chooser interceptado! Injetando ${absPath}`);
+          await fileChooser.accept([absPath]);
+          await this.randomDelay(1500, 2500);
+          
+          // Aguardar processamento (polling simples)
+          const maxWaitMs = 30000;
+          const startWait = Date.now();
+          while (Date.now() - startWait < maxWaitMs) {
+            // Verificar se a imagem foi processada (thumb apareceu no painel)
+            const processed = (await this.page.evaluate(`(function() {
+              // Procurar imagens carregadas no painel de ingredientes
+              var imgs = document.querySelectorAll('img[crossorigin="anonymous"], img[alt*="ingredient"], img[alt*="ingrediente"]');
+              for (var i = 0; i < imgs.length; i++) {
+                var src = imgs[i].getAttribute('src') || '';
+                var style = window.getComputedStyle(imgs[i]);
+                if (src && (src.indexOf('/fx/api/trpc/media') !== -1 || src.indexOf('blob:') === 0) && style.opacity !== '0') {
+                  return true;
+                }
+              }
+              return false;
+            })())`)) as boolean;
+            
+            if (processed) {
+              const elapsed = Math.round((Date.now() - startWait) / 1000);
+              console.log(`✅ [Flow] Ingrediente carregado com sucesso! (${elapsed}s)`);
+              return true;
+            }
+            await new Promise(r => setTimeout(r, 800));
+          }
+          
+          console.warn(`⚠️ [Flow] Timeout aguardando processamento do ingrediente (30s). Prosseguindo...`);
+          return true; // Considera sucesso parcial já que o upload foi aceito
+        } else {
+          console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
+        }
+      } else {
+        console.warn(`⚠️ [Flow] Botão de upload não encontrado no painel de ingredientes.`);
+        // Fechar qualquer modal aberto
+        try { await this.page.keyboard.press('Escape'); } catch {}
+      }
+
+      return false;
+
+    } catch (error: any) {
+      console.error(`❌ [Flow] Erro ao enviar ingrediente:`, error.message);
       return false;
     }
   }

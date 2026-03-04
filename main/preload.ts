@@ -421,6 +421,7 @@ const handler = {
       count?: number;
       referenceImagePath?: string;
       finalImagePath?: string;
+      ingredientImagePaths?: string[];
     }) => ipcRenderer.invoke('video-project:generate-vo3', options),
 
     // Consultar créditos do Flow (Veo 3)

@@ -1151,11 +1151,13 @@ Lembre-se:
       count?: number;
       referenceImagePath?: string;
       finalImagePath?: string;
+      ingredientImagePaths?: string[];
     }
   ) => {
     try {
       const count = Math.min(options.count || 1, 4);
-      console.log(`🌊 [Flow/Veo3] Generating ${count} video(s) with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'}, model: ${options.model || 'Veo 3.1 - Fast'})`);
+      const hasIngredients = options.ingredientImagePaths && options.ingredientImagePaths.length > 0;
+      console.log(`🌊 [Flow/Veo3] Generating ${count} video(s) with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'}, model: ${options.model || 'Veo 3.1 - Fast'}${hasIngredients ? `, ingredients: ${options.ingredientImagePaths!.length}` : ''})`);
 
       const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
       const flowProvider = getFlowVideoProvider({
@@ -1176,7 +1178,8 @@ Lembre-se:
         options.model || 'Veo 3.1 - Fast',
         count,
         options.referenceImagePath,
-        options.finalImagePath
+        options.finalImagePath,
+        options.ingredientImagePaths
       );
 
       if (!result.success) {

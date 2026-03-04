@@ -56,6 +56,11 @@ export function ImagesStep({
   const [finalImages, setFinalImages] = useState<Record<number, string>>({});
   const [carouselIndices, setCarouselIndices] = useState<Record<number, number>>({});
 
+  // ── Ingredients (Veo 3 - 3.1 Fast only) ──
+  // 'frames' = usa Inicial/Final (padrão), 'ingredients' = usa até 3 imagens como ingredientes
+  const [ingredientMode, setIngredientMode] = useState<Record<number, 'frames' | 'ingredients'>>({});
+  const [ingredientImages, setIngredientImages] = useState<Record<number, string[]>>({});
+
   // ── Batch Processing (Processamento em lote) ──
   // Por padrão, todas as cenas estão selecionadas
   const [selectedScenes, setSelectedScenes] = useState<Set<number>>(() => new Set(segments.map(s => s.id)));
@@ -211,6 +216,38 @@ export function ImagesStep({
     });
   };
 
+  // Upload de imagem de ingrediente (max 3 por segmento)
+  const handleIngredientUpload = async (segmentId: number, file: File) => {
+    const current = ingredientImages[segmentId] || [];
+    if (current.length >= 3) return; // limite de 3
+    setUploadingSegments(prev => new Set([...prev, segmentId]));
+    try {
+      if (!window.electron?.videoProject?.saveImage) {
+        const mediaUrl = URL.createObjectURL(file);
+        setIngredientImages(prev => ({ ...prev, [segmentId]: [...(prev[segmentId] || []), mediaUrl] }));
+      } else {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.electron.videoProject.saveImage(arrayBuffer, `ingredient_${Date.now()}_${file.name}`, segmentId);
+        if (result.success && result.httpUrl) {
+          setIngredientImages(prev => ({ ...prev, [segmentId]: [...(prev[segmentId] || []), result.httpUrl] }));
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading ingredient image:', error);
+    } finally {
+      setUploadingSegments(prev => { const n = new Set(prev); n.delete(segmentId); return n; });
+    }
+  };
+
+  // Remover uma imagem de ingrediente específica
+  const handleRemoveIngredient = (segmentId: number, index: number) => {
+    setIngredientImages(prev => {
+      const current = [...(prev[segmentId] || [])];
+      current.splice(index, 1);
+      return { ...prev, [segmentId]: current };
+    });
+  };
+
   // Helper para extrair o prompt como string (suporta objeto JSON estruturado do video_veo2)
   const extractPromptString = (imagePrompt: unknown): string => {
     if (!imagePrompt) return '';
@@ -232,7 +269,10 @@ export function ImagesStep({
 
   // Obtém o serviço efetivo a usar para um segmento
   const getEffectiveService = (segment: TranscriptionSegment): string => {
+    // Se o usuário escolheu explicitamente um serviço, respeitar
     if (selectedService[segment.id]) return selectedService[segment.id];
+    // Se modo Ingredients está ativo (e não trocou serviço), forçar veo3
+    if (ingredientMode[segment.id] === 'ingredients') return 'veo3';
     if (segment.assetType === 'video_vo3') return 'veo3';
     return 'veo2-flow'; // padrão
   };
@@ -293,9 +333,22 @@ export function ImagesStep({
           setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
           return false;
         }
-        console.log(`🌊 [Veo3] Gerando ${count} vídeo(s) para segmento ${segmentId}...`);
+
+        // Verificar modo Ingredients
+        const isIngredients = ingredientMode[segmentId] === 'ingredients';
+        const ingredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
+
+        if (isIngredients && ingredientPaths.length === 0) {
+          if (!silent) alert('Adicione pelo menos 1 imagem de ingrediente antes de gerar.');
+          setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
+          return false;
+        }
+
+        console.log(`🌊 [Veo3] Gerando ${count} vídeo(s) para segmento ${segmentId}${isIngredients ? ` com ${ingredientPaths.length} ingredient(s)` : ''}...`);
         
-        if (referenceImagePath) {
+        if (isIngredients) {
+           setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com ${ingredientPaths.length} ingrediente(s)...` }));
+        } else if (referenceImagePath) {
            setVo3Progress(prev => ({ ...prev, [segmentId]: 'Animando imagem com Veo 3...' }));
         } else {
            setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Veo 3...' }));
@@ -307,8 +360,10 @@ export function ImagesStep({
           prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
           aspectRatio: aspectRatio,
           count,
-          referenceImagePath,
-          finalImagePath,
+          referenceImagePath: isIngredients ? undefined : referenceImagePath,
+          finalImagePath: isIngredients ? undefined : finalImagePath,
+          ingredientImagePaths: isIngredients ? ingredientPaths : undefined,
+          model: isIngredients ? 'Veo 3.1 - Fast' : undefined,
         });
         const timeoutPromise = new Promise<never>((_, reject) =>
           setTimeout(() => reject(new Error('Timeout: geração Veo 3 excedeu 12 minutos. Verifique se o navegador do Flow está aberto.')), veo3TimeoutMs)
@@ -722,6 +777,24 @@ export function ImagesStep({
               {/* Preview de imagem ou área de upload */}
               <div className="aspect-video relative group">
 
+                {/* Select Modo: Frames / Ingredients (canto superior esquerdo, só Veo 3) */}
+                {getEffectiveService(segment) === 'veo3' && !isGenerating && (
+                  <div className="absolute top-2 left-2 z-20">
+                    <select
+                      value={ingredientMode[segment.id] || 'frames'}
+                      onChange={e => {
+                        const mode = e.target.value as 'frames' | 'ingredients';
+                        setIngredientMode(prev => ({ ...prev, [segment.id]: mode }));
+                      }}
+                      onClick={e => e.stopPropagation()}
+                      className="bg-black/80 border border-white/30 text-white text-[11px] rounded-md px-1.5 py-0.5 backdrop-blur-sm cursor-pointer focus:outline-none focus:border-cyan-400 hover:border-white/50 transition-all"
+                    >
+                      <option value="frames">🎬 Frames</option>
+                      <option value="ingredients">🧪 Ingredients</option>
+                    </select>
+                  </div>
+                )}
+
                 {/* Mini-select de quantidade (Flow Image) */}
                 {getEffectiveService(segment) === 'flow-image' && !isGenerating && (
                   <div className="absolute top-2 right-2 z-10">
@@ -730,7 +803,7 @@ export function ImagesStep({
                       onChange={e => setImageCount(prev => ({ ...prev, [segment.id]: Number(e.target.value) }))}
                       onClick={e => e.stopPropagation()}
                       title="Quantidade de imagens a gerar"
-                      className="bg-black/60 border border-white/20 text-white text-xs rounded-md px-1.5 py-0.5 backdrop-blur-sm cursor-pointer focus:outline-none focus:border-pink-500 hover:border-white/40 transition-all"
+                      className="bg-black/80 border border-white/30 text-white text-xs rounded-md px-1.5 py-0.5 backdrop-blur-sm cursor-pointer focus:outline-none focus:border-pink-500 hover:border-white/50 transition-all"
                     >
                       <option value={1}>1 imagem</option>
                       <option value={2}>2 imagens</option>
@@ -748,7 +821,7 @@ export function ImagesStep({
                       onChange={e => setImageCount(prev => ({ ...prev, [segment.id]: Number(e.target.value) }))}
                       onClick={e => e.stopPropagation()}
                       title="Quantidade de vídeos a gerar"
-                      className="bg-black/60 border border-cyan-500/30 text-cyan-200 text-xs rounded-md px-1.5 py-0.5 backdrop-blur-sm cursor-pointer focus:outline-none focus:border-cyan-400 hover:border-cyan-400/50 transition-all"
+                      className="bg-black/80 border border-white/30 text-white text-xs rounded-md px-1.5 py-0.5 backdrop-blur-sm cursor-pointer focus:outline-none focus:border-cyan-400 hover:border-white/50 transition-all"
                     >
                       <option value={1}>1 vídeo</option>
                       <option value={2}>2 vídeos</option>
@@ -773,8 +846,66 @@ export function ImagesStep({
 
                   const svc = getEffectiveService(segment);
                   const isVideoService = svc === 'veo3' || svc === 'veo2-flow' || svc === 'veo2';
-                  const showCarousel = isVideoService && hasImage && !isVideo(segment.imageUrl);
+                  const showCarousel = isVideoService && hasImage && !isVideo(segment.imageUrl) && ingredientMode[segment.id] !== 'ingredients';
                   const currentIndex = carouselIndices[segment.id] || 0;
+                  const isIngredientsMode = ingredientMode[segment.id] === 'ingredients';
+
+                  // 0. MODO INGREDIENTS: 3 slots de upload de imagem
+                  if (isIngredientsMode) {
+                    const imgs = ingredientImages[segment.id] || [];
+                    return (
+                      <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-purple-500/5 flex items-center justify-center p-4">
+                        <div className="flex gap-3 items-center justify-center w-full">
+                          {[0, 1, 2].map(idx => {
+                            const imgUrl = imgs[idx];
+                            if (imgUrl) {
+                              return (
+                                <div key={idx} className="relative w-1/3 aspect-square rounded-xl overflow-hidden border-2 border-cyan-500/30 group/slot">
+                                  <img src={getMediaSrc(imgUrl)} className="w-full h-full object-cover" alt={`Ingrediente ${idx + 1}`} />
+                                  <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/slot:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
+                                    <button
+                                      onClick={(e) => { e.stopPropagation(); handleRemoveIngredient(segment.id, idx); }}
+                                      className="p-1.5 bg-red-500/80 hover:bg-red-500 text-white rounded-lg text-xs transition-all"
+                                      title="Remover"
+                                    >🗑️</button>
+                                    <label className="p-1.5 bg-blue-500/80 hover:bg-blue-500 text-white rounded-lg text-xs cursor-pointer transition-all">
+                                      📁
+                                      <input type="file" accept="image/*" className="hidden" onChange={e => {
+                                        const file = e.target.files?.[0];
+                                        if (file) {
+                                          handleRemoveIngredient(segment.id, idx);
+                                          handleIngredientUpload(segment.id, file);
+                                        }
+                                      }} />
+                                    </label>
+                                  </div>
+                                  <div className="absolute bottom-1 left-1 px-1.5 py-0.5 bg-black/70 text-cyan-300 text-[10px] rounded backdrop-blur-sm">{idx + 1}</div>
+                                </div>
+                              );
+                            }
+                            return (
+                              <label key={idx} className="w-1/3 aspect-square rounded-xl border-2 border-dashed border-cyan-500/25 hover:border-cyan-400/50 flex flex-col items-center justify-center cursor-pointer transition-all bg-black/20 hover:bg-cyan-500/10">
+                                <span className="text-cyan-400/60 text-2xl mb-1">+</span>
+                                <span className="text-white/30 text-[10px]">Imagem {idx + 1}</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleIngredientUpload(segment.id, file);
+                                  }}
+                                />
+                              </label>
+                            );
+                          })}
+                        </div>
+                        <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/60 text-white/40 text-[10px] rounded backdrop-blur-sm">
+                          3.1 Fast · {imgs.length}/3
+                        </div>
+                      </div>
+                    );
+                  }
 
                   // 1. SEM IMAGEM (UPLOAD INICIAL)
                   if (!hasImage) {
@@ -937,10 +1068,11 @@ export function ImagesStep({
                 </div>
                 <p className="text-white/80 text-sm line-clamp-2 mb-1">{segment.text}</p>
                 {segment.imagePrompt && (
-                  <p className="text-white/40 text-xs line-clamp-1 mb-3 italic">
+                  <p className="text-white/40 text-xs line-clamp-1 mb-2 italic">
                     Prompt: {extractPromptString(segment.imagePrompt)}
                   </p>
                 )}
+
                 
                 {/* Botão de geração com dropdown de serviço */}
                 <div className="flex gap-0 relative">
@@ -1011,6 +1143,10 @@ export function ImagesStep({
                                   // Resetar count para 1 ao trocar para serviço de vídeo
                                   if (svc.id === 'veo3' || svc.id === 'veo2-flow') {
                                     setImageCount(prev => ({ ...prev, [segment.id]: 1 }));
+                                  }
+                                  // Resetar modo ingredients se saiu de veo3
+                                  if (svc.id !== 'veo3' && ingredientMode[segment.id] === 'ingredients') {
+                                    setIngredientMode(prev => ({ ...prev, [segment.id]: 'frames' }));
                                   }
                                   setOpenDropdown(null);
                                 }}
