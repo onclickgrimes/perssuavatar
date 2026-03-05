@@ -40,8 +40,8 @@ export class GeminiLiveService extends EventEmitter {
 
         try {
             this.isConnecting = true;
-            const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY_1;
-            if (!apiKey) throw new Error("Missing GEMINI_API_KEY or GOOGLE_API_KEY_1");
+            const apiKey = process.env.GOOGLE_API_KEY_2;
+            if (!apiKey) throw new Error("Missing GOOGLE_API_KEY_2");
 
             const ai = new GoogleGenAI({ apiKey });
 

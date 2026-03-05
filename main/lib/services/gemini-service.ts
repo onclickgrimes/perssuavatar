@@ -26,18 +26,18 @@ export interface GeminiChatResponse {
 export class GeminiService extends EventEmitter {
     private genAI: GoogleGenerativeAI;
     private model: any;
-    private modelName: string = "gemini-2.5-flash-lite";
+    private modelName: string = "gemini-3.1-flash-lite-preview";
     private chatModel: any;
 
     constructor() {
         super();
-        const apiKey = process.env.GOOGLE_API_KEY_1 || '';
+        const apiKey = process.env.GOOGLE_API_KEY_2 || '';
         if (!apiKey) {
             console.error("Google API Key missing!");
         }
         this.genAI = new GoogleGenerativeAI(apiKey);
-        this.model = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
-        this.chatModel = this.genAI.getGenerativeModel({ model: "gemini-2.5-flash-lite" });
+        this.model = this.genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
+        this.chatModel = this.genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
     }
 
     /**
@@ -79,7 +79,7 @@ export class GeminiService extends EventEmitter {
 
             // Create model with tools if provided
             const modelConfig: any = {
-                model: "gemini-2.5-flash-lite",
+                model: "gemini-3.1-flash-lite-preview",
                 systemInstruction: systemInstruction
             };
 
