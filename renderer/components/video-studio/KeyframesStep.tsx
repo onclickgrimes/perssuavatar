@@ -54,14 +54,15 @@ export function KeyframesStep({
                    >
                      {provider === 'gemini' && (
                        <>
-                         <option value="gemini-3-flash-preview">Gemini 3 Flash Preview ($0.50 inputs / $3 outputs)</option>
-                         <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro Preview ($2 inputs / $12 outputs)</option>
+                         <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite ($0.25 inputs / $1.50 outputs)</option>
+                         <option value="gemini-3-flash-preview">Gemini 3 Flash ($0.50 inputs / $3 outputs)</option>
+                         <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro ($2 inputs / $12 outputs)</option>
                        </>
                      )}
                      {provider === 'openai' && (
                        <>
-                         <option value="gpt-5-mini-2025-08-07">GPT 5 Mini ($0.25 inputs / $2 outputs)</option>
-                         <option value="gpt-5.2-2025-12-11">GPT 5.2 ($1.75 inputs / $14 outputs)</option>
+                         <option value="gpt-5-mini-2025-08-07">GPT 5 Mini ($0.25 inputs / $2.00 outputs)</option>
+                         <option value="gpt-4.1-2025-04-14">GPT 4.1 ($2.00 inputs / $8.00 outputs)</option>
                        </>
                      )}
                      {provider === 'deepseek' && (
