@@ -2677,7 +2677,7 @@ export class FlowVideoProvider {
             var completed = [];
             var maxProgress = 0;
             var matchingTileCount = 0;
-            var failedMatchingTile = false;
+            var failedTileCount = 0;
 
             var containers = document.querySelectorAll('[data-index]');
             for (var ci = 0; ci < containers.length; ci++) {
@@ -2701,11 +2701,18 @@ export class FlowVideoProvider {
               
               if (!foundPrompt) continue;
               
-              var tiles = container.querySelectorAll('[data-tile-id]');
-              for (var ti = 0; ti < tiles.length; ti++) {
-                var tile = tiles[ti];
+              // Deduplicar tiles por ID: o DOM do Flow tem 2 elementos [data-tile-id] por tile
+              // (outer e inner). Precisamos do OUTERMOST porque ele contém o progress overlay
+              // com o ícone 'image'. O inner NÃO contém esse ícone, causando falsos positivos.
+              var allTileElements = container.querySelectorAll('[data-tile-id]');
+              var seenTileIds = {};
+              for (var ti = 0; ti < allTileElements.length; ti++) {
+                var tile = allTileElements[ti];
                 var tileId = tile.getAttribute('data-tile-id');
-                if (tileId && knownIds.indexOf(tileId) !== -1) continue; // Pular tiles velhas
+                if (!tileId) continue;
+                if (knownIds.indexOf(tileId) !== -1) continue; // Pular tiles velhas
+                if (seenTileIds[tileId]) continue; // Pular inner duplicado (já processamos o outer)
+                seenTileIds[tileId] = true;
                 
                 matchingTileCount++;
                 var tileText = tile.textContent || '';
@@ -2725,7 +2732,7 @@ export class FlowVideoProvider {
                   }
                 }
 
-                // Checar falha (warning sem progresso no tile)
+                // Checar falha: precisa de warning icon + texto "Falha"/"Failed" + sem progresso
                 var icons = tile.querySelectorAll('i');
                 var hasWarning = false;
                 var hasProgressIcon = false;
@@ -2734,7 +2741,8 @@ export class FlowVideoProvider {
                   if (iconText === 'warning') hasWarning = true;
                   if (iconText === 'image' || iconText === 'videocam') hasProgressIcon = true;
                 }
-                if (hasWarning && !hasProgressIcon) { failedMatchingTile = true; }
+                var hasFailText = (tileText.indexOf('Falha') !== -1 || tileText.indexOf('Failed') !== -1);
+                if (hasWarning && !hasProgressIcon && hasFailText) { failedTileCount++; }
 
                 // -- Coleta de imagens --
                 var imgs = tile.querySelectorAll('img');
@@ -2757,27 +2765,40 @@ export class FlowVideoProvider {
                 }
               }
             }
-            return { completed: completed, maxProgress: maxProgress, matchingTileCount: matchingTileCount, failedMatchingTile: failedMatchingTile };
-          })()`) as { completed: string[]; maxProgress: number; matchingTileCount: number; failedMatchingTile: boolean };
+            return { completed: completed, maxProgress: maxProgress, matchingTileCount: matchingTileCount, failedTileCount: failedTileCount };
+          })()`) as { completed: string[]; maxProgress: number; matchingTileCount: number; failedTileCount: number };
 
           // Reportar progresso
           if (result.maxProgress > 0) {
             const mapped = Math.min(85, 25 + Math.round(result.maxProgress * 0.6));
-            emit('generating', `Gerando imagens... ${result.maxProgress}%`, mapped);
+            emit('generating', `Gerando imagens... ${result.completed.length}/${count} prontas (${result.maxProgress}%)`, mapped);
           } else {
             const pct = Math.min(85, 25 + Math.round((elapsed / timeoutMs) * 60));
-            emit('generating', `Gerando imagens... (${Math.round(elapsed / 1000)}s)`, pct);
+            emit('generating', `Gerando imagens... ${result.completed.length}/${count} prontas (${Math.round(elapsed / 1000)}s)`, pct);
           }
 
-          // Tiles com nosso prompt concluídos → terminar
-          if (result.completed.length > 0) {
-            console.log(`✅ [Flow/Img] ${result.completed.length} imagem(ns) concluída(s) por match de prompt`);
+          // Todos os tiles resolvidos (concluídos + falhados ≥ count) → prosseguir com download
+          const resolvedCount = result.completed.length + result.failedTileCount;
+          if (result.completed.length > 0 && resolvedCount >= count) {
+            console.log(`✅ [Flow/Img] ${result.completed.length} concluída(s), ${result.failedTileCount} falhada(s) — todos os ${count} tiles resolvidos`);
             newImageUrls = result.completed.slice(0, Math.max(count, 4));
             break;
           }
 
-          // Se TODOS os tiles do nosso prompt falharam (e nenhum com progresso), lançar erro
-          if (result.failedMatchingTile && result.matchingTileCount > 0 && result.maxProgress === 0) {
+          // Mesmo que nem todos estejam resolvidos, se já temos count imagens concluídas, podemos sair
+          if (result.completed.length >= count) {
+            console.log(`✅ [Flow/Img] ${result.completed.length}/${count} imagem(ns) concluída(s) — todas prontas`);
+            newImageUrls = result.completed.slice(0, count);
+            break;
+          }
+
+          // Log de progresso parcial
+          if (result.completed.length > 0) {
+            console.log(`⏳ [Flow/Img] ${result.completed.length}/${count} prontas, ${result.failedTileCount} falhadas, aguardando mais...`);
+          }
+
+          // Se TODOS os tiles do nosso prompt falharam (nenhum concluído e nenhum em progresso), lançar erro
+          if (result.failedTileCount > 0 && result.failedTileCount >= result.matchingTileCount && result.completed.length === 0 && result.maxProgress === 0) {
             throw new Error('Flow retornou falha: todos os tiles com o prompt atual falharam.');
           }
 
@@ -2875,81 +2896,125 @@ export class FlowVideoProvider {
       emit('downloading', `Baixando ${urlsToProcess.length} imagem(ns)...`, 90);
       const localPaths: string[] = [];
 
+      // Obter cookies da sessão Puppeteer para autenticar os requests server-side
+      const pageCookies = await this.page!.cookies();
+      const cookieStr = pageCookies.map(c => `${c.name}=${c.value}`).join('; ');
+
       for (let i = 0; i < urlsToProcess.length; i++) {
         const redirectUrl = urlsToProcess[i];
         emit('downloading', `Baixando imagem ${i + 1} de ${urlsToProcess.length}...`, 90 + Math.round((i / urlsToProcess.length) * 8));
 
-        try {
-          // 8b. Seguir redirect via page.evaluate para obter URL assinada do GCS
-          // A URL assinada (storage.googleapis.com) é pública (não precisa de cookies)
-          const redirectUrlJson = JSON.stringify(redirectUrl);
-          // Tentar obter URL assinada do GCS seguindo o redirect via 3 estratégias
-          const signedUrl = await this.page!.evaluate(`(function() {
-            var url = ${redirectUrlJson};
-            return new Promise(function(resolve) {
-              // Estratégia 1: fetch com credentials same-origin
-              // (envia cookies para labs.google, omite para GCS cross-origin — resolve CORS)
-              fetch(url, { credentials: 'same-origin', redirect: 'follow' })
-                .then(function(res) {
-                  if (res.url && res.url !== url) { resolve(res.url); return; }
+        const MAX_RETRIES = 3;
+        let downloaded = false;
+
+        for (let attempt = 1; attempt <= MAX_RETRIES && !downloaded; attempt++) {
+          try {
+            if (attempt > 1) {
+              console.log(`🔄 [Flow/Img] Tentativa ${attempt}/${MAX_RETRIES} para imagem ${i + 1}...`);
+              await new Promise(r => setTimeout(r, 2000 * attempt));
+            }
+
+            // 8b. Seguir redirect server-side com cookies (evita CORS do browser)
+            const parsedRedirectUrl = new URL(redirectUrl);
+            const signedUrl = await new Promise<string | null>((resolve) => {
+              const reqOptions = {
+                hostname: parsedRedirectUrl.hostname,
+                path: parsedRedirectUrl.pathname + parsedRedirectUrl.search,
+                method: 'GET',
+                headers: {
+                  'Cookie': cookieStr,
+                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                },
+              };
+              const req = https.request(reqOptions, (res) => {
+                // Seguir 301/302/303/307 redirect → pegar Location header
+                if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                  resolve(res.headers.location);
+                } else if (res.statusCode === 200) {
+                  // Não houve redirect — URL pode servir a imagem diretamente
+                  // Neste caso, usar a própria URL
+                  resolve(redirectUrl);
+                } else {
+                  console.warn(`⚠️ [Flow/Img] Redirect retornou HTTP ${res.statusCode} para imagem ${i + 1}`);
                   resolve(null);
-                })
-                .catch(function(e1) {
-                  // Estratégia 2: XHR — withCredentials=true, responseURL após redirect
-                  try {
-                    var xhr = new XMLHttpRequest();
-                    xhr.withCredentials = true;
-                    xhr.onload = function() { resolve(xhr.responseURL && xhr.responseURL !== url ? xhr.responseURL : null); };
-                    xhr.onerror = function() {
-                      // Estratégia 3: fetch sem credentials
-                      fetch(url, { redirect: 'follow' })
-                        .then(function(res) { resolve(res.url !== url ? res.url : null); })
-                        .catch(function() { resolve(null); });
-                    };
-                    xhr.open('GET', url, true);
-                    xhr.send();
-                  } catch(e2) { resolve(null); }
-                });
-            });
-          })()`) as string | null;
-
-          if (!signedUrl || signedUrl === redirectUrl) {
-            console.warn(`⚠️ [Flow/Img] Redirect não resolveu URL assinada para imagem ${i + 1}: ${signedUrl}`);
-            continue;
-          }
-          console.log(`✅ [Flow/Img] URL assinada obtida: ${signedUrl.substring(0, 80)}...`);
-
-          // 8c. Download direto da URL assinada com https.get (sem cookies necessário)
-          const filename = `flow-image-${Date.now()}-${i + 1}.jpg`;
-          const outputPath = path.join(imgOutputDir, filename);
-
-          await new Promise<void>((resolve, reject) => {
-            const file = fs.createWriteStream(outputPath);
-            const req = https.get(signedUrl, (res) => {
-              if (res.statusCode && res.statusCode >= 400) {
-                file.close();
-                reject(new Error(`HTTP ${res.statusCode} ao baixar imagem`));
-                return;
-              }
-              res.pipe(file);
-              file.on('finish', () => {
-                file.close();
-                resolve();
+                }
+                // Consumir a resposta para liberar o socket
+                res.resume();
               });
+              req.on('error', (e) => {
+                console.warn(`⚠️ [Flow/Img] Erro no request de redirect:`, e.message);
+                resolve(null);
+              });
+              req.setTimeout(15000, () => { req.destroy(); resolve(null); });
+              req.end();
             });
-            req.on('error', (e) => { file.close(); reject(e); });
-          });
 
-          const size = fs.statSync(outputPath).size;
-          if (size > 500) {
-            localPaths.push(outputPath);
-            console.log(`✅ [Flow/Img] Imagem ${i + 1} salva: ${outputPath} (${Math.round(size / 1024)} KB)`);
-          } else {
-            console.warn(`⚠️ [Flow/Img] Arquivo vazio, ignorando: ${outputPath}`);
-            fs.unlinkSync(outputPath);
+            if (!signedUrl) {
+              console.warn(`⚠️ [Flow/Img] Redirect não resolveu URL para imagem ${i + 1} (tentativa ${attempt}/${MAX_RETRIES})`);
+              continue;
+            }
+            console.log(`✅ [Flow/Img] URL resolvida: ${signedUrl.substring(0, 100)}...`);
+
+            // 8c. Download da imagem (signed URL do GCS ou URL direta)
+            const filename = `flow-image-${Date.now()}-${i + 1}.jpg`;
+            const outputPath = path.join(imgOutputDir, filename);
+
+            // Decidir se precisa de cookies (mesma origem) ou não (GCS cross-origin)
+            const downloadUrl = new URL(signedUrl);
+            const needsCookies = downloadUrl.hostname.includes('labs.google');
+            const downloadHeaders: Record<string, string> = {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+            };
+            if (needsCookies) {
+              downloadHeaders['Cookie'] = cookieStr;
+            }
+
+            await new Promise<void>((resolve, reject) => {
+              const file = fs.createWriteStream(outputPath);
+              const protocol = downloadUrl.protocol === 'https:' ? https : http;
+              const req = protocol.get(signedUrl, { headers: downloadHeaders }, (res) => {
+                // Seguir mais um redirect se necessário (ex: GCS pode fazer redirect)
+                if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+                  file.close();
+                  // Seguir o redirect final
+                  https.get(res.headers.location, (res2) => {
+                    if (res2.statusCode && res2.statusCode >= 400) {
+                      reject(new Error(`HTTP ${res2.statusCode} no redirect final`));
+                      return;
+                    }
+                    const file2 = fs.createWriteStream(outputPath);
+                    res2.pipe(file2);
+                    file2.on('finish', () => { file2.close(); resolve(); });
+                  }).on('error', reject);
+                  return;
+                }
+                if (res.statusCode && res.statusCode >= 400) {
+                  file.close();
+                  reject(new Error(`HTTP ${res.statusCode} ao baixar imagem`));
+                  return;
+                }
+                res.pipe(file);
+                file.on('finish', () => { file.close(); resolve(); });
+              });
+              req.on('error', (e) => { file.close(); reject(e); });
+            });
+
+            const size = fs.statSync(outputPath).size;
+            if (size > 500) {
+              localPaths.push(outputPath);
+              console.log(`✅ [Flow/Img] Imagem ${i + 1} salva: ${outputPath} (${Math.round(size / 1024)} KB)`);
+              downloaded = true;
+            } else {
+              console.warn(`⚠️ [Flow/Img] Arquivo muito pequeno (${size}B, tentativa ${attempt}/${MAX_RETRIES}), ignorando: ${outputPath}`);
+              fs.unlinkSync(outputPath);
+            }
+          } catch (dlErr: any) {
+            console.warn(`⚠️ [Flow/Img] Erro ao baixar imagem ${i + 1} (tentativa ${attempt}/${MAX_RETRIES}):`, dlErr.message);
           }
-        } catch (dlErr: any) {
-          console.warn(`⚠️ [Flow/Img] Erro ao baixar imagem ${i + 1}:`, dlErr.message);
+        }
+
+        if (!downloaded) {
+          console.error(`❌ [Flow/Img] Imagem ${i + 1} não pôde ser baixada após ${MAX_RETRIES} tentativas`);
         }
       }
 

@@ -49,8 +49,8 @@ export function ImagesStep({
   const [openDropdown, setOpenDropdown] = useState<number | null>(null);
   // Quantidade de imagens a gerar por segmento (só relevante para flow-image)
   const [imageCount, setImageCount] = useState<Record<number, number>>({});
-  // Picker de imagem quando o Flow gera múltiplas imagens
-  const [imagePicker, setImagePicker] = useState<{ segmentId: number; httpUrls: string[] } | null>(null);
+  // Fila de seleções pendentes quando o Flow gera múltiplas imagens
+  const [pickerQueue, setPickerQueue] = useState<{ segmentId: number; httpUrls: string[] }[]>([]);
   const [pickerSelectedIdx, setPickerSelectedIdx] = useState<number>(0);
 
   const [finalImages, setFinalImages] = useState<Record<number, string>>({});
@@ -392,16 +392,11 @@ export function ImagesStep({
         });
 
         if (result?.success && result.httpUrls?.length > 0) {
-          // Se pediu count > 1 e não é silent, sempre abrir modal de seleção
-          if (count > 1 && !silent) {
-            setImagePicker({ segmentId, httpUrls: result.httpUrls });
-            setPickerSelectedIdx(0);
-          } else if (silent) {
-            // Modo batch/silent: usar a primeira imagem automaticamente
-            onUpdateImage(segmentId, result.httpUrls[0]);
-          } else {
-            // count === 1 e não é silent: usar diretamente
-            onUpdateImage(segmentId, result.httpUrls[0]);
+          // Usar a primeira imagem imediatamente
+          onUpdateImage(segmentId, result.httpUrls[0]);
+          // Se há múltiplas opções, empilhar na fila para o usuário escolher depois
+          if (count > 1 && result.httpUrls.length > 1) {
+            setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls }]);
           }
           success = true;
         } else {
@@ -1191,65 +1186,79 @@ export function ImagesStep({
         })}
       </div>
 
-      {/* Modal picker de imagens geradas pelo Flow */}
-      {imagePicker && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl">
-            <h3 className="text-white font-bold text-lg mb-1">🖼️ Escolha uma imagem</h3>
-            <p className="text-white/50 text-sm mb-4">
-              {imagePicker.httpUrls.length > 1
-                ? 'Clique na imagem desejada para selecioná-la para a cena.'
-                : 'Apenas 1 imagem foi gerada com sucesso. As demais falharam no Flow.'}
-            </p>
+      {/* Modal picker de imagens geradas pelo Flow (fila) */}
+      {pickerQueue.length > 0 && (() => {
+        const current = pickerQueue[0];
+        const remaining = pickerQueue.length - 1;
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
+            <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl p-6 w-[560px] max-h-[90vh] overflow-y-auto shadow-2xl">
+              <div className="flex items-center justify-between mb-1">
+                <h3 className="text-white font-bold text-lg">🖼️ Escolha uma imagem</h3>
+                {remaining > 0 && (
+                  <span className="text-xs text-white/40 bg-white/10 px-2 py-0.5 rounded-full">
+                    +{remaining} cena{remaining > 1 ? 's' : ''} na fila
+                  </span>
+                )}
+              </div>
+              <p className="text-white/50 text-sm mb-4">
+                Cena {current.segmentId} — Clique na imagem desejada para selecioná-la.
+              </p>
 
-            <div className={`grid ${imagePicker.httpUrls.length === 1 ? 'grid-cols-1 max-w-[280px] mx-auto' : 'grid-cols-2'} gap-3 mb-5`}>
-              {imagePicker.httpUrls.map((url, idx) => (
-                <button
-                  key={idx}
-                  onClick={() => setPickerSelectedIdx(idx)}
-                  className={`relative rounded-xl overflow-hidden border-2 transition-all ${
-                    pickerSelectedIdx === idx
-                      ? 'border-pink-500 ring-2 ring-pink-500/40'
-                      : 'border-white/10 hover:border-white/30'
-                  }`}
-                >
-                  <img
-                    src={getMediaSrc(url)}
-                    alt={`Opção ${idx + 1}`}
-                    className="w-full aspect-video object-cover"
-                  />
-                  {pickerSelectedIdx === idx && (
-                    <div className="absolute top-2 right-2 w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center">
-                      <span className="text-white text-xs font-bold">✓</span>
+              <div className={`grid ${current.httpUrls.length === 1 ? 'grid-cols-1 max-w-[280px] mx-auto' : 'grid-cols-2'} gap-3 mb-5`}>
+                {current.httpUrls.map((url, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setPickerSelectedIdx(idx)}
+                    className={`relative rounded-xl overflow-hidden border-2 transition-all ${
+                      pickerSelectedIdx === idx
+                        ? 'border-pink-500 ring-2 ring-pink-500/40'
+                        : 'border-white/10 hover:border-white/30'
+                    }`}
+                  >
+                    <img
+                      src={getMediaSrc(url)}
+                      alt={`Opção ${idx + 1}`}
+                      className="w-full aspect-video object-cover"
+                    />
+                    {pickerSelectedIdx === idx && (
+                      <div className="absolute top-2 right-2 w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center">
+                        <span className="text-white text-xs font-bold">✓</span>
+                      </div>
+                    )}
+                    <div className="absolute bottom-0 left-0 right-0 bg-black/50 py-1 text-center text-white/70 text-xs">
+                      Opção {idx + 1}
                     </div>
-                  )}
-                  <div className="absolute bottom-0 left-0 right-0 bg-black/50 py-1 text-center text-white/70 text-xs">
-                    Opção {idx + 1}
-                  </div>
-                </button>
-              ))}
-            </div>
+                  </button>
+                ))}
+              </div>
 
-            <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  onUpdateImage(imagePicker.segmentId, imagePicker.httpUrls[pickerSelectedIdx]);
-                  setImagePicker(null);
-                }}
-                className="flex-1 py-2.5 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-xl font-medium transition-all"
-              >
-                {imagePicker.httpUrls.length === 1 ? 'Usar imagem' : 'Usar esta imagem'}
-              </button>
-              <button
-                onClick={() => setImagePicker(null)}
-                className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
-              >
-                Cancelar
-              </button>
+              <div className="flex gap-3">
+                <button
+                  onClick={() => {
+                    onUpdateImage(current.segmentId, current.httpUrls[pickerSelectedIdx]);
+                    setPickerQueue(prev => prev.slice(1));
+                    setPickerSelectedIdx(0);
+                  }}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-xl font-medium transition-all"
+                >
+                  {remaining > 0 ? `Usar esta imagem → Próxima (${remaining})` : 'Usar esta imagem'}
+                </button>
+                <button
+                  onClick={() => {
+                    // Manter a primeira imagem (já foi aplicada) e pular
+                    setPickerQueue(prev => prev.slice(1));
+                    setPickerSelectedIdx(0);
+                  }}
+                  className="px-4 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all"
+                >
+                  Pular
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
     </div>
   );
 }
