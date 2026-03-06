@@ -39,6 +39,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renderProgress, setRenderProgress] = useState(0);
+  const [transcriptionMessage, setTranscriptionMessage] = useState('Transcrevendo áudio...');
 
   // Estados para gerenciamento de projetos
   const [showProjectsModal, setShowProjectsModal] = useState(false);
@@ -136,38 +137,76 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       audioFile: file,
       title: file.name.replace(/\.[^/.]+$/, ''),
     }));
-    setCurrentStep('transcribing');
+    // Não mudar o step para 'transcribing' para evitar unmount do UploadStep (e resetar a timeline de áudios)
     setIsProcessing(true);
     setError(null);
 
-    try {
-      // Verificar se API está disponível
-      if (!window.electron?.videoProject) {
-        throw new Error('Video Project API not available');
-      }
+    const maxAttempts = 3;
+    let attempts = 0;
+    let success = false;
+    let tempAudioPath = '';
+    let tempDuration = 0;
+    let tempSegments: any[] = [];
 
-      // Converter File para ArrayBuffer
-      const arrayBuffer = await file.arrayBuffer();
-      
-      // Salvar arquivo no backend
-      const saveResult = await window.electron.videoProject.saveAudio(arrayBuffer, file.name);
-      if (!saveResult.success) {
-        throw new Error(saveResult.error || 'Failed to save audio file');
-      }
-      
-      // Transcrever áudio
-      const transcriptionResult = await window.electron.videoProject.transcribe(saveResult.path);
-      
-      if (!transcriptionResult.success) {
-        throw new Error(transcriptionResult.error || 'Transcription failed');
-      }
+    while (attempts < maxAttempts && !success) {
+      try {
+        attempts++;
+        if (attempts > 1) {
+            setTranscriptionMessage(`Transcrevendo áudio... (Tentativa ${attempts}/${maxAttempts})`);
+        } else {
+            setTranscriptionMessage('Transcrevendo áudio...');
+        }
 
+        // Verificar se API está disponível
+        if (!window.electron?.videoProject) {
+          throw new Error('Video Project API not available');
+        }
+
+        // Converter File para ArrayBuffer
+        const arrayBuffer = await file.arrayBuffer();
+        
+        // Salvar arquivo no backend
+        const saveResult = await window.electron.videoProject.saveAudio(arrayBuffer, file.name);
+        if (!saveResult.success) {
+          throw new Error(saveResult.error || 'Failed to save audio file');
+        }
+        
+        // Transcrever áudio
+        const transcriptionResult = await window.electron.videoProject.transcribe(saveResult.path);
+        
+        if (!transcriptionResult.success) {
+           const errDetail = transcriptionResult.error?.message || transcriptionResult.error || 'Transcription failed';
+           throw new Error(typeof errDetail === 'string' ? errDetail : JSON.stringify(errDetail));
+        }
+
+        success = true; // saiu do erro
+        tempAudioPath = saveResult.path;
+        tempDuration = transcriptionResult.duration;
+        tempSegments = transcriptionResult.segments;
+
+      } catch (err: any) {
+        console.error(`Tentativa ${attempts} falhou:`, err);
+        const errMsg = err.message || 'Desconhecido';
+        
+        if (attempts >= maxAttempts) {
+          setError(`Falha ao transcrever após ${maxAttempts} tentativas. Erro: ${errMsg}`);
+          setIsProcessing(false);
+          return; // Retorna sem fechar o form de upload
+        }
+        
+        setTranscriptionMessage(`Falha: ${errMsg}. Tentando ${attempts + 1}/${maxAttempts} em 2s...`);
+        // Espera 2 segundos antes de tentar de novo
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+    }
+
+    if (success) {
       // Atualizar projeto com segmentos E caminho do áudio
       setProject(prev => ({
         ...prev,
-        audioPath: saveResult.path, // Salvar caminho do áudio
-        duration: transcriptionResult.duration,
-        segments: transcriptionResult.segments.map((seg: any) => ({
+        audioPath: tempAudioPath, // Salvar caminho do áudio
+        duration: tempDuration,
+        segments: tempSegments.map((seg: any) => ({
           id: seg.id,
           text: seg.text,
           start: seg.start,
@@ -181,11 +220,6 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       }));
       
       setCurrentStep('keyframes');
-    } catch (err) {
-      console.error('Upload/transcription error:', err);
-      setError(err instanceof Error ? err.message : 'Erro ao transcrever áudio');
-      setCurrentStep('upload');
-    } finally {
       setIsProcessing(false);
     }
   }, []);
@@ -375,6 +409,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             onAspectRatiosChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: value }))}
             selectedNiche={selectedNiche}
             onNicheChange={setSelectedNiche}
+            isTranscribing={isProcessing && currentStep === 'upload'}
+            transcriptionMessage={transcriptionMessage}
           />
         );
       
@@ -533,7 +569,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       </header>
 
       {/* Main Content */}
-      <main className="max-w-7xl mx-auto px-6 py-8">
+      <main className={`mx-auto px-6 py-8 w-full ${currentStep === 'upload' ? 'max-w-[100vw]' : 'max-w-7xl'}`}>
         {error && (
           <div className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-300">
             {error}
