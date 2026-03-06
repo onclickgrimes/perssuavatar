@@ -486,6 +486,10 @@ const handler = {
 
     // Cancelar fila de geração do Flow (esvazia mutex e semaphore no backend)
     cancelFlowQueue: () => ipcRenderer.invoke('video-project:cancel-flow-queue'),
+    
+    // Gerar TTS
+    generateTTS: (options: { text: string; voiceName: string; model: string; }) =>
+      ipcRenderer.invoke('video-project:generate-tts', options),
   },
   
   // ========================================

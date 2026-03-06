@@ -151,6 +151,8 @@ export function UploadStep({
   const [isDragging, setIsDragging] = useState(false);
   const [isNicheModalOpen, setIsNicheModalOpen] = useState(false);
   const [ttsText, setTtsText] = useState('');
+  const [ttsModel, setTtsModel] = useState('gemini-2.5-flash-preview-tts');
+  const [ttsGenerating, setTtsGenerating] = useState(false);
   
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [isMerging, setIsMerging] = useState(false);
@@ -247,6 +249,44 @@ export function UploadStep({
       alert('Houve um erro ao processar os arquivos de áudio suportados.');
     } finally {
       setIsDecoding(false);
+    }
+  };
+
+  const handleGenerateTTS = async () => {
+    if (!ttsText.trim() || !selectedNiche?.voice_id) return;
+    
+    setTtsGenerating(true);
+    try {
+      let currentStyle = '';
+      if (selectedNiche.voice_styles && selectedNiche.voice_styles.length > 0) {
+          const styleVar = selectedNiche.voice_styles[0];
+          currentStyle = typeof styleVar === 'string' ? styleVar : (styleVar as any).name || '';
+      }
+      
+      const fullText = currentStyle ? `${currentStyle} ${ttsText}` : ttsText;
+      
+      const result = await (window as any).electron.videoProject.generateTTS({
+        text: fullText,
+        voiceName: selectedNiche.voice_id,
+        model: ttsModel
+      });
+
+      if (result.success && result.httpUrl) {
+        // Obter o blob do audio gerado para inserir na timeline usando processFiles
+        const response = await fetch(result.httpUrl);
+        const blob = await response.blob();
+        const file = new File([blob], result.filename || 'tts_audio.wav', { type: blob.type || 'audio/wav' });
+        
+        await processFiles([file], 'end');
+        setTtsText(''); // Clear text after success
+      } else {
+        alert(result.error || 'Erro ao gerar TTS.');
+      }
+    } catch (err: any) {
+      console.error('Erro ao chamar TTS:', err);
+      alert('Houve um erro ao processar o TTS: ' + (err.message || String(err)));
+    } finally {
+      setTtsGenerating(false);
     }
   };
 
@@ -857,9 +897,19 @@ export function UploadStep({
                     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-pink-500"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
                     Gerar Faixa de Voz (TTS)
                   </label>
-                  <span title="Voice ID mapeado no Nicho" className="text-xs bg-purple-500/10 text-purple-300 px-3 py-1.5 font-medium rounded-lg border border-purple-500/20 whitespace-nowrap">
-                      Voz: <strong className="text-white">{selectedNiche.voice_id || 'Nenhuma configurada'}</strong>
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <select
+                      value={ttsModel}
+                      onChange={(e) => setTtsModel(e.target.value)}
+                      className="bg-black/40 border border-white/20 rounded-lg text-white text-xs px-2 py-1.5 outline-none focus:border-pink-500"
+                    >
+                      <option className="bg-gray-900 text-white" value="gemini-2.5-flash-preview-tts">Gemini 2.5 Flash</option>
+                      <option className="bg-gray-900 text-white" value="gemini-2.5-pro-preview-tts">Gemini 2.5 Pro</option>
+                    </select>
+                    <span title="Voice ID mapeado no Nicho" className="text-xs bg-purple-500/10 text-purple-300 px-3 py-1.5 font-medium rounded-lg border border-purple-500/20 whitespace-nowrap">
+                        Voz: <strong className="text-white">{selectedNiche.voice_id || 'Nenhuma configurada'}</strong>
+                    </span>
+                  </div>
               </div>
 
               {selectedNiche.voice_styles && selectedNiche.voice_styles.length > 0 && (
@@ -885,15 +935,24 @@ export function UploadStep({
               />
               
               <button 
-                className="mt-4 w-full py-3 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white hover:shadow-[0_0_20px_rgba(236,72,153,0.4)] rounded-xl font-bold transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed flex items-center justify-center gap-2" 
-                disabled={!ttsText.trim() || !selectedNiche.voice_id}
+                onClick={handleGenerateTTS}
+                className="mt-4 w-full py-3 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white hover:shadow-[0_0_20px_rgba(236,72,153,0.4)] rounded-xl font-bold transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed flex items-center justify-center gap-2 relative overflow-hidden group" 
+                disabled={!ttsText.trim() || !selectedNiche.voice_id || ttsGenerating}
               >
                 {!selectedNiche.voice_id ? (
                   <>Selecione uma Voz no Nicho</>
+                ) : ttsGenerating ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Gerando Áudio...
+                  </>
                 ) : (
                   <>
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
-                    Gerar Áudio da Falas (Em Breve)
+                    Gerar e Adicionar na Timeline
                   </>
                 )}
               </button>

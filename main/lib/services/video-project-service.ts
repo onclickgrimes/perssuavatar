@@ -539,11 +539,16 @@ export class VideoProjectService extends EventEmitter {
             }
         }
 
-        // Se é um caminho de arquivo, converter para URL do servidor local
+        // Se é um caminho de arquivo, verificar se está dentro do diretório de projetos
         // Caminho esperado: C:\...\video-projects\images\segment-1-123.jpg
         // URL retornada: http://localhost:9999/images/segment-1-123.jpg
-        const relativePath = filePath.replace(this.projectsDir, '').replace(/\\/g, '/');
-        return `http://localhost:${this.imageServerPort}${relativePath}`;
+        if (filePath.startsWith(this.projectsDir)) {
+             const relativePath = filePath.replace(this.projectsDir, '').replace(/\\/g, '/');
+             return `http://localhost:${this.imageServerPort}${relativePath}`;
+        }
+        
+        // Se for um caminho absoluto fora das pastas conhecidas, usar a rota /absolute/
+        return `http://localhost:${this.imageServerPort}/absolute/${encodeURIComponent(filePath.replace(/\\/g, '/'))}`;
     }
 
     // ========================================

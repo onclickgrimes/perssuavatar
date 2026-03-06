@@ -1410,5 +1410,72 @@ Lembre-se:
     }
   });
 
+  // Handler para gerar TTS com Gemini
+  ipcMain.handle('video-project:generate-tts', async (event, options: {
+    text: string;
+    voiceName: string;
+    model: string;
+  }) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      
+      const { getGeminiVoiceService } = require('../services/gemini-voice-service');
+      const voiceService = getGeminiVoiceService();
+      
+      // Salva o modelo atual para restaurar depois
+      const originalModel = voiceService.getModel();
+      
+      // Define o modelo desejado (gemini-2.5-pro-preview-tts ou gemini-2.5-flash-preview-tts)
+      if (options.model) {
+        voiceService.setModel(options.model);
+      }
+      
+      // Prepara o caminho de destino
+      const path = require('path');
+      const fs = require('fs');
+      
+      const outputDir = path.join(
+        require('electron').app.getPath('userData'), 
+        'tts-audio'
+      );
+      
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true });
+      }
+      
+      const timestamp = Date.now();
+      const filename = `tts_${options.voiceName}_${timestamp}.wav`;
+      const outputPath = path.join(outputDir, filename);
+      
+      // Usar a função de retry que já existe
+      const result = await generateSpeechWithRetry(voiceService, {
+        text: options.text,
+        voiceName: options.voiceName,
+        outputPath: outputPath
+      });
+      
+      // Restaura o modelo original
+      voiceService.setModel(originalModel);
+      
+      if (!result.success) {
+        throw new Error(result.error || 'Erro desconhecido na geração de TTS');
+      }
+      
+      const httpUrl = videoProjectService.convertToHttpUrl(outputPath);
+      
+      console.log(`✅ [TTS] Audio generated: ${outputPath} → ${httpUrl}`);
+      return {
+        success: true,
+        audioPath: outputPath,
+        httpUrl: httpUrl,
+        filename: filename
+      };
+
+    } catch (error: any) {
+      console.error('❌ [TTS] Generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   console.log('✅ [VideoEditor] Handlers registered');
 }

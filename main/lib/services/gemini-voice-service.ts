@@ -158,7 +158,7 @@ export class GeminiVoiceService {
                     role: 'user',
                     parts: [
                         {
-                            text: `Read aloud in a warm and friendly tone: ${text}`,
+                            text: text,
                         },
                     ],
                 },
