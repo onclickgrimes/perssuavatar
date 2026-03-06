@@ -441,6 +441,7 @@ export function UploadStep({
   // Drag and Drop (Arquivos externos)
   const handleMainDrop = (e: React.DragEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     setIsDragging(false);
     if (e.dataTransfer.types.includes('application/x-timeline-item')) return;
     const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('audio/'));
@@ -461,16 +462,22 @@ export function UploadStep({
   };
   const handleDropItem = (e: React.DragEvent, idx: number) => {
     e.preventDefault();
-    e.stopPropagation();
-    if (draggedIdx !== null && draggedIdx !== idx) {
-        const newItems = [...items];
-        const dragged = newItems.splice(draggedIdx, 1)[0];
-        newItems.splice(idx, 0, dragged);
-        setItems(newItems);
-        if (isPlaying) stopPlayback();
+    
+    // Tratamos reordenamento aqui
+    if (e.dataTransfer.types.includes('application/x-timeline-item')) {
+      e.stopPropagation();
+      if (draggedIdx !== null && draggedIdx !== idx) {
+          const newItems = [...items];
+          const dragged = newItems.splice(draggedIdx, 1)[0];
+          newItems.splice(idx, 0, dragged);
+          setItems(newItems);
+          if (isPlaying) stopPlayback();
+      }
+      setDraggedIdx(null);
+      setDragOverIdx(null);
     }
-    setDraggedIdx(null);
-    setDragOverIdx(null);
+    // Se for arquivo externo, não usamos stopPropagation, e deixamos o evento 
+    // borbulhar (bubble up) até o handleMainDrop para cadastrar o áudio.
   };
 
   // Propriedades do Tooltip de Hover
