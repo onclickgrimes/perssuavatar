@@ -37,6 +37,11 @@ export interface ChannelNiche {
     default_font?: string;
     components_allowed?: string[];
     
+    // Vozes e TTS
+    tts_provider?: string;
+    voice_id?: string;
+    voice_styles?: string[];
+    
     created_at?: string;
     updated_at?: string;
 }
@@ -316,6 +321,7 @@ ${jsonExample}`;
             stock_categories: this.safeJsonParse(row.stock_categories),
             default_colors: this.safeJsonParse(row.default_colors),
             components_allowed: this.safeJsonParse(row.components_allowed),
+            voice_styles: this.safeJsonParse(row.voice_styles),
         };
     }
 
@@ -327,7 +333,7 @@ ${jsonExample}`;
         const jsonFields = [
             'asset_types', 'emotions', 'camera_movements', 'transitions',
             'entry_animations', 'exit_animations', 'stock_categories',
-            'default_colors', 'components_allowed'
+            'default_colors', 'components_allowed', 'voice_styles'
         ];
 
         for (const field of jsonFields) {

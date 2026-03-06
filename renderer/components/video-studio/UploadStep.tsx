@@ -150,6 +150,7 @@ export function UploadStep({
 }: UploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isNicheModalOpen, setIsNicheModalOpen] = useState(false);
+  const [ttsText, setTtsText] = useState('');
   
   const [items, setItems] = useState<TimelineItem[]>([]);
   const [isMerging, setIsMerging] = useState(false);
@@ -815,34 +816,90 @@ export function UploadStep({
         </div>
 
       {/* Campos de Configuração (Nicho e Proporção) */}
-      <div className="w-full max-w-xl mt-8 space-y-6">
-        <div>
-          <label className="block text-white/80 font-medium mb-2">Nicho do Canal</label>
-          <button onClick={() => setIsNicheModalOpen(true)} className={`w-full p-4 rounded-xl border-2 transition-all text-left ${selectedNiche ? 'border-pink-500/50 bg-pink-500/10' : 'border-white/10 bg-black/30 hover:border-white/30 hover:bg-white/5'}`}>
-            {selectedNiche ? (
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{selectedNiche.icon || '📺'}</span>
-                <div className="flex-1"><h4 className="text-white font-medium">{selectedNiche.name}</h4><p className="text-white/50 text-sm">{selectedNiche.description}</p></div>
-              </div>
-            ) : (
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/40"><path d="M12 5v14M5 12h14" /></svg></div>
-                <div className="flex-1"><span className="text-white/60">Selecionar nicho do canal</span></div>
-              </div>
-            )}
-          </button>
-        </div>
+      <div className="w-full max-w-5xl mt-8 grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+        {/* Coluna 1: Configurações Gerais */}
+        <div className="space-y-6">
+          <div>
+            <label className="block text-white/80 font-medium mb-2">Nicho do Canal</label>
+            <button onClick={() => setIsNicheModalOpen(true)} className={`w-full p-4 rounded-xl border-2 transition-all text-left group hover:shadow-[0_0_20px_rgba(236,72,153,0.1)] ${selectedNiche ? 'border-pink-500/50 bg-pink-500/10' : 'border-white/10 bg-black/30 hover:border-white/30 hover:bg-white/5'}`}>
+              {selectedNiche ? (
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl drop-shadow-md">{selectedNiche.icon || '📺'}</span>
+                  <div className="flex-1"><h4 className="text-white font-medium group-hover:text-pink-400 transition-colors">{selectedNiche.name}</h4><p className="text-white/50 text-sm mt-0.5">{selectedNiche.description}</p></div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-lg bg-white/10 flex items-center justify-center group-hover:bg-pink-500/20 transition-colors"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-white/40 group-hover:text-pink-400"><path d="M12 5v14M5 12h14" /></svg></div>
+                  <div className="flex-1"><span className="text-white/60 font-medium group-hover:text-white/90 transition-colors">Selecionar/Criar nicho do canal</span></div>
+                </div>
+              )}
+            </button>
+          </div>
 
-        <div>
-          <label className="block text-white/80 font-medium mb-2">Proporção do Vídeo</label>
-          <div className="grid grid-cols-3 gap-3">
-            {ASPECT_RATIOS.map((ratio) => (
-              <button key={ratio} onClick={() => toggleAspectRatio(ratio)} className={`px-4 py-2 rounded-lg border transition-all text-sm font-medium ${selectedAspectRatios.includes(ratio) ? 'bg-pink-500 border-pink-500 text-white' : 'bg-black/30 border-white/10 text-white/60 hover:bg-white/5 hover:border-white/30'}`}>
-                {ratio}
-              </button>
-            ))}
+          <div>
+            <label className="block text-white/80 font-medium mb-2">Proporção do Vídeo</label>
+            <div className="grid grid-cols-3 gap-3">
+              {ASPECT_RATIOS.map((ratio) => (
+                <button key={ratio} onClick={() => toggleAspectRatio(ratio)} className={`px-4 py-2 rounded-lg border transition-all text-sm font-medium ${selectedAspectRatios.includes(ratio) ? 'bg-pink-500 border-pink-500 text-white shadow-[0_0_10px_rgba(236,72,153,0.3)]' : 'bg-black/30 border-white/10 text-white/60 hover:bg-white/5 hover:border-white/30 hover:text-white'}`}>
+                  {ratio}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
+
+        {/* Coluna 2: Texto para Geração de Voz (TTS) */}
+        {selectedNiche && (
+          <div className="space-y-4 bg-black/20 p-6 rounded-2xl border border-white/5 shadow-inner">
+            <div>
+              <div className="flex justify-between items-center mb-4">
+                  <label className="text-white font-bold flex items-center gap-2">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="text-pink-500"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                    Gerar Faixa de Voz (TTS)
+                  </label>
+                  <span title="Voice ID mapeado no Nicho" className="text-xs bg-purple-500/10 text-purple-300 px-3 py-1.5 font-medium rounded-lg border border-purple-500/20 whitespace-nowrap">
+                      Voz: <strong className="text-white">{selectedNiche.voice_id || 'Nenhuma configurada'}</strong>
+                  </span>
+              </div>
+
+              {selectedNiche.voice_styles && selectedNiche.voice_styles.length > 0 && (
+                <div className="mb-4 flex flex-col gap-2">
+                  <div className="flex gap-2 items-center flex-wrap">
+                      <span 
+                          title={typeof selectedNiche.voice_styles[0] === 'string' ? selectedNiche.voice_styles[0] : (selectedNiche.voice_styles[0] as any).name}
+                          className="text-xs bg-blue-500/10 text-blue-300 px-3 py-1.5 font-medium rounded-lg border border-blue-500/20 break-words flex-1 min-w-[150px]" 
+                      >
+                          Estilo / Tom: <strong className="text-white font-normal italic">
+                              "{typeof selectedNiche.voice_styles[0] === 'string' ? selectedNiche.voice_styles[0] : (selectedNiche.voice_styles[0] as any).name}"
+                          </strong>
+                      </span>
+                  </div>
+                </div>
+              )}
+
+              <textarea 
+                placeholder="Cole o roteiro ou digite o texto aqui para gerar a dublagem de IA com a voz selecionada no nicho..."
+                className="w-full min-h-[140px] p-4 bg-black/40 border border-white/10 rounded-xl text-white text-sm outline-none focus:border-pink-500 focus:bg-black/60 transition-colors resize-y leading-relaxed scrollbar-thin scrollbar-thumb-white/10"
+                value={ttsText}
+                onChange={(e) => setTtsText(e.target.value)}
+              />
+              
+              <button 
+                className="mt-4 w-full py-3 bg-gradient-to-r from-pink-600 to-purple-600 hover:from-pink-500 hover:to-purple-500 text-white hover:shadow-[0_0_20px_rgba(236,72,153,0.4)] rounded-xl font-bold transition-all disabled:opacity-50 disabled:grayscale disabled:cursor-not-allowed flex items-center justify-center gap-2" 
+                disabled={!ttsText.trim() || !selectedNiche.voice_id}
+              >
+                {!selectedNiche.voice_id ? (
+                  <>Selecione uma Voz no Nicho</>
+                ) : (
+                  <>
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    Gerar Áudio da Falas (Em Breve)
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <NicheModal isOpen={isNicheModalOpen} onClose={() => setIsNicheModalOpen(false)} onSelect={onNicheChange} selectedNiche={selectedNiche} />
