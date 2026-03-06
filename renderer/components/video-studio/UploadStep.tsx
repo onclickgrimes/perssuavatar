@@ -117,7 +117,29 @@ function WaveformDisplay({ buffer, color, duration, widthScale }: { buffer: Audi
   return <canvas ref={canvasRef} style={{ width: Math.max(1, duration * widthScale), height: 64 }} className="opacity-90 absolute top-0 left-0 pointer-events-none" />;
 }
 
-export function UploadStep({ 
+// Regras Adaptativas para a Régua da Timeline
+const getRulerSteps = (zoom: number) => {
+    if (zoom < 10) return { major: 60, minor: 10 };     // Escala 1 min
+    if (zoom < 20) return { major: 30, minor: 5 };      // Escala 30s
+    if (zoom < 50) return { major: 15, minor: 5 };      // Escala 15s
+    if (zoom < 100) return { major: 5, minor: 1 };      // Escala 5s
+    if (zoom < 200) return { major: 2, minor: 1 };      // Escala 2s
+    return { major: 1, minor: 0.5 };                    // Escala 1s
+};
+
+const formatRulerTime = (seconds: number) => {
+    if (seconds === 0) return '0s';
+    if (seconds < 60) return `${seconds}s`;
+    
+    const m = Math.floor(seconds / 60);
+    const s = Math.floor(seconds % 60);
+    
+    if (s === 0) return `${m}m`;
+    return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+};
+
+export function UploadStep({
+ 
   onUpload,
   selectedAspectRatios = [],
   onAspectRatiosChange,
@@ -139,11 +161,13 @@ export function UploadStep({
   const [currentTime, setCurrentTime] = useState(0);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
-  // Refs para Audio Web API
   const audioCtxRef = useRef<AudioContext | null>(null);
   const sourceNodesRef = useRef<AudioBufferSourceNode[]>([]);
   const startTimeRef = useRef<number>(0);
   const trackContainerRef = useRef<HTMLDivElement>(null);
+  
+  const scrollWrapperRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(1000);
   
   // Drag / Drop / Hover Refs
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
@@ -151,6 +175,19 @@ export function UploadStep({
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [hoveredInfo, setHoveredInfo] = useState<{item: TimelineItem, x: number, y: number} | null>(null);
   const [contextMenu, setContextMenu] = useState<{x: number, y: number, id: string | null} | null>(null);
+
+  // Calcula a largura visual disponível pro editor pra preencher a régua
+  useEffect(() => {
+    if (!scrollWrapperRef.current) return;
+    const observer = new ResizeObserver((entries) => {
+        if (entries[0]) {
+            setViewportWidth(entries[0].contentRect.width);
+        }
+    });
+    observer.observe(scrollWrapperRef.current);
+    setViewportWidth(scrollWrapperRef.current.clientWidth);
+    return () => observer.disconnect();
+  }, []);
 
   // Atalhos de teclado
   useEffect(() => {
@@ -591,6 +628,7 @@ export function UploadStep({
 
               {/* TIMELINE EDITOR */}
               <div 
+                 ref={scrollWrapperRef}
                  className="relative flex-1 min-w-0 h-full bg-black/60 border border-white/10 overflow-x-auto overflow-y-hidden rounded-xl custom-scrollbar flex"
                  onDragOver={(e) => e.preventDefault()}
                  onDrop={handleMainDrop}
@@ -605,8 +643,8 @@ export function UploadStep({
                  <div className="h-full flex px-4">
 
                  <div 
-                   className="relative h-full flex pt-[40px] pb-4 items-start mx-2" 
-                   style={{ width: Math.max(totalDuration * zoomLevel, 200) }}
+                   className="relative h-full flex pt-[40px] pb-4 items-start mx-2 min-w-full" 
+                   style={{ width: Math.max(totalDuration * zoomLevel, viewportWidth) }}
                  >
                     {/* Ruler (Agulha Target) - Clicável para Seek */}
                     <div 
@@ -614,11 +652,31 @@ export function UploadStep({
                         onMouseDown={handleRulerMouseDown}
                         title="Clique ou arraste para buscar"
                     >
-                        {Array.from({ length: Math.ceil(totalDuration) + 1 }).map((_, i) => (
-                           <div key={i} className="absolute top-2 bottom-0 border-l border-white/20" style={{ left: i * zoomLevel }}>
-                              <span className="absolute -top-[10px] -left-3 text-[10px] text-white/40 font-mono select-none bg-black/40 px-1 rounded">{i}s</span>
-                           </div>
-                        ))}
+                        {(() => {
+                            const { major, minor } = getRulerSteps(zoomLevel);
+                            const maxTime = Math.ceil(Math.max(totalDuration, viewportWidth / zoomLevel));
+                            const markers = [];
+                            
+                            for (let time = 0; time <= maxTime; time += minor) {
+                                // Usa 10 como fator de correção do JS math precision (0.5 * 10 = 5)
+                                const isMajor = Math.round(time * 10) % Math.round(major * 10) === 0;
+                                
+                                markers.push(
+                                    <div 
+                                       key={time} 
+                                       className={`absolute bottom-0 border-l pointer-events-none ${isMajor ? 'top-1 border-white/50 z-10' : 'top-3 border-white/15 z-0'}`} 
+                                       style={{ left: time * zoomLevel }}
+                                    >
+                                        {isMajor && (
+                                           <span className="absolute -top-[10px] -translate-x-1/2 text-[10px] text-white/60 font-mono select-none bg-[#13131a]/90 backdrop-blur-sm px-[4px] py-[2px] rounded border border-white/5 shadow-md">
+                                               {formatRulerTime(time)}
+                                           </span>
+                                        )}
+                                    </div>
+                                );
+                            }
+                            return markers;
+                        })()}
                     </div>
 
                     {/* Container Track real (Onde as caixas ficam) */}
