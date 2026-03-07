@@ -293,6 +293,56 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     }));
   }, []);
 
+  // Handler para mover palavras entre segmentos
+  const handleMoveWords = useCallback((fromSegmentId: number, toSegmentId: number, wordIndices: number[]) => {
+    setProject(prev => {
+      const newSegments = JSON.parse(JSON.stringify(prev.segments)); // deep copy 
+      
+      const fromSeg = newSegments.find((s: any) => s.id === fromSegmentId);
+      const toSeg = newSegments.find((s: any) => s.id === toSegmentId);
+      
+      if (!fromSeg || !toSeg || !fromSeg.words || !toSeg.words) return prev;
+
+      // Extract words to move
+      const wordsToMove = wordIndices.map(i => fromSeg.words[i]);
+      
+      // Remove from fromSeg
+      fromSeg.words = fromSeg.words.filter((_: any, i: number) => !wordIndices.includes(i));
+      
+      // Add to toSeg
+      toSeg.words = [...toSeg.words, ...wordsToMove].sort((a: any, b: any) => a.start - b.start);
+      
+      // Update text, start, end for fromSeg
+      if (fromSeg.words.length > 0) {
+        fromSeg.start = fromSeg.words[0].start;
+        fromSeg.end = fromSeg.words[fromSeg.words.length - 1].end;
+        fromSeg.text = fromSeg.words.map((w: any) => w.punctuatedWord || w.word).join(' ');
+      } else {
+        fromSeg.start = 0;
+        fromSeg.end = 0;
+        fromSeg.text = '';
+      }
+      
+      // Update text, start, end for toSeg
+      if (toSeg.words.length > 0) {
+        toSeg.start = toSeg.words[0].start;
+        toSeg.end = toSeg.words[toSeg.words.length - 1].end;
+        toSeg.text = toSeg.words.map((w: any) => w.punctuatedWord || w.word).join(' ');
+      }
+
+      // Filter out empty segments to keep it clean
+      const finalSegments = newSegments.filter((s: any) => s.words && s.words.length > 0);
+      
+      // Re-sort segments 
+      finalSegments.sort((a: any, b: any) => a.start - b.start);
+
+      return {
+        ...prev,
+        segments: finalSegments
+      };
+    });
+  }, []);
+
   // Handler para atualizar imagem de um segmento (upload manual ou gerada)
   const handleUpdateImage = useCallback((segmentId: number, imageUrl: string) => {
     setProject(prev => ({
@@ -436,6 +486,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             }}
             providerModel={selectedModel}
             onProviderModelChange={(m: string) => setSelectedModel(m)}
+            onMoveWords={handleMoveWords}
           />
         );
       
