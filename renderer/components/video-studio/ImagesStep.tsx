@@ -155,6 +155,7 @@ export function ImagesStep({
   // Por padrão, todas as cenas estão selecionadas
   const [selectedScenes, setSelectedScenes] = useState<Set<number>>(() => new Set(segments.map(s => s.id)));
   const [showBatchDropdown, setShowBatchDropdown] = useState(false);
+  const [showBatchSettings, setShowBatchSettings] = useState(false);
   const lastClickedSceneRef = useRef<number | null>(null);
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; currentSceneId: number | null }>({
@@ -751,7 +752,56 @@ export function ImagesStep({
         )}
 
         {/* ── Processamento em Lote ── */}
-        <div className="ml-auto flex items-center gap-2 border-l border-white/10 pl-4 relative">
+        <div className="ml-auto flex items-center gap-3 relative">
+          
+          {/* Botão de Configurações em Lote */}
+          <div className="relative flex items-center">
+            <button
+              onClick={() => setShowBatchSettings(!showBatchSettings)}
+              className="w-8 h-8 rounded-xl bg-gray-600/50 hover:bg-gray-500/70 border border-white/10 flex items-center justify-center text-white transition-all shadow-lg"
+              title="Configurar cenas selecionadas"
+            >
+              ⚙️
+            </button>
+            {showBatchSettings && (
+              <div
+                className="absolute top-full right-0 mt-2 z-[60] bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[240px] select-none"
+                onMouseLeave={() => setShowBatchSettings(false)}
+              >
+                <div className="px-3 py-2 border-b border-white/10 bg-white/5">
+                  <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Ações em Lote</span>
+                </div>
+                <div className="p-2 space-y-1">
+                  <div className="px-2 py-1 text-[10px] text-white/40 uppercase mb-1">Alterar Serviço (Selecionadas)</div>
+                  {GENERATION_SERVICES.map(svc => (
+                    <button
+                      key={svc.id}
+                      onClick={() => {
+                        if (selectedScenes.size === 0) {
+                          alert('Nenhuma cena selecionada.');
+                          return;
+                        }
+                        setSelectedService(prev => {
+                          const next = { ...prev };
+                          Array.from(selectedScenes).forEach(id => {
+                            next[id] = svc.id;
+                          });
+                          return next;
+                        });
+                        setShowBatchSettings(false);
+                      }}
+                      className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-all outline-none"
+                    >
+                      <span className="text-sm">{svc.icon}</span>
+                      <span>{svc.label}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 border-l border-white/10 pl-4 relative">
           {batchProcessing ? (
             <>
               <div className="w-4 h-4 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
@@ -885,6 +935,7 @@ export function ImagesStep({
               </button>
             </div>
           )}
+          </div>
         </div>
       </div>
 
