@@ -61,6 +61,96 @@ export function ImagesStep({
   const [ingredientMode, setIngredientMode] = useState<Record<number, 'frames' | 'ingredients'>>({});
   const [ingredientImages, setIngredientImages] = useState<Record<number, string[]>>({});
 
+  // ── Character Images ──
+  const [showCharactersModal, setShowCharactersModal] = useState(false);
+  const [characterImages, setCharacterImages] = useState<Record<number, string>>({});
+
+  const handleCharacterImageUpload = async (charId: number, file: File) => {
+    try {
+      if (!window.electron?.videoProject?.saveImage) {
+        const mediaUrl = URL.createObjectURL(file);
+        setCharacterImages(prev => ({ ...prev, [charId]: mediaUrl }));
+      } else {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.electron.videoProject.saveImage(arrayBuffer, `character_${charId}_${file.name}`, 0);
+        if (result.success && result.httpUrl) {
+          setCharacterImages(prev => ({ ...prev, [charId]: result.httpUrl }));
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading character image:', error);
+    }
+  };
+
+  const handleRemoveCharacterImage = (charId: number) => {
+    setCharacterImages(prev => {
+      const next = { ...prev };
+      delete next[charId];
+      return next;
+    });
+  };
+
+  const getCharactersInScene = (imagePrompt: unknown): string | null => {
+    if (!imagePrompt) return null;
+    let charsRaw: any = null;
+    
+    if (typeof imagePrompt === 'object' && imagePrompt !== null) {
+      if ('CharacterInTheScene' in imagePrompt) {
+        charsRaw = (imagePrompt as any).CharacterInTheScene;
+      } else if (
+        'video_generation_prompt' in imagePrompt && 
+        typeof (imagePrompt as any).video_generation_prompt === 'object' && 
+        'CharacterInTheScene' in (imagePrompt as any).video_generation_prompt
+      ) {
+        charsRaw = (imagePrompt as any).video_generation_prompt.CharacterInTheScene;
+      }
+    } else if (typeof imagePrompt === 'string') {
+      try {
+        const parsed = JSON.parse(imagePrompt);
+        if (parsed.CharacterInTheScene) {
+          charsRaw = parsed.CharacterInTheScene;
+        } else if (parsed.video_generation_prompt?.CharacterInTheScene) {
+          charsRaw = parsed.video_generation_prompt.CharacterInTheScene;
+        }
+      } catch (e) {
+        // Fallback: extract using regex from raw string if not valid JSON
+        charsRaw = imagePrompt;
+      }
+    }
+
+    if (charsRaw) {
+      if (typeof charsRaw === 'string') {
+        // Handle formats like "[1] The Victim (Buffalo)" or "[1, 3] The Suspects"
+        const bracketMatches = [...charsRaw.matchAll(/\[([\d\s,]+)\]/g)];
+        if (bracketMatches.length > 0) {
+          // Extract all numbers within brackets and join them
+          const ids = bracketMatches
+            .map(m => m[1])
+            .join(',')
+            .split(',')
+            .map(s => parseInt(s.trim(), 10))
+            .filter(n => !isNaN(n));
+            
+          if (ids.length > 0) {
+            return ids.join(', ');
+          }
+        }
+
+        // Handle simple numbers like "1, 2" or "1"
+        const rawDigits = charsRaw.split(',').map(s => parseInt(s.replace(/\D/g, ''), 10)).filter(n => !isNaN(n));
+        if (rawDigits.length > 0) {
+           return rawDigits.join(', ');
+        }
+        
+        // Original fallback
+        return charsRaw.replace(/[\[\]"]/g, '');
+      }
+      return String(charsRaw).replace(/[\[\]"]/g, '');
+    }
+    
+    return null;
+  };
+
   // ── Batch Processing (Processamento em lote) ──
   // Por padrão, todas as cenas estão selecionadas
   const [selectedScenes, setSelectedScenes] = useState<Set<number>>(() => new Set(segments.map(s => s.id)));
@@ -334,12 +424,21 @@ export function ImagesStep({
           return false;
         }
 
-        // Verificar modo Ingredients
-        const isIngredients = ingredientMode[segmentId] === 'ingredients';
-        const ingredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
+        // Verificar modo Ingredients e Personagens
+        const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
+        
+        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
+        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
+        
+        const isIngredients = isIngredientsExplicit || charsReferencePaths.length > 0;
+        const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
+        
+        // Combina ingredientes explícitos com imagens de personagens (máximo 3)
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths])).slice(0, 3);
 
         if (isIngredients && ingredientPaths.length === 0) {
-          if (!silent) alert('Adicione pelo menos 1 imagem de ingrediente antes de gerar.');
+          if (!silent) alert('Nenhuma imagem de ingrediente ou personagem disponível para gerar.');
           setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
           return false;
         }
@@ -383,12 +482,31 @@ export function ImagesStep({
       } else if (service === 'flow-image') {
         console.log(`🖼️ [FlowImg] Gerando imagem para segmento ${segmentId}...`);
         const count = imageCount[segmentId] ?? 1;
-        setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando ${count} imagem(ns) com Flow...` }));
+
+        // Verificar modo Ingredients e Personagens
+        const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
+        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
+        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
+        
+        const isIngredients = isIngredientsExplicit || charsReferencePaths.length > 0;
+        const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
+        
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths])).slice(0, 3);
+
+        if (isIngredients && ingredientPaths.length === 0) {
+          if (!silent) alert('Nenhuma imagem de ingrediente ou personagem disponível para gerar.');
+          setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
+          return false;
+        }
+
+        setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando ${count} imagem(ns) com Flow${ingredientPaths.length > 0 ? ` e ${ingredientPaths.length} ref(s)` : ''}...` }));
 
         const result = await window.electron?.videoProject?.generateFlowImage({
           prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
           count,
           aspectRatio,
+          ingredientImagePaths: ingredientPaths.length > 0 ? ingredientPaths : undefined,
         });
 
         if (result?.success && result.httpUrls?.length > 0) {
@@ -575,6 +693,13 @@ export function ImagesStep({
           <p className="text-white/60">Refaça ou faça upload das suas próprias imagens ou vídeos (opcional)</p>
         </div>
         <div className="flex gap-3">
+          <button
+            onClick={() => setShowCharactersModal(true)}
+            className="px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 border border-yellow-500/20 rounded-lg transition-all"
+          >
+            📸 Personagens
+          </button>
+
           <button
             onClick={onBack}
             className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
@@ -787,8 +912,8 @@ export function ImagesStep({
               {/* Preview de imagem ou área de upload */}
               <div className="aspect-video relative group">
 
-                {/* Select Modo: Frames / Ingredients (canto superior esquerdo, só Veo 3) */}
-                {getEffectiveService(segment) === 'veo3' && !isGenerating && (
+                {/* Select Modo: Frames / Ingredients (canto superior esquerdo, só Veo 3 e Flow Image) */}
+                {(getEffectiveService(segment) === 'veo3' || getEffectiveService(segment) === 'flow-image') && !isGenerating && (
                   <div className="absolute top-2 left-2 z-20">
                     <select
                       value={ingredientMode[segment.id] || 'frames'}
@@ -1075,6 +1200,15 @@ export function ImagesStep({
                       {segment.assetType}
                     </span>
                   )}
+                  {(() => {
+                    const chars = getCharactersInScene(segment.imagePrompt);
+                    if (!chars) return null;
+                    return (
+                      <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 rounded text-xs">
+                        🧑‍🤝‍🧑 {chars}
+                      </span>
+                    );
+                  })()}
                 </div>
                 <p className="text-white/80 text-sm line-clamp-2 mb-1">{segment.text}</p>
                 {segment.imagePrompt && (
@@ -1154,8 +1288,8 @@ export function ImagesStep({
                                   if (svc.id === 'veo3' || svc.id === 'veo2-flow') {
                                     setImageCount(prev => ({ ...prev, [segment.id]: 1 }));
                                   }
-                                  // Resetar modo ingredients se saiu de veo3
-                                  if (svc.id !== 'veo3' && ingredientMode[segment.id] === 'ingredients') {
+                                  // Resetar modo ingredients se saiu de veo3 ou flow-image
+                                  if (svc.id !== 'veo3' && svc.id !== 'flow-image' && ingredientMode[segment.id] === 'ingredients') {
                                     setIngredientMode(prev => ({ ...prev, [segment.id]: 'frames' }));
                                   }
                                   setOpenDropdown(null);
@@ -1259,6 +1393,95 @@ export function ImagesStep({
           </div>
         );
       })()}
+
+      {/* Modal de Personagens */}
+      {showCharactersModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+            <div className="p-6 border-b border-white/10 flex justify-between items-center">
+              <div>
+                <h3 className="text-xl font-bold text-white mb-1">📸 Referências de Personagens</h3>
+                <p className="text-white/50 text-sm">Faça upload de personagens que poderão ser usados como referência ou ingredientes.</p>
+              </div>
+              <button
+                onClick={() => setShowCharactersModal(false)}
+                className="text-white/40 hover:text-white p-2 rounded-lg hover:bg-white/5 transition-all text-xl"
+              >
+                ✕
+              </button>
+            </div>
+            
+            <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
+                {/* Mostra personagens existentes ou placeholders (sempre garantimos pelo menos um extra) */}
+                {Array.from({ length: Math.max(...Object.keys(characterImages).map(Number), 0) + 1 }).map((_, i) => {
+                  const charId = i + 1;
+                  const imgUrl = characterImages[charId];
+                  return (
+                    <div key={charId} className="flex flex-col gap-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-white/80 text-sm font-medium">Personagem {charId}</span>
+                        {imgUrl && (
+                          <button
+                            onClick={() => handleRemoveCharacterImage(charId)}
+                            className="text-red-400 hover:text-red-300 text-xs transition-colors"
+                          >
+                            Remover
+                          </button>
+                        )}
+                      </div>
+                      <div className="aspect-square relative group rounded-xl border-2 border-dashed border-white/20 hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all overflow-hidden flex items-center justify-center bg-white/5 cursor-pointer">
+                        {imgUrl ? (
+                          <>
+                            <img src={getMediaSrc(imgUrl)} alt={`Personagem ${charId}`} className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                              <label className="text-white text-sm font-medium px-3 py-1.5 bg-black/50 rounded-lg cursor-pointer hover:bg-black/70 transition-all">
+                                📁 Trocar
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleCharacterImageUpload(charId, file);
+                                  }}
+                                />
+                              </label>
+                            </div>
+                          </>
+                        ) : (
+                          <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer p-4 text-center">
+                            <span className="text-white/30 text-3xl mb-2">+</span>
+                            <span className="text-white/50 text-xs">Adicionar<br/>Referência</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={e => {
+                                const file = e.target.files?.[0];
+                                if (file) handleCharacterImageUpload(charId, file);
+                              }}
+                            />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            
+            <div className="p-6 border-t border-white/10 flex justify-end">
+              <button
+                onClick={() => setShowCharactersModal(false)}
+                className="px-6 py-2.5 bg-gradient-to-r from-yellow-500 to-orange-500 hover:from-yellow-600 hover:to-orange-600 text-white rounded-xl font-medium transition-all"
+              >
+                Concluir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

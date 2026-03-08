@@ -1295,10 +1295,12 @@ Lembre-se:
     aspectRatio?: string;
     geminiProviderId?: string;
     headless?: boolean;
+    ingredientImagePaths?: string[];
   }) => {
     try {
       const count = Math.min(options.count || 1, 4);
-      console.log(`🖼️ [Flow/Img] Gerando ${count} imagem(ns) (ratio: ${options.aspectRatio || 'default'}) com prompt: "${options.prompt.substring(0, 80)}..."`);
+      const hasIngredients = options.ingredientImagePaths && options.ingredientImagePaths.length > 0;
+      console.log(`🖼️ [Flow/Img] Gerando ${count} imagem(ns) (ratio: ${options.aspectRatio || 'default'}) com prompt: "${options.prompt.substring(0, 80)}..."${hasIngredients ? ` (com ${options.ingredientImagePaths!.length} referências)` : ''}`);
 
       const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
       const flowProvider = getFlowVideoProvider({
@@ -1313,7 +1315,8 @@ Lembre-se:
           event.sender.send('video-project:flow-image-progress', progress);
         },
         '🍌 Nano Banana Pro',
-        options.aspectRatio
+        options.aspectRatio,
+        options.ingredientImagePaths
       );
 
       if (!result.success || !result.imagePaths?.length) {

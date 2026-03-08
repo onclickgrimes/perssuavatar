@@ -99,7 +99,45 @@ export const ASSET_DEFINITIONS = {
     description: 'Vídeo gerado pelo Google Veo 2 (API oficial, sem áudio)',
     icon: '🌊',
     badgeColor: 'bg-blue-500/20 text-blue-300',
-    aiDescription: 'Vídeo cinematográfico gerado pelo Google Veo 2 via API oficial (sem áudio). Crie prompts em JSON detalhados em inglês para o modelo Veo 2, para vídeos **com duração máxima de 8 segundos**. IMPORTANTE: Para manter consistência visual em múltiplas cenas, você deve repetir **exatamente as mesmas descrições detalhadas** dos personagens e do ambiente em **todos** os prompts, mesmo se a cena for diferente. Isso garante continuidade visual. Descreva o ambiente completo: - Local, horário, iluminação (ex: dia claro, luz natural) - Elementos do cenário, se houver - Descreva a cena — o que os personagens fazem, sua interação. Estilo de filmagem (ex: câmera fixa, câmera na mão, ângulo da câmera). Repita todos os detalhes dos personagens e do ambiente em todas as cenas.\n\nExemplo da estrutura do JSON:\n{\n  "video_generation_prompt": {\n    "title": "Ousado in the Mist",\n    "technical_specifications": {\n      "frame_rate": "24fps (Cinematic)",\n      "lens_type": "Wide-angle",\n      "resolution": "4K/Hyper-realistic",\n      "aspect_ratio": "16:9"\n    },\n    "artistic_direction": {\n      "style": "Cinematic wildlife documentary",\n      "lighting": "Soft natural morning light filtering through the canopy",\n      "mood": "Majestic, contemplative, ethereal"\n    },\n    "camera_control": {\n      "movement": "Static wide shot or very slow pan",\n      "focus": "Deep focus on the forest environment, sharpening on the jaguar as he enters the light"\n    },\n    "main_text_prompt": "Wide shot of Ousado, the golden-yellow jaguar with black rosettes, emerging from a light mist in the Pantanal forest. He moves like a silent ghost through the trees. Soft natural morning light filtering through the canopy creates a majestic and contemplative atmosphere. 4k resolution, hyper-realistic textures.",\n    "timeline_breakdown": [\n      {\n        "time_range": "0-3s",\n        "action": "A cinematic wide shot establishes the tranquil Pantanal forest enveloped in a light mist, with soft natural morning light filtering through the dense canopy."\n      },\n      {\n        "time_range": "3-6s",\n        "action": "Ousado, the majestic golden-yellow jaguar, emerges seamlessly from the mist, moving silently like a ghost through the trees."\n      },\n      {\n        "time_range": "6-8s",\n        "action": "The camera captures his hyper-realistic textures as he navigates the serene and contemplative atmosphere before continuing his path into the forest."\n      }\n    ]\n  }\n}',
+    aiDescription: `Vídeo cinematográfico gerado pelo Google Veo 2 via API oficial (sem áudio). Crie prompts em JSON detalhados em inglês para o modelo Veo 2, para vídeos **com duração máxima de 8 segundos**. IMPORTANTE: Para manter consistência visual em múltiplas cenas, você deve repetir **exatamente as mesmas descrições detalhadas** dos personagens e do ambiente em **todos** os prompts, mesmo se a cena for diferente. Isso garante continuidade visual. Descreva o ambiente completo: - Local, horário, iluminação (ex: dia claro, luz natural) - Elementos do cenário, se houver - Descreva a cena — o que os personagens fazem, sua interação. Estilo de filmagem (ex: câmera fixa, câmera na mão, ângulo da câmera). Repita todos os detalhes dos personagens e do ambiente em todas as cenas.
+
+Exemplo da estrutura do JSON:
+{
+  "video_generation_prompt": {
+    "title": "Ousado in the Mist",
+    "technical_specifications": {
+      "frame_rate": "24fps (Cinematic)",
+      "lens_type": "Wide-angle",
+      "resolution": "4K/Hyper-realistic",
+      "aspect_ratio": "16:9"
+    },
+    "artistic_direction": {
+      "style": "Cinematic wildlife documentary",
+      "lighting": "Soft natural morning light filtering through the canopy",
+      "mood": "Majestic, contemplative, ethereal"
+    },
+    "camera_control": {
+      "movement": "Static wide shot or very slow pan",
+      "focus": "Deep focus on the forest environment, sharpening on the jaguar as he enters the light"
+    },
+    "CharacterInTheScene": "[1, 3]",
+    "main_text_prompt": "Wide shot of Ousado, the golden-yellow jaguar with black rosettes, emerging from a light mist in the Pantanal forest. He moves like a silent ghost through the trees. Soft natural morning light filtering through the canopy creates a majestic and contemplative atmosphere. 4k resolution, hyper-realistic textures.",
+    "timeline_breakdown": [
+      {
+        "time_range": "0-3s",
+        "action": "A cinematic wide shot establishes the tranquil Pantanal forest enveloped in a light mist, with soft natural morning light filtering through the dense canopy."
+      },
+      {
+        "time_range": "3-6s",
+        "action": "Ousado, the majestic golden-yellow jaguar, emerges seamlessly from the mist, moving silently like a ghost through the trees."
+      },
+      {
+        "time_range": "6-8s",
+        "action": "The camera captures his hyper-realistic textures as he stops at the edge of the light shaft, holding a powerful and contemplative pause for the final frame."
+      }
+    ]
+  }
+}`,
   },
   video_static: {
     label: 'Vídeo Estático',

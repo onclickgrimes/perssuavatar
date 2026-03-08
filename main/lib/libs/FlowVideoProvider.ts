@@ -1470,32 +1470,98 @@ export class FlowVideoProvider {
 
       console.log(`📝 [Flow] Prompt digitado: "${prompt.substring(0, 80)}..."`);
 
-      // Procurar botão de submit
-      const submitSelectors = [
-        'button[aria-label*="Generate"]',
-        'button[aria-label*="generate"]',
-        'button[aria-label*="Create"]',
-        'button[aria-label*="create"]',
-        'button[aria-label*="Submit"]',
-        'button[aria-label*="submit"]',
-        'button[aria-label*="Send"]',
-        'button[type="submit"]',
-      ];
-
+      // Polling inteligente para o botão de submit (aguardar que seja liberado)
       let submitClicked = false;
-      for (const selector of submitSelectors) {
-        const btn = await this.page.$(selector);
-        if (btn && await this.isVisible(btn)) {
-          await btn.click();
-          submitClicked = true;
-          console.log(`✅ [Flow] Botão de submit clicado: ${selector}`);
-          break;
+      let attempts = 0;
+      const maxAttempts = 60; // 30 segundos no total (500ms por tentativa)
+
+      while (attempts < maxAttempts) {
+        try {
+          const result = await this.page.evaluate(`(function() {
+            var foundBtn = null;
+            
+            // Opção 1: pelo <i> com arrow_forward
+            var icons = document.querySelectorAll('i');
+            for (var i = 0; i < icons.length; i++) {
+              if ((icons[i].textContent || '').trim() === 'arrow_forward') {
+                var btn = icons[i].closest('button');
+                if (btn) {
+                  foundBtn = btn;
+                  break;
+                }
+              }
+            }
+            
+            // Opção 2: procurar por 'span' com texto equivalente
+            if (!foundBtn) {
+              var spans = document.querySelectorAll('span');
+              for (var j = 0; j < spans.length; j++) {
+                var txt = (spans[j].textContent || '').trim().toLowerCase();
+                if (txt === 'criar' || txt === 'create' || txt === 'generate' || txt === 'submit') {
+                  var btnSpan = spans[j].closest('button');
+                  if (btnSpan) {
+                    foundBtn = btnSpan;
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Opção 3: seletores de fallback
+            if (!foundBtn) {
+              var selectors = [
+                'button[aria-label*="Generate"]',
+                'button[aria-label*="generate"]',
+                'button[aria-label*="Create"]',
+                'button[aria-label*="create"]',
+                'button[aria-label*="Submit"]',
+                'button[aria-label*="submit"]',
+                'button[aria-label*="Send"]',
+                'button[type="submit"]'
+              ];
+              for (var k = 0; k < selectors.length; k++) {
+                var btnSel = document.querySelector(selectors[k]);
+                if (btnSel) {
+                  foundBtn = btnSel;
+                  break;
+                }
+              }
+            }
+
+            if (!foundBtn) return { found: false, disabled: true };
+
+            var disabled = foundBtn.hasAttribute('disabled') || 
+                            foundBtn.disabled || 
+                            foundBtn.getAttribute('aria-disabled') === 'true' || 
+                            foundBtn.getAttribute('data-state') === 'closed';
+
+            if (!disabled) {
+              foundBtn.click();
+              return { found: true, disabled: false, clicked: true };
+            }
+
+            return { found: true, disabled: true, clicked: false };
+          })()`) as { found: boolean; disabled: boolean; clicked?: boolean };
+
+          if (result.clicked) {
+            submitClicked = true;
+            console.log(`✅ [Flow] Botão de submit liberado e clicado com sucesso!`);
+            break;
+          } else if (result.found && result.disabled) {
+            console.log(`⏳ [Flow] Botão de submit encontrado, mas bloqueado. Aguardando liberação... (${attempts + 1}/${maxAttempts})`);
+          } else {
+            console.log(`🔎 [Flow] Buscando botão de submit... (${attempts + 1}/${maxAttempts})`);
+          }
+        } catch (e: any) {
+          console.warn(`⚠️ [Flow] Erro temporário ao consultar botão de submit:`, e.message);
         }
+
+        await new Promise(r => setTimeout(r, 500));
+        attempts++;
       }
 
       if (!submitClicked) {
-        console.log(`⚠️ [Flow] Botão de submit não encontrado, tentando Enter...`);
-        await this.page.keyboard.press('Enter');
+        throw new Error('Timeout: Botão de submit não foi encontrado ou não foi liberado em tempo hábil.');
       }
 
       await this.randomDelay(2000, 3000);
@@ -1902,21 +1968,39 @@ export class FlowVideoProvider {
 
       if (absPath.startsWith('http://') || absPath.startsWith('https://')) {
         console.log(`🧪 [Flow] URL detectada, baixando temporariamente para upload...`);
-        const tempFilename = `temp_ingredient_${Date.now()}.jpg`;
+        
+        let baseName = '';
+        try {
+          const urlObj = new URL(absPath);
+          baseName = pathModule.basename(urlObj.pathname);
+        } catch {
+          baseName = pathModule.basename(absPath.split('?')[0]);
+        }
+        
+        if (!baseName || baseName === '/' || baseName.trim() === '') {
+          baseName = `temp_ingredient_${Buffer.from(absPath).toString('base64').substring(0, 10)}.jpg`;
+        }
+        
+        // Garante a mesma constância de nome para reaproveitamento
+        const tempFilename = `flow_temp_${baseName}`;
         const tempPath = pathModule.join(this.outputDir, tempFilename);
 
-        await new Promise<void>((resolve, reject) => {
-          const client = absPath.startsWith('https') ? require('https') : require('http');
-          client.get(absPath, (response: any) => {
-            if (response.statusCode === 200) {
-              const fileStream = fs.createWriteStream(tempPath);
-              response.pipe(fileStream);
-              fileStream.on('finish', () => { fileStream.close(); resolve(); });
-            } else {
-              reject(new Error(`Falha no download do ingrediente: Status ${response.statusCode}`));
-            }
-          }).on('error', (err: any) => reject(err));
-        });
+        if (!fs.existsSync(tempPath)) {
+          await new Promise<void>((resolve, reject) => {
+            const client = absPath.startsWith('https') ? require('https') : require('http');
+            client.get(absPath, (response: any) => {
+              if (response.statusCode === 200) {
+                const fileStream = fs.createWriteStream(tempPath);
+                response.pipe(fileStream);
+                fileStream.on('finish', () => { fileStream.close(); resolve(); });
+              } else {
+                reject(new Error(`Falha no download do ingrediente: Status ${response.statusCode}`));
+              }
+            }).on('error', (err: any) => reject(err));
+          });
+        } else {
+          console.log(`🧪 [Flow] Arquivo local já existe, reutilizando: ${tempFilename}`);
+        }
         absPath = tempPath;
       } else if (absPath.startsWith('file:///')) {
         absPath = absPath.replace('file:///', '');
@@ -1972,7 +2056,44 @@ export class FlowVideoProvider {
         return false;
       }
 
-      await this.randomDelay(500, 800);
+      await this.randomDelay(800, 1200);
+
+      // NOVO: Verificar se a imagem já existe na galeria!
+      const filename = pathModule.basename(absPath);
+      let clickedExisting = false;
+
+      // Executando no contexto do browser para ser mais rápido e tolerante a DOM voador (como no virtuoso-scroller)
+      const filenameEscaped = JSON.stringify(filename);
+      const existingClicked = await this.page.evaluate(`(function() {
+        var filenameStr = ${filenameEscaped}.toLowerCase();
+        var virtuosoItems = document.querySelectorAll('div[data-testid="virtuoso-item-list"] img');
+        for (var i = 0; i < virtuosoItems.length; i++) {
+          var img = virtuosoItems[i];
+          var altText = (img.getAttribute('alt') || '').toLowerCase();
+          var pDiv = img.parentElement ? (img.parentElement.textContent || '') : '';
+          
+          if (altText.indexOf(filenameStr) !== -1 || pDiv.toLowerCase().indexOf(filenameStr) !== -1) {
+            // Clica na div wrapper (jUfWAo, etc) para selecionar
+            var clickableDiv = img.parentElement;
+            if (clickableDiv) {
+              clickableDiv.click();
+              return true;
+            }
+          }
+        }
+        return false;
+      })()`);
+
+      if (existingClicked) {
+        console.log(`✅ [Flow] Imagem existente já selecionada da galeria: ${filename}`);
+        await this.randomDelay(800, 1200);
+        
+        // Clica fora para fechar o popover (pode usar o botão X ou Escape)
+        try { await this.page.keyboard.press('Escape'); } catch (e) { /* ignore */ }
+        return true;
+      }
+
+      console.log(`🔎 [Flow] Imagem não encontrada na galeria. Prosseguindo para upload de arquivo local...`);
 
       // 2. O clique no add_2 abre um dialog/popover. Procurar botão de upload dentro dele.
       // Preparar segundo FileChooser caso o dialog tenha um botão de upload separado
@@ -1994,7 +2115,7 @@ export class FlowVideoProvider {
             break;
           }
         }
-        if (hasUploadIcon || text.includes('upload') || text.includes('fa\u00e7a upload')) {
+        if (hasUploadIcon || text.includes('upload') || text.includes('fa\u00e7a upload') || text.includes('from your device')) {
           await btn.click();
           clickedUpload = true;
           console.log(`✅ [Flow] Botão de upload clicado no dialog`);
@@ -2028,13 +2149,59 @@ export class FlowVideoProvider {
         console.log(`✅ [Flow] FileChooser interceptado! Injetando ${absPath}`);
         await fileChooser.accept([absPath]);
 
-        // Aguardar processamento (até 15s)
-        await this.randomDelay(2000, 3000);
-        console.log(`✅ [Flow] Ingrediente enviado com sucesso!`);
+        console.log(`⏳ [Flow] Aguardando processamento da imagem do ingrediente...`);
+        const maxWaitMs = 60000; // Máximo de 60 segundos
+        const startWait = Date.now();
+        let isImageReady = false;
+
+        while (Date.now() - startWait < maxWaitMs) {
+          isImageReady = (await this.page.evaluate(`(function() {
+             var imgs = document.querySelectorAll('img');
+             var uploadingFound = false;
+             var uploadedFound = false;
+             
+             for (var i = 0; i < imgs.length; i++) {
+                var img = imgs[i];
+                var src = img.getAttribute('src') || '';
+                
+                if (src.indexOf('/fx/api/trpc/media') !== -1 || src.indexOf('blob:') === 0) {
+                   var style = window.getComputedStyle(img);
+                   var pNode = img.parentNode;
+                   var pOpacity = pNode ? window.getComputedStyle(pNode).opacity : '1';
+                   
+                   if (style.opacity === '0' || pOpacity === '0') {
+                      uploadingFound = true;
+                   } else {
+                      uploadedFound = true;
+                   }
+                }
+             }
+             
+             // Se detectou qualquer imagem no DOM que ainda está com opacidade 0 (carregando), recusa
+             if (uploadingFound) return false;
+             // Se tem imagens totalmente sólidas (opacidade normal) e nenhuma em andamento, aceita
+             if (uploadedFound) return true;
+             
+             return false;
+          })()`)) as boolean;
+
+          if (isImageReady) {
+            break;
+          }
+          await new Promise(r => setTimeout(r, 1000));
+        }
+
+        if (isImageReady) {
+           console.log(`✅ [Flow] Ingrediente processado e estabilizado! (${Math.round((Date.now() - startWait) / 1000)}s)`);
+        } else {
+           console.warn(`⚠️ [Flow] Timeout ao aguardar processamento total da nova imagem. Apenas seguindo em frente...`);
+        }
+
+        // Fechar qualquer dialog aberto (fallback de segurança caso o modal de upload não feche sozinho)
+        try { await this.page.keyboard.press('Escape'); } catch (e) { /* ignore */ }
         return true;
       } else {
         console.warn(`⚠️ [Flow] FileChooser não foi detectado após todas as tentativas.`);
-        // Fechar qualquer dialog aberto
         try { await this.page.keyboard.press('Escape'); } catch (e) { /* ignore */ }
         return false;
       }
@@ -2565,9 +2732,11 @@ export class FlowVideoProvider {
     count: number = 1,
     onProgress?: FlowProgressCallback,
     model: string = '🍌 Nano Banana Pro',
-    aspectRatio?: string
+    aspectRatio?: string,
+    ingredientImagePaths?: string[]
   ): Promise<FlowImageResult> {
     const startTime = Date.now();
+    const hasIngredients = ingredientImagePaths && ingredientImagePaths.length > 0;
 
     const emit = (stage: any, message: string, percent?: number) => {
       console.log(`🖼️ [Flow/Img] ${message}`);
@@ -2631,6 +2800,31 @@ export class FlowVideoProvider {
         count,
       });
       await this.randomDelay(400, 600);
+
+      // 3c. Remover imagens de referência anteriores
+      if (hasIngredients) {
+        await this.clearExistingReferenceImages();
+      }
+
+      // 4. Enviar imagens de ingredientes (referências para a geração de imagem)
+      if (hasIngredients && ingredientImagePaths) {
+        emit('submitting', `Enviando ${ingredientImagePaths.length} imagem(ns) de referência...`, 6);
+        let uploadedIngredients = 0;
+        for (const imgPath of ingredientImagePaths) {
+          if (!imgPath) continue;
+          const success = await this.uploadIngredientImage(imgPath);
+          if (success) {
+            uploadedIngredients++;
+            emit('submitting', `${uploadedIngredients}/${ingredientImagePaths.length} referências enviadas`, 7 + uploadedIngredients);
+            await this.randomDelay(800, 1500);
+          } else {
+            console.warn(`⚠️ [Flow/Img] Falha ao enviar referência: ${imgPath}`);
+          }
+        }
+        if (uploadedIngredients < ingredientImagePaths.length) {
+           console.warn(`⚠️ [Flow/Img] Apenas ${uploadedIngredients} de ${ingredientImagePaths.length} referências foram enviadas.`);
+        }
+      }
 
       // 5. Guardar o prompt e as tiles velhas para fazer match de mídias novas
       const knownTileIds = (await this.page!.evaluate(`(function() {

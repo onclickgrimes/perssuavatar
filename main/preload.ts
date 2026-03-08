@@ -475,6 +475,7 @@ const handler = {
       aspectRatio?: string;
       geminiProviderId?: string;
       headless?: boolean;
+      ingredientImagePaths?: string[];
     }) => ipcRenderer.invoke('video-project:generate-flow-image', options),
 
     // Listener para progresso da geração de imagem via Flow
