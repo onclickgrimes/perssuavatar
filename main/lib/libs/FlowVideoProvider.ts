@@ -1656,21 +1656,39 @@ export class FlowVideoProvider {
 
       if (absPath.startsWith('http://') || absPath.startsWith('https://')) {
         console.log(`🖼️ [Flow] URL detectada, baixando temporariamente para upload...`);
-        const tempFilename = `temp_ref_${targetFrame}_${Date.now()}.jpg`;
+        
+        let baseName = '';
+        try {
+          const urlObj = new URL(absPath);
+          baseName = pathModule.basename(urlObj.pathname);
+        } catch {
+          baseName = pathModule.basename(absPath.split('?')[0]);
+        }
+        
+        if (!baseName || baseName === '/' || baseName.trim() === '') {
+          baseName = `temp_ref_${targetFrame}_${Buffer.from(absPath).toString('base64').substring(0, 10)}.jpg`;
+        }
+        
+        // Mantém constância do hash/nome da imagem (ex para cruzar dados locais com online)
+        const tempFilename = `flow_temp_${baseName}`;
         const tempPath = pathModule.join(this.outputDir, tempFilename);
 
-        await new Promise((resolve, reject) => {
-          const client = absPath.startsWith('https') ? require('https') : require('http');
-          const request = client.get(absPath, (response: any) => {
-            if (response.statusCode === 200) {
-              const fileStream = fs.createWriteStream(tempPath);
-              response.pipe(fileStream);
-              fileStream.on('finish', () => { fileStream.close(); resolve(true); });
-            } else {
-              reject(new Error(`Falha no download da referência: Status ${response.statusCode}`));
-            }
-          }).on('error', (err: any) => reject(err));
-        });
+        if (!fs.existsSync(tempPath)) {
+          await new Promise((resolve, reject) => {
+            const client = absPath.startsWith('https') ? require('https') : require('http');
+            const request = client.get(absPath, (response: any) => {
+              if (response.statusCode === 200) {
+                const fileStream = fs.createWriteStream(tempPath);
+                response.pipe(fileStream);
+                fileStream.on('finish', () => { fileStream.close(); resolve(true); });
+              } else {
+                reject(new Error(`Falha no download da referência: Status ${response.statusCode}`));
+              }
+            }).on('error', (err: any) => reject(err));
+          });
+        } else {
+          console.log(`🖼️ [Flow] Arquivo base local já existe, reutilizando: ${tempFilename}`);
+        }
         absPath = tempPath;
       } else if (absPath.startsWith('file:///')) {
         absPath = absPath.replace('file:///', '');
@@ -1735,53 +1753,93 @@ export class FlowVideoProvider {
           console.log(`✅ [Flow] Modal de mídia do quadro ${targetFrame} aberto. Aguardando renderizar...`);
           await this.randomDelay(800, 1200);
 
-          const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
-
-          // 2. Procura globalmente o botão de "upload" dentro da recém-aberta janela Modal
-          let clickedUploadBtn = (await this.page.evaluate(`(function() {
-              var uploadBtns = document.querySelectorAll('button');
-              // Como estamos iterando em todos, vamos processar de forma invertida para pegar portas modais renderizadas no final do body
-              for (var i = uploadBtns.length - 1; i >= 0; i--) {
-                 var btn = uploadBtns[i];
-                 
-                 // Impede clicar em botões escondidos (display: none ou opacidade 0 massiva)
-                 var rect = btn.getBoundingClientRect();
-                 if (rect.width === 0 || rect.height === 0) continue;
-
-                 var spans = btn.querySelectorAll('span');
-                 var hasUploadText = false;
-                 for (var j = 0; j < spans.length; j++) {
-                    var spanText = (spans[j].textContent || '').toLowerCase().trim();
-                    if (spanText === 'faça upload de uma imagem' || spanText.indexOf('upload') !== -1) {
-                       hasUploadText = true;
-                       break;
-                    }
-                 }
-                 var isIcon = btn.querySelector('i');
-                 var hasUploadIcon = isIcon && isIcon.textContent.trim() === 'upload';
-                 
-                 if (hasUploadText || hasUploadIcon) {
-                    btn.click();
-                    return true;
-                 }
+          // NOVO: Verificar se a imagem já existe na galeria!
+          const filenameOrig = pathModule.basename(absPath);
+          const filenameEscaped = JSON.stringify(filenameOrig);
+          // Tentativa de extrair hash de 36 caracteres
+          let hashMatchText = filenameOrig.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+          const hashStrValue = hashMatchText ? hashMatchText[1] : '';
+          const hashEscaped = JSON.stringify(hashStrValue);
+          
+          let clickedExistingInGallery = await this.page.evaluate(`(function() {
+            var filenameStr = ${filenameEscaped}.toLowerCase();
+            var hashStr = ${hashEscaped}.toLowerCase();
+            var modalImgs = document.querySelectorAll('div[data-testid="virtuoso-item-list"] div[data-known-size="56"] img');
+            for (var i = 0; i < modalImgs.length; i++) {
+              var img = modalImgs[i];
+              var altText = (img.getAttribute('alt') || '').toLowerCase();
+              var pDiv = img.parentElement ? (img.parentElement.textContent || '') : '';
+              var srcUrl = (img.getAttribute('src') || '').toLowerCase();
+              
+              if (
+                altText.indexOf(filenameStr) !== -1 || 
+                pDiv.toLowerCase().indexOf(filenameStr) !== -1 ||
+                (hashStr !== "" && srcUrl.indexOf(hashStr) !== -1)
+              ) {
+                var clickableDiv = img.parentElement;
+                if (clickableDiv) {
+                  clickableDiv.click();
+                  return true;
+                }
               }
-              return false;
-           })()`)) as boolean;
-
-          if (clickedUploadBtn) {
-            console.log(`✅ [Flow] Botão genérico de upload acionado. Interceptando File Chooser...`);
-            const fileChooser = await futureFileChooser;
-            if (fileChooser) {
-              console.log(`✅ [Flow] File Chooser interceptado com sucesso! Injetando ${absPath}`);
-              await fileChooser.accept([absPath]);
-              uploadSuccess = true;
-              await this.randomDelay(500, 1000); // dá um tempinho extra para fechar o modal solo
-            } else {
-              console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
             }
+            return false;
+          })()`) as boolean;
+
+          if (clickedExistingInGallery) {
+            console.log(`✅ [Flow] Imagem de referência já existente clicada na galeria: ${filenameOrig}`);
+            uploadSuccess = true;
+            await this.randomDelay(800, 1200);
           } else {
-            console.warn(`⚠️ [Flow] Falha ao encontrar o Action Button de upload dentro do modal aberto.`);
-            try { await this.page.keyboard.press('Escape'); } catch { } // Força escape para destravar a tela
+            console.log(`🔎 [Flow] Imagem não encontrada na galeria. Prosseguindo genérico upload...`);
+            const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
+
+            // 2. Procura globalmente o botão de "upload" dentro da recém-aberta janela Modal
+            let clickedUploadBtn = (await this.page.evaluate(`(function() {
+                var uploadBtns = document.querySelectorAll('button');
+                // Como estamos iterando em todos, vamos processar de forma invertida para pegar portas modais renderizadas no final do body
+                for (var i = uploadBtns.length - 1; i >= 0; i--) {
+                   var btn = uploadBtns[i];
+                   
+                   // Impede clicar em botões escondidos (display: none ou opacidade 0 massiva)
+                   var rect = btn.getBoundingClientRect();
+                   if (rect.width === 0 || rect.height === 0) continue;
+
+                   var spans = btn.querySelectorAll('span');
+                   var hasUploadText = false;
+                   for (var j = 0; j < spans.length; j++) {
+                      var spanText = (spans[j].textContent || '').toLowerCase().trim();
+                      if (spanText === 'faça upload de uma imagem' || spanText.indexOf('upload') !== -1) {
+                         hasUploadText = true;
+                         break;
+                      }
+                   }
+                   var isIcon = btn.querySelector('i');
+                   var hasUploadIcon = isIcon && isIcon.textContent.trim() === 'upload';
+                   
+                   if (hasUploadText || hasUploadIcon) {
+                      btn.click();
+                      return true;
+                   }
+                }
+                return false;
+             })()`)) as boolean;
+
+            if (clickedUploadBtn) {
+              console.log(`✅ [Flow] Botão genérico de upload acionado. Interceptando File Chooser...`);
+              const fileChooser = await futureFileChooser;
+              if (fileChooser) {
+                console.log(`✅ [Flow] File Chooser interceptado com sucesso! Injetando ${absPath}`);
+                await fileChooser.accept([absPath]);
+                uploadSuccess = true;
+                await this.randomDelay(500, 1000); // dá um tempinho extra para fechar o modal solo
+              } else {
+                console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
+              }
+            } else {
+              console.warn(`⚠️ [Flow] Falha ao encontrar o Action Button de upload dentro do modal aberto.`);
+              try { await this.page.keyboard.press('Escape'); } catch { } // Força escape para destravar a tela
+            }
           }
         } else {
           console.log(`⚠️ [Flow] Falha ao clicar no slot "${targetFrame}" inicial. A UI pode não comportar 2 quadros no momento ou estrutura mudou.`);
@@ -2064,15 +2122,26 @@ export class FlowVideoProvider {
 
       // Executando no contexto do browser para ser mais rápido e tolerante a DOM voador (como no virtuoso-scroller)
       const filenameEscaped = JSON.stringify(filename);
+      // Tentativa de extrair hash de 36 caracteres do nome do arquivo (ex: para reaproveitar imagens geradas pelo Flow)
+      let hashMatchText = filename.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+      const hashStrValue = hashMatchText ? hashMatchText[1] : '';
+      const hashEscaped = JSON.stringify(hashStrValue);
+      
       const existingClicked = await this.page.evaluate(`(function() {
         var filenameStr = ${filenameEscaped}.toLowerCase();
-        var virtuosoItems = document.querySelectorAll('div[data-testid="virtuoso-item-list"] img');
+        var hashStr = ${hashEscaped}.toLowerCase();
+        var virtuosoItems = document.querySelectorAll('div[data-testid="virtuoso-item-list"] div[data-known-size="56"] img');
         for (var i = 0; i < virtuosoItems.length; i++) {
           var img = virtuosoItems[i];
           var altText = (img.getAttribute('alt') || '').toLowerCase();
           var pDiv = img.parentElement ? (img.parentElement.textContent || '') : '';
+          var srcUrl = (img.getAttribute('src') || '').toLowerCase();
           
-          if (altText.indexOf(filenameStr) !== -1 || pDiv.toLowerCase().indexOf(filenameStr) !== -1) {
+          if (
+            altText.indexOf(filenameStr) !== -1 || 
+            pDiv.toLowerCase().indexOf(filenameStr) !== -1 ||
+            (hashStr !== "" && srcUrl.indexOf(hashStr) !== -1)
+          ) {
             // Clica na div wrapper (jUfWAo, etc) para selecionar
             var clickableDiv = img.parentElement;
             if (clickableDiv) {
@@ -3150,7 +3219,9 @@ export class FlowVideoProvider {
             console.log(`✅ [Flow/Img] URL resolvida: ${signedUrl.substring(0, 100)}...`);
 
             // 8c. Download da imagem (signed URL do GCS ou URL direta)
-            const filename = `flow-image-${Date.now()}-${i + 1}.jpg`;
+            const nameMatch = redirectUrl.match(/[?&]name=([^&]+)/i);
+            const imageHash = nameMatch ? nameMatch[1] : `fallback-${Date.now()}-${i + 1}`;
+            const filename = `flow-image-${imageHash}.jpg`;
             const outputPath = path.join(imgOutputDir, filename);
 
             // Decidir se precisa de cookies (mesma origem) ou não (GCS cross-origin)
