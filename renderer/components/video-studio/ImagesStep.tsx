@@ -724,11 +724,6 @@ export function ImagesStep({
             {segmentsWithMedia.length} de {segments.length} prontas
           </span>
         </div>
-        {segmentsWithMedia.length === 0 && (
-          <span className="text-blue-400 text-sm">
-            ℹ️ Você pode renderizar sem mídias (apenas texto/legendas)
-          </span>
-        )}
 
         {/* Aspect Ratio Selector */}
         {onAspectRatioChange && (
