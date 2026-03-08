@@ -478,6 +478,12 @@ const handler = {
       ingredientImagePaths?: string[];
     }) => ipcRenderer.invoke('video-project:generate-flow-image', options),
 
+    // Gerar Vídeo via Grok.com
+    generateGrokVideo: (options: {
+      prompt: string;
+      referenceImagePaths?: string[];
+    }) => ipcRenderer.invoke('video-project:generate-grok-video', options),
+
     // Listener para progresso da geração de imagem via Flow
     onFlowImageProgress: (callback: (data: { stage: string; message: string; percent?: number }) => void) => {
       const subscription = (_: any, data: { stage: string; message: string; percent?: number }) => callback(data);

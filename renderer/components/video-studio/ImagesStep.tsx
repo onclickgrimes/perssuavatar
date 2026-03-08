@@ -353,6 +353,7 @@ export function ImagesStep({
   // Serviços disponíveis para geração
   const GENERATION_SERVICES = [
     { id: 'veo3',       label: 'Veo 3 (Flow)',     icon: '🌊', description: 'Google Veo 3.1 via Google Flow' },
+    { id: 'grok',       label: 'Grok',             icon: '✖️', description: 'Geração de vídeo com Grok' },
     { id: 'veo2-flow',  label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Google Veo 2 Fast via Google Flow' },
     { id: 'flow-image', label: 'Imagem (Flow)',    icon: '🖼️', description: 'Gerar imagem com Google Flow' },
     { id: 'veo2',       label: 'Veo 2 (API)',      icon: '🌊', description: 'Google Veo 2 via API oficial' },
@@ -477,6 +478,47 @@ export function ImagesStep({
         } else {
           console.error(`❌ [Veo3] Falha:`, result?.error);
           if (!silent) alert(`Falha na geração Veo 3: ${result?.error}`);
+        }
+
+      // ── GROK (Vídeo via Grok) ──
+      } else if (service === 'grok') {
+        console.log(`✖️ [Grok] Gerando vídeo para segmento ${segmentId}...`);
+        
+        // Coleta possíveis inputs de imagem permitidos pelo provedor Grok (que aceita arrays de imagens)
+        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
+        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
+        
+        const baseIngredientPaths = ingredientImages[segmentId] || [];
+        const grokImagePaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths]));
+
+        if (referenceImagePath && !grokImagePaths.includes(referenceImagePath)) {
+          grokImagePaths.push(referenceImagePath);
+        }
+
+        if (grokImagePaths.length > 0) {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com Grok (${grokImagePaths.length} ref(s))...` }));
+        } else {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Grok...' }));
+        }
+
+        const grokTimeoutMs = 12 * 60 * 1000;
+        const grokPromise = window.electron?.videoProject?.generateGrokVideo?.({
+          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
+          referenceImagePaths: grokImagePaths.length > 0 ? grokImagePaths : undefined,
+        });
+
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Timeout: geração Grok excedeu 12 minutos.')), grokTimeoutMs)
+        );
+        const result = await Promise.race([grokPromise, timeoutPromise]) as any;
+
+        if (result?.success && (result.httpUrl || result.videoPath)) {
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath);
+          success = true;
+        } else {
+          console.error(`❌ [Grok] Falha:`, result?.error);
+          if (!silent) alert(`Falha na geração Grok: ${result?.error}`);
         }
 
       // ── FLOW IMAGE (Google Flow modo "Criar imagens") ──
@@ -680,6 +722,7 @@ export function ImagesStep({
       return '🖼️ Animar Imagem';
     }
     // Sem mídia → label baseado no serviço
+    if (svc === 'grok') return '✖️ Gerar com Grok';
     if (svc === 'veo3') return '🌊 Gerar com Veo 3';
     if (svc === 'veo2-flow') return '🌊 Gerar com Veo 2 Flow';
     if (svc === 'flow-image') return '🖼️ Imagem com Flow';
@@ -1026,7 +1069,7 @@ export function ImagesStep({
                   }
 
                   const svc = getEffectiveService(segment);
-                  const isVideoService = svc === 'veo3' || svc === 'veo2-flow' || svc === 'veo2';
+                  const isVideoService = svc === 'veo3' || svc === 'veo2-flow' || svc === 'veo2' || svc === 'grok';
                   const showCarousel = isVideoService && hasImage && !isVideo(segment.imageUrl) && ingredientMode[segment.id] !== 'ingredients';
                   const currentIndex = carouselIndices[segment.id] || 0;
                   const isIngredientsMode = ingredientMode[segment.id] === 'ingredients';
@@ -1275,7 +1318,9 @@ export function ImagesStep({
                         ? 'bg-white/5 text-white/30 cursor-not-allowed'
                         : getEffectiveService(segment) === 'veo3'
                           ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300'
-                          : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
+                          : getEffectiveService(segment) === 'grok'
+                            ? 'bg-zinc-500/20 hover:bg-zinc-500/30 text-zinc-300'
+                            : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
                     }`}
                   >
                     {getGenerateLabel(segment, isGenerating)}
@@ -1284,7 +1329,8 @@ export function ImagesStep({
                   {/* Separador | */}
                   <div className={`self-stretch w-px opacity-40 ${
                     isGenerating ? 'bg-white/20' :
-                    getEffectiveService(segment) === 'veo3' ? 'bg-cyan-400' : 'bg-orange-400'
+                    getEffectiveService(segment) === 'veo3' ? 'bg-cyan-400' : 
+                    getEffectiveService(segment) === 'grok' ? 'bg-zinc-400' : 'bg-orange-400'
                   }`} />
 
                   {/* Botão: ✕ para cancelar se travado, ▼ para dropdown quando ocioso */}
@@ -1306,7 +1352,9 @@ export function ImagesStep({
                         className={`px-2 py-2 rounded-r-lg text-sm transition-all ${
                           getEffectiveService(segment) === 'veo3'
                             ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300'
-                            : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
+                            : getEffectiveService(segment) === 'grok'
+                              ? 'bg-zinc-500/20 hover:bg-zinc-500/30 text-zinc-300'
+                              : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
                         }`}
                       >
                         <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
@@ -1331,7 +1379,7 @@ export function ImagesStep({
                                 onClick={() => {
                                   setSelectedService(prev => ({ ...prev, [segment.id]: svc.id }));
                                   // Resetar count para 1 ao trocar para serviço de vídeo
-                                  if (svc.id === 'veo3' || svc.id === 'veo2-flow') {
+                                  if (svc.id === 'veo3' || svc.id === 'veo2-flow' || svc.id === 'grok') {
                                     setImageCount(prev => ({ ...prev, [segment.id]: 1 }));
                                   }
                                   // Resetar modo ingredients se saiu de veo3 ou flow-image

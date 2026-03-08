@@ -1400,6 +1400,56 @@ Lembre-se:
     }
   });
 
+  // Handler para gerar VÍDEO via Grok.com
+  ipcMain.handle('video-project:generate-grok-video', async (event, options: {
+    prompt: string;
+    referenceImagePaths?: string[];
+  }) => {
+    try {
+      console.log(`✖️ [Grok] Generating video with prompt: "${options.prompt.substring(0, 80)}..."`);
+
+      const { getGrokVideoProvider } = require('../libs/GrokVideoProvider');
+      const grokProvider = getGrokVideoProvider({
+        headless: false,
+      });
+
+      const window = getWindowFn?.();
+
+      const result = await grokProvider.generateVideo(
+        options.prompt,
+        (progress: any) => {
+          if (window && !window.isDestroyed()) {
+            window.webContents.send('video-project:vo3-progress', progress);
+          }
+        },
+        options.referenceImagePaths
+      );
+
+      if (!result.success) {
+        throw new Error(result.error || 'Erro desconhecido na geração do vídeo Grok');
+      }
+
+      let httpUrl = result.videoPath;
+      if (videoProjectService && result.videoPath && !result.videoPath.startsWith('http')) {
+        httpUrl = videoProjectService.convertToHttpUrl(result.videoPath);
+      } else if (result.videoPath?.startsWith('http')) {
+        httpUrl = result.videoPath;
+      }
+
+      console.log(`✅ [Grok] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
+      return {
+        success: true,
+        videoPath: result.videoPath,
+        httpUrl,
+        durationMs: result.durationMs,
+      };
+
+    } catch (error: any) {
+      console.error('❌ [Grok] Generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Handler para cancelar a fila de geração do Flow (esvazia mutex e slots)
   ipcMain.handle('video-project:cancel-flow-queue', async () => {
     try {
