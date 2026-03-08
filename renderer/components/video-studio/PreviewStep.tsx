@@ -10,8 +10,8 @@ import {
 
 interface PreviewStepProps {
   project: ProjectState;
-  subtitleMode: 'paragraph' | 'word-by-word';
-  setSubtitleMode: (mode: 'paragraph' | 'word-by-word') => void;
+  subtitleMode: 'paragraph' | 'word-by-word' | 'none';
+  setSubtitleMode: (mode: 'paragraph' | 'word-by-word' | 'none') => void;
   onContinue: () => void;
   onBack: () => void;
   onAspectRatiosChange: (ratios: string[]) => void;
@@ -136,6 +136,16 @@ export function PreviewStep({
                 }`}
               >
                 Palavra por Palavra
+              </button>
+              <button
+                onClick={() => setSubtitleMode('none')}
+                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                  subtitleMode === 'none'
+                    ? 'bg-purple-500 text-white shadow-lg'
+                    : 'text-white/60 hover:text-white hover:bg-white/10'
+                }`}
+              >
+                Sem Legenda
               </button>
             </div>
           </div>

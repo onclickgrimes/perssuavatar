@@ -416,7 +416,7 @@ export const ProjectConfigSchema = z.object({
   backgroundColor: z.string().default('#000000'),
   
   /** Modo de exibição das legendas */
-  subtitleMode: z.enum(['paragraph', 'word-by-word']).optional(),
+  subtitleMode: z.enum(['paragraph', 'word-by-word', 'none']).optional(),
   
   /** Áudio de fundo (música) */
   backgroundMusic: z.object({

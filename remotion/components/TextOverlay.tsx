@@ -37,6 +37,11 @@ export const TextOverlayComponent: React.FC<TextOverlayProps> = ({
   const hasWords = config.words && config.words.length > 0;
   const subtitleMode = projectConfig.subtitleMode || 'paragraph';
 
+  // Se o modo for 'none', não renderiza a legenda
+  if (subtitleMode === 'none') {
+    return null;
+  }
+
   // Se estiver em modo word-by-word E tiver words, renderizar palavra por palavra
   if (subtitleMode === 'word-by-word' && hasWords) {
     

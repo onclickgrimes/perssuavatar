@@ -104,7 +104,7 @@ export interface VideoProject {
   audioPath?: string;
   segments: VideoSegment[];
   selectedAspectRatios?: string[];
-  subtitleMode?: 'paragraph' | 'word-by-word';
+  subtitleMode?: 'paragraph' | 'word-by-word' | 'none';
   componentsAllowed?: string[];
   config?: {
     width?: number;
@@ -212,7 +212,7 @@ export function segmentToRemotionScene(seg: VideoSegment): any {
 export function toRemotionFormat(
   project: VideoProject,
   options: {
-    subtitleMode: 'paragraph' | 'word-by-word';
+    subtitleMode: 'paragraph' | 'word-by-word' | 'none';
     width: number;
     height: number;
     fps?: number;

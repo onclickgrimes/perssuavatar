@@ -28,7 +28,7 @@ interface AudioToVideoToolProps {
 export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
   // Estado do modo de legenda
-  const [subtitleMode, setSubtitleMode] = useState<'paragraph' | 'word-by-word'>('paragraph');
+  const [subtitleMode, setSubtitleMode] = useState<'paragraph' | 'word-by-word' | 'none'>('paragraph');
   const [project, setProject] = useState<ProjectState>({
     title: '',
     duration: 0,

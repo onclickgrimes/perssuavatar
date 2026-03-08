@@ -99,7 +99,7 @@ export interface VideoProjectData {
     duration: number;
     audioPath?: string;
     segments: VideoProjectSegment[];
-    subtitleMode?: 'paragraph' | 'word-by-word';
+    subtitleMode?: 'paragraph' | 'word-by-word' | 'none';
     selectedAspectRatios?: string[];
     componentsAllowed?: string[]; // Componentes Remotion permitidos (ex: ['HighlightWord', 'AnimatedSvgOverlay'])
     defaultFont?: string; // Fonte padrão do nicho (Google Fonts)
@@ -125,7 +125,7 @@ export interface RemotionProject {
         height: number;
         fps: number;
         backgroundColor: string;
-        subtitleMode?: 'paragraph' | 'word-by-word';
+        subtitleMode?: 'paragraph' | 'word-by-word' | 'none';
         componentsAllowed?: string[]; // Componentes Remotion permitidos
         defaultFont?: string; // Fonte padrão do nicho (Google Fonts)
         backgroundMusic?: {
