@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { NicheModal, ChannelNiche } from './NicheModal';
 
 interface UploadStepProps {
-  onUpload: (file: File) => void;
+  onUpload: (file: File, originalFile?: File) => void;
   selectedAspectRatios: string[];
   onAspectRatiosChange: (value: string[]) => void;
   selectedNiche: ChannelNiche | null;
@@ -540,33 +540,52 @@ export function UploadStep({
     
     setIsMerging(true);
     try {
-      // Usar uma taxa de amostragem baixa e em MONO para reduzir brutalmente o tamanho do WAV para transcrição!
-      const targetSampleRate = 16000;
-      const targetChannels = 1;
-
       let offsetTime = 0;
       for (const item of items) {
         if (item.buffer) offsetTime += item.buffer.duration;
       }
       
-      const totalLength = Math.ceil(offsetTime * targetSampleRate);
-      const offlineCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(targetChannels, totalLength, targetSampleRate);
+      // 1. Renderizar áudio de BAIXA qualidade para transcrição (Mono, 16000Hz)
+      const transSampleRate = 16000;
+      const transChannels = 1;
+      const transTotalLength = Math.ceil(offsetTime * transSampleRate);
+      const transOfflineCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(transChannels, transTotalLength, transSampleRate);
 
       let currentOffset = 0;
       for (const item of items) {
         if (!item.buffer) continue;
-        const source = offlineCtx.createBufferSource();
+        const source = transOfflineCtx.createBufferSource();
         source.buffer = item.buffer;
-        source.connect(offlineCtx.destination);
+        source.connect(transOfflineCtx.destination);
         source.start(currentOffset);
         currentOffset += item.buffer.duration;
       }
 
-      const renderedBuffer = await offlineCtx.startRendering();
-      const wavBlob = audioBufferToWav(renderedBuffer);
+      const transRenderedBuffer = await transOfflineCtx.startRendering();
+      const transWavBlob = audioBufferToWav(transRenderedBuffer);
+      const transcriptionFile = new File([transWavBlob], 'audio_transcricao.wav', { type: 'audio/wav' });
+
+      // 2. Renderizar áudio em ALTA qualidade original para o vídeo (Stereo, 44100Hz)
+      const origSampleRate = 44100;
+      const origChannels = 2; // Stereo
+      const origTotalLength = Math.ceil(offsetTime * origSampleRate);
+      const origOfflineCtx = new (window.OfflineAudioContext || (window as any).webkitOfflineAudioContext)(origChannels, origTotalLength, origSampleRate);
+
+      currentOffset = 0;
+      for (const item of items) {
+        if (!item.buffer) continue;
+        const source = origOfflineCtx.createBufferSource();
+        source.buffer = item.buffer;
+        source.connect(origOfflineCtx.destination);
+        source.start(currentOffset);
+        currentOffset += item.buffer.duration;
+      }
+
+      const origRenderedBuffer = await origOfflineCtx.startRendering();
+      const origWavBlob = audioBufferToWav(origRenderedBuffer);
+      const originalFile = new File([origWavBlob], 'audio_processado.wav', { type: 'audio/wav' });
       
-      const mergedFile = new File([wavBlob], 'audio_processado.wav', { type: 'audio/wav' });
-      onUpload(mergedFile);
+      onUpload(transcriptionFile, originalFile);
     } catch (error) {
       console.error('Erro ao juntar áudios:', error);
       alert('Ocorreu um erro ao juntar os áudios.');

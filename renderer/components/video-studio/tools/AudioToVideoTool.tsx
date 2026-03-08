@@ -131,11 +131,12 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   }, []);
 
   // Handler para upload de áudio
-  const handleAudioUpload = useCallback(async (file: File) => {
+  const handleAudioUpload = useCallback(async (file: File, originalFile?: File) => {
+    const fileToSet = originalFile || file;
     setProject(prev => ({
       ...prev,
-      audioFile: file,
-      title: file.name.replace(/\.[^/.]+$/, ''),
+      audioFile: fileToSet,
+      title: fileToSet.name.replace(/\.[^/.]+$/, ''),
     }));
     // Não mudar o step para 'transcribing' para evitar unmount do UploadStep (e resetar a timeline de áudios)
     setIsProcessing(true);
@@ -162,13 +163,26 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           throw new Error('Video Project API not available');
         }
 
-        // Converter File para ArrayBuffer
+        // Converter File para ArrayBuffer (arquivo para transcrição em baixa qualidade)
         const arrayBuffer = await file.arrayBuffer();
         
-        // Salvar arquivo no backend
+        // Salvar arquivo de transcrição no backend
         const saveResult = await window.electron.videoProject.saveAudio(arrayBuffer, file.name);
         if (!saveResult.success) {
           throw new Error(saveResult.error || 'Failed to save audio file');
+        }
+
+        let originalAudioPath = saveResult.path;
+
+        // Salvar o arquivo original (alta qualidade) se existir, usado pro vídeo
+        if (originalFile) {
+          const originalBuffer = await originalFile.arrayBuffer();
+          const origSaveResult = await window.electron.videoProject.saveAudio(originalBuffer, originalFile.name);
+          if (origSaveResult.success) {
+            originalAudioPath = origSaveResult.path;
+          } else {
+            console.warn('Failed to save original audio, using transcription audio as fallback:', origSaveResult.error);
+          }
         }
         
         // Transcrever áudio
@@ -180,7 +194,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         }
 
         success = true; // saiu do erro
-        tempAudioPath = saveResult.path;
+        tempAudioPath = originalAudioPath;
         tempDuration = transcriptionResult.duration;
         tempSegments = transcriptionResult.segments;
 
