@@ -37,7 +37,7 @@ export class GrokVideoProvider {
   private usingSharedBrowser: boolean = false;
 
   private static readonly GROK_URL = 'https://grok.com/imagine';
-  private static readonly MAX_CONCURRENT = 4;
+  private static readonly MAX_CONCURRENT = 1;
 
   private static activeCount = 0;
   private static activeQueue: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
@@ -258,6 +258,9 @@ export class GrokVideoProvider {
         '--disable-accelerated-2d-canvas',
         '--lang=en-US',
         '--disable-blink-features=AutomationControlled',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding'
       ],
       ignoreDefaultArgs: ['--enable-automation'],
       defaultViewport: null,
@@ -318,6 +321,8 @@ export class GrokVideoProvider {
       }
 
       emitProgress('submitting', 'Configurando geração de vídeo...');
+
+      try { await page.bringToFront(); } catch(e){}
 
       // Setup Video Mode
       await page.evaluate(`(function() {

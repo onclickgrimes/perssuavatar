@@ -506,6 +506,9 @@ export class FlowVideoProvider {
           '--disable-features=IsolateOrigins,site-per-process',
           '--disable-site-isolation-trials',
           '--disable-infobars',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding'
         ],
         ignoreDefaultArgs: ['--enable-automation'],
         defaultViewport: null, // deixar o window-size controlar
@@ -671,6 +674,9 @@ export class FlowVideoProvider {
       if (!this.page) {
         throw new Error('Página não disponível');
       }
+
+      // Trazer a aba para o foreground para evitar que Chrome congele o Execution Context
+      try { await this.page.bringToFront(); } catch (e) {}
 
       // 1b. Verificar créditos antes de iniciar
       emitProgress('navigating', 'Verificando créditos...');
@@ -2837,6 +2843,9 @@ export class FlowVideoProvider {
         await this.init();
       }
       if (!this.page) throw new Error('Página não disponível');
+
+      // Trazer a aba para o foreground para evitar que Chrome congele o Execution Context
+      try { await this.page.bringToFront(); } catch (e) {}
 
       // 2. Navegar para o Flow se necessário
       const currentUrl = this.page.url();
