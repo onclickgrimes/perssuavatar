@@ -163,6 +163,7 @@ export function ImagesStep({
   });
   const [batchResults, setBatchResults] = useState<Record<number, 'success' | 'error' | 'skipped'>>({});
   const batchCancelledRef = useRef(false);
+  const activeServicesRef = useRef<Record<number, string>>({});
   // Quando os segmentos mudam, atualizar a seleção para incluir novos segmentos
   useEffect(() => {
     setSelectedScenes(prev => {
@@ -376,6 +377,7 @@ export function ImagesStep({
     if (!segment) return false;
 
     const service = forceService || getEffectiveService(segment);
+    activeServicesRef.current[segmentId] = service;
     setGeneratingSegments(prev => new Set([...prev, segmentId]));
     let success = false;
 
@@ -482,6 +484,18 @@ export function ImagesStep({
 
       // ── GROK (Vídeo via Grok) ──
       } else if (service === 'grok') {
+        const isFlowRunning = () => Object.values(activeServicesRef.current).some(s => ['veo3', 'veo2-flow', 'flow-image'].includes(s));
+        if (isFlowRunning()) {
+          console.log(`✖️ [Grok] Aguardando processos do Flow concluirem para segmento ${segmentId}...`);
+          setVo3Progress(prev => ({ ...prev, [segmentId]: 'Aguardando Flow...' }));
+          while (isFlowRunning()) {
+            if (batchCancelledRef.current) {
+              return false; // Sai se batch foi cancelado
+            }
+            await new Promise(r => setTimeout(r, 2000));
+          }
+        }
+
         console.log(`✖️ [Grok] Gerando vídeo para segmento ${segmentId}...`);
         
         // Coleta possíveis inputs de imagem permitidos pelo provedor Grok (que aceita arrays de imagens)
@@ -594,6 +608,7 @@ export function ImagesStep({
     } catch (error) {
       console.error('Erro ao gerar mídia:', error);
     } finally {
+      delete activeServicesRef.current[segmentId];
       setGeneratingSegments(prev => {
         const newSet = new Set(prev);
         newSet.delete(segmentId);
@@ -664,7 +679,17 @@ export function ImagesStep({
     setBatchProgress({ current: 0, total: targetIds.length, currentSceneId: null });
 
     // Fila compartilhada entre workers
-    const queue = [...targetIds];
+    // Ordenar a fila para que os processos do Flow sejam executados antes dos processos do Grok
+    const queue = [...targetIds].sort((a, b) => {
+      const segA = segments.find(s => s.id === a);
+      const segB = segments.find(s => s.id === b);
+      if (!segA || !segB) return 0;
+      const isFlowA = ['veo3', 'veo2-flow', 'flow-image'].includes(getEffectiveService(segA));
+      const isFlowB = ['veo3', 'veo2-flow', 'flow-image'].includes(getEffectiveService(segB));
+      if (isFlowA && !isFlowB) return -1;
+      if (!isFlowA && isFlowB) return 1;
+      return 0;
+    });
     let completed = 0;
 
     // Cada worker pega tarefas da fila enquanto houver e não estiver cancelado.
