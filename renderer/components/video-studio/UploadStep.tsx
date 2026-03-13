@@ -443,7 +443,8 @@ export function UploadStep({
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(false);
-    if (e.dataTransfer.types.includes('application/x-timeline-item')) return;
+    // Ignorar reordenamento interno de timeline
+    if (draggedIdx !== null || e.dataTransfer.types.includes('application/x-timeline-item')) return;
     const files = Array.from(e.dataTransfer.files).filter(f => f.type.startsWith('audio/'));
     if (files.length > 0) processFiles(files, 'end');
   };
@@ -451,24 +452,32 @@ export function UploadStep({
   // Drag and drop Timeline itens (Reordenamento)
   const handleDragStart = (e: React.DragEvent, idx: number) => {
     e.dataTransfer.effectAllowed = 'move';
-    e.dataTransfer.setData('application/x-timeline-item', idx.toString());
+    try { e.dataTransfer.setData('application/x-timeline-item', idx.toString()); } catch(err) {}
+    try { e.dataTransfer.setData('text/plain', idx.toString()); } catch(err) {}
     setDraggedIdx(idx);
     e.stopPropagation();
   };
   const handleDragOver = (e: React.DragEvent, idx: number) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer.types.includes('application/x-timeline-item')) setDragOverIdx(idx);
+    if (draggedIdx !== null || e.dataTransfer.types.includes('application/x-timeline-item') || e.dataTransfer.types.includes('text/plain')) {
+      setDragOverIdx(idx);
+    }
   };
   const handleDropItem = (e: React.DragEvent, idx: number) => {
     e.preventDefault();
     
     // Tratamos reordenamento aqui
-    if (e.dataTransfer.types.includes('application/x-timeline-item')) {
+    if (draggedIdx !== null || e.dataTransfer.types.includes('application/x-timeline-item') || e.dataTransfer.types.includes('text/plain')) {
       e.stopPropagation();
-      if (draggedIdx !== null && draggedIdx !== idx) {
+      let sourceIdxStr = e.dataTransfer.getData('application/x-timeline-item');
+      if (!sourceIdxStr) sourceIdxStr = e.dataTransfer.getData('text/plain');
+      
+      const sourceIdx = sourceIdxStr ? parseInt(sourceIdxStr, 10) : draggedIdx;
+
+      if (sourceIdx !== null && !isNaN(sourceIdx) && sourceIdx !== idx) {
           const newItems = [...items];
-          const dragged = newItems.splice(draggedIdx, 1)[0];
+          const dragged = newItems.splice(sourceIdx, 1)[0];
           newItems.splice(idx, 0, dragged);
           setItems(newItems);
           if (isPlaying) stopPlayback();
@@ -476,8 +485,6 @@ export function UploadStep({
       setDraggedIdx(null);
       setDragOverIdx(null);
     }
-    // Se for arquivo externo, não usamos stopPropagation, e deixamos o evento 
-    // borbulhar (bubble up) até o handleMainDrop para cadastrar o áudio.
   };
 
   // Propriedades do Tooltip de Hover
@@ -759,7 +766,7 @@ export function UploadStep({
                            return (
                                <div 
                                   key={item.id}
-                                  draggable
+                                  draggable={true}
                                   onDragStart={(e) => handleDragStart(e, idx)}
                                   onDragOver={(e) => handleDragOver(e, idx)}
                                   onDrop={(e) => handleDropItem(e, idx)}
