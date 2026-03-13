@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
+import { ChannelNiche } from './NicheModal';
+import { ASSET_DEFINITIONS } from '../../../remotion/assets/definitions';
 
 function normalizeWord(w: string) {
   return w.toLowerCase().replace(/[.,!?;:()\[\]{}"'\-—]/g, '');
@@ -148,7 +150,8 @@ interface KeyframesStepProps {
   providerModel?: string;
   onProviderModelChange?: (m: string) => void;
   onMoveWords?: (fromSegmentId: number, toSegmentId: number, wordIndices: number[]) => void;
-  onSyncText?: (newSegments: TranscriptionSegment[]) => void;
+  onSegmentsUpdate?: (newSegments: TranscriptionSegment[]) => void;
+  niche?: ChannelNiche | null;
 }
 
 export function KeyframesStep({
@@ -162,7 +165,8 @@ export function KeyframesStep({
   providerModel,
   onProviderModelChange,
   onMoveWords,
-  onSyncText,
+  onSegmentsUpdate,
+  niche,
 }: KeyframesStepProps) {
   const emotions = ['surpresa', 'empolgação', 'nostalgia', 'seriedade', 'alegria', 'tristeza', 'raiva', 'medo', 'neutro'];
 
@@ -179,7 +183,7 @@ export function KeyframesStep({
   const [isSyncing, setIsSyncing] = useState(false);
 
   const handleSyncOriginalText = async () => {
-    if (!originalScriptText.trim() || !onSyncText) return;
+    if (!originalScriptText.trim() || !onSegmentsUpdate) return;
     
     setIsSyncing(true);
     // Timeout para permitir que a UI mostre o estado "Sincronizando..."
@@ -187,7 +191,7 @@ export function KeyframesStep({
 
     try {
       const newSegments = syncTextWithLevenshtein(segments, originalScriptText);
-      onSyncText(newSegments);
+      onSegmentsUpdate(newSegments);
       setIsSyncModalOpen(false);
       setOriginalScriptText('');
     } catch (e) {
@@ -338,6 +342,103 @@ export function KeyframesStep({
     }
   };
 
+  const handleAddSegment = (index: number) => {
+    const newSegments = JSON.parse(JSON.stringify(segments));
+    const prevSegment = newSegments[index];
+    
+    const defaultDuration = 0.0;
+    const insertionTime = prevSegment.end;
+    
+    for (let i = index + 1; i < newSegments.length; i++) {
+      const seg = newSegments[i];
+      seg.start += defaultDuration;
+      seg.end += defaultDuration;
+      if (seg.words) {
+        seg.words.forEach((w: any) => {
+          w.start += defaultDuration;
+          w.end += defaultDuration;
+        });
+      }
+    }
+
+    const newId = Math.max(...newSegments.map((s: any) => s.id), 0) + 1;
+    
+    // Usar o primeiro asset type permitido pelo nicho ou image_static como fallback
+    const defaultAssetType = niche?.asset_types?.[0] || 'image_static';
+
+    const newSegment: TranscriptionSegment = {
+      id: newId,
+      text: '',
+      start: insertionTime,
+      end: insertionTime + defaultDuration,
+      speaker: 0,
+      words: [],
+      emotion: 'neutro',
+      assetType: defaultAssetType,
+    };
+
+    newSegments.splice(index + 1, 0, newSegment);
+
+    if (onSegmentsUpdate) {
+      onSegmentsUpdate(newSegments);
+    }
+  };
+
+  const handleDeleteSegment = (index: number) => {
+    const newSegments = JSON.parse(JSON.stringify(segments));
+    const deletedSegment = newSegments[index];
+    const duration = deletedSegment.end - deletedSegment.start;
+
+    // Remover o segmento
+    newSegments.splice(index, 1);
+
+    // Ajustar o tempo dos segmentos subsequentes para preencher o buraco
+    // (Opcional: ou deixamos o buraco? Normalmente em edição de vídeo linear, puxamos tudo pra trás)
+    // Se for uma ferramenta linear, puxamos pra trás.
+    for (let i = index; i < newSegments.length; i++) {
+      const seg = newSegments[i];
+      seg.start -= duration;
+      seg.end -= duration;
+      if (seg.words) {
+        seg.words.forEach((w: any) => {
+          w.start -= duration;
+          w.end -= duration;
+        });
+      }
+    }
+
+    if (onSegmentsUpdate) {
+      onSegmentsUpdate(newSegments);
+    }
+  };
+
+  const handleContinueWithCleanup = () => {
+    const validSegments = segments.filter(seg => {
+      const hasWords = seg.words && seg.words.length > 0;
+      const hasText = seg.text && seg.text.trim().length > 0;
+      return hasWords || hasText;
+    });
+
+    if (validSegments.length !== segments.length && onSegmentsUpdate) {
+      console.log(`Removidos ${segments.length - validSegments.length} segmentos vazios.`);
+      onSegmentsUpdate(validSegments);
+      setTimeout(() => {
+         if (onSkipAnalysis && segments.some(s => s.imagePrompt)) {
+             onSkipAnalysis();
+         } else {
+             onContinue();
+         }
+      }, 100);
+      return;
+    }
+    
+    if (onSkipAnalysis && segments.some(s => s.imagePrompt)) {
+        onSkipAnalysis();
+    } else {
+        onContinue();
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between">
@@ -400,7 +501,7 @@ export function KeyframesStep({
               ← Voltar
             </button>
             
-            {onSyncText && (
+            {onSegmentsUpdate && (
               <button
                 onClick={() => setIsSyncModalOpen(true)}
                 className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/50 rounded-lg transition-all flex items-center gap-2 group relative overflow-hidden"
@@ -422,7 +523,7 @@ export function KeyframesStep({
             )}
 
             <button
-              onClick={onSkipAnalysis && segments.some(s => s.imagePrompt) ? onSkipAnalysis : onContinue}
+              onClick={handleContinueWithCleanup}
               className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all"
             >
               Continuar →
@@ -483,7 +584,7 @@ export function KeyframesStep({
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className="flex flex-col pb-20">
         {segments.map((segment, index) => {
           const proj = segmentProjections[index];
           const projectedStart = proj.projectedStart;
@@ -493,12 +594,14 @@ export function KeyframesStep({
           
           const isHighlighted = highlightedSegmentIds.includes(segment.id);
           const isCurrentHighlight = highlightedSegmentIds.length > 0 && highlightedSegmentIds[currentHighlightIndex] === segment.id;
+          
+          const isEmptySegment = (!segment.words || segment.words.length === 0) && (!segment.text || segment.text.trim().length === 0);
 
           return (
+          <React.Fragment key={segment.id}>
           <div
-            key={segment.id}
             id={`segment-${segment.id}`}
-            className={`p-6 border rounded-xl transition-all relative ${
+            className={`p-6 border rounded-xl transition-all relative mb-4 group/segment ${
               isHighlighted 
                 ? isCurrentHighlight 
                   ? 'bg-red-500/10 border-red-500 shadow-[0_0_20px_rgba(239,68,68,0.4)]' 
@@ -508,6 +611,20 @@ export function KeyframesStep({
                   : 'bg-white/5 border-white/10 hover:bg-white/10'
             }`}
           >
+            {/* Botão de Excluir (apenas para segmentos vazios) */}
+            {isEmptySegment && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleDeleteSegment(index);
+                }}
+                className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg flex items-center justify-center opacity-0 group-hover/segment:opacity-100 transition-opacity z-20 transform hover:scale-110"
+                title="Excluir segmento vazio"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+              </button>
+            )}
+
             <div className="flex items-start justify-between gap-6">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
@@ -620,7 +737,33 @@ export function KeyframesStep({
                 </p>
               </div>
               
-              <div className="flex flex-wrap gap-2 max-w-xs">
+              <div className="flex flex-col gap-3 max-w-xs">
+                {/* Seletor de Asset Type */}
+                <select
+                  value={segment.assetType || (niche?.asset_types?.[0] || 'image_static')}
+                  onChange={(e) => {
+                     if (onSegmentsUpdate) {
+                        const newSegments = [...segments];
+                        newSegments[index].assetType = e.target.value;
+                        onSegmentsUpdate(newSegments);
+                     }
+                  }}
+                  className="w-full bg-white/5 hover:bg-white/10 text-white text-xs rounded-lg px-2 py-1.5 border border-white/10 focus:border-pink-500 outline-none transition-colors"
+                >
+                  {(niche?.asset_types && niche.asset_types.length > 0 
+                      ? niche.asset_types 
+                      : Object.keys(ASSET_DEFINITIONS)
+                  ).map(type => {
+                    const def = ASSET_DEFINITIONS[type as keyof typeof ASSET_DEFINITIONS];
+                    return (
+                      <option key={type} value={type} className="bg-gray-900 text-white py-1">
+                        {def?.icon} {def?.label || type}
+                      </option>
+                    );
+                  })}
+                </select>
+
+                <div className="flex flex-wrap gap-2">
                 {emotions.map((emotion) => (
                   <button
                     key={emotion}
@@ -637,6 +780,21 @@ export function KeyframesStep({
               </div>
             </div>
           </div>
+        </div>
+          
+          {index < segments.length - 1 && (
+            <div 
+              className="relative h-6 -mt-2 mb-2 group w-full flex items-center justify-center cursor-pointer z-10"
+              onClick={() => handleAddSegment(index)}
+              title="Inserir nova cena aqui"
+            >
+              <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/20 opacity-0 group-hover:opacity-100 transition-all duration-300 w-[98%] mx-auto" />
+              <div className="relative z-10 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+              </div>
+            </div>
+          )}
+          </React.Fragment>
         )})}
       </div>
 

@@ -516,7 +516,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             providerModel={selectedModel}
             onProviderModelChange={(m: string) => setSelectedModel(m)}
             onMoveWords={handleMoveWords}
-            onSyncText={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
+            onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
+            niche={selectedNiche}
           />
         );
       
