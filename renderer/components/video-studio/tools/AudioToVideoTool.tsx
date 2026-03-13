@@ -382,8 +382,9 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         if (imageUrl) {
           const isVideoFile = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']
             .some(ext => imageUrl.toLowerCase().endsWith(ext));
-          // Só força image_static se é realmente uma imagem (não vídeo)
-          if (!isVideoFile && assetType !== 'video_vo3') {
+          // Se o arquivo é imagem (não vídeo), sempre marcar como image_static
+          // Isso evita que imagens do flow-image fiquem com assetType de vídeo
+          if (!isVideoFile) {
             assetType = 'image_static';
           }
         }

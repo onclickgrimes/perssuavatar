@@ -12,7 +12,7 @@ import { TextOverlayComponent } from './TextOverlay';
 import { HighlightWordComponent } from './HighlightWord';
 import { AnimatedSvgOverlay } from './AnimatedSvgOverlay';
 import { useProjectConfig } from '../contexts/ProjectConfigContext';
-import { getAssetComponent, getVideoFallbackComponent, type AssetType } from '../assets/registry';
+import { getAssetComponent, getVideoFallbackComponent, getImageFallbackComponent, type AssetType } from '../assets/registry';
 
 
 interface SceneProps {
@@ -246,14 +246,25 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
     const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
     return videoExtensions.some(ext => url.toLowerCase().endsWith(ext));
   };
+
+  // Helper para detectar se é imagem pela extensão do arquivo
+  const isImageUrl = (url: string | undefined): boolean => {
+    if (!url) return false;
+    const imageExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.svg', '.bmp', '.tiff'];
+    return imageExtensions.some(ext => url.toLowerCase().endsWith(ext));
+  };
   
   // Obter componente do registry
   let Component = getAssetComponent(asset_type as AssetType);
   
   // Lógica de compatibilidade: Se tiver URL de vídeo, força renderização como vídeo
   // a menos que seja chroma_key (que tem tratamento próprio)
-  if (asset_url && asset_type !== 'video_chromakey' && isVideoUrl(asset_url)) {
-    Component = getVideoFallbackComponent();
+  if (asset_url && asset_type !== 'video_chromakey') {
+    if (isVideoUrl(asset_url)) {
+      Component = getVideoFallbackComponent();
+    } else if (isImageUrl(asset_url)) {
+      Component = getImageFallbackComponent();
+    }
   }
 
   if (Component) {

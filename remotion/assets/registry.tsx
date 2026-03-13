@@ -263,5 +263,12 @@ export const getVideoFallbackComponent = (): AssetComponent => {
   return VideoAsset;
 };
 
+/**
+ * Obtém o componente de fallback para imagens detectadas automaticamente.
+ */
+export const getImageFallbackComponent = (): AssetComponent => {
+  return ImageAsset;
+};
+
 // Re-exportar tipos e funções do definitions para conveniência
 export { ASSET_DEFINITIONS, type AssetType } from './definitions';
