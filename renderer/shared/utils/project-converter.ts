@@ -106,6 +106,8 @@ export interface VideoProject {
   selectedAspectRatios?: string[];
   subtitleMode?: 'paragraph' | 'word-by-word' | 'none';
   componentsAllowed?: string[];
+  nicheId?: number;
+  nicheName?: string;
   config?: {
     width?: number;
     height?: number;
@@ -127,7 +129,8 @@ const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
 
 const PROJECT_PROPERTIES: (keyof VideoProject)[] = [
   'title', 'description', 'duration', 'audioPath', 'segments',
-  'selectedAspectRatios', 'subtitleMode', 'componentsAllowed', 'config',
+  'selectedAspectRatios', 'subtitleMode', 'componentsAllowed',
+  'nicheId', 'nicheName', 'config',
 ];
 
 // ========================================
@@ -162,10 +165,12 @@ export function mapProject(source: any): VideoProject {
 }
 
 /** Converte projeto para formato de salvamento */
-export function toSaveFormat(project: VideoProject, niche?: { components_allowed?: string[] }): VideoProject {
+export function toSaveFormat(project: VideoProject, niche?: { id?: number; name?: string; components_allowed?: string[] }): VideoProject {
   return {
     ...mapProject(project),
     componentsAllowed: niche?.components_allowed || project.componentsAllowed,
+    nicheId: niche?.id || project.nicheId,
+    nicheName: niche?.name || project.nicheName,
   };
 }
 

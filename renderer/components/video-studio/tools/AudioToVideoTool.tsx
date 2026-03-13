@@ -94,6 +94,19 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         const loadedProject = fromSaveFormat(result.project);
         
         setProject(loadedProject as ProjectState);
+
+        // ✅ Restaurar nicho selecionado (se salvo no projeto)
+        if (loadedProject.nicheId) {
+          try {
+            const nicheData = await window.electron.niche.get(loadedProject.nicheId);
+            if (nicheData) {
+              setSelectedNiche(nicheData);
+              console.log(`🎯 Nicho restaurado: ${nicheData.name}`);
+            }
+          } catch (err) {
+            console.warn('Não foi possível restaurar o nicho:', err);
+          }
+        }
         
         // Determinar em qual passo estamos baseado nos dados
         if (loadedProject.segments.some((s: any) => s.imageUrl)) {
@@ -490,6 +503,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             segments={project.segments}
             onUpdateEmotion={handleUpdateEmotion}
             onContinue={handleAnalyzeWithAI}
+            onSkipAnalysis={() => setCurrentStep('prompts')}
             onBack={() => setCurrentStep('upload')}
             provider={selectedProvider}
             onProviderChange={(p: any) => {

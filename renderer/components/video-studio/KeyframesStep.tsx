@@ -141,6 +141,7 @@ interface KeyframesStepProps {
   segments: TranscriptionSegment[];
   onUpdateEmotion: (id: number, emotion: string) => void;
   onContinue: () => void;
+  onSkipAnalysis?: () => void;
   onBack: () => void;
   provider?: 'gemini' | 'openai' | 'deepseek';
   onProviderChange?: (p: 'gemini' | 'openai' | 'deepseek') => void;
@@ -154,6 +155,7 @@ export function KeyframesStep({
   segments,
   onUpdateEmotion,
   onContinue,
+  onSkipAnalysis,
   onBack,
   provider = 'gemini',
   onProviderChange,
@@ -409,8 +411,18 @@ export function KeyframesStep({
               </button>
             )}
 
+            {/* Botão vermelho para recriar prompts (só aparece se análise já foi feita) */}
+            {onSkipAnalysis && segments.some(s => s.imagePrompt) && (
+              <button
+                onClick={onContinue}
+                className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/50 rounded-lg transition-all flex items-center gap-2"
+              >
+                🔄 Recriar prompts com IA
+              </button>
+            )}
+
             <button
-              onClick={onContinue}
+              onClick={onSkipAnalysis && segments.some(s => s.imagePrompt) ? onSkipAnalysis : onContinue}
               className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all"
             >
               Continuar →

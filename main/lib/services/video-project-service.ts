@@ -103,6 +103,8 @@ export interface VideoProjectData {
     selectedAspectRatios?: string[];
     componentsAllowed?: string[]; // Componentes Remotion permitidos (ex: ['HighlightWord', 'AnimatedSvgOverlay'])
     defaultFont?: string; // Fonte padrão do nicho (Google Fonts)
+    nicheId?: number; // ID do nicho selecionado
+    nicheName?: string; // Nome do nicho selecionado
     config?: {
         width?: number;
         height?: number;
@@ -1229,6 +1231,8 @@ Responda APENAS com um objeto JSON válido no formato:
             selectedAspectRatios: project.selectedAspectRatios, // Salvar as proporções
             subtitleMode: project.subtitleMode,
             componentsAllowed: project.componentsAllowed, // ✅ Salvar componentes permitidos
+            nicheId: project.nicheId, // ✅ Salvar ID do nicho
+            nicheName: project.nicheName, // ✅ Salvar nome do nicho
             renderConfigs: project.selectedAspectRatios?.reduce((acc, ratio) => {
                 let w = 1080, h = 1920;
                 switch (ratio) {
