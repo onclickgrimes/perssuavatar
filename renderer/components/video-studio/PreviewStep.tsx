@@ -19,19 +19,37 @@ interface PreviewStepProps {
 }
 
 // ========================================
+// FILMORA DARK PALETTE  
+// ========================================
+const FILMORA = {
+  bg:         '#1a1a2e',   // Fundo geral
+  bgDark:     '#0f0f1e',   // Painéis laterais / timeline
+  bgDarker:   '#0a0a16',   // Fundo da timeline
+  surface:    '#21213b',   // Cards / Containers
+  surfaceAlt: '#2a2a4a',   // Containers hover
+  border:     '#2d2d52',   // Bordas
+  borderLight:'#3a3a60',   // Bordas mais claras
+  accent:     '#00d4aa',   // Verde/Teal Filmora (primário)
+  accentDark: '#00b894',   // Verde escuro
+  accentHover:'#00e8bc',   // Verde hover
+  text:       '#e8e8f0',   // Texto principal
+  textMuted:  '#8888aa',   // Texto secundário
+  textDim:    '#555570',   // Texto dim
+  playhead:   '#ff3b5c',   // Playhead vermelho
+  trackVideo: '#6c5ce7',   // Trilha vídeo — roxo
+  trackImage: '#0984e3',   // Trilha imagem — azul
+  trackAudio: '#00b894',   // Trilha áudio — verde (matching accent)
+  ruler:      '#16162e',   // Régua
+  rulerText:  '#6666aa',   // Texto régua
+};
+
+// ========================================
 // CONSTANTES DA TIMELINE
 // ========================================
 const MIN_ZOOM = 5;
 const MAX_ZOOM = 300;
 const DEFAULT_ZOOM = 60;
 
-const TRACK_COLORS = {
-  video: '#8b5cf6',   // Roxo
-  image: '#3b82f6',   // Azul
-  audio: '#ec4899',   // Rosa
-};
-
-// Regras Adaptativas para a Régua da Timeline
 const getRulerSteps = (zoom: number) => {
   if (zoom < 10) return { major: 60, minor: 10 };
   if (zoom < 20) return { major: 30, minor: 5 };
@@ -41,17 +59,24 @@ const getRulerSteps = (zoom: number) => {
   return { major: 1, minor: 0.5 };
 };
 
+const formatTimecode = (totalSec: number): string => {
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = Math.floor(totalSec % 60);
+  const f = Math.round((totalSec % 1) * 30);
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}:${String(f).padStart(2, '0')}`;
+};
+
 const formatRulerTime = (seconds: number) => {
-  if (seconds === 0) return '0s';
-  if (seconds < 60) return `${seconds}s`;
-  const m = Math.floor(seconds / 60);
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
   const s = Math.floor(seconds % 60);
-  if (s === 0) return `${m}m`;
-  return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+  if (h > 0) return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}:00`;
+  return `00:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}:00`;
 };
 
 // ========================================
-// WAVEFORM COMPONENT (do áudio)
+// WAVEFORM COMPONENT
 // ========================================
 function AudioWaveformDisplay({ audioUrl, color, duration, widthScale }: {
   audioUrl: string;
@@ -91,7 +116,7 @@ function AudioWaveformDisplay({ audioUrl, color, duration, widthScale }: {
 
     const dpr = window.devicePixelRatio || 1;
     const width = Math.max(1, duration * widthScale);
-    const height = 48;
+    const height = 40;
 
     canvas.width = width * dpr;
     canvas.height = height * dpr;
@@ -124,19 +149,17 @@ function AudioWaveformDisplay({ audioUrl, color, duration, widthScale }: {
   return (
     <canvas 
       ref={canvasRef} 
-      style={{ width: Math.max(1, duration * widthScale), height: 48 }} 
-      className="opacity-80 absolute top-0 left-0 pointer-events-none" 
+      style={{ width: Math.max(1, duration * widthScale), height: 40 }} 
+      className="opacity-70 absolute top-0 left-0 pointer-events-none" 
     />
   );
 }
 
-
 // ========================================
-// MINI THUMBNAIL PARA CENA
+// SCENE THUMBNAIL
 // ========================================
 function SceneThumbnail({ imageUrl, text }: { imageUrl?: string; text: string }) {
   if (imageUrl) {
-    // Converte caminhos locais para URL servida
     let src = imageUrl;
     if (!src.startsWith('http') && !src.startsWith('blob:') && !src.startsWith('data:')) {
       const filename = src.split(/[/\\]/).pop();
@@ -146,13 +169,76 @@ function SceneThumbnail({ imageUrl, text }: { imageUrl?: string; text: string })
       <img 
         src={src} 
         alt={text}
-        className="absolute inset-0 w-full h-full object-cover rounded opacity-60"
+        className="absolute inset-0 w-full h-full object-cover opacity-50"
         onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
       />
     );
   }
   return null;
 }
+
+// ========================================
+// SVG ICONS  (inline, estilo Filmora)
+// ========================================
+const Icons = {
+  play: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21"/></svg>
+  ),
+  pause: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="3" width="5" height="18"/><rect x="14" y="3" width="5" height="18"/></svg>
+  ),
+  skipBack: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="11 19 2 12 11 5"/><polygon points="22 19 13 12 22 5"/></svg>
+  ),
+  skipForward: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 19 22 12 13 5"/><polygon points="2 19 11 12 2 5"/></svg>
+  ),
+  prevFrame: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="3" height="16"/><polygon points="20 4 10 12 20 20"/></svg>
+  ),
+  nextFrame: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><rect x="17" y="4" width="3" height="16"/><polygon points="4 4 14 12 4 20"/></svg>
+  ),
+  fullscreen: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+  ),
+  scissors: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><line x1="20" y1="4" x2="8.12" y2="15.88"/><line x1="14.47" y1="14.48" x2="20" y2="20"/><line x1="8.12" y1="8.12" x2="12" y2="12"/></svg>
+  ),
+  undo: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+  ),
+  redo: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+  ),
+  trash: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+  ),
+  zoom: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+  ),
+  lock: (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+  ),
+  eye: (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+  ),
+  music: (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+  ),
+  film: (
+    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="2" y="2" width="20" height="20" rx="2.18" ry="2.18"/><line x1="7" y1="2" x2="7" y2="22"/><line x1="17" y1="2" x2="17" y2="22"/><line x1="2" y1="12" x2="22" y2="12"/><line x1="2" y1="7" x2="7" y2="7"/><line x1="2" y1="17" x2="7" y2="17"/><line x1="17" y1="7" x2="22" y2="7"/><line x1="17" y1="17" x2="22" y2="17"/></svg>
+  ),
+  minus: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  ),
+  plus: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+  ),
+  render: (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+  ),
+};
 
 
 // ========================================
@@ -167,18 +253,16 @@ export function PreviewStep({
   onAspectRatiosChange,
   selectedNiche,
 }: PreviewStepProps) {
-  // Estado para proporção selecionada no preview
+  // Aspect ratio
   const [selectedRatio, setSelectedRatio] = useState<string>(() => {
     return project.selectedAspectRatios?.[0] || '9:16';
   });
-
   const [showRatioMenu, setShowRatioMenu] = useState(false);
 
   // ========================================
   // ESTADOS DA TIMELINE
   // ========================================
   const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM);
-  // currentTime é um REF (não state) para evitar re-renders a 30fps
   const currentTimeRef = useRef(0);
   const [selectedSegmentId, setSelectedSegmentId] = useState<number | null>(null);
   const [hoveredSegment, setHoveredSegment] = useState<{ id: number; x: number; y: number } | null>(null);
@@ -192,23 +276,23 @@ export function PreviewStep({
   const playheadRef = useRef<HTMLDivElement>(null);
   const playheadLabelRef = useRef<HTMLDivElement>(null);
   const timecodeRef = useRef<HTMLSpanElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
 
-  // Instância do Player Remotion para sincronização com a timeline
+  // Player Remotion sync
   const playerRef = useRef<any>(null);
   const isSeekingFromTimelineRef = useRef(false);
   const frameListenerCleanupRef = useRef<(() => void) | null>(null);
   const zoomLevelRef = useRef(DEFAULT_ZOOM);
+  const [isPlaying, setIsPlaying] = useState(false);
 
-  // Manter zoomLevelRef sincronizado com o state
   useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
 
   const AVAILABLE_RATIOS = Object.keys(ASPECT_RATIO_DIMENSIONS);
   const currentRatios = project.selectedAspectRatios || ['9:16'];
 
-  // ✅ Usar conversor centralizado
+  // Remotion project
   const remotionProject = useMemo(() => {
     const dims = ASPECT_RATIO_DIMENSIONS[selectedRatio] || { width: 1080, height: 1920 };
-    
     return toRemotionFormat(project as any, {
       subtitleMode,
       width: dims.width,
@@ -220,16 +304,12 @@ export function PreviewStep({
     });
   }, [project, subtitleMode, selectedRatio, selectedNiche]);
   
-  // Efeito para garantir que selectedRatio seja válido se as opções mudarem
   useEffect(() => {
     if (!currentRatios.includes(selectedRatio)) {
-      if (currentRatios.length > 0) {
-        setSelectedRatio(currentRatios[0]);
-      }
+      if (currentRatios.length > 0) setSelectedRatio(currentRatios[0]);
     }
   }, [currentRatios, selectedRatio]);
 
-  // Handler para adicionar/remover ratio
   const toggleAspectRatio = (ratio: string) => {
     let newRatios;
     if (currentRatios.includes(ratio)) {
@@ -241,15 +321,12 @@ export function PreviewStep({
     onAspectRatiosChange(newRatios);
   };
 
-  // Calcular duração
+  // Duration
   const lastScene = project.segments[project.segments.length - 1];
   const durationInSeconds = lastScene ? lastScene.end : 10;
   const fps = 30;
   const durationInFrames = Math.ceil(durationInSeconds * fps);
-
   const getCssAspectRatio = (ratio: string) => ratio.replace(':', '/');
-
-  // Calcular URL do áudio
   const audioUrl = useMemo(() => audioPathToUrl(project.audioPath), [project.audioPath]);
 
   // ========================================
@@ -258,9 +335,7 @@ export function PreviewStep({
   useEffect(() => {
     if (!scrollWrapperRef.current) return;
     const observer = new ResizeObserver((entries) => {
-      if (entries[0]) {
-        setViewportWidth(entries[0].contentRect.width);
-      }
+      if (entries[0]) setViewportWidth(entries[0].contentRect.width);
     });
     observer.observe(scrollWrapperRef.current);
     setViewportWidth(scrollWrapperRef.current.clientWidth);
@@ -274,41 +349,36 @@ export function PreviewStep({
     currentTimeRef.current = time;
     const zoom = zoomLevelRef.current;
 
-    // Atualizar posição da agulha
     if (playheadRef.current) {
       playheadRef.current.style.transform = `translateX(${time * zoom}px)`;
     }
-    // Atualizar label da agulha
     if (playheadLabelRef.current) {
-      playheadLabelRef.current.textContent = time.toFixed(1);
+      playheadLabelRef.current.textContent = formatTimecode(time);
     }
-    // Atualizar timecode no header
     if (timecodeRef.current) {
-      const m = Math.floor(time / 60);
-      const s = (time % 60).toFixed(1).padStart(4, '0');
-      timecodeRef.current.textContent = `${m}:${s}`;
+      timecodeRef.current.textContent = formatTimecode(time);
     }
-  }, []);
+    // Progress bar no player
+    if (progressRef.current && durationInSeconds > 0) {
+      const pct = Math.min(100, (time / durationInSeconds) * 100);
+      progressRef.current.style.width = `${pct}%`;
+    }
+  }, [durationInSeconds]);
 
-  // Quando o zoom muda, re-posicionar a agulha
   useEffect(() => {
     updatePlayheadDOM(currentTimeRef.current);
   }, [zoomLevel, updatePlayheadDOM]);
 
   // ========================================
-  // SINCRONIZAÇÃO: Player Remotion -> Agulha da Timeline
-  // Callback chamado quando o Player Remotion monta
-  // Registra listener de frameupdate (atualiza DOM direto, SEM re-render)
+  // SINCRONIZAÇÃO: Player → Timeline (sem re-render)
   // ========================================
   const handlePlayerReady = useCallback((player: any) => {
-    // Limpar listener anterior se existir
     if (frameListenerCleanupRef.current) {
       frameListenerCleanupRef.current();
       frameListenerCleanupRef.current = null;
     }
 
     playerRef.current = player;
-
     if (!player) return;
 
     const handleFrameUpdate = (e: any) => {
@@ -318,14 +388,21 @@ export function PreviewStep({
       updatePlayheadDOM(timeInSeconds);
     };
 
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+
     player.addEventListener('frameupdate', handleFrameUpdate);
+    player.addEventListener('play', handlePlay);
+    player.addEventListener('pause', handlePause);
     frameListenerCleanupRef.current = () => {
-      try { player.removeEventListener('frameupdate', handleFrameUpdate); } catch(_) {}
+      try {
+        player.removeEventListener('frameupdate', handleFrameUpdate);
+        player.removeEventListener('play', handlePlay);
+        player.removeEventListener('pause', handlePause);
+      } catch(_) {}
     };
-    console.log('🎯 [Timeline] Sincronização Player↔Agulha conectada (DOM direto)');
   }, [fps, updatePlayheadDOM]);
 
-  // Cleanup ao desmontar
   useEffect(() => {
     return () => {
       if (frameListenerCleanupRef.current) {
@@ -336,26 +413,48 @@ export function PreviewStep({
   }, []);
 
   // ========================================
-  // TIMELINE: Seek (bidirecional)
-  // Atualiza agulha E o Player Remotion
+  // TIMELINE: Seek bidirecional
   // ========================================
   const seekTo = useCallback((time: number) => {
     const safeTime = Math.max(0, Math.min(time, durationInSeconds));
     updatePlayheadDOM(safeTime);
-
-    // Sincronizar com o Player Remotion
     if (playerRef.current) {
       isSeekingFromTimelineRef.current = true;
       const frame = Math.round(safeTime * fps);
       playerRef.current.seekTo(frame);
-      requestAnimationFrame(() => {
-        isSeekingFromTimelineRef.current = false;
-      });
+      requestAnimationFrame(() => { isSeekingFromTimelineRef.current = false; });
     }
   }, [durationInSeconds, fps, updatePlayheadDOM]);
 
+  // Player transport controls
+  const handleTogglePlay = useCallback(() => {
+    if (playerRef.current) {
+      if (playerRef.current.isPlaying()) {
+        playerRef.current.pause();
+      } else {
+        playerRef.current.play();
+      }
+    }
+  }, []);
+
+  const handleStepForward = useCallback(() => {
+    seekTo(currentTimeRef.current + 1 / fps);
+  }, [seekTo, fps]);
+
+  const handleStepBackward = useCallback(() => {
+    seekTo(currentTimeRef.current - 1 / fps);
+  }, [seekTo, fps]);
+
+  const handleSkipToStart = useCallback(() => {
+    seekTo(0);
+  }, [seekTo]);
+
+  const handleSkipToEnd = useCallback(() => {
+    seekTo(durationInSeconds);
+  }, [seekTo, durationInSeconds]);
+
   // ========================================
-  // TIMELINE: Ruler Mouse Down (zoom por arrasto + click seek)
+  // TIMELINE: Ruler Mouse Down
   // ========================================
   const handleRulerMouseDown = (e: React.MouseEvent) => {
     if ((e.target as HTMLElement).closest('.playhead-handle')) return;
@@ -375,8 +474,7 @@ export function PreviewStep({
       window.removeEventListener('mouseup', handleMouseUp);
       if (!isDragging && trackContainerRef.current) {
         const rect = trackContainerRef.current.getBoundingClientRect();
-        let x = upEvent.clientX - rect.left;
-        seekTo(Math.max(0, x) / zoomLevel);
+        seekTo(Math.max(0, upEvent.clientX - rect.left) / zoomLevel);
       }
     };
 
@@ -394,8 +492,7 @@ export function PreviewStep({
     const rect = trackContainerRef.current.getBoundingClientRect();
 
     const handleMouseMove = (mvEvent: MouseEvent) => {
-      let x = mvEvent.clientX - rect.left;
-      seekTo(Math.max(0, x) / zoomLevel);
+      seekTo(Math.max(0, mvEvent.clientX - rect.left) / zoomLevel);
     };
 
     const handleMouseUp = () => {
@@ -407,15 +504,10 @@ export function PreviewStep({
     window.addEventListener('mouseup', handleMouseUp);
   };
 
-  // ========================================
-  // TIMELINE: Zoom controls
-  // ========================================
   const handleZoomIn = () => setZoomLevel(z => Math.min(z * 1.5, MAX_ZOOM));
   const handleZoomOut = () => setZoomLevel(z => Math.max(z / 1.5, MIN_ZOOM));
 
-  // ========================================
-  // TIMELINE: Hover tooltip
-  // ========================================
+  // Hover tooltip
   const handleSegmentMouseEnter = (e: React.MouseEvent, segId: number) => {
     if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
     const x = e.clientX;
@@ -430,281 +522,351 @@ export function PreviewStep({
     setHoveredSegment(null);
   };
 
-  // Deselecionar ao clicar no fundo
-  const handleBackgroundClick = () => {
-    setSelectedSegmentId(null);
+  const handleBackgroundClick = () => setSelectedSegmentId(null);
+
+  // Progress bar seek
+  const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    seekTo(pct * durationInSeconds);
   };
 
-  // Calcula a largura total do conteúdo da timeline
+  // Computations
   const totalTimelineWidth = Math.max(durationInSeconds * zoomLevel, viewportWidth);
-
-  // Segmento hovered para tooltip
   const hoveredSeg = hoveredSegment ? project.segments.find(s => s.id === hoveredSegment.id) : null;
+  const visualSegments = project.segments;
 
-  // Separar segmentos por tipo de mídia
-  const imageSegments = project.segments.filter(s => {
-    const type = s.assetType || 'image_static';
-    return type.startsWith('image') || type === 'chroma_key' || (!type.startsWith('video') && !type.startsWith('audio'));
-  });
-
-  const videoSegments = project.segments.filter(s => {
-    const type = s.assetType || '';
-    return type.startsWith('video');
-  });
-
-  // Combinar imagens e vídeos na trilha visual (em ordem)
-  const visualSegments = project.segments; // Todos ficam na trilha visual pois cada cena tem uma mídia associada
-
+  // ========================================================================
+  // RENDER — FILMORA LAYOUT
+  // ========================================================================
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-white mb-2">👁️ Preview do Vídeo</h2>
-          <p className="text-white/60">
-            Visualize o resultado antes de renderizar
-          </p>
+    <div className="flex flex-col h-full" style={{ background: FILMORA.bg, color: FILMORA.text, fontFamily: "'Segoe UI', system-ui, sans-serif" }}>
+
+      {/* ================================================================ */}
+      {/* TOP BAR — Title + Actions (como barra de menu do Filmora)        */}
+      {/* ================================================================ */}
+      <div className="flex items-center justify-between px-4 py-2 border-b" style={{ borderColor: FILMORA.border, background: FILMORA.bgDark }}>
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold tracking-wide" style={{ color: FILMORA.text }}>
+            Player
+          </h2>
+          <span className="text-xs px-2 py-0.5 rounded" style={{ color: FILMORA.textMuted, background: FILMORA.surface }}>
+            Preview
+          </span>
         </div>
-        <div className="flex gap-3">
+        <div className="flex items-center gap-2">
           <button
             onClick={onBack}
-            className="px-6 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+            className="px-4 py-1.5 rounded text-xs font-medium transition-all hover:brightness-110"
+            style={{ background: FILMORA.surface, color: FILMORA.textMuted, border: `1px solid ${FILMORA.border}` }}
           >
             ← Voltar
           </button>
           <button
             onClick={onContinue}
-            className="px-6 py-2 bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white rounded-lg font-medium transition-all"
+            className="px-5 py-1.5 rounded text-xs font-bold transition-all hover:brightness-110 flex items-center gap-1.5"
+            style={{ background: FILMORA.accent, color: '#000' }}
           >
-            🎬 Renderizar Vídeo
+            {Icons.render}
+            Exportar
           </button>
         </div>
       </div>
 
-      {/* Player de Preview */}
-      <div className="bg-black/50 rounded-xl overflow-hidden shadow-2xl">
-        {/* Controles de Preview */}
-        <div className="p-4 border-b border-white/10 flex flex-wrap gap-4 items-center justify-between">
-          
-          {/* Modo de Legenda */}
-          <div className="flex items-center gap-3">
-            <span className="text-white/60 text-sm">📝 Legenda:</span>
-            <div className="flex bg-white/5 rounded-lg p-1 gap-1">
-              <button
-                onClick={() => setSubtitleMode('paragraph')}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  subtitleMode === 'paragraph'
-                    ? 'bg-purple-500 text-white shadow-lg'
-                    : 'text-white/60 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                Parágrafo
-              </button>
-              <button
-                onClick={() => setSubtitleMode('word-by-word')}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  subtitleMode === 'word-by-word'
-                    ? 'bg-purple-500 text-white shadow-lg'
-                    : 'text-white/60 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                Palavra por Palavra
-              </button>
-              <button
-                onClick={() => setSubtitleMode('none')}
-                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
-                  subtitleMode === 'none'
-                    ? 'bg-purple-500 text-white shadow-lg'
-                    : 'text-white/60 hover:text-white hover:bg-white/10'
-                }`}
-              >
-                Sem Legenda
-              </button>
+      {/* ================================================================ */}
+      {/* MAIN CONTENT — Player + Sidebar (estilo Filmora)                 */}
+      {/* ================================================================ */}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+
+        {/* ============ PLAYER AREA (Centro) ============ */}
+        <div className="flex-1 flex flex-col min-w-0" style={{ background: '#000' }}>
+
+          {/* Controles de Preview (subtítulo + aspect ratio) */}
+          <div className="flex items-center justify-between px-4 py-2 gap-4 flex-wrap" style={{ background: FILMORA.bgDark, borderBottom: `1px solid ${FILMORA.border}` }}>
+            {/* Modo de Legenda */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: FILMORA.textDim }}>Legenda</span>
+              <div className="flex rounded overflow-hidden" style={{ border: `1px solid ${FILMORA.border}` }}>
+                {(['paragraph', 'word-by-word', 'none'] as const).map(mode => (
+                  <button
+                    key={mode}
+                    onClick={() => setSubtitleMode(mode)}
+                    className="px-2.5 py-1 text-[10px] font-medium transition-all"
+                    style={{
+                      background: subtitleMode === mode ? FILMORA.accent : 'transparent',
+                      color: subtitleMode === mode ? '#000' : FILMORA.textMuted,
+                    }}
+                  >
+                    {mode === 'paragraph' ? 'Parágrafo' : mode === 'word-by-word' ? 'Palavra' : 'Nenhuma'}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Aspect Ratio */}
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] uppercase tracking-wider" style={{ color: FILMORA.textDim }}>Proporção</span>
+              <div className="flex rounded" style={{ border: `1px solid ${FILMORA.border}` }}>
+                {currentRatios.map(ratio => (
+                  <div key={ratio} className="relative group">
+                    <button
+                      onClick={() => setSelectedRatio(ratio)}
+                      className="px-2.5 py-1 text-[10px] font-medium transition-all"
+                      style={{
+                        background: selectedRatio === ratio ? FILMORA.accent : 'transparent',
+                        color: selectedRatio === ratio ? '#000' : FILMORA.textMuted,
+                        paddingRight: currentRatios.length > 1 ? '18px' : undefined,
+                      }}
+                    >
+                      {ratio}
+                    </button>
+                    {currentRatios.length > 1 && (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); toggleAspectRatio(ratio); }}
+                        className="absolute right-0.5 top-1/2 -translate-y-1/2 w-3 h-3 flex items-center justify-center rounded-full text-[8px] opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ color: FILMORA.textDim }}
+                      >×</button>
+                    )}
+                  </div>
+                ))}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowRatioMenu(!showRatioMenu)}
+                    className="px-2 py-1 text-[10px] transition-all"
+                    style={{ color: FILMORA.textDim }}
+                  >+</button>
+                  {showRatioMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" onClick={() => setShowRatioMenu(false)} />
+                      <div className="absolute right-0 top-full mt-1 w-24 rounded shadow-xl z-20 overflow-hidden" style={{ background: FILMORA.surface, border: `1px solid ${FILMORA.border}` }}>
+                        {AVAILABLE_RATIOS.filter(r => !currentRatios.includes(r)).map(ratio => (
+                          <button
+                            key={ratio}
+                            onClick={() => { toggleAspectRatio(ratio); setShowRatioMenu(false); setSelectedRatio(ratio); }}
+                            className="w-full text-left px-3 py-1.5 text-[10px] transition-colors hover:brightness-125"
+                            style={{ color: FILMORA.textMuted }}
+                          >{ratio}</button>
+                        ))}
+                        {AVAILABLE_RATIOS.every(r => currentRatios.includes(r)) && (
+                          <div className="px-3 py-1.5 text-[9px] italic" style={{ color: FILMORA.textDim }}>Todas</div>
+                        )}
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
 
-          {/* Seletor de Aspect Ratio */}
-          <div className="flex items-center gap-3">
-            <span className="text-white/60 text-sm relative">
-                📐 Proporção:
-            </span>
-            <div className="flex bg-white/5 rounded-lg p-1 gap-1 flex-wrap">
-            {currentRatios.map(ratio => (
-                <div key={ratio} className="relative group">
-                    <button
-                        onClick={() => setSelectedRatio(ratio)}
-                        className={`px-3 py-1.5 rounded-md text-sm font-medium transition-all pr-7 ${
-                        selectedRatio === ratio
-                            ? 'bg-pink-500 text-white shadow-lg'
-                            : 'text-white/60 hover:text-white hover:bg-white/10'
-                        }`}
-                    >
-                        {ratio}
-                    </button>
-                    {currentRatios.length > 1 && (
-                        <button
-                            onClick={(e) => {
-                                e.stopPropagation();
-                                toggleAspectRatio(ratio);
-                            }}
-                            className="absolute right-1 top-1/2 -translate-y-1/2 p-0.5 hover:bg-black/20 rounded-full text-white/40 hover:text-white transition-all"
-                            title="Remover"
-                        >
-                            ×
-                        </button>
-                    )}
-                </div>
-            ))}
-            
-            {/* Botão Adicionar */}
-            <div className="relative">
-                <button
-                    onClick={() => setShowRatioMenu(!showRatioMenu)}
-                    className="px-3 py-1.5 rounded-md text-sm font-medium text-white/60 hover:text-white hover:bg-white/10 transition-all border border-dashed border-white/20 hover:border-white/40"
-                    title="Adicionar Proporção"
-                >
-                    +
-                </button>
-                
-                {/* Menu Dropdown */}
-                {showRatioMenu && (
-                    <>
-                        <div 
-                            className="fixed inset-0 z-10" 
-                            onClick={() => setShowRatioMenu(false)} 
-                        />
-                        <div className="absolute right-0 top-full mt-2 w-32 bg-gray-800 border border-white/10 rounded-lg shadow-xl z-20 overflow-hidden">
-                            {AVAILABLE_RATIOS.filter(r => !currentRatios.includes(r)).map(ratio => (
-                                <button
-                                    key={ratio}
-                                    onClick={() => {
-                                        toggleAspectRatio(ratio);
-                                        setShowRatioMenu(false);
-                                        setSelectedRatio(ratio);
-                                    }}
-                                    className="w-full text-left px-4 py-2 text-sm text-white/80 hover:bg-white/10 transition-colors"
-                                >
-                                    {ratio}
-                                </button>
-                            ))}
-                            {AVAILABLE_RATIOS.every(r => currentRatios.includes(r)) && (
-                                <div className="px-4 py-2 text-xs text-white/40 italic">
-                                    Todas selecionadas
-                                </div>
-                            )}
-                        </div>
-                    </>
-                )}
-            </div>
-            </div>
-          </div>
-        </div>
-        
-        <div className="flex justify-center bg-black/80 py-8">
-            <div className="relative shadow-2xl" style={{ 
-                aspectRatio: getCssAspectRatio(selectedRatio),
-                height: '50vh',
-                maxHeight: '480px'
+          {/* ====== VIDEO PLAYER ====== */}
+          <div className="flex-1 flex items-center justify-center relative min-h-[200px]" style={{ background: '#000' }}>
+            <div className="relative" style={{ 
+              aspectRatio: getCssAspectRatio(selectedRatio),
+              height: '100%',
+              maxHeight: '100%',
+              maxWidth: '100%',
             }}>
-            <VideoPreviewPlayer
+              <VideoPreviewPlayer
                 project={remotionProject}
                 durationInFrames={durationInFrames}
                 fps={fps}
                 onPlayerReady={handlePlayerReady}
-            />
-            </div>
-        </div>
-      </div>
-
-      {/* ============================================================ */}
-      {/* TIMELINE ESTILO FILMORA                                       */}
-      {/* ============================================================ */}
-      <div className="bg-[#0d0d14] rounded-2xl border border-white/10 shadow-2xl overflow-hidden">
-        
-        {/* Tooltip de Info do Segmento */}
-        {hoveredSegment && hoveredSeg && (
-          <div 
-            className="fixed z-[100] bg-black/90 backdrop-blur border border-white/20 p-3 rounded-lg shadow-2xl shadow-black max-w-[280px] pointer-events-none"
-            style={{ left: hoveredSegment.x + 15, top: hoveredSegment.y - 100 }}
-          >
-            <p className="text-white text-sm font-bold truncate mb-1">Cena {hoveredSeg.id}</p>
-            <p className="text-white/60 text-xs line-clamp-2 mb-2">{hoveredSeg.text}</p>
-            <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs text-white/50">
-              <span>Início:</span>
-              <span className="text-right text-white/80">{hoveredSeg.start.toFixed(2)}s</span>
-              <span>Fim:</span>
-              <span className="text-right text-white/80">{hoveredSeg.end.toFixed(2)}s</span>
-              <span>Duração:</span>
-              <span className="text-right text-white/80">{(hoveredSeg.end - hoveredSeg.start).toFixed(2)}s</span>
-              <span>Tipo:</span>
-              <span className="text-right text-white/80">{hoveredSeg.assetType || 'image_static'}</span>
+              />
             </div>
           </div>
-        )}
 
-        {/* Header da Timeline */}
-        <div className="flex items-center justify-between px-5 py-3 border-b border-white/10 bg-[#13131a]">
-          <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="text-purple-400">
-              <rect x="2" y="2" width="20" height="20" rx="2" />
-              <line x1="7" y1="2" x2="7" y2="22" />
-              <line x1="17" y1="2" x2="17" y2="22" />
-              <line x1="2" y1="12" x2="22" y2="12" />
-            </svg>
-            Timeline
-          </h3>
+          {/* ====== TRANSPORT CONTROLS (estilo Filmora) ====== */}
+          <div className="flex items-center justify-between px-4 py-2" style={{ background: FILMORA.bgDark, borderTop: `1px solid ${FILMORA.border}` }}>
+            {/* Progress bar */}
+            <div className="flex-1 mr-4 cursor-pointer group" onClick={handleProgressClick}>
+              <div className="relative h-1 rounded-full overflow-hidden" style={{ background: FILMORA.border }}>
+                <div ref={progressRef} className="absolute left-0 top-0 h-full rounded-full transition-none" style={{ background: FILMORA.accent, width: 0 }} />
+                <div className="absolute left-0 top-0 h-full w-full rounded-full opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'rgba(0,212,170,0.15)' }} />
+              </div>
+            </div>
 
-          <div className="flex items-center gap-4">
-            {/* Zoom Controls */}
-            <div className="flex bg-black/50 p-0.5 rounded-lg border border-white/5">
-              <button onClick={handleZoomOut} className="w-7 h-7 rounded flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 active:scale-95 text-sm" title="Zoom Out">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            {/* Buttons */}
+            <div className="flex items-center gap-1">
+              <button onClick={handleSkipToStart} className="w-7 h-7 rounded flex items-center justify-center transition-colors" style={{ color: FILMORA.textMuted }} title="Início">
+                {Icons.skipBack}
               </button>
-              <div className="flex items-center justify-center w-10 text-[10px] text-white/50 font-mono select-none">{Math.round(zoomLevel)}%</div>
-              <button onClick={handleZoomIn} className="w-7 h-7 rounded flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 active:scale-95 text-sm" title="Zoom In">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              <button onClick={handleStepBackward} className="w-7 h-7 rounded flex items-center justify-center transition-colors" style={{ color: FILMORA.textMuted }} title="Frame anterior">
+                {Icons.prevFrame}
+              </button>
+              <button onClick={handleTogglePlay} className="w-9 h-9 rounded-full flex items-center justify-center transition-all" style={{ background: FILMORA.accent, color: '#000' }} title={isPlaying ? 'Pausar' : 'Play'}>
+                {isPlaying ? Icons.pause : Icons.play}
+              </button>
+              <button onClick={handleStepForward} className="w-7 h-7 rounded flex items-center justify-center transition-colors" style={{ color: FILMORA.textMuted }} title="Próximo frame">
+                {Icons.nextFrame}
+              </button>
+              <button onClick={handleSkipToEnd} className="w-7 h-7 rounded flex items-center justify-center transition-colors" style={{ color: FILMORA.textMuted }} title="Fim">
+                {Icons.skipForward}
               </button>
             </div>
 
             {/* Timecode */}
-            <div className="flex items-center gap-2 text-xs text-white/40 font-mono">
-              <span ref={timecodeRef} className="text-white/80">0:00.0</span>
-              <span>/</span>
-              <span>{Math.floor(durationInSeconds / 60)}:{(durationInSeconds % 60).toFixed(1).padStart(4, '0')}</span>
+            <div className="ml-4 font-mono text-[11px] tabular-nums tracking-wide" style={{ color: FILMORA.textMuted }}>
+              <span ref={timecodeRef} style={{ color: FILMORA.text }}>00:00:00:00</span>
             </div>
           </div>
         </div>
 
-        {/* Timeline Body */}
-        <div className="flex">
-          
-          {/* Labels das Trilhas (lado esquerdo fixo) */}
-          <div className="flex-shrink-0 w-[100px] bg-[#0a0a12] border-r border-white/10 z-20">
-            {/* Espaço para a régua */}
-            <div className="h-[28px] border-b border-white/10" />
-            
-            {/* Label: Trilha Visual */}
-            <div className="h-[72px] flex items-center px-3 border-b border-white/[0.06] gap-2">
-              <div className="w-2 h-2 rounded-full bg-blue-400 shadow-[0_0_6px_rgba(59,130,246,0.5)]" />
-              <div className="flex flex-col">
-                <span className="text-[10px] font-semibold text-white/70 tracking-wide uppercase">Vídeo</span>
-                <span className="text-[9px] text-white/30">{visualSegments.length} cenas</span>
+        {/* ============ SIDEBAR DIREITA (Propriedades) ============ */}
+        <div className="w-[220px] flex-shrink-0 flex flex-col border-l overflow-y-auto" style={{ background: FILMORA.bgDark, borderColor: FILMORA.border }}>
+          {/* Tabs */}
+          <div className="flex border-b" style={{ borderColor: FILMORA.border }}>
+            <div className="flex-1 py-2 text-center text-[10px] font-semibold tracking-wider uppercase" style={{ color: FILMORA.accent, borderBottom: `2px solid ${FILMORA.accent}` }}>
+              Info
+            </div>
+          </div>
+
+          {/* Info Cards */}
+          <div className="p-3 space-y-3">
+            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Duração</div>
+              <div className="text-sm font-bold font-mono" style={{ color: FILMORA.text }}>
+                {formatTimecode(durationInSeconds)}
               </div>
             </div>
 
-            {/* Label: Trilha de Áudio */}
-            <div className="h-[56px] flex items-center px-3 gap-2">
-              <div className="w-2 h-2 rounded-full bg-pink-400 shadow-[0_0_6px_rgba(236,72,153,0.5)]" />
-              <div className="flex flex-col">
-                <span className="text-[10px] font-semibold text-white/70 tracking-wide uppercase">Áudio</span>
-                <span className="text-[9px] text-white/30">{audioUrl ? '1 faixa' : 'Vazio'}</span>
+            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Cenas</div>
+              <div className="text-sm font-bold" style={{ color: FILMORA.text }}>
+                {project.segments.length}
+              </div>
+            </div>
+
+            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Resolução</div>
+              <div className="text-sm font-bold" style={{ color: FILMORA.text }}>
+                {ASPECT_RATIO_DIMENSIONS[selectedRatio]?.width}×{ASPECT_RATIO_DIMENSIONS[selectedRatio]?.height}
+              </div>
+            </div>
+
+            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>FPS</div>
+              <div className="text-sm font-bold" style={{ color: FILMORA.text }}>30</div>
+            </div>
+
+            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Áudio</div>
+              <div className="text-xs font-medium truncate" style={{ color: audioUrl ? FILMORA.accent : FILMORA.textDim }}>
+                {audioUrl ? '✓ Carregado' : '— Sem áudio'}
               </div>
             </div>
           </div>
 
-          {/* Área Scrollável da Timeline */}
+          {/* Dica */}
+          <div className="mt-auto p-3">
+            <div className="rounded p-2.5" style={{ background: `${FILMORA.accent}10`, border: `1px solid ${FILMORA.accent}30` }}>
+              <p className="text-[9px] leading-relaxed" style={{ color: FILMORA.accent }}>
+                💡 O preview usa qualidade reduzida. O vídeo final será renderizado em alta qualidade.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ================================================================ */}
+      {/* TIMELINE TOOLBAR (estilo Filmora — ícones de edição)             */}
+      {/* ================================================================ */}
+      <div className="flex items-center px-3 py-1 gap-0.5 border-t border-b" style={{ background: FILMORA.bgDark, borderColor: FILMORA.border }}>
+        {/* Tool icons */}
+        {[Icons.undo, Icons.redo, null, Icons.scissors, Icons.trash, null].map((icon, i) => 
+          icon === null ? (
+            <div key={`sep-${i}`} className="w-px h-4 mx-1" style={{ background: FILMORA.border }} />
+          ) : (
+            <button key={i} className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:brightness-150" style={{ color: FILMORA.textDim }}>
+              {icon}
+            </button>
+          )
+        )}
+        
+        <div className="flex-1" />
+
+        {/* Zoom Controls (estilo Filmora — slider feel) */}
+        <div className="flex items-center gap-1.5">
+          <button onClick={handleZoomOut} className="w-6 h-6 rounded flex items-center justify-center transition-colors hover:brightness-150" style={{ color: FILMORA.textDim }}>
+            {Icons.minus}
+          </button>
+          <div className="relative w-20 h-1 rounded-full cursor-pointer" style={{ background: FILMORA.border }}
+            onClick={(e) => {
+              const rect = e.currentTarget.getBoundingClientRect();
+              const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+              setZoomLevel(MIN_ZOOM + pct * (MAX_ZOOM - MIN_ZOOM));
+            }}
+          >
+            <div className="absolute left-0 top-0 h-full rounded-full" style={{ background: FILMORA.accent, width: `${((zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)) * 100}%` }} />
+            <div className="absolute top-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full" style={{ background: FILMORA.accent, left: `calc(${((zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)) * 100}% - 5px)` }} />
+          </div>
+          <button onClick={handleZoomIn} className="w-6 h-6 rounded flex items-center justify-center transition-colors hover:brightness-150" style={{ color: FILMORA.textDim }}>
+            {Icons.plus}
+          </button>
+          <span className="text-[9px] font-mono ml-1 w-8 text-right" style={{ color: FILMORA.textDim }}>{Math.round(zoomLevel)}%</span>
+        </div>
+      </div>
+
+      {/* ================================================================ */}
+      {/* TIMELINE (Ruler + Tracks + Playhead)                             */}
+      {/* ================================================================ */}
+      <div className="flex-shrink-0 relative overflow-hidden" style={{ background: FILMORA.bgDarker, minHeight: '160px' }}>
+
+        {/* Tooltip */}
+        {hoveredSegment && hoveredSeg && (
+          <div 
+            className="fixed z-[100] backdrop-blur p-2.5 rounded shadow-2xl max-w-[260px] pointer-events-none"
+            style={{ left: hoveredSegment.x + 15, top: hoveredSegment.y - 90, background: FILMORA.surface, border: `1px solid ${FILMORA.border}` }}
+          >
+            <p className="text-xs font-bold truncate mb-0.5" style={{ color: FILMORA.text }}>Cena {hoveredSeg.id}</p>
+            <p className="text-[10px] mb-1.5 line-clamp-2" style={{ color: FILMORA.textMuted }}>{hoveredSeg.text}</p>
+            <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]" style={{ color: FILMORA.textDim }}>
+              <span>Início:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{hoveredSeg.start.toFixed(2)}s</span>
+              <span>Fim:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{hoveredSeg.end.toFixed(2)}s</span>
+              <span>Duração:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{(hoveredSeg.end - hoveredSeg.start).toFixed(2)}s</span>
+              <span>Tipo:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{hoveredSeg.assetType || 'image_static'}</span>
+            </div>
+          </div>
+        )}
+
+        <div className="flex h-full">
+          {/* Track Labels (esquerda fixa) */}
+          <div className="flex-shrink-0 w-[80px] z-20" style={{ background: FILMORA.bgDark, borderRight: `1px solid ${FILMORA.border}` }}>
+            {/* Ruler spacer */}
+            <div className="h-[24px] border-b" style={{ borderColor: FILMORA.border }} />
+            
+            {/* Track 1: Video */}
+            <div className="h-[60px] flex items-center px-2 gap-1.5 border-b" style={{ borderColor: `${FILMORA.border}80` }}>
+              <div className="flex items-center gap-1" style={{ color: FILMORA.textDim }}>
+                {Icons.film}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[9px] font-semibold truncate" style={{ color: FILMORA.textMuted }}>V1</span>
+                <div className="flex gap-0.5 mt-0.5" style={{ color: FILMORA.textDim }}>
+                  {Icons.lock}
+                  {Icons.eye}
+                </div>
+              </div>
+            </div>
+
+            {/* Track 2: Audio */}
+            <div className="h-[50px] flex items-center px-2 gap-1.5" style={{ borderColor: `${FILMORA.border}80` }}>
+              <div className="flex items-center gap-1" style={{ color: FILMORA.textDim }}>
+                {Icons.music}
+              </div>
+              <div className="flex flex-col min-w-0">
+                <span className="text-[9px] font-semibold truncate" style={{ color: FILMORA.textMuted }}>A1</span>
+                <div className="flex gap-0.5 mt-0.5" style={{ color: FILMORA.textDim }}>
+                  {Icons.lock}
+                  {Icons.eye}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Scrollable timeline area */}
           <div 
             ref={scrollWrapperRef}
-            className="relative flex-1 min-w-0 overflow-x-auto overflow-y-hidden custom-scrollbar"
+            className="relative flex-1 min-w-0 overflow-x-auto overflow-y-hidden filmora-scrollbar"
             onClick={handleBackgroundClick}
           >
             <div 
@@ -712,10 +874,10 @@ export function PreviewStep({
               style={{ width: totalTimelineWidth }}
               ref={trackContainerRef}
             >
-              
-              {/* ====== RÉGUA ====== */}
+              {/* ====== RULER ====== */}
               <div 
-                className="relative h-[28px] border-b border-white/15 cursor-text bg-[#16161f] hover:bg-[#1a1a25] transition-colors z-40"
+                className="relative h-[24px] border-b cursor-text z-40"
+                style={{ background: FILMORA.ruler, borderColor: FILMORA.border }}
                 onMouseDown={handleRulerMouseDown}
                 title="Clique para buscar / Arraste para zoom"
               >
@@ -723,17 +885,21 @@ export function PreviewStep({
                   const { major, minor } = getRulerSteps(zoomLevel);
                   const maxTime = Math.ceil(Math.max(durationInSeconds, viewportWidth / zoomLevel));
                   const markers: React.ReactNode[] = [];
-
                   for (let time = 0; time <= maxTime; time += minor) {
                     const isMajor = Math.round(time * 10) % Math.round(major * 10) === 0;
                     markers.push(
                       <div 
                         key={time}
-                        className={`absolute bottom-0 border-l pointer-events-none ${isMajor ? 'top-1 border-white/40 z-10' : 'top-3 border-white/10 z-0'}`}
-                        style={{ left: time * zoomLevel }}
+                        className="absolute bottom-0 pointer-events-none"
+                        style={{ 
+                          left: time * zoomLevel,
+                          height: isMajor ? '100%' : '40%',
+                          width: '1px',
+                          background: isMajor ? FILMORA.borderLight : `${FILMORA.border}60`,
+                        }}
                       >
                         {isMajor && (
-                          <span className="absolute -top-[9px] -translate-x-1/2 text-[9px] text-white/50 font-mono select-none px-[3px]">
+                          <span className="absolute -top-[1px] -translate-x-1/2 text-[8px] font-mono select-none" style={{ color: FILMORA.rulerText }}>
                             {formatRulerTime(time)}
                           </span>
                         )}
@@ -744,10 +910,10 @@ export function PreviewStep({
                 })()}
               </div>
 
-              {/* ====== TRILHA VISUAL (Imagens/Vídeos) ====== */}
-              <div className="relative h-[72px] border-b border-white/[0.06] bg-[#0e0e17]">
-                {/* Grid de fundo (estilo editor) */}
-                <div className="absolute inset-0 opacity-[0.03]" style={{
+              {/* ====== VIDEO TRACK ====== */}
+              <div className="relative h-[60px] border-b" style={{ background: FILMORA.bgDarker, borderColor: `${FILMORA.border}60` }}>
+                {/* Subtle grid */}
+                <div className="absolute inset-0 opacity-[0.02]" style={{
                   backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
                   backgroundSize: `${zoomLevel}px 100%`
                 }} />
@@ -757,96 +923,68 @@ export function PreviewStep({
                   const width = Math.max(4, (seg.end - seg.start) * zoomLevel);
                   const isVideo = (seg.assetType || '').startsWith('video');
                   const isSelected = selectedSegmentId === seg.id;
-                  const trackColor = isVideo ? TRACK_COLORS.video : TRACK_COLORS.image;
+                  const trackColor = isVideo ? FILMORA.trackVideo : FILMORA.trackImage;
 
                   return (
                     <div
                       key={seg.id}
-                      className={`absolute top-[4px] bottom-[4px] rounded-md overflow-hidden cursor-pointer transition-all group/clip ${
-                        isSelected 
-                          ? 'ring-2 ring-white/60 shadow-[0_0_12px_rgba(255,255,255,0.15)] z-10' 
-                          : 'ring-1 ring-white/10 hover:ring-white/30 hover:z-10'
+                      className={`absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden cursor-pointer transition-shadow group/clip ${
+                        isSelected ? 'z-10' : 'hover:z-10'
                       }`}
                       style={{ 
                         left, 
                         width,
-                        backgroundColor: `${trackColor}15`,
-                        borderLeft: `3px solid ${trackColor}`,
+                        background: `linear-gradient(180deg, ${trackColor}35 0%, ${trackColor}18 100%)`,
+                        border: `1px solid ${isSelected ? trackColor : `${trackColor}40`}`,
+                        boxShadow: isSelected ? `0 0 10px ${trackColor}30, inset 0 1px 0 ${trackColor}20` : 'none',
                       }}
                       onClick={(e) => { e.stopPropagation(); setSelectedSegmentId(seg.id); }}
                       onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
                       onMouseLeave={handleSegmentMouseLeave}
                     >
-                      {/* Background Image Thumbnail */}
-                      <SceneThumbnail 
-                        imageUrl={seg.imageUrl || seg.asset_url} 
-                        text={seg.text} 
-                      />
-
-                      {/* Gradient overlay para legibilidade */}
-                      <div className="absolute inset-0 bg-gradient-to-r from-black/70 via-black/30 to-black/60" />
-
-                      {/* Informações */}
-                      <div className="absolute inset-0 flex flex-col justify-between p-1.5 z-10">
-                        <div className="flex items-center gap-1">
-                          {/* Badge tipo */}
-                          <span className={`inline-flex items-center gap-0.5 text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm ${
-                            isVideo 
-                              ? 'bg-purple-500/40 text-purple-200' 
-                              : 'bg-blue-500/40 text-blue-200'
-                          }`}>
-                            {isVideo ? (
-                              <svg width="8" height="8" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21"/></svg>
-                            ) : (
-                              <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
-                            )}
-                            {isVideo ? 'VID' : 'IMG'}
-                          </span>
-                          <span className="text-[9px] text-white/60 font-mono">{seg.id}</span>
-                        </div>
-                        <span className="text-[9px] text-white/80 truncate leading-tight">{seg.text}</span>
+                      <SceneThumbnail imageUrl={seg.imageUrl || seg.asset_url} text={seg.text} />
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40" />
+                      <div className="absolute inset-0 flex items-center px-1.5 z-10">
+                        <span className="text-[8px] font-medium truncate" style={{ color: '#ffffffcc' }}>
+                          {seg.text}
+                        </span>
                       </div>
-
-                      {/* Borda de hover/seleção animada */}
-                      <div className={`absolute inset-0 border-b-2 transition-colors ${
-                        isSelected ? 'border-white/40' : 'border-transparent group-hover/clip:border-white/20'
-                      }`} />
+                      {/* Top accent bar */}
+                      <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: trackColor }} />
                     </div>
                   );
                 })}
               </div>
 
-              {/* ====== TRILHA DE ÁUDIO ====== */}
-              <div className="relative h-[56px] bg-[#0c0c14]">
-                {/* Grid de fundo */}
-                <div className="absolute inset-0 opacity-[0.03]" style={{
+              {/* ====== AUDIO TRACK ====== */}
+              <div className="relative h-[50px]" style={{ background: FILMORA.bgDarker }}>
+                <div className="absolute inset-0 opacity-[0.02]" style={{
                   backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
                   backgroundSize: `${zoomLevel}px 100%`
                 }} />
 
                 {audioUrl && (
                   <div 
-                    className="absolute top-[4px] bottom-[4px] rounded-md overflow-hidden ring-1 ring-pink-500/20"
+                    className="absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden"
                     style={{ 
                       left: 0, 
                       width: Math.max(4, durationInSeconds * zoomLevel),
-                      backgroundColor: `${TRACK_COLORS.audio}08`,
-                      borderLeft: `3px solid ${TRACK_COLORS.audio}`,
+                      background: `linear-gradient(180deg, ${FILMORA.trackAudio}25 0%, ${FILMORA.trackAudio}10 100%)`,
+                      border: `1px solid ${FILMORA.trackAudio}40`,
                     }}
                   >
-                    {/* Waveform */}
                     <AudioWaveformDisplay 
                       audioUrl={audioUrl} 
-                      color={TRACK_COLORS.audio} 
+                      color={FILMORA.trackAudio} 
                       duration={durationInSeconds} 
                       widthScale={zoomLevel} 
                     />
-                    
-                    {/* Label */}
-                    <div className="absolute top-1 left-2 z-10">
-                      <span className="text-[8px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-sm bg-pink-500/30 text-pink-200 flex items-center gap-1">
-                        <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/></svg>
-                        AUDIO
+                    {/* Top accent bar */}
+                    <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: FILMORA.trackAudio }} />
+                    <div className="absolute top-1 left-1.5 z-10">
+                      <span className="text-[7px] font-bold uppercase tracking-wider px-1 py-[1px] rounded-sm" 
+                        style={{ background: `${FILMORA.trackAudio}40`, color: `${FILMORA.trackAudio}` }}>
+                        ♫ Audio
                       </span>
                     </div>
                   </div>
@@ -854,31 +992,39 @@ export function PreviewStep({
 
                 {!audioUrl && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                    <span className="text-white/15 text-xs">Sem áudio</span>
+                    <span className="text-[10px]" style={{ color: FILMORA.textDim }}>Sem áudio</span>
                   </div>
                 )}
               </div>
 
-              {/* ====== PLAYHEAD (Agulha vermelha) ====== */}
+              {/* ====== PLAYHEAD ====== */}
               <div 
                 ref={playheadRef}
-                className="absolute top-0 w-[2px] bg-red-500 z-50 pointer-events-none"
+                className="absolute top-0 w-[2px] z-50 pointer-events-none"
                 style={{ 
                   height: '100%', 
-                  transform: `translateX(0px)`,
-                  boxShadow: '0 0 8px rgba(239,68,68,0.4)',
+                  transform: 'translateX(0px)',
+                  background: FILMORA.playhead,
+                  boxShadow: `0 0 6px ${FILMORA.playhead}60`,
                 }}
               >
-                {/* Handle da agulha - clicável */}
+                {/* Handle */}
                 <div 
-                  className="playhead-handle absolute -top-[0px] left-1/2 -translate-x-1/2 w-8 h-8 cursor-pointer flex items-start justify-center pointer-events-auto group/handle z-50"
+                  className="playhead-handle absolute -top-[0px] left-1/2 -translate-x-1/2 w-8 h-6 cursor-pointer flex items-start justify-center pointer-events-auto group/handle z-50"
                   onMouseDown={handlePlayheadMouseDown}
                 >
                   <div className="flex flex-col items-center">
-                    <div ref={playheadLabelRef} className="bg-red-500 text-white text-[8px] font-bold px-[5px] py-[1px] rounded-t-sm shadow-md group-hover/handle:bg-red-400 group-hover/handle:scale-110 transition-transform">
-                      0.0
+                    {/* Playhead label */}
+                    <div 
+                      ref={playheadLabelRef} 
+                      className="text-white text-[7px] font-bold font-mono px-1 py-[1px] rounded-t-sm shadow-md group-hover/handle:brightness-125 transition-all"
+                      style={{ background: FILMORA.playhead }}
+                    >
+                      00:00:00:00
                     </div>
-                    <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[6px] border-t-red-500 group-hover/handle:border-t-red-400 drop-shadow-md" />
+                    {/* Triangle */}
+                    <div className="w-0 h-0 border-l-[5px] border-l-transparent border-r-[5px] border-r-transparent border-t-[5px] drop-shadow-md"
+                      style={{ borderTopColor: FILMORA.playhead }} />
                   </div>
                 </div>
               </div>
@@ -888,39 +1034,11 @@ export function PreviewStep({
         </div>
       </div>
 
-      {/* Informações do projeto */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="p-4 bg-white/5 rounded-lg text-center">
-          <p className="text-white/60 text-sm">Duração</p>
-          <p className="text-white text-lg font-bold">
-            {Math.floor(durationInSeconds / 60)}:{String(Math.floor(durationInSeconds % 60)).padStart(2, '0')}
-          </p>
-        </div>
-        <div className="p-4 bg-white/5 rounded-lg text-center">
-          <p className="text-white/60 text-sm">Cenas</p>
-          <p className="text-white text-lg font-bold">{project.segments.length}</p>
-        </div>
-        <div className="p-4 bg-white/5 rounded-lg text-center">
-          <p className="text-white/60 text-sm">Resolução Atual</p>
-          <p className="text-white text-lg font-bold">
-            {ASPECT_RATIO_DIMENSIONS[selectedRatio]?.width}x{ASPECT_RATIO_DIMENSIONS[selectedRatio]?.height}
-          </p>
-        </div>
-      </div>
-
-      {/* Aviso sobre renderização */}
-      <div className="p-4 bg-purple-500/10 border border-purple-500/30 rounded-lg">
-        <p className="text-purple-300 text-sm">
-          💡 <strong>Dica:</strong> O preview usa qualidade reduzida para performance. 
-          O vídeo final será renderizado em alta qualidade com aceleração por GPU.
-        </p>
-      </div>
-
       <style dangerouslySetInnerHTML={{__html: `
-        .custom-scrollbar::-webkit-scrollbar { height: 8px; }
-        .custom-scrollbar::-webkit-scrollbar-track { background: rgba(0, 0, 0, 0.4); border-radius: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); border-radius: 4px; }
-        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.3); }
+        .filmora-scrollbar::-webkit-scrollbar { height: 6px; }
+        .filmora-scrollbar::-webkit-scrollbar-track { background: ${FILMORA.bgDarker}; }
+        .filmora-scrollbar::-webkit-scrollbar-thumb { background: ${FILMORA.border}; border-radius: 3px; }
+        .filmora-scrollbar::-webkit-scrollbar-thumb:hover { background: ${FILMORA.borderLight}; }
         .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
       `}} />
     </div>

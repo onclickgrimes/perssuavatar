@@ -586,8 +586,25 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     }
   };
 
+  // Preview: tela cheia, sem header nem background
+  if (currentStep === 'preview') {
+    return (
+      <div className="h-screen w-screen overflow-hidden">
+        <PreviewStep
+          project={project}
+          subtitleMode={subtitleMode}
+          setSubtitleMode={setSubtitleMode}
+          onContinue={handleStartRender}
+          onBack={() => setCurrentStep('images')}
+          onAspectRatiosChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: value }))}
+          selectedNiche={selectedNiche}
+        />
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900">
+    <div className="flex flex-col min-h-screen bg-gradient-to-br from-gray-900 via-purple-900 to-gray-900">
       {/* Header */}
       <header className="border-b border-white/10 bg-black/30 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 py-4">
@@ -656,7 +673,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       </header>
 
       {/* Main Content */}
-      <main className={`mx-auto px-6 py-8 w-full ${currentStep === 'upload' ? 'max-w-[100vw]' : 'max-w-7xl'}`}>
+      <main className={`w-full ${currentStep === 'upload' ? 'mx-auto px-6 py-8 max-w-[100vw]' : 'mx-auto px-6 py-8 max-w-7xl'}`}>
         {error && (
           <div className="mb-6 p-4 bg-red-500/20 border border-red-500/50 rounded-xl text-red-300">
             {error}
