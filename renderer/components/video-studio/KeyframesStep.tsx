@@ -333,12 +333,27 @@ export function KeyframesStep({
 
   const handleAddSegment = (index: number) => {
     const newSegments = JSON.parse(JSON.stringify(segments));
-    const prevSegment = newSegments[index];
     
+    // Default duration for new segment
     const defaultDuration = 0.0;
-    const insertionTime = prevSegment.end;
     
-    for (let i = index + 1; i < newSegments.length; i++) {
+    // Determine insertion time
+    let insertionTime = 0;
+    if (index === -1) {
+      // Adding at start
+      insertionTime = 0;
+    } else {
+      // Adding after index
+      const prevSegment = newSegments[index];
+      insertionTime = prevSegment.end;
+    }
+    
+    // Shift subsequent segments
+    // If adding at start (index -1), loop from 0
+    // If adding after index, loop from index + 1
+    const startIndex = index + 1;
+    
+    for (let i = startIndex; i < newSegments.length; i++) {
       const seg = newSegments[i];
       seg.start += defaultDuration;
       seg.end += defaultDuration;
@@ -350,13 +365,11 @@ export function KeyframesStep({
       }
     }
 
-    const newId = Math.max(...newSegments.map((s: any) => s.id), 0) + 1;
-    
     // Usar o primeiro asset type permitido pelo nicho ou image_static como fallback
     const defaultAssetType = niche?.asset_types?.[0] || 'image_static';
 
     const newSegment: TranscriptionSegment = {
-      id: newId,
+      id: 0, // Temporary ID, will be renumbered
       text: '',
       start: insertionTime,
       end: insertionTime + defaultDuration,
@@ -366,10 +379,17 @@ export function KeyframesStep({
       assetType: defaultAssetType,
     };
 
+    // Insert new segment
     newSegments.splice(index + 1, 0, newSegment);
+
+    // Renumber IDs sequentially
+    newSegments.forEach((seg: any, idx: number) => {
+      seg.id = idx + 1;
+    });
 
     if (onSegmentsUpdate) {
       onSegmentsUpdate(newSegments);
+      setSelectedWords({ segmentId: -1, indices: [] });
     }
   };
 
@@ -382,8 +402,6 @@ export function KeyframesStep({
     newSegments.splice(index, 1);
 
     // Ajustar o tempo dos segmentos subsequentes para preencher o buraco
-    // (Opcional: ou deixamos o buraco? Normalmente em edição de vídeo linear, puxamos tudo pra trás)
-    // Se for uma ferramenta linear, puxamos pra trás.
     for (let i = index; i < newSegments.length; i++) {
       const seg = newSegments[i];
       seg.start -= duration;
@@ -396,8 +414,14 @@ export function KeyframesStep({
       }
     }
 
+    // Renumber IDs sequentially
+    newSegments.forEach((seg: any, idx: number) => {
+      seg.id = idx + 1;
+    });
+
     if (onSegmentsUpdate) {
       onSegmentsUpdate(newSegments);
+      setSelectedWords({ segmentId: -1, indices: [] });
     }
   };
 
@@ -510,6 +534,18 @@ export function KeyframesStep({
       )}
 
       <div className="flex flex-col pb-20">
+        {/* Botão de adicionar no início */}
+        <div 
+          className="relative h-6 -mt-2 mb-2 group w-full flex items-center justify-center cursor-pointer z-10"
+          onClick={() => handleAddSegment(-1)}
+          title="Inserir nova cena no início"
+        >
+          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/20 opacity-0 group-hover:opacity-100 transition-all duration-300 w-[98%] mx-auto" />
+          <div className="relative z-10 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+        </div>
+
         {segments.map((segment, index) => {
           const proj = segmentProjections[index];
           const projectedStart = proj.projectedStart;
@@ -553,6 +589,9 @@ export function KeyframesStep({
             <div className="flex items-start justify-between gap-6">
               <div className="flex-1">
                 <div className="flex items-center gap-3 mb-2">
+                  <span className="bg-white/10 text-white/80 px-2 py-1 rounded text-xs font-bold font-mono">
+                    #{segment.id}
+                  </span>
                   <span className={`px-2 py-1 rounded text-xs font-bold font-mono transition-colors ${
                     isHighlighted ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]'
                     : isDurationChanged ? 'bg-yellow-500 text-black shadow-[0_0_10px_rgba(234,179,8,0.5)]' 
@@ -696,6 +735,18 @@ export function KeyframesStep({
           )}
           </React.Fragment>
         )})}
+        
+        {/* Botão de adicionar no final */}
+        <div 
+          className="relative h-6 -mt-2 mb-2 group w-full flex items-center justify-center cursor-pointer z-10"
+          onClick={() => handleAddSegment(segments.length - 1)}
+          title="Inserir nova cena no final"
+        >
+          <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/20 opacity-0 group-hover:opacity-100 transition-all duration-300 w-[98%] mx-auto" />
+          <div className="relative z-10 w-6 h-6 rounded-full bg-blue-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transform scale-50 group-hover:scale-100 transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"><path d="M12 5v14M5 12h14"/></svg>
+          </div>
+        </div>
       </div>
 
       {isSyncModalOpen && (
