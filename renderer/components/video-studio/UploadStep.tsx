@@ -9,6 +9,8 @@ interface UploadStepProps {
   onNicheChange: (niche: ChannelNiche | null) => void;
   isTranscribing?: boolean;
   transcriptionMessage?: string;
+  onContinue?: () => void;
+  currentAudio?: { file?: File, path?: string };
 }
 
 const ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:3', '4:5', '3:4'];
@@ -147,6 +149,8 @@ export function UploadStep({
   onNicheChange,
   isTranscribing = false,
   transcriptionMessage = '',
+  onContinue,
+  currentAudio,
 }: UploadStepProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isNicheModalOpen, setIsNicheModalOpen] = useState(false);
@@ -220,6 +224,33 @@ export function UploadStep({
     return () => window.removeEventListener('click', closeContext);
   }, []);
 
+  // Carregar áudio inicial se existir (e timeline estiver vazia)
+  useEffect(() => {
+    const loadInitialAudio = async () => {
+      if (items.length > 0 || !currentAudio) return;
+
+      if (currentAudio.file) {
+        // Se tivermos o objeto File (recém uploadado mas ainda na memória)
+        await processFiles([currentAudio.file], 'start');
+      } else if (currentAudio.path) {
+        // Se tivermos apenas o path (projeto carregado)
+        try {
+            const response = await fetch(`file://${currentAudio.path}`);
+            const blob = await response.blob();
+            const fileName = currentAudio.path.split(/[/\\]/).pop() || 'audio.wav';
+            const file = new File([blob], fileName, { type: blob.type || 'audio/wav' });
+            await processFiles([file], 'start');
+        } catch (e) {
+            console.error("Erro ao carregar áudio inicial:", e);
+        }
+      }
+    };
+    
+    // Pequeno delay para garantir que o AudioContext esteja pronto e UI montada
+    const t = setTimeout(loadInitialAudio, 500);
+    return () => clearTimeout(t);
+  }, [currentAudio]); // Dependência apenas de currentAudio
+
   // Processa novos arquivos
   const processFiles = async (files: File[], position: 'start' | 'end') => {
     setIsDecoding(true);
@@ -242,11 +273,20 @@ export function UploadStep({
         });
       }
       
-      setItems(prev => position === 'start' ? [...newItems, ...prev] : [...prev, ...newItems]);
+      setItems(prev => {
+        // Evita duplicatas pelo nome e tamanho se já existirem
+        const existingKeys = new Set(prev.map(p => `${p.file.name}-${p.file.size}`));
+        const filteredNew = newItems.filter(n => !existingKeys.has(`${n.file.name}-${n.file.size}`));
+        
+        if (filteredNew.length === 0) return prev;
+        return position === 'start' ? [...filteredNew, ...prev] : [...prev, ...filteredNew];
+      });
+      
       if (isPlaying) stopPlayback();
     } catch (err) {
       console.error('Erro ao ler áudios:', err);
-      alert('Houve um erro ao processar os arquivos de áudio suportados.');
+      // Não mostrar alert se for apenas um erro de decode silencioso (ex: load inicial)
+      // alert('Houve um erro ao processar os arquivos de áudio suportados.');
     } finally {
       setIsDecoding(false);
     }
@@ -867,7 +907,15 @@ export function UploadStep({
                </button>
             </div>
 
-            <div className="flex-1 flex justify-end">
+            <div className="flex-1 flex justify-end gap-3">
+               {onContinue && (
+                 <button
+                   onClick={onContinue}
+                   className="px-6 py-2.5 bg-white/10 hover:bg-white/20 text-white rounded-xl font-medium transition-all flex items-center gap-2"
+                 >
+                   Continuar →
+                 </button>
+               )}
                <button
                  onClick={handleSubmit}
                  disabled={isMerging || isDecoding || isPlaying || items.length === 0 || isTranscribing}

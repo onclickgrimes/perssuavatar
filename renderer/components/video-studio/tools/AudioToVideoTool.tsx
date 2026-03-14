@@ -489,6 +489,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             onNicheChange={setSelectedNiche}
             isTranscribing={isProcessing && currentStep === 'upload'}
             transcriptionMessage={transcriptionMessage}
+            onContinue={project.segments.length > 0 ? () => setCurrentStep('keyframes') : undefined}
+            currentAudio={{ file: project.audioFile, path: project.audioPath }}
           />
         );
       
