@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
 import { ChannelNiche } from './NicheModal';
-import { ASSET_DEFINITIONS } from '../../../remotion/assets/definitions';
 
 function normalizeWord(w: string) {
   return w.toLowerCase().replace(/[.,!?;:()\[\]{}"'\-—]/g, '');
@@ -143,12 +142,7 @@ interface KeyframesStepProps {
   segments: TranscriptionSegment[];
   onUpdateEmotion: (id: number, emotion: string) => void;
   onContinue: () => void;
-  onSkipAnalysis?: () => void;
   onBack: () => void;
-  provider?: 'gemini' | 'openai' | 'deepseek';
-  onProviderChange?: (p: 'gemini' | 'openai' | 'deepseek') => void;
-  providerModel?: string;
-  onProviderModelChange?: (m: string) => void;
   onMoveWords?: (fromSegmentId: number, toSegmentId: number, wordIndices: number[]) => void;
   onSegmentsUpdate?: (newSegments: TranscriptionSegment[]) => void;
   niche?: ChannelNiche | null;
@@ -158,12 +152,7 @@ export function KeyframesStep({
   segments,
   onUpdateEmotion,
   onContinue,
-  onSkipAnalysis,
   onBack,
-  provider = 'gemini',
-  onProviderChange,
-  providerModel,
-  onProviderModelChange,
   onMoveWords,
   onSegmentsUpdate,
   niche,
@@ -423,20 +412,12 @@ export function KeyframesStep({
       console.log(`Removidos ${segments.length - validSegments.length} segmentos vazios.`);
       onSegmentsUpdate(validSegments);
       setTimeout(() => {
-         if (onSkipAnalysis && segments.some(s => s.imagePrompt)) {
-             onSkipAnalysis();
-         } else {
-             onContinue();
-         }
+         onContinue();
       }, 100);
       return;
     }
     
-    if (onSkipAnalysis && segments.some(s => s.imagePrompt)) {
-        onSkipAnalysis();
-    } else {
-        onContinue();
-    }
+    onContinue();
   };
 
   return (
@@ -445,52 +426,6 @@ export function KeyframesStep({
         <div>
           <h2 className="text-2xl font-bold text-white">Keyframes & Emoções</h2>
           <p className="text-white/60">Revise e ajuste as emoções sugeridas para cada segmento</p>
-          
-          {onProviderChange && (
-            <div className="flex items-center gap-3 mt-6">
-               <span className="text-white/60 text-sm">IA de Análise:</span>
-               <select
-                 value={provider}
-                 onChange={(e) => onProviderChange(e.target.value as any)}
-                 className="bg-black/30 border border-white/10 rounded-lg px-3 py-1 text-white text-sm focus:border-pink-500 focus:outline-none"
-               >
-                 <option value="gemini">Google Gemini</option>
-                 <option value="openai">OpenAI</option>
-                 <option value="deepseek">DeepSeek V3</option>
-               </select>
-
-               {onProviderModelChange && (
-                 <>
-                   <span className="text-white/60 text-sm ml-2">Modelo:</span>
-                   <select
-                     value={providerModel || ''}
-                     onChange={(e) => onProviderModelChange(e.target.value)}
-                     className="bg-black/30 border border-white/10 rounded-lg px-3 py-1 text-white text-sm focus:border-pink-500 focus:outline-none"
-                   >
-                     {provider === 'gemini' && (
-                       <>
-                         <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite ($0.25 inputs / $1.50 outputs)</option>
-                         <option value="gemini-3-flash-preview">Gemini 3 Flash ($0.50 inputs / $3 outputs)</option>
-                         <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro ($2 inputs / $12 outputs)</option>
-                       </>
-                     )}
-                     {provider === 'openai' && (
-                       <>
-                         <option value="gpt-5-mini-2025-08-07">GPT 5 Mini ($0.25 inputs / $2.00 outputs)</option>
-                         <option value="gpt-4.1-2025-04-14">GPT 4.1 ($2.00 inputs / $8.00 outputs)</option>
-                       </>
-                     )}
-                     {provider === 'deepseek' && (
-                       <>
-                         <option value="deepseek-chat">DeepSeek Chat V3</option>
-                         <option value="deepseek-reasoner">DeepSeek Reasoner R1</option>
-                       </>
-                     )}
-                   </select>
-                 </>
-               )}
-            </div>
-          )}
         </div>
         <div className="flex flex-col items-end gap-4 mt-1">
           <div className="flex gap-3 items-center">
@@ -509,16 +444,6 @@ export function KeyframesStep({
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-400/10 to-blue-500/0 translate-x-[-100%] group-hover:animate-[shimmer_1.5s_infinite]" />
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" /><path d="M3 3v5h5" /><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" /><path d="M16 16h5v5" /></svg>
                 Usar Roteiro Original
-              </button>
-            )}
-
-            {/* Botão vermelho para recriar prompts (só aparece se análise já foi feita) */}
-            {onSkipAnalysis && segments.some(s => s.imagePrompt) && (
-              <button
-                onClick={onContinue}
-                className="px-4 py-2 bg-red-500/20 hover:bg-red-500/30 text-red-300 border border-red-500/50 rounded-lg transition-all flex items-center gap-2"
-              >
-                🔄 Recriar prompts com IA
               </button>
             )}
 
@@ -738,31 +663,6 @@ export function KeyframesStep({
               </div>
               
               <div className="flex flex-col gap-3 max-w-xs">
-                {/* Seletor de Asset Type */}
-                <select
-                  value={segment.assetType || (niche?.asset_types?.[0] || 'image_static')}
-                  onChange={(e) => {
-                     if (onSegmentsUpdate) {
-                        const newSegments = [...segments];
-                        newSegments[index].assetType = e.target.value;
-                        onSegmentsUpdate(newSegments);
-                     }
-                  }}
-                  className="w-full bg-white/5 hover:bg-white/10 text-white text-xs rounded-lg px-2 py-1.5 border border-white/10 focus:border-pink-500 outline-none transition-colors"
-                >
-                  {(niche?.asset_types && niche.asset_types.length > 0 
-                      ? niche.asset_types 
-                      : Object.keys(ASSET_DEFINITIONS)
-                  ).map(type => {
-                    const def = ASSET_DEFINITIONS[type as keyof typeof ASSET_DEFINITIONS];
-                    return (
-                      <option key={type} value={type} className="bg-gray-900 text-white py-1">
-                        {def?.icon} {def?.label || type}
-                      </option>
-                    );
-                  })}
-                </select>
-
                 <div className="flex flex-wrap gap-2">
                 {emotions.map((emotion) => (
                   <button

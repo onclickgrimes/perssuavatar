@@ -1,5 +1,6 @@
 import React from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
+import { ChannelNiche } from './NicheModal';
 import { 
   ASSET_DEFINITIONS, 
   type AssetType,
@@ -15,6 +16,14 @@ interface PromptsStepProps {
   onContinue: () => void;
   onBack: () => void;
   onUpdateImage: (id: number, imageUrl: string) => void;
+  provider?: 'gemini' | 'openai' | 'deepseek';
+  onProviderChange?: (p: 'gemini' | 'openai' | 'deepseek') => void;
+  providerModel?: string;
+  onProviderModelChange?: (m: string) => void;
+  onAnalyze?: () => void;
+  isProcessing?: boolean;
+  onSegmentsUpdate?: (newSegments: TranscriptionSegment[]) => void;
+  niche?: ChannelNiche | null;
 }
 
 // Função helper para obter info do asset type
@@ -40,31 +49,115 @@ export function PromptsStep({
   onContinue,
   onBack,
   onUpdateImage,
+  provider = 'gemini',
+  onProviderChange,
+  providerModel,
+  onProviderModelChange,
+  onAnalyze,
+  isProcessing,
+  onSegmentsUpdate,
+  niche,
 }: PromptsStepProps) {
   // Verificar se algum segmento usa video_stock e ainda não tem vídeo
   const hasVideoStockWithoutUrl = segments.some(
     seg => seg.assetType === 'video_stock' && !seg.imageUrl
   );
+  
+  const hasPrompts = segments.some(s => s.imagePrompt);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between">
         <div>
           <h2 className="text-2xl font-bold text-white">Revisão de Prompts</h2>
           <p className="text-white/60">
             Revise os prompts e tipos de asset escolhidos pela IA para cada cena
           </p>
+          
+          {onProviderChange && (
+            <div className="flex items-center gap-3 mt-6">
+               <span className="text-white/60 text-sm">IA de Análise:</span>
+               <select
+                 value={provider}
+                 onChange={(e) => onProviderChange(e.target.value as any)}
+                 className="bg-black/30 border border-white/10 rounded-lg px-3 py-1 text-white text-sm focus:border-pink-500 focus:outline-none"
+               >
+                 <option value="gemini">Google Gemini</option>
+                 <option value="openai">OpenAI</option>
+                 <option value="deepseek">DeepSeek V3</option>
+               </select>
+
+               {onProviderModelChange && (
+                 <>
+                   <span className="text-white/60 text-sm ml-2">Modelo:</span>
+                   <select
+                     value={providerModel || ''}
+                     onChange={(e) => onProviderModelChange(e.target.value)}
+                     className="bg-black/30 border border-white/10 rounded-lg px-3 py-1 text-white text-sm focus:border-pink-500 focus:outline-none"
+                   >
+                     {provider === 'gemini' && (
+                       <>
+                         <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite ($0.25 inputs / $1.50 outputs)</option>
+                         <option value="gemini-3-flash-preview">Gemini 3 Flash ($0.50 inputs / $3 outputs)</option>
+                         <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro ($2 inputs / $12 outputs)</option>
+                       </>
+                     )}
+                     {provider === 'openai' && (
+                       <>
+                         <option value="gpt-5-mini-2025-08-07">GPT 5 Mini ($0.25 inputs / $2.00 outputs)</option>
+                         <option value="gpt-4.1-2025-04-14">GPT 4.1 ($2.00 inputs / $8.00 outputs)</option>
+                       </>
+                     )}
+                     {provider === 'deepseek' && (
+                       <>
+                         <option value="deepseek-chat">DeepSeek Chat V3</option>
+                         <option value="deepseek-reasoner">DeepSeek Reasoner R1</option>
+                       </>
+                     )}
+                   </select>
+                 </>
+               )}
+            </div>
+          )}
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 items-center">
           <button
             onClick={onBack}
             className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
           >
             ← Voltar
           </button>
+          
+          {onAnalyze && (
+            <button
+              onClick={onAnalyze}
+              disabled={isProcessing}
+              className={`px-4 py-2 border rounded-lg transition-all flex items-center gap-2 ${
+                 hasPrompts 
+                    ? 'bg-white/5 hover:bg-white/10 text-white border-white/20' 
+                    : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 animate-pulse'
+              }`}
+            >
+              {isProcessing ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Gerando...
+                  </>
+              ) : hasPrompts ? '🔄 Regenerar com IA' : '✨ Gerar Prompts com IA'}
+            </button>
+          )}
+
           <button
             onClick={onContinue}
-            className="px-6 py-2 rounded-lg font-medium transition-all bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white"
+            disabled={!hasPrompts}
+            className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                !hasPrompts
+                ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                : 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white'
+            }`}
           >
             Próximo →
           </button>
@@ -105,9 +198,38 @@ export function PromptsStep({
                 <span className="px-2 py-1 bg-white/10 rounded text-xs text-white/60">
                   {segment.emotion}
                 </span>
-                <span className={`px-2 py-1 ${assetInfo.color} rounded text-xs flex items-center gap-1`}>
-                  {assetInfo.icon} {assetInfo.label}
-                </span>
+                
+                <div className="relative group">
+                  <select
+                    value={segment.assetType || (niche?.asset_types?.[0] || 'image_flux')}
+                    onChange={(e) => {
+                       if (onSegmentsUpdate) {
+                          const newSegments = segments.map(s => 
+                            s.id === segment.id ? { ...s, assetType: e.target.value } : s
+                          );
+                          onSegmentsUpdate(newSegments);
+                       }
+                    }}
+                    disabled={!onSegmentsUpdate}
+                    className={`appearance-none px-2 py-1 pr-6 ${assetInfo.color} rounded text-xs flex items-center gap-1 cursor-pointer focus:outline-none focus:ring-1 focus:ring-white/50`}
+                  >
+                    {(niche?.asset_types && niche.asset_types.length > 0 
+                        ? niche.asset_types 
+                        : Object.keys(ASSET_DEFINITIONS)
+                    ).map(type => {
+                      const def = ASSET_DEFINITIONS[type as keyof typeof ASSET_DEFINITIONS];
+                      return (
+                        <option key={type} value={type} className="bg-gray-900 text-white">
+                           {def?.label || type}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <div className="absolute right-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-white/50">
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m6 9 6 6 6-6"/></svg>
+                  </div>
+                </div>
+
                 {segment.assetType === 'video_stock' && segment.imageUrl && (
                   <span className="px-2 py-1 bg-green-500/20 text-green-300 rounded text-xs">
                     ✓ Vídeo encontrado

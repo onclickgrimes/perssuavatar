@@ -503,18 +503,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           <KeyframesStep
             segments={project.segments}
             onUpdateEmotion={handleUpdateEmotion}
-            onContinue={handleAnalyzeWithAI}
-            onSkipAnalysis={() => setCurrentStep('prompts')}
+            onContinue={() => setCurrentStep('prompts')}
             onBack={() => setCurrentStep('upload')}
-            provider={selectedProvider}
-            onProviderChange={(p: any) => {
-              setSelectedProvider(p);
-              if (p === 'gemini') setSelectedModel('gemini-3-flash-preview');
-              else if (p === 'openai') setSelectedModel('gpt-5-mini-2025-08-07');
-              else if (p === 'deepseek') setSelectedModel('deepseek-chat');
-            }}
-            providerModel={selectedModel}
-            onProviderModelChange={(m: string) => setSelectedModel(m)}
             onMoveWords={handleMoveWords}
             onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
             niche={selectedNiche}
@@ -529,6 +519,19 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             onUpdateImage={handleUpdateImage}
             onContinue={() => setCurrentStep('images')}
             onBack={() => setCurrentStep('keyframes')}
+            provider={selectedProvider}
+            onProviderChange={(p: any) => {
+              setSelectedProvider(p);
+              if (p === 'gemini') setSelectedModel('gemini-3-flash-preview');
+              else if (p === 'openai') setSelectedModel('gpt-5-mini-2025-08-07');
+              else if (p === 'deepseek') setSelectedModel('deepseek-chat');
+            }}
+            providerModel={selectedModel}
+            onProviderModelChange={(m: string) => setSelectedModel(m)}
+            onAnalyze={handleAnalyzeWithAI}
+            isProcessing={isProcessing}
+            onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
+            niche={selectedNiche}
           />
         );
       
