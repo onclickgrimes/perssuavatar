@@ -4,17 +4,29 @@ import React from 'react';
 export function VideoPreviewPlayer({ 
   project, 
   durationInFrames, 
-  fps 
+  fps,
+  onPlayerReady,
 }: { 
   project: any; 
   durationInFrames: number; 
   fps: number;
+  onPlayerReady?: (player: any) => void;
 }) {
   const [Player, setPlayer] = React.useState<any>(null);
   const [VideoProjectComposition, setVideoProjectComposition] = React.useState<any>(null);
   const [isLoading, setIsLoading] = React.useState(true);
   const [isPrefetching, setIsPrefetching] = React.useState(false);
   const [error, setError] = React.useState<string | null>(null);
+
+  const playerRef = React.useRef<any>(null);
+
+  // Quando o Player montar, notificar o pai
+  const handlePlayerRef = React.useCallback((instance: any) => {
+    playerRef.current = instance;
+    if (instance && onPlayerReady) {
+      onPlayerReady(instance);
+    }
+  }, [onPlayerReady]);
 
   // Pré-carregar todos os vídeos e áudio antes de mostrar o player
   // Isso elimina o dessincronismo causado pelo carregamento tardio durante a reprodução
@@ -125,6 +137,7 @@ export function VideoPreviewPlayer({
         </div>
       )}
       <Player
+        ref={handlePlayerRef}
         key={`${project.config?.width}-${project.config?.height}`}
         component={VideoProjectComposition}
         inputProps={{ project }}
