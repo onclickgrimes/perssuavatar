@@ -7,6 +7,7 @@ import {
   audioPathToUrl, 
   ASPECT_RATIO_DIMENSIONS 
 } from '../../shared/utils/project-converter';
+import { TRANSITION_LIST, type Transition } from '../../../remotion/utils/transitions';
 
 interface PreviewStepProps {
   project: ProjectState;
@@ -15,6 +16,8 @@ interface PreviewStepProps {
   onContinue: () => void;
   onBack: () => void;
   onAspectRatiosChange: (ratios: string[]) => void;
+  onSegmentsUpdate?: (segments: any[]) => void;
+  onSave?: () => Promise<void> | void;
   selectedNiche: ChannelNiche | null;
 }
 
@@ -251,6 +254,8 @@ export function PreviewStep({
   onContinue,
   onBack,
   onAspectRatiosChange,
+  onSegmentsUpdate,
+  onSave,
   selectedNiche,
 }: PreviewStepProps) {
   // Aspect ratio
@@ -258,6 +263,31 @@ export function PreviewStep({
     return project.selectedAspectRatios?.[0] || '9:16';
   });
   const [showRatioMenu, setShowRatioMenu] = useState(false);
+  const [sidebarTab, setSidebarTab] = useState<'info' | 'transitions'>('info');
+
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+
+  const handleBackClick = () => {
+    if (hasUnsavedChanges) {
+      if (!window.confirm("Você tem alterações não salvas. Tem certeza que deseja voltar? As alterações podem ser perdidas.")) {
+        return;
+      }
+    }
+    onBack();
+  };
+
+  const handleSaveClick = async () => {
+    if (onSave) {
+      setIsSaving(true);
+      try {
+        await onSave();
+        setHasUnsavedChanges(false);
+      } finally {
+        setIsSaving(false);
+      }
+    }
+  };
 
   // ========================================
   // ESTADOS DA TIMELINE
@@ -319,6 +349,7 @@ export function PreviewStep({
       newRatios = [...currentRatios, ratio];
     }
     onAspectRatiosChange(newRatios);
+    setHasUnsavedChanges(true);
   };
 
   // Duration
@@ -452,6 +483,27 @@ export function PreviewStep({
   const handleSkipToEnd = useCallback(() => {
     seekTo(durationInSeconds);
   }, [seekTo, durationInSeconds]);
+  // ========================================
+  // TRANSITIONS: Alterar transição de um segmento
+  // ========================================
+  const handleTransitionChange = useCallback((segmentId: number, transition: string) => {
+    if (!onSegmentsUpdate) return;
+    const updated = project.segments.map(seg =>
+      seg.id === segmentId ? { ...seg, transition } : seg
+    );
+    onSegmentsUpdate(updated);
+    setHasUnsavedChanges(true);
+  }, [project.segments, onSegmentsUpdate]);
+
+  const handleApplyTransitionToAll = useCallback((transition: string) => {
+    if (!onSegmentsUpdate) return;
+    const updated = project.segments.map(seg => ({ ...seg, transition }));
+    onSegmentsUpdate(updated);
+    setHasUnsavedChanges(true);
+  }, [project.segments, onSegmentsUpdate]);
+
+  // Segmento selecionado
+  const selectedSeg = selectedSegmentId != null ? project.segments.find(s => s.id === selectedSegmentId) : null;
 
   // ========================================
   // TIMELINE: Ruler Mouse Down
@@ -556,12 +608,24 @@ export function PreviewStep({
         </div>
         <div className="flex items-center gap-2">
           <button
-            onClick={onBack}
+            onClick={handleBackClick}
             className="px-4 py-1.5 rounded text-xs font-medium transition-all hover:brightness-110"
             style={{ background: FILMORA.surface, color: FILMORA.textMuted, border: `1px solid ${FILMORA.border}` }}
           >
             ← Voltar
           </button>
+          
+          {onSave && (
+            <button
+              onClick={handleSaveClick}
+              disabled={isSaving}
+              className="px-4 py-1.5 rounded text-xs font-medium transition-all hover:brightness-110 flex items-center gap-1.5"
+              style={{ background: FILMORA.surface, color: FILMORA.text, border: `1px solid ${FILMORA.borderLight}`, opacity: isSaving ? 0.7 : 1 }}
+            >
+              <span className="opacity-80">💾</span> {isSaving ? 'Salvando...' : 'Salvar'}
+            </button>
+          )}
+
           <button
             onClick={onContinue}
             className="px-5 py-1.5 rounded text-xs font-bold transition-all hover:brightness-110 flex items-center gap-1.5"
@@ -590,7 +654,7 @@ export function PreviewStep({
                 {(['paragraph', 'word-by-word', 'none'] as const).map(mode => (
                   <button
                     key={mode}
-                    onClick={() => setSubtitleMode(mode)}
+                    onClick={() => { setSubtitleMode(mode); setHasUnsavedChanges(true); }}
                     className="px-2.5 py-1 text-[10px] font-medium transition-all"
                     style={{
                       background: subtitleMode === mode ? FILMORA.accent : 'transparent',
@@ -711,53 +775,130 @@ export function PreviewStep({
           </div>
         </div>
 
-        {/* ============ SIDEBAR DIREITA (Propriedades) ============ */}
-        <div className="w-[220px] flex-shrink-0 flex flex-col border-l overflow-y-auto" style={{ background: FILMORA.bgDark, borderColor: FILMORA.border }}>
+        {/* ============ SIDEBAR DIREITA (Propriedades + Transições) ============ */}
+        <div className="w-[240px] flex-shrink-0 flex flex-col border-l overflow-hidden" style={{ background: FILMORA.bgDark, borderColor: FILMORA.border }}>
           {/* Tabs */}
-          <div className="flex border-b" style={{ borderColor: FILMORA.border }}>
-            <div className="flex-1 py-2 text-center text-[10px] font-semibold tracking-wider uppercase" style={{ color: FILMORA.accent, borderBottom: `2px solid ${FILMORA.accent}` }}>
-              Info
-            </div>
+          <div className="flex border-b flex-shrink-0" style={{ borderColor: FILMORA.border }}>
+            {(['info', 'transitions'] as const).map(tab => (
+              <button
+                key={tab}
+                onClick={() => setSidebarTab(tab)}
+                className="flex-1 py-2 text-center text-[10px] font-semibold tracking-wider uppercase transition-colors"
+                style={{ 
+                  color: sidebarTab === tab ? FILMORA.accent : FILMORA.textDim,
+                  borderBottom: sidebarTab === tab ? `2px solid ${FILMORA.accent}` : '2px solid transparent',
+                }}
+              >
+                {tab === 'info' ? 'Info' : 'Transições'}
+              </button>
+            ))}
           </div>
 
-          {/* Info Cards */}
-          <div className="p-3 space-y-3">
-            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
-              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Duração</div>
-              <div className="text-sm font-bold font-mono" style={{ color: FILMORA.text }}>
-                {formatTimecode(durationInSeconds)}
-              </div>
-            </div>
+          <div className="flex-1 overflow-y-auto">
+            {sidebarTab === 'info' ? (
+              /* ====== TAB INFO ====== */
+              <div className="p-3 space-y-3">
+                <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+                  <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Duração</div>
+                  <div className="text-sm font-bold font-mono" style={{ color: FILMORA.text }}>
+                    {formatTimecode(durationInSeconds)}
+                  </div>
+                </div>
 
-            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
-              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Cenas</div>
-              <div className="text-sm font-bold" style={{ color: FILMORA.text }}>
-                {project.segments.length}
-              </div>
-            </div>
+                <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+                  <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Cenas</div>
+                  <div className="text-sm font-bold" style={{ color: FILMORA.text }}>
+                    {project.segments.length}
+                  </div>
+                </div>
 
-            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
-              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Resolução</div>
-              <div className="text-sm font-bold" style={{ color: FILMORA.text }}>
-                {ASPECT_RATIO_DIMENSIONS[selectedRatio]?.width}×{ASPECT_RATIO_DIMENSIONS[selectedRatio]?.height}
-              </div>
-            </div>
+                <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+                  <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Resolução</div>
+                  <div className="text-sm font-bold" style={{ color: FILMORA.text }}>
+                    {ASPECT_RATIO_DIMENSIONS[selectedRatio]?.width}×{ASPECT_RATIO_DIMENSIONS[selectedRatio]?.height}
+                  </div>
+                </div>
 
-            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
-              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>FPS</div>
-              <div className="text-sm font-bold" style={{ color: FILMORA.text }}>30</div>
-            </div>
+                <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+                  <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>FPS</div>
+                  <div className="text-sm font-bold" style={{ color: FILMORA.text }}>30</div>
+                </div>
 
-            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
-              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Áudio</div>
-              <div className="text-xs font-medium truncate" style={{ color: audioUrl ? FILMORA.accent : FILMORA.textDim }}>
-                {audioUrl ? '✓ Carregado' : '— Sem áudio'}
+                <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+                  <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Áudio</div>
+                  <div className="text-xs font-medium truncate" style={{ color: audioUrl ? FILMORA.accent : FILMORA.textDim }}>
+                    {audioUrl ? '✓ Carregado' : '— Sem áudio'}
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              /* ====== TAB TRANSIÇÕES ====== */
+              <div className="p-3 space-y-3">
+                {selectedSeg ? (
+                  <>
+                    {/* Segmento selecionado */}
+                    <div className="rounded p-2.5" style={{ background: FILMORA.surface }}>
+                      <div className="text-[9px] uppercase tracking-wider mb-1" style={{ color: FILMORA.textDim }}>Cena selecionada</div>
+                      <div className="text-xs font-bold truncate" style={{ color: FILMORA.text }}>#{selectedSeg.id} — {selectedSeg.text}</div>
+                    </div>
+
+                    {/* Transição atual */}
+                    <div className="text-[9px] uppercase tracking-wider" style={{ color: FILMORA.textDim }}>
+                      Transição de entrada
+                    </div>
+
+                    {/* Grid de transições */}
+                    <div className="grid grid-cols-2 gap-1.5">
+                      {TRANSITION_LIST.map(tr => {
+                        const currentTransition = selectedSeg.transition || 'fade';
+                        const isActive = currentTransition === tr.value;
+                        return (
+                          <button
+                            key={tr.value}
+                            onClick={() => handleTransitionChange(selectedSeg.id, tr.value)}
+                            className="rounded p-2 text-left transition-all hover:brightness-125"
+                            style={{
+                              background: isActive ? `${FILMORA.accent}20` : FILMORA.surface,
+                              border: `1px solid ${isActive ? FILMORA.accent : FILMORA.border}`,
+                            }}
+                            title={tr.description}
+                          >
+                            <div className="text-[9px] font-semibold truncate" style={{ color: isActive ? FILMORA.accent : FILMORA.text }}>
+                              {tr.label}
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Aplicar a todos */}
+                    <button
+                      onClick={() => handleApplyTransitionToAll(selectedSeg.transition || 'fade')}
+                      className="w-full rounded py-1.5 text-[10px] font-semibold transition-all hover:brightness-110"
+                      style={{ background: FILMORA.accent, color: '#000' }}
+                    >
+                      Aplicar "{TRANSITION_LIST.find(t => t.value === (selectedSeg.transition || 'fade'))?.label}" a todas
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center justify-center py-8 text-center">
+                    <div className="w-10 h-10 rounded-full flex items-center justify-center mb-3" style={{ background: FILMORA.surface }}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: FILMORA.textDim }}>
+                        <polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/>
+                        <line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/>
+                      </svg>
+                    </div>
+                    <p className="text-[10px] leading-relaxed" style={{ color: FILMORA.textDim }}>
+                      Selecione uma cena na timeline para alterar sua transição
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Dica */}
-          <div className="mt-auto p-3">
+          <div className="mt-auto p-3 flex-shrink-0">
             <div className="rounded p-2.5" style={{ background: `${FILMORA.accent}10`, border: `1px solid ${FILMORA.accent}30` }}>
               <p className="text-[9px] leading-relaxed" style={{ color: FILMORA.accent }}>
                 💡 O preview usa qualidade reduzida. O vídeo final será renderizado em alta qualidade.

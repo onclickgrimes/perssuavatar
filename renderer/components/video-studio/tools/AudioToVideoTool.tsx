@@ -597,6 +597,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           onContinue={handleStartRender}
           onBack={() => setCurrentStep('images')}
           onAspectRatiosChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: value }))}
+          onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
+          onSave={handleSaveProject}
           selectedNiche={selectedNiche}
         />
       </div>
