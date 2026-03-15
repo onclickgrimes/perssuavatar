@@ -6,6 +6,26 @@
  */
 import { ipcMain, BrowserWindow } from 'electron';
 import { VideoProjectSegment, VideoProjectData, VideoProjectService } from '../services/video-project-service';
+import ffmpeg from 'fluent-ffmpeg';
+
+/**
+ * Helper para obter a duração do vídeo usando ffprobe
+ */
+async function getVideoDuration(videoPath: string): Promise<number | undefined> {
+  return new Promise((resolve) => {
+    try {
+      ffmpeg.ffprobe(videoPath, (err, metadata) => {
+        if (err || !metadata || !metadata.format || !metadata.format.duration) {
+          resolve(undefined);
+        } else {
+          resolve(metadata.format.duration);
+        }
+      });
+    } catch (e) {
+      resolve(undefined);
+    }
+  });
+}
 
 // ========================================
 // STATE
@@ -111,7 +131,7 @@ export function registerVideoEditorHandlers(): void {
       if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
       const buffer = Buffer.from(arrayBuffer);
       const result = await videoProjectService.saveImageFile(buffer, fileName, segmentId);
-      return { success: true, path: result.path, httpUrl: result.httpUrl };
+      return { success: true, path: result.path, httpUrl: result.httpUrl, durationMs: result.durationMs };
     } catch (error: any) {
       console.error('❌ [VideoProject] Save image error:', error);
       return { success: false, error: error.message };
@@ -1192,14 +1212,23 @@ Lembre-se:
         httpUrl = videoProjectService.convertToHttpUrl(result.videoPath);
       }
 
-      console.log(`✅ [Flow/Veo3] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
+      // Obter a duração REAL do vídeo gerado
+      let realDurationMs = result.durationMs;
+      if (result.videoPath) {
+         const videoDur = await getVideoDuration(result.videoPath);
+         if (videoDur !== undefined) {
+             realDurationMs = videoDur * 1000;
+         }
+      }
+
+      console.log(`✅ [Flow/Veo3] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((realDurationMs || 0) / 1000)}s)`);
 
       return {
         success: true,
         videoPath: result.videoPath,
         httpUrl,
         credits: result.credits,
-        durationMs: result.durationMs,
+        durationMs: realDurationMs,
       };
 
     } catch (error: any) {
@@ -1272,14 +1301,22 @@ Lembre-se:
       if (videoProjectService && result.videoPath) {
         httpUrl = videoProjectService.convertToHttpUrl(result.videoPath);
       }
+      
+      let realDurationMs = result.durationMs;
+      if (result.videoPath) {
+         const videoDur = await getVideoDuration(result.videoPath);
+         if (videoDur !== undefined) {
+             realDurationMs = videoDur * 1000;
+         }
+      }
 
-      console.log(`✅ [Veo2] Video generated (${mode}): ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
+      console.log(`✅ [Veo2] Video generated (${mode}): ${result.videoPath} → ${httpUrl} (${Math.round((realDurationMs || 0) / 1000)}s)`);
 
       return {
         success: true,
         videoPath: result.videoPath,
         httpUrl,
-        durationMs: result.durationMs,
+        durationMs: realDurationMs,
       };
 
     } catch (error: any) {
@@ -1385,13 +1422,21 @@ Lembre-se:
       if (videoProjectService && result.videoPath) {
         httpUrl = videoProjectService.convertToHttpUrl(result.videoPath);
       }
+      
+      let realDurationMs = result.durationMs;
+      if (result.videoPath) {
+         const videoDur = await getVideoDuration(result.videoPath);
+         if (videoDur !== undefined) {
+             realDurationMs = videoDur * 1000;
+         }
+      }
 
-      console.log(`✅ [Flow/Veo2] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
+      console.log(`✅ [Flow/Veo2] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((realDurationMs || 0) / 1000)}s)`);
       return {
         success: true,
         videoPath: result.videoPath,
         httpUrl,
-        durationMs: result.durationMs,
+        durationMs: realDurationMs,
       };
 
     } catch (error: any) {
@@ -1435,13 +1480,22 @@ Lembre-se:
       } else if (result.videoPath?.startsWith('http')) {
         httpUrl = result.videoPath;
       }
+      
+      let realDurationMs = result.durationMs;
+      // Para o Grok, apenas ler o arquivo se for um path local
+      if (result.videoPath && !result.videoPath.startsWith('http')) {
+         const videoDur = await getVideoDuration(result.videoPath);
+         if (videoDur !== undefined) {
+             realDurationMs = videoDur * 1000;
+         }
+      }
 
-      console.log(`✅ [Grok] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((result.durationMs || 0) / 1000)}s)`);
+      console.log(`✅ [Grok] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((realDurationMs || 0) / 1000)}s)`);
       return {
         success: true,
         videoPath: result.videoPath,
         httpUrl,
-        durationMs: result.durationMs,
+        durationMs: realDurationMs,
       };
 
     } catch (error: any) {

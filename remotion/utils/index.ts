@@ -5,3 +5,4 @@
  */
 export * from './camera-effects';
 export * from './transitions';
+export * from './playback-rate';

@@ -115,7 +115,7 @@ export const Scene: React.FC<SceneProps> = ({
           {scene.background && <BackgroundRenderer scene={scene} />}
           
           {/* Renderiza o asset baseado no tipo */}
-          <AssetRenderer scene={scene} />
+          <AssetRenderer scene={scene} sceneDurationFrames={sceneDurationFrames} fps={fps} />
         </div>
       </div>
       
@@ -167,6 +167,7 @@ const TrailPrintingEffect: React.FC<TrailPrintingEffectProps> = ({
   relativeFrame,
   sceneDurationFrames,
 }) => {
+  const { fps } = useVideoConfig();
   // Configuração do efeito - Motion Blur Style
   // NOTA: Este efeito funciona melhor com IMAGENS ou movimentos de CÂMERA
   // Com vídeos estáticos, o efeito é sutil pois não podemos mostrar frames anteriores
@@ -210,7 +211,7 @@ const TrailPrintingEffect: React.FC<TrailPrintingEffectProps> = ({
                 mixBlendMode: 'screen',
               }}
             >
-              <AssetRenderer scene={scene} />
+              <AssetRenderer scene={scene} sceneDurationFrames={sceneDurationFrames} fps={fps} />
             </div>
           );
         })}
@@ -222,7 +223,7 @@ const TrailPrintingEffect: React.FC<TrailPrintingEffectProps> = ({
             inset: 0,
           }}
         >
-          <AssetRenderer scene={scene} />
+          <AssetRenderer scene={scene} sceneDurationFrames={sceneDurationFrames} fps={fps} />
         </div>
       </div>
     </AbsoluteFill>
@@ -235,10 +236,17 @@ const TrailPrintingEffect: React.FC<TrailPrintingEffectProps> = ({
 
 interface AssetRendererProps {
   scene: SceneType;
+  sceneDurationFrames?: number;
+  fps?: number;
 }
 
-const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
+const AssetRenderer: React.FC<AssetRendererProps> = ({ scene, sceneDurationFrames, fps: propFps }) => {
   const { asset_type, asset_url } = scene;
+  const { fps: configFps } = useVideoConfig();
+  const fps = propFps || configFps;
+  
+  // Calcular duração da cena em segundos para o playbackRate
+  const sceneDurationSeconds = sceneDurationFrames && fps ? sceneDurationFrames / fps : undefined;
   
   // Helper para detectar se é vídeo pela extensão do arquivo
   const isVideoUrl = (url: string | undefined): boolean => {
@@ -268,7 +276,7 @@ const AssetRenderer: React.FC<AssetRendererProps> = ({ scene }) => {
   }
 
   if (Component) {
-    return <Component scene={scene} />;
+    return <Component scene={scene} sceneDurationSeconds={sceneDurationSeconds} />;
   }
   
   // Fallback se não encontrar o componente

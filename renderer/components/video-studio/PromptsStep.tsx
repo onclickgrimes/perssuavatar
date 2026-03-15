@@ -15,7 +15,7 @@ interface PromptsStepProps {
   onUpdatePrompt: (id: number, prompt: string) => void;
   onContinue: () => void;
   onBack: () => void;
-  onUpdateImage: (id: number, imageUrl: string) => void;
+  onUpdateImage: (id: number, imageUrl: string, duration?: number) => void;
   provider?: 'gemini' | 'openai' | 'deepseek';
   onProviderChange?: (p: 'gemini' | 'openai' | 'deepseek') => void;
   providerModel?: string;

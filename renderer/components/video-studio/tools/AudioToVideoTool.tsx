@@ -371,7 +371,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   }, []);
 
   // Handler para atualizar imagem de um segmento (upload manual ou gerada)
-  const handleUpdateImage = useCallback((segmentId: number, imageUrl: string) => {
+  const handleUpdateImage = useCallback((segmentId: number, imageUrl: string, duration?: number) => {
     setProject(prev => ({
       ...prev,
       segments: prev.segments.map(seg => {
@@ -389,7 +389,15 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           }
         }
         
-        return { ...seg, imageUrl, assetType };
+        const newSeg: any = { ...seg, imageUrl, assetType };
+        if (duration !== undefined) {
+          newSeg.asset_duration = duration;
+        } else if (!imageUrl) {
+          // Se removeu a imagem, remove a duração também
+          delete newSeg.asset_duration;
+        }
+        
+        return newSeg;
       }),
     }));
   }, []);
@@ -447,6 +455,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             width: dims.width,
             height: dims.height,
             fps: 30, // Default 30fps
+            fitVideoToScene: project.config?.fitVideoToScene ?? true,
           }
         });
 
@@ -558,7 +567,14 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             onContinue={handleStartRender}
             onBack={() => setCurrentStep('images')}
             onAspectRatiosChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: value }))}
+            onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
+            onSave={handleSaveProject}
             selectedNiche={selectedNiche}
+            fitVideoToScene={project.config?.fitVideoToScene ?? true}
+            onFitVideoToSceneChange={(val) => setProject(prev => ({
+              ...prev,
+              config: { ...prev.config, fitVideoToScene: val }
+            }))}
           />
         );
       
@@ -600,6 +616,11 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
           onSave={handleSaveProject}
           selectedNiche={selectedNiche}
+          fitVideoToScene={project.config?.fitVideoToScene ?? true}
+          onFitVideoToSceneChange={(val) => setProject(prev => ({
+            ...prev,
+            config: { ...prev.config, fitVideoToScene: val }
+          }))}
         />
       </div>
     );

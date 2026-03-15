@@ -71,6 +71,7 @@ export interface VideoProjectSegment {
         fontWeight?: string;
     }>;
     asset_url?: string;
+    asset_duration?: number;
     chroma_key?: {
         color: 'green' | 'blue' | 'custom';
         customColor?: { r: number; g: number; b: number };
@@ -110,6 +111,7 @@ export interface VideoProjectData {
         height?: number;
         fps?: number;
         backgroundColor?: string;
+        fitVideoToScene?: boolean;
     };
 }
 
@@ -130,6 +132,7 @@ export interface RemotionProject {
         subtitleMode?: 'paragraph' | 'word-by-word' | 'none';
         componentsAllowed?: string[]; // Componentes Remotion permitidos
         defaultFont?: string; // Fonte padrão do nicho (Google Fonts)
+        fitVideoToScene?: boolean;
         backgroundMusic?: {
             src: string;
             volume?: number;
@@ -603,6 +606,7 @@ export class VideoProjectService extends EventEmitter {
     public async saveImageFile(buffer: Buffer, originalName: string, segmentId: number): Promise<{
         path: string;
         httpUrl: string;
+        durationMs?: number;
     }> {
         // Servidor já iniciado no construtor
 
@@ -617,10 +621,31 @@ export class VideoProjectService extends EventEmitter {
         }
 
         fs.writeFileSync(filePath, buffer);
-        console.log(`🖼️ Image saved: ${filePath}`);
+        console.log(`🖼️ Media saved: ${filePath}`);
 
         const httpUrl = `http://localhost:${this.imageServerPort}/images/${fileName}`;
-        return { path: filePath, httpUrl };
+        let durationMs: number | undefined;
+
+        // Se for um vídeo, tenta extrair a duração
+        const isVideo = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'].includes(ext.toLowerCase());
+        if (isVideo) {
+             const ffmpeg = require('fluent-ffmpeg');
+             try {
+                 durationMs = await new Promise<number | undefined>((resolve) => {
+                     ffmpeg.ffprobe(filePath, (err: any, metadata: any) => {
+                         if (err || !metadata?.format?.duration) {
+                             resolve(undefined);
+                         } else {
+                             resolve(metadata.format.duration * 1000);
+                         }
+                     });
+                 });
+             } catch (e) {
+                 console.log("Error extracting video duration in manual upload");
+             }
+        }
+
+        return { path: filePath, httpUrl, durationMs };
     }
 
     // ========================================
@@ -1086,6 +1111,7 @@ Responda APENAS com um objeto JSON válido no formato:
             // Converter caminho local para URL HTTP
             // Se tiver asset_url explícito (vídeo), usa ele. Senão usa imageUrl.
             asset_url: this.convertToHttpUrl(seg.asset_url || seg.imageUrl),
+            ...(seg.asset_duration != null && { asset_duration: seg.asset_duration }),
             chroma_key: seg.chroma_key, // ✅ Configuração de Chroma Key
             prompt_suggestion: seg.imagePrompt || '',
             camera_movement: seg.cameraMovement || 'static',
@@ -1135,6 +1161,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 subtitleMode: project.subtitleMode, // ✅ Modo de legenda
                 componentsAllowed: project.componentsAllowed, // ✅ Componentes permitidos pelo nicho
                 defaultFont: project.defaultFont, // ✅ Fonte padrão do nicho
+                fitVideoToScene: project.config?.fitVideoToScene ?? true, // ✅ Acelerar/Desacelerar
                 assetsBaseUrl: `http://localhost:${this.imageServerPort}`, // ✅ URL base dinâmica
                 // Incluir áudio da narração/transcrição
                 ...(project.audioPath && {

@@ -3,7 +3,7 @@ import { TranscriptionSegment } from '../../types/video-studio';
 
 interface ImagesStepProps {
   segments: TranscriptionSegment[];
-  onUpdateImage: (id: number, imageUrl: string) => void;
+  onUpdateImage: (id: number, imageUrl: string, durationVideoSec?: number) => void;
   onContinue: () => void;
   onBack: () => void;
   aspectRatio?: string;
@@ -254,7 +254,8 @@ export function ImagesStep({
         if (result.success && result.httpUrl) {
           // Usar a URL HTTP para preview E renderização
           // O servidor HTTP estará rodando durante ambos
-          onUpdateImage(segmentId, result.httpUrl);
+          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
+          onUpdateImage(segmentId, result.httpUrl, duration);
           console.log(`✅ Media saved for segment ${segmentId}:`, result.httpUrl);
         } else {
           console.error('Failed to save media:', result.error);
@@ -412,7 +413,8 @@ export function ImagesStep({
         const result = await Promise.race([veo2FlowPromise, timeoutPromise]) as any;
 
         if (result?.success && (result.httpUrl || result.videoPath)) {
-          onUpdateImage(segmentId, result.httpUrl || result.videoPath);
+          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
           success = true;
         } else {
           console.error(`❌ [Veo2Flow] Falha:`, result?.error);
@@ -474,7 +476,8 @@ export function ImagesStep({
         const result = await Promise.race([veo3Promise, timeoutPromise]) as any;
 
         if (result?.success && (result.httpUrl || result.videoPath)) {
-          onUpdateImage(segmentId, result.httpUrl || result.videoPath);
+          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
           if (result.credits !== undefined) setVo3Credits(result.credits);
           success = true;
         } else {
@@ -528,7 +531,8 @@ export function ImagesStep({
         const result = await Promise.race([grokPromise, timeoutPromise]) as any;
 
         if (result?.success && (result.httpUrl || result.videoPath)) {
-          onUpdateImage(segmentId, result.httpUrl || result.videoPath);
+          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
           success = true;
         } else {
           console.error(`❌ [Grok] Falha:`, result?.error);
@@ -567,8 +571,9 @@ export function ImagesStep({
         });
 
         if (result?.success && result.httpUrls?.length > 0) {
+          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
           // Usar a primeira imagem imediatamente
-          onUpdateImage(segmentId, result.httpUrls[0]);
+          onUpdateImage(segmentId, result.httpUrls[0], duration);
           // Se há múltiplas opções, empilhar na fila para o usuário escolher depois
           if (count > 1 && result.httpUrls.length > 1) {
             setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls }]);
@@ -598,7 +603,8 @@ export function ImagesStep({
           finalImagePath,
         });
         if (result?.success && (result.httpUrl || result.videoPath)) {
-          onUpdateImage(segmentId, result.httpUrl || result.videoPath);
+          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
           success = true;
         } else {
           console.error(`❌ [Veo2] Falha:`, result?.error);

@@ -349,6 +349,9 @@ export const SceneSchema = z.object({
   /** URL ou path do asset (se já existir) */
   asset_url: z.string().optional(),
   
+  /** Duração real do asset de vídeo em segundos (para cálculo de playbackRate) */
+  asset_duration: z.number().optional(),
+  
   /** Prompt para geração do asset */
   prompt_suggestion: z.string().optional(),
   
@@ -445,6 +448,9 @@ export const ProjectConfigSchema = z.object({
 
   /** Fonte padrão do projeto (Google Fonts) */
   defaultFont: z.string().optional(),
+
+  /** Se true, acelera/desacelera vídeos para caber na duração da cena (padrão: true) */
+  fitVideoToScene: z.boolean().optional(),
 });
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

@@ -15,6 +15,8 @@ import { GeometricPatterns } from '../components/GeometricPatterns';
 import { WavyGrid } from '../components/WavyGrid';
 import { Timeline3D, Timeline3DProps } from '../components/Timeline3D';
 import { ChromaKeyMedia, greenScreenPreset, blueScreenPreset } from '../components/ChromaKeyMedia';
+import { useProjectConfig } from '../contexts/ProjectConfigContext';
+import { calculatePlaybackRate, getPlaybackRateInfo } from '../utils/playback-rate';
 
 // ========================================
 // TIPOS (definidos localmente para evitar dependência circular)
@@ -23,6 +25,8 @@ import { ChromaKeyMedia, greenScreenPreset, blueScreenPreset } from '../componen
 export interface SceneProps {
   asset_type: string;
   asset_url?: string;
+  /** Duração real do asset de vídeo em segundos */
+  asset_duration?: number;
   background?: {
     type?: string;
     url?: string;
@@ -43,6 +47,8 @@ export interface SceneProps {
 
 export interface AssetComponentProps {
   scene: SceneProps;
+  /** Duração da cena em segundos (para cálculo de playbackRate) */
+  sceneDurationSeconds?: number;
 }
 
 export type AssetComponent = React.FC<AssetComponentProps>;
@@ -86,8 +92,23 @@ const ImageAsset: AssetComponent = ({ scene }) => {
 };
 
 /** Renderiza vídeos (genérico para todos os tipos de vídeo) */
-const VideoAsset: AssetComponent = ({ scene }) => {
+const VideoAsset: AssetComponent = ({ scene, sceneDurationSeconds }) => {
   const { width, height } = useVideoConfig();
+  const projectConfig = useProjectConfig();
+  
+  // Calcular playbackRate se fitVideoToScene estiver ativo e temos as durações
+  const fitVideoToScene = projectConfig.fitVideoToScene !== false; // default: true
+  let playbackRate = 1.0;
+  
+  if (fitVideoToScene && scene.asset_duration && sceneDurationSeconds && scene.asset_duration > 0 && sceneDurationSeconds > 0) {
+    playbackRate = calculatePlaybackRate(scene.asset_duration, sceneDurationSeconds);
+    
+    // Log de debug (apenas na primeira renderização)
+    if (playbackRate !== 1.0) {
+      const info = getPlaybackRateInfo(scene.asset_duration, sceneDurationSeconds);
+      console.log(`🎬 Video fit: ${info.speedLabel} (vídeo: ${info.videoDuration.toFixed(1)}s → cena: ${info.sceneDuration.toFixed(1)}s)`);
+    }
+  }
   
   if (!scene.asset_url) {
     return (
@@ -115,6 +136,7 @@ const VideoAsset: AssetComponent = ({ scene }) => {
           objectFit: 'cover',
         }}
         volume={0}
+        playbackRate={playbackRate}
       />
     </AbsoluteFill>
   );
@@ -260,7 +282,7 @@ export const getAssetComponent = (assetType: AssetType): AssetComponent | undefi
  * Obtém o componente de fallback para vídeos detectados automaticamente.
  */
 export const getVideoFallbackComponent = (): AssetComponent => {
-  return VideoAsset;
+  return VideoAsset as AssetComponent;
 };
 
 /**

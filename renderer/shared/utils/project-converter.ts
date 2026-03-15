@@ -86,6 +86,8 @@ export interface VideoSegment {
   // Media
   imageUrl?: string;
   asset_url?: string;
+  /** Duração real do asset de vídeo em segundos (para cálculo de playbackRate) */
+  asset_duration?: number;
   
   // Components
   highlightWords?: HighlightWordConfig[];
@@ -113,6 +115,7 @@ export interface VideoProject {
     height?: number;
     fps?: number;
     backgroundColor?: string;
+    fitVideoToScene?: boolean;
   };
 }
 
@@ -123,7 +126,7 @@ export interface VideoProject {
 const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'id', 'text', 'start', 'end', 'speaker', 'words',
   'emotion', 'imagePrompt', 'assetType', 'cameraMovement', 'transition',
-  'imageUrl', 'asset_url',
+  'imageUrl', 'asset_url', 'asset_duration',
   'highlightWords', 'chroma_key', 'background', 'timeline_config',
 ];
 
@@ -195,6 +198,7 @@ export function segmentToRemotionScene(seg: VideoSegment): any {
     },
     asset_type: seg.assetType || 'image_static',
     asset_url: seg.asset_url || seg.imageUrl || '',
+    ...(seg.asset_duration != null && { asset_duration: seg.asset_duration }),
     prompt_suggestion: seg.imagePrompt || '',
     camera_movement: seg.cameraMovement || 'static',
     transition: seg.transition || 'fade',
@@ -224,6 +228,7 @@ export function toRemotionFormat(
     componentsAllowed?: string[];
     audioUrl?: string;
     defaultFont?: string;
+    fitVideoToScene?: boolean;
   }
 ): any {
   return {
@@ -237,6 +242,7 @@ export function toRemotionFormat(
       subtitleMode: options.subtitleMode,
       componentsAllowed: options.componentsAllowed || project.componentsAllowed,
       defaultFont: options.defaultFont,
+      fitVideoToScene: options.fitVideoToScene !== undefined ? options.fitVideoToScene : true,
       ...(options.audioUrl && {
         backgroundMusic: { src: options.audioUrl, volume: 1.0 },
       }),
