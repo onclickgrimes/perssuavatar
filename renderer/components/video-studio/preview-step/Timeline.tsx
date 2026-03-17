@@ -40,6 +40,7 @@ interface TimelineProps {
   trackContainerRef: React.RefObject<HTMLDivElement>;
   playheadRef: React.RefObject<HTMLDivElement>;
   playheadLabelRef: React.RefObject<HTMLDivElement>;
+  currentTimeRef: React.MutableRefObject<number>;
 }
 
 export function Timeline({
@@ -71,6 +72,7 @@ export function Timeline({
   trackContainerRef,
   playheadRef,
   playheadLabelRef,
+  currentTimeRef,
 }: TimelineProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [activeUpload, setActiveUpload] = useState<{type: 'video'|'audio', trackId: number} | null>(null);
@@ -103,6 +105,33 @@ export function Timeline({
     type: 'video' | 'audio';
   } | null>(null);
 
+  const getSnappedTime = (time: number, ignoreSegId: number) => {
+    const snapThreshold = 10 / zoomLevel; // ~10 pixels visual threshold
+    let closestTime = time;
+    let minDiff = snapThreshold;
+
+    const pointsToSnap: number[] = [];
+    if (currentTimeRef && currentTimeRef.current !== undefined) {
+      pointsToSnap.push(currentTimeRef.current);
+    }
+    visualSegments.forEach(seg => {
+      if (seg.id !== ignoreSegId) {
+        pointsToSnap.push(seg.start);
+        pointsToSnap.push(seg.end);
+      }
+    });
+
+    for (const point of pointsToSnap) {
+      const diff = Math.abs(time - point);
+      if (diff < minDiff) {
+        minDiff = diff;
+        closestTime = point;
+      }
+    }
+
+    return closestTime;
+  };
+
   const handleSegmentMouseDown = (e: React.MouseEvent, seg: any, type: 'video' | 'audio', currentTrackIndex: number) => {
     if (e.button !== 0) return; // Só permite clique esquerdo
     e.stopPropagation();
@@ -126,8 +155,21 @@ export function Timeline({
       }
       hasMoved = true;
 
-      // Cálculo de X (Tempo)
-      currentStart = Math.max(0, initialStart + deltaX / zoomLevel);
+      // Cálculo de X (Tempo) com Snapping
+      let rawStart = initialStart + deltaX / zoomLevel;
+      let rawEnd = rawStart + (seg.end - seg.start);
+
+      const snappedStart = getSnappedTime(rawStart, seg.id);
+      if (snappedStart !== rawStart) {
+        rawStart = snappedStart;
+      } else {
+        const snappedEnd = getSnappedTime(rawEnd, seg.id);
+        if (snappedEnd !== rawEnd) {
+          rawStart = snappedEnd - (seg.end - seg.start);
+        }
+      }
+
+      currentStart = Math.max(0, rawStart);
 
       // Cálculo de Y (Faixa/Track)
       // O deltaY será usado para ver quantos "blocos" de altura o mouse subiu ou desceu.
@@ -198,9 +240,13 @@ export function Timeline({
       const deltaTime = deltaX / zoomLevel;
 
       if (edge === 'left') {
-        currentStart = Math.min(initialEnd - 0.1, Math.max(0, initialStart + deltaTime));
+        const rawStart = initialStart + deltaTime;
+        const snappedStart = getSnappedTime(rawStart, seg.id);
+        currentStart = Math.min(initialEnd - 0.1, Math.max(0, snappedStart));
       } else {
-        currentEnd = Math.max(initialStart + 0.1, initialEnd + deltaTime);
+        const rawEnd = initialEnd + deltaTime;
+        const snappedEnd = getSnappedTime(rawEnd, seg.id);
+        currentEnd = Math.max(initialStart + 0.1, snappedEnd);
       }
       setTrimState({
         id: seg.id, edge, startX, initialStart, initialEnd, currentStart, currentEnd

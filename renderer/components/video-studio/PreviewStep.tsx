@@ -703,6 +703,7 @@ export function PreviewStep({
         trackContainerRef={trackContainerRef}
         playheadRef={playheadRef}
         playheadLabelRef={playheadLabelRef}
+        currentTimeRef={currentTimeRef}
       />
 
       <style dangerouslySetInnerHTML={{__html: `
