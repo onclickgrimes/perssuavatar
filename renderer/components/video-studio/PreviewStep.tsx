@@ -255,6 +255,14 @@ export function PreviewStep({
 
   const AVAILABLE_RATIOS = Object.keys(ASPECT_RATIO_DIMENSIONS);
   const currentRatios = project.selectedAspectRatios || ['9:16'];
+  const isVerticalLayout = selectedRatio === '9:16' || selectedRatio === '3:4';
+
+  const lastScene = project.segments[project.segments.length - 1];
+  const durationInSeconds = lastScene ? lastScene.end : 10;
+  // Computations
+  const totalTimelineWidth = Math.max((durationInSeconds + 10) * zoomLevel, viewportWidth);
+  const hoveredSeg = hoveredSegment ? project.segments.find(s => s.id === hoveredSegment.id) : null;
+  const visualSegments = project.segments;
 
   // Remotion project
   const remotionProject = useMemo(() => {
@@ -289,9 +297,6 @@ export function PreviewStep({
     setHasUnsavedChanges(true);
   };
 
-  // Duration
-  const lastScene = project.segments[project.segments.length - 1];
-  const durationInSeconds = lastScene ? lastScene.end : 10;
   const fps = 30;
   const durationInFrames = Math.ceil(durationInSeconds * fps);
   const getCssAspectRatio = (ratio: string) => ratio.replace(':', '/');
@@ -354,7 +359,7 @@ export function PreviewStep({
     observer.observe(scrollWrapperRef.current);
     setViewportWidth(scrollWrapperRef.current.clientWidth);
     return () => observer.disconnect();
-  }, []);
+  }, [isVerticalLayout]); // Re-subscribe when layout changes (vertical vs horizontal)
 
   // ========================================
   // Atualiza playhead e timecode via DOM direto (sem re-render)
@@ -630,12 +635,7 @@ export function PreviewStep({
     seekTo(pct * durationInSeconds);
   };
 
-  // Computations
-  const totalTimelineWidth = Math.max(durationInSeconds * zoomLevel, viewportWidth);
-  const hoveredSeg = hoveredSegment ? project.segments.find(s => s.id === hoveredSegment.id) : null;
-  const visualSegments = project.segments;
 
-  const isVerticalLayout = selectedRatio === '9:16' || selectedRatio === '3:4';
 
   return (
     <div 

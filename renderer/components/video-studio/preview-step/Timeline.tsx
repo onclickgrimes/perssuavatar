@@ -590,7 +590,10 @@ export function Timeline({
             >
               {(() => {
                 const { major, minor } = getRulerSteps(zoomLevel);
-                const maxTime = Math.ceil(Math.max(durationInSeconds, viewportWidth / zoomLevel));
+                const visibleDuration = viewportWidth / zoomLevel;
+                // Buffer de 10s + preencher largura da tela
+                const rulerDuration = Math.max(durationInSeconds + 10, visibleDuration);
+                const maxTime = Math.ceil(rulerDuration);
                 const markers: React.ReactNode[] = [];
                 for (let time = 0; time <= maxTime; time += minor) {
                   const isMajor = Math.round(time * 10) % Math.round(major * 10) === 0;
