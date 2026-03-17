@@ -244,6 +244,7 @@ export function Timeline({
   };
 
   const handleSegmentMouseDown = (e: React.MouseEvent, seg: any, type: 'video' | 'audio', currentTrackIndex: number) => {
+    handleSegmentMouseLeave();
     if (e.button !== 0) return; // Só permite clique esquerdo
     e.stopPropagation();
     e.preventDefault(); // Previne o drag-and-drop nativo do HTML5 que causa o ícone de proibido (🚫)
@@ -334,13 +335,17 @@ export function Timeline({
     initialEnd: number;
     currentStart: number;
     currentEnd: number;
+    currentMouseX?: number;
+    currentMouseY?: number;
   } | null>(null);
 
   const handleTrimMouseDown = (e: React.MouseEvent, seg: any, edge: 'left' | 'right') => {
+    handleSegmentMouseLeave(); // Garante que o tooltip de hover suma ao clicar
     if (e.button !== 0) return; // Só permite clique esquerdo
     e.stopPropagation();
     e.preventDefault(); // Previne o drag-and-drop nativo
     setSelectedSegmentIds(prev => prev.includes(seg.id) ? prev : [seg.id]);
+    
     const startX = e.clientX;
     const initialStart = seg.start;
     const initialEnd = seg.end;
@@ -349,10 +354,19 @@ export function Timeline({
 
     let hasMoved = false;
 
+    // Inicializa o estado para o tooltip já aparecer no clique
+    setTrimState({
+      id: seg.id, edge, startX, initialStart, initialEnd, currentStart, currentEnd,
+      currentMouseX: e.clientX,
+      currentMouseY: e.clientY
+    });
+
     const handleMouseMove = (mvEvent: MouseEvent) => {
       const deltaX = mvEvent.clientX - startX;
       
       if (!hasMoved && Math.abs(deltaX) < 3) {
+        // Se mexeu muito pouco, apenas atualiza a posição do mouse no tooltip
+        setTrimState(prev => prev ? { ...prev, currentMouseX: mvEvent.clientX, currentMouseY: mvEvent.clientY } : null);
         return;
       }
       hasMoved = true;
@@ -368,8 +382,11 @@ export function Timeline({
         const snappedEnd = getSnappedTime(rawEnd, seg.id);
         currentEnd = Math.max(initialStart + 0.1, snappedEnd);
       }
+      
       setTrimState({
-        id: seg.id, edge, startX, initialStart, initialEnd, currentStart, currentEnd
+        id: seg.id, edge, startX, initialStart, initialEnd, currentStart, currentEnd,
+        currentMouseX: mvEvent.clientX,
+        currentMouseY: mvEvent.clientY
       });
     };
 
@@ -431,12 +448,33 @@ export function Timeline({
           style={{ left: hoveredSegment.x + 15, top: hoveredSegment.y - 90, background: FILMORA.surface, border: `1px solid ${FILMORA.border}` }}
         >
           <p className="text-xs font-bold truncate mb-0.5" style={{ color: FILMORA.text }}>Cena {hoveredSeg.id}</p>
-          <p className="text-[10px] mb-1.5 line-clamp-2" style={{ color: FILMORA.textMuted }}>{hoveredSeg.text}</p>
+          <p className="text-[10px] mb-1.5 line-clamp-2" style={{ color: FILMORA.textMuted }}>{hoveredSeg.fileName || hoveredSeg.text || 'Sem texto'}</p>
           <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]" style={{ color: FILMORA.textDim }}>
             <span>Início:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{hoveredSeg.start.toFixed(2)}s</span>
             <span>Fim:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{hoveredSeg.end.toFixed(2)}s</span>
             <span>Duração:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{(hoveredSeg.end - hoveredSeg.start).toFixed(2)}s</span>
             <span>Tipo:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{hoveredSeg.assetType || 'image_static'}</span>
+          </div>
+        </div>
+      )}
+
+      {/* Tooltip de Trim (Acompanha o mouse ao redimensionar a mídia) */}
+      {trimState && trimState.currentMouseX && trimState.currentMouseY && (
+        <div 
+          className="fixed z-[120] backdrop-blur p-2 rounded shadow-2xl pointer-events-none flex flex-col items-center justify-center min-w-[120px]"
+          style={{ 
+            left: trimState.currentMouseX, 
+            top: trimState.currentMouseY - 65, 
+            transform: 'translateX(-50%)',
+            background: FILMORA.bgDark, 
+            border: `1px solid ${FILMORA.border}` 
+          }}
+        >
+          <div className="text-[11px] font-bold" style={{ color: FILMORA.text }}>
+            Duração: {(trimState.currentEnd - trimState.currentStart).toFixed(2)}s
+          </div>
+          <div className="text-[9px] mt-0.5" style={{ color: FILMORA.textMuted }}>
+            Início: {trimState.currentStart.toFixed(2)}s | Fim: {trimState.currentEnd.toFixed(2)}s
           </div>
         </div>
       )}
@@ -626,28 +664,37 @@ export function Timeline({
                       }}
                       onMouseDown={(e) => handleSegmentMouseDown(e, seg, 'video', trackIndex)}
                       onClick={(e) => e.stopPropagation()}
-                      onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
-                      onMouseLeave={handleSegmentMouseLeave}
                     >
                       {/* BORDAS DE TRIM */}
                       {!isDragging && (
                         <>
                           <div 
-                            className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 hover:bg-white/20 transition-colors"
+                            className="absolute left-0 top-0 bottom-0 w-3 cursor-col-resize z-30 hover:bg-white/20 transition-colors"
                             onMouseDown={(e) => handleTrimMouseDown(e, seg, 'left')}
                           />
                           <div 
-                            className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 hover:bg-white/20 transition-colors"
+                            className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize z-30 hover:bg-white/20 transition-colors"
                             onMouseDown={(e) => handleTrimMouseDown(e, seg, 'right')}
                           />
                         </>
                       )}
 
-                      <SceneThumbnail imageUrl={seg.imageUrl || seg.asset_url} text={seg.text} />
-                      <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40 pointer-events-none" />
-                      <div className="absolute inset-0 flex items-center px-1.5 z-10 pointer-events-none">
-                        <span className="text-[8px] font-medium truncate" style={{ color: '#ffffffcc' }}>
-                          {seg.text}
+                      <SceneThumbnail 
+                        imageUrl={seg.imageUrl || seg.asset_url} 
+                        text={seg.text} 
+                        isVideo={isVideo}
+                        duration={duration} 
+                      />
+
+                      
+                      {/* === NOVA BARRA SUPERIOR (HEADER DO CLIP) === */}
+                      <div 
+                        className="absolute top-0 left-0 right-0 h-[16px] bg-black/60 backdrop-blur-sm flex items-center px-1.5 z-30"
+                        onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
+                        onMouseLeave={handleSegmentMouseLeave}
+                      >
+                        <span className="text-[8.5px] font-medium truncate pointer-events-none text-white/90">
+                          {seg.fileName || seg.text || 'Mídia'}
                         </span>
                       </div>
                       
@@ -758,27 +805,31 @@ export function Timeline({
                       }}
                       onMouseDown={(e) => handleSegmentMouseDown(e, seg, 'audio', trackIndex)}
                       onClick={(e) => e.stopPropagation()}
-                      onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
-                      onMouseLeave={handleSegmentMouseLeave}
                     >
                       {/* BORDAS DE TRIM */}
                       {!isDragging && (
                         <>
                           <div 
-                            className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 hover:bg-white/20 transition-colors"
+                            className="absolute left-0 top-0 bottom-0 w-3 cursor-col-resize z-30 hover:bg-white/20 transition-colors"
                             onMouseDown={(e) => handleTrimMouseDown(e, seg, 'left')}
                           />
                           <div 
-                            className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 hover:bg-white/20 transition-colors"
+                            className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize z-30 hover:bg-white/20 transition-colors"
                             onMouseDown={(e) => handleTrimMouseDown(e, seg, 'right')}
                           />
                         </>
                       )}
 
-                      <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40 pointer-events-none" />
-                      <div className="absolute inset-0 flex items-center px-1.5 z-10 pointer-events-none">
-                        <span className="text-[8px] font-medium truncate" style={{ color: '#ffffffcc' }}>
-                          ♫ {seg.text}
+
+                      
+                      {/* === NOVA BARRA SUPERIOR DE ÁUDIO === */}
+                      <div 
+                        className="absolute top-0 left-0 right-0 h-[16px] bg-black/40 backdrop-blur-sm flex items-center px-1.5 z-30"
+                        onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
+                        onMouseLeave={handleSegmentMouseLeave}
+                      >
+                        <span className="text-[8.5px] font-medium truncate pointer-events-none text-white/90">
+                          ♫ {seg.fileName || seg.text || 'Áudio'}
                         </span>
                       </div>
 

@@ -163,7 +163,8 @@ export function PreviewStep({
 
     const newSegment: any = {
       id: newId,
-      text: file.name,
+      text: '', // <-- Deixe vazio para não aparecer como legenda no vídeo
+      fileName: file.name, // <-- Nova propriedade para guardar o nome na UI
       start: currentTimeRef.current,
       end: currentTimeRef.current + (assetDuration || 5),
       speaker: 0,
