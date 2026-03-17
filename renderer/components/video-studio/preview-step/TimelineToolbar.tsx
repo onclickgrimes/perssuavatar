@@ -7,17 +7,42 @@ interface TimelineToolbarProps {
   setZoomLevel: React.Dispatch<React.SetStateAction<number>>;
   handleZoomIn: () => void;
   handleZoomOut: () => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  onSplit: () => void;
+  onDelete: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+  canSplit: boolean;
+  canDelete: boolean;
 }
 
-export function TimelineToolbar({ zoomLevel, setZoomLevel, handleZoomIn, handleZoomOut }: TimelineToolbarProps) {
+export function TimelineToolbar({ 
+  zoomLevel, setZoomLevel, handleZoomIn, handleZoomOut,
+  onUndo, onRedo, onSplit, onDelete,
+  canUndo, canRedo, canSplit, canDelete
+}: TimelineToolbarProps) {
   return (
     <div className="flex items-center px-3 py-1 gap-0.5 border-t border-b" style={{ background: FILMORA.bgDark, borderColor: FILMORA.border }}>
-      {[Icons.undo, Icons.redo, null, Icons.scissors, Icons.trash, null].map((icon, i) => 
-        icon === null ? (
+      {[
+        { icon: Icons.undo, onClick: onUndo, disabled: !canUndo },
+        { icon: Icons.redo, onClick: onRedo, disabled: !canRedo },
+        null,
+        { icon: Icons.scissors, onClick: onSplit, disabled: !canSplit },
+        { icon: Icons.trash, onClick: onDelete, disabled: !canDelete },
+        null
+      ].map((item, i) => 
+        item === null ? (
           <div key={`sep-${i}`} className="w-px h-4 mx-1" style={{ background: FILMORA.border }} />
         ) : (
-          <button key={i} className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:brightness-150" style={{ color: FILMORA.textDim }}>
-            {icon}
+          <button 
+            key={i} 
+            onClick={item.onClick}
+            disabled={item.disabled}
+            className={`w-7 h-7 rounded flex items-center justify-center transition-colors ${item.disabled ? 'opacity-30 cursor-not-allowed' : 'hover:bg-white/10'}`} 
+            style={{ color: FILMORA.textDim }}
+          >
+            {item.icon}
           </button>
         )
       )}

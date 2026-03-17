@@ -22,6 +22,7 @@ interface TimelineProps {
   onAddAudioTrack: () => void;
   onFileUploadToTrack: (type: 'video' | 'audio', trackId: number, file: File) => void;
   onSegmentMove: (id: number, newStart: number, newTrack: number) => void;
+  onSegmentTrim: (id: number, newStart: number, newEnd: number) => void;
 
   // Hover
   hoveredSegment: { id: number; x: number; y: number } | null;
@@ -57,6 +58,7 @@ export function Timeline({
   onAddAudioTrack,
   onFileUploadToTrack,
   onSegmentMove,
+  onSegmentTrim,
 
   hoveredSegment,
   hoveredSeg,
@@ -102,7 +104,9 @@ export function Timeline({
   } | null>(null);
 
   const handleSegmentMouseDown = (e: React.MouseEvent, seg: any, type: 'video' | 'audio', currentTrackIndex: number) => {
+    if (e.button !== 0) return; // Só permite clique esquerdo
     e.stopPropagation();
+    e.preventDefault(); // Previne o drag-and-drop nativo do HTML5 que causa o ícone de proibido (🚫)
     setSelectedSegmentId(seg.id);
     const startX = e.clientX;
     const startY = e.clientY;
@@ -111,15 +115,23 @@ export function Timeline({
     let currentStart = initialStart;
     let currentTrack = initialTrack;
 
+    let hasMoved = false;
+
     const handleMouseMove = (mvEvent: MouseEvent) => {
-      // Cálculo de X (Tempo)
       const deltaX = mvEvent.clientX - startX;
+      const deltaY = mvEvent.clientY - startY;
+
+      if (!hasMoved && Math.abs(deltaX) < 3 && Math.abs(deltaY) < 3) {
+        return;
+      }
+      hasMoved = true;
+
+      // Cálculo de X (Tempo)
       currentStart = Math.max(0, initialStart + deltaX / zoomLevel);
 
       // Cálculo de Y (Faixa/Track)
       // O deltaY será usado para ver quantos "blocos" de altura o mouse subiu ou desceu.
       // Altura da track de vídeo: 60px. Altura de track de áudio: 50px.
-      const deltaY = mvEvent.clientY - startY;
       const trackHeight = type === 'video' ? 60 : 50;
       const trackOffset = Math.round(deltaY / trackHeight);
       
@@ -142,6 +154,66 @@ export function Timeline({
       setDragState(prev => {
         if (prev && (prev.currentStart !== prev.initialStart || prev.currentTrack !== prev.initialTrack)) {
           onSegmentMove(prev.id, prev.currentStart, prev.currentTrack);
+        }
+        return null;
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  // Trim State
+  const [trimState, setTrimState] = useState<{
+    id: number;
+    edge: 'left' | 'right';
+    startX: number;
+    initialStart: number;
+    initialEnd: number;
+    currentStart: number;
+    currentEnd: number;
+  } | null>(null);
+
+  const handleTrimMouseDown = (e: React.MouseEvent, seg: any, edge: 'left' | 'right') => {
+    if (e.button !== 0) return; // Só permite clique esquerdo
+    e.stopPropagation();
+    e.preventDefault(); // Previne o drag-and-drop nativo
+    setSelectedSegmentId(seg.id);
+    const startX = e.clientX;
+    const initialStart = seg.start;
+    const initialEnd = seg.end;
+    let currentStart = initialStart;
+    let currentEnd = initialEnd;
+
+    let hasMoved = false;
+
+    const handleMouseMove = (mvEvent: MouseEvent) => {
+      const deltaX = mvEvent.clientX - startX;
+      
+      if (!hasMoved && Math.abs(deltaX) < 3) {
+        return;
+      }
+      hasMoved = true;
+
+      const deltaTime = deltaX / zoomLevel;
+
+      if (edge === 'left') {
+        currentStart = Math.min(initialEnd - 0.1, Math.max(0, initialStart + deltaTime));
+      } else {
+        currentEnd = Math.max(initialStart + 0.1, initialEnd + deltaTime);
+      }
+      setTrimState({
+        id: seg.id, edge, startX, initialStart, initialEnd, currentStart, currentEnd
+      });
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      
+      setTrimState(prev => {
+        if (prev && (prev.currentStart !== prev.initialStart || prev.currentEnd !== prev.initialEnd)) {
+          onSegmentTrim(prev.id, prev.currentStart, prev.currentEnd);
         }
         return null;
       });
@@ -319,9 +391,13 @@ export function Timeline({
                   })
                   .map((seg) => {
                   const isDragging = dragState?.id === seg.id;
-                  const currentStart = isDragging ? dragState.currentStart : seg.start;
-                  const duration = seg.end - seg.start;
-                  const left = currentStart * zoomLevel;
+                  const isTrimming = trimState?.id === seg.id;
+                  
+                  const computedStart = isTrimming ? trimState.currentStart : (isDragging ? dragState.currentStart : seg.start);
+                  const computedEnd = isTrimming ? trimState.currentEnd : (isDragging ? dragState.currentStart + (seg.end - seg.start) : seg.end);
+                  const duration = computedEnd - computedStart;
+                  
+                  const left = computedStart * zoomLevel;
                   const width = Math.max(4, duration * zoomLevel);
                   
                   const isVideo = (seg.assetType || '').startsWith('video');
@@ -333,7 +409,7 @@ export function Timeline({
                       key={seg.id}
                       className={`absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden cursor-pointer transition-shadow group/clip ${
                         isSelected ? 'z-10' : 'hover:z-10'
-                      } ${isDragging ? 'opacity-80 z-20 scale-[1.05] shadow-2xl' : ''}`}
+                      } ${isDragging || isTrimming ? 'opacity-80 z-20 scale-[1.05] shadow-2xl' : ''}`}
                       style={{ 
                         left, 
                         width,
@@ -342,17 +418,32 @@ export function Timeline({
                         boxShadow: isSelected ? `0 0 10px ${trackColor}30, inset 0 1px 0 ${trackColor}20` : 'none',
                       }}
                       onMouseDown={(e) => handleSegmentMouseDown(e, seg, 'video', trackIndex)}
+                      onClick={(e) => e.stopPropagation()}
                       onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
                       onMouseLeave={handleSegmentMouseLeave}
                     >
+                      {/* BORDAS DE TRIM */}
+                      {!isDragging && (
+                        <>
+                          <div 
+                            className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 hover:bg-white/20 transition-colors"
+                            onMouseDown={(e) => handleTrimMouseDown(e, seg, 'left')}
+                          />
+                          <div 
+                            className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 hover:bg-white/20 transition-colors"
+                            onMouseDown={(e) => handleTrimMouseDown(e, seg, 'right')}
+                          />
+                        </>
+                      )}
+
                       <SceneThumbnail imageUrl={seg.imageUrl || seg.asset_url} text={seg.text} />
-                      <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40" />
-                      <div className="absolute inset-0 flex items-center px-1.5 z-10">
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40 pointer-events-none" />
+                      <div className="absolute inset-0 flex items-center px-1.5 z-10 pointer-events-none">
                         <span className="text-[8px] font-medium truncate" style={{ color: '#ffffffcc' }}>
                           {seg.text}
                         </span>
                       </div>
-                      <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: trackColor }} />
+                      <div className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none" style={{ background: trackColor }} />
                     </div>
                   );
                 })}
@@ -406,9 +497,13 @@ export function Timeline({
                   })
                   .map((seg) => {
                   const isDragging = dragState?.id === seg.id;
-                  const currentStart = isDragging ? dragState.currentStart : seg.start;
-                  const duration = seg.end - seg.start;
-                  const left = currentStart * zoomLevel;
+                  const isTrimming = trimState?.id === seg.id;
+                  
+                  const computedStart = isTrimming ? trimState.currentStart : (isDragging ? dragState.currentStart : seg.start);
+                  const computedEnd = isTrimming ? trimState.currentEnd : (isDragging ? dragState.currentStart + (seg.end - seg.start) : seg.end);
+                  const duration = computedEnd - computedStart;
+
+                  const left = computedStart * zoomLevel;
                   const width = Math.max(4, duration * zoomLevel);
                   const isSelected = selectedSegmentId === seg.id;
                   
@@ -417,7 +512,7 @@ export function Timeline({
                       key={seg.id}
                       className={`absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden cursor-pointer transition-shadow group/clip ${
                         isSelected ? 'z-10' : 'hover:z-10'
-                      } ${isDragging ? 'opacity-80 z-20 scale-[1.05] shadow-2xl' : ''}`}
+                      } ${isDragging || isTrimming ? 'opacity-80 z-20 scale-[1.05] shadow-2xl' : ''}`}
                       style={{ 
                         left, 
                         width,
@@ -426,16 +521,31 @@ export function Timeline({
                         boxShadow: isSelected ? `0 0 10px ${FILMORA.trackAudio}30, inset 0 1px 0 ${FILMORA.trackAudio}20` : 'none',
                       }}
                       onMouseDown={(e) => handleSegmentMouseDown(e, seg, 'audio', trackIndex)}
+                      onClick={(e) => e.stopPropagation()}
                       onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
                       onMouseLeave={handleSegmentMouseLeave}
                     >
-                      <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40" />
-                      <div className="absolute inset-0 flex items-center px-1.5 z-10">
+                      {/* BORDAS DE TRIM */}
+                      {!isDragging && (
+                        <>
+                          <div 
+                            className="absolute left-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 hover:bg-white/20 transition-colors"
+                            onMouseDown={(e) => handleTrimMouseDown(e, seg, 'left')}
+                          />
+                          <div 
+                            className="absolute right-0 top-0 bottom-0 w-3 cursor-ew-resize z-30 hover:bg-white/20 transition-colors"
+                            onMouseDown={(e) => handleTrimMouseDown(e, seg, 'right')}
+                          />
+                        </>
+                      )}
+
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40 pointer-events-none" />
+                      <div className="absolute inset-0 flex items-center px-1.5 z-10 pointer-events-none">
                         <span className="text-[8px] font-medium truncate" style={{ color: '#ffffffcc' }}>
                           ♫ {seg.text}
                         </span>
                       </div>
-                      <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: FILMORA.trackAudio }} />
+                      <div className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none" style={{ background: FILMORA.trackAudio }} />
                     </div>
                   );
                 })}

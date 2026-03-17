@@ -61,6 +61,48 @@ export function PreviewStep({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // ========================================
+  // HISTÓRICO (UNDO / REDO)
+  // ========================================
+  const [history, setHistory] = useState<any[][]>([project.segments]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+
+  const handleSegmentsChange = useCallback((newSegments: any[]) => {
+    if (!onSegmentsUpdate) return;
+    
+    setHistory(prev => {
+      const newHistory = prev.slice(0, historyIndex + 1);
+      newHistory.push(newSegments);
+      return newHistory;
+    });
+    setHistoryIndex(prev => prev + 1);
+    
+    onSegmentsUpdate(newSegments);
+    setHasUnsavedChanges(true);
+  }, [historyIndex, onSegmentsUpdate]);
+
+  const handleUndo = useCallback(() => {
+    if (historyIndex > 0) {
+      const newIndex = historyIndex - 1;
+      setHistoryIndex(newIndex);
+      if (onSegmentsUpdate) {
+        onSegmentsUpdate(history[newIndex]);
+        setHasUnsavedChanges(true);
+      }
+    }
+  }, [history, historyIndex, onSegmentsUpdate]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const newIndex = historyIndex + 1;
+      setHistoryIndex(newIndex);
+      if (onSegmentsUpdate) {
+        onSegmentsUpdate(history[newIndex]);
+        setHasUnsavedChanges(true);
+      }
+    }
+  }, [history, historyIndex, onSegmentsUpdate]);
+
   // Estados para as faixas (tracks)
   const [videoTrackCount, setVideoTrackCount] = useState(1);
   const [audioTrackCount, setAudioTrackCount] = useState(1);
@@ -128,8 +170,7 @@ export function PreviewStep({
     };
 
     const updated = [...project.segments, newSegment];
-    onSegmentsUpdate(updated);
-    setHasUnsavedChanges(true);
+    handleSegmentsChange(updated);
   };
 
   const handleSegmentMove = useCallback((id: number, newStart: number, newTrack: number) => {
@@ -143,9 +184,20 @@ export function PreviewStep({
     });
     // Ordena pelo tempo de início para manter a timeline consistente
     updated.sort((a, b) => a.start - b.start);
-    onSegmentsUpdate(updated);
-    setHasUnsavedChanges(true);
-  }, [project.segments, onSegmentsUpdate]);
+    handleSegmentsChange(updated);
+  }, [project.segments, onSegmentsUpdate, handleSegmentsChange]);
+
+  const handleSegmentTrim = useCallback((id: number, newStart: number, newEnd: number) => {
+    if (!onSegmentsUpdate) return;
+    const updated = project.segments.map(s => {
+      if (s.id === id) {
+        return { ...s, start: newStart, end: newEnd };
+      }
+      return s;
+    });
+    updated.sort((a, b) => a.start - b.start);
+    handleSegmentsChange(updated);
+  }, [project.segments, onSegmentsUpdate, handleSegmentsChange]);
 
   const handleBackClick = () => {
     if (hasUnsavedChanges) {
@@ -418,16 +470,46 @@ export function PreviewStep({
     const updated = project.segments.map(seg =>
       seg.id === segmentId ? { ...seg, transition } : seg
     );
-    onSegmentsUpdate(updated);
-    setHasUnsavedChanges(true);
-  }, [project.segments, onSegmentsUpdate]);
+    handleSegmentsChange(updated);
+  }, [project.segments, handleSegmentsChange]);
 
   const handleApplyTransitionToAll = useCallback((transition: string) => {
     if (!onSegmentsUpdate) return;
     const updated = project.segments.map(seg => ({ ...seg, transition }));
-    onSegmentsUpdate(updated);
-    setHasUnsavedChanges(true);
-  }, [project.segments, onSegmentsUpdate]);
+    handleSegmentsChange(updated);
+  }, [project.segments, handleSegmentsChange, onSegmentsUpdate]);
+
+  // ========================================
+  // ACTIONS (SPLIT, DELETE)
+  // ========================================
+  const handleDeleteSegment = useCallback(() => {
+    if (selectedSegmentId === null) return;
+    const newSegments = project.segments.filter(s => s.id !== selectedSegmentId);
+    handleSegmentsChange(newSegments);
+    setSelectedSegmentId(null);
+  }, [project.segments, selectedSegmentId, handleSegmentsChange]);
+
+  const handleSplitSegment = useCallback(() => {
+    if (selectedSegmentId === null) return;
+    const segmentIndex = project.segments.findIndex(s => s.id === selectedSegmentId);
+    if (segmentIndex === -1) return;
+    
+    const segment = project.segments[segmentIndex];
+    const currentTime = currentTimeRef.current;
+    
+    if (currentTime > segment.start + 0.1 && currentTime < segment.end - 0.1) {
+      const maxId = project.segments.reduce((acc, curr) => Math.max(acc, curr.id), 0);
+      const newId = maxId + 1;
+      
+      const firstHalf = { ...segment, end: currentTime };
+      const secondHalf = { ...segment, id: newId, start: currentTime };
+      
+      const newSegments = [...project.segments];
+      newSegments.splice(segmentIndex, 1, firstHalf, secondHalf);
+      
+      handleSegmentsChange(newSegments);
+    }
+  }, [project.segments, selectedSegmentId, handleSegmentsChange]);
 
   // Segmento selecionado
   const selectedSeg = selectedSegmentId != null ? project.segments.find(s => s.id === selectedSegmentId) : null;
@@ -583,6 +665,14 @@ export function PreviewStep({
         setZoomLevel={setZoomLevel}
         handleZoomIn={handleZoomIn}
         handleZoomOut={handleZoomOut}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        onSplit={handleSplitSegment}
+        onDelete={handleDeleteSegment}
+        canUndo={historyIndex > 0}
+        canRedo={historyIndex < history.length - 1}
+        canSplit={selectedSegmentId !== null}
+        canDelete={selectedSegmentId !== null}
       />
 
       {/* TIMELINE */}
@@ -601,6 +691,7 @@ export function PreviewStep({
         onAddAudioTrack={handleAddAudioTrack}
         onFileUploadToTrack={handleFileUploadToTrack}
         onSegmentMove={handleSegmentMove}
+        onSegmentTrim={handleSegmentTrim}
         hoveredSegment={hoveredSegment}
         hoveredSeg={hoveredSeg}
         handleSegmentMouseEnter={handleSegmentMouseEnter}
