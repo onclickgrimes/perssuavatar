@@ -331,6 +331,9 @@ export const SceneSchema = z.object({
   /** ID único da cena */
   id: z.number(),
   
+  /** Faixa / camada da timeline (Z-Index) */
+  track: z.number().optional(),
+  
   /** Tempo de início em segundos */
   start_time: z.number(),
   

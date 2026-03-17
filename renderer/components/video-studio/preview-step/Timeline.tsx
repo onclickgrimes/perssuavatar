@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef, useState } from 'react';
 import { FILMORA, getRulerSteps, formatRulerTime, formatTimecode } from './constants';
 import { Icons } from './Icons';
 import { SceneThumbnail } from './SceneThumbnail';
@@ -14,6 +14,14 @@ interface TimelineProps {
   totalTimelineWidth: number;
   selectedSegmentId: number | null;
   setSelectedSegmentId: (id: number | null) => void;
+
+  // Tracks
+  videoTrackCount: number;
+  audioTrackCount: number;
+  onAddVideoTrack: () => void;
+  onAddAudioTrack: () => void;
+  onFileUploadToTrack: (type: 'video' | 'audio', trackId: number, file: File) => void;
+  onSegmentMove: (id: number, newStart: number, newTrack: number) => void;
 
   // Hover
   hoveredSegment: { id: number; x: number; y: number } | null;
@@ -42,6 +50,14 @@ export function Timeline({
   totalTimelineWidth,
   selectedSegmentId,
   setSelectedSegmentId,
+  
+  videoTrackCount,
+  audioTrackCount,
+  onAddVideoTrack,
+  onAddAudioTrack,
+  onFileUploadToTrack,
+  onSegmentMove,
+
   hoveredSegment,
   hoveredSeg,
   handleSegmentMouseEnter,
@@ -54,8 +70,92 @@ export function Timeline({
   playheadRef,
   playheadLabelRef,
 }: TimelineProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [activeUpload, setActiveUpload] = useState<{type: 'video'|'audio', trackId: number} | null>(null);
+
+  const handleUploadClick = (type: 'video' | 'audio', trackId: number) => {
+    setActiveUpload({ type, trackId });
+    if (fileInputRef.current) {
+      fileInputRef.current.accept = type === 'video' ? 'video/*,image/*' : 'audio/*';
+      fileInputRef.current.value = '';
+      fileInputRef.current.click();
+    }
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0 && activeUpload) {
+      onFileUploadToTrack(activeUpload.type, activeUpload.trackId, e.target.files[0]);
+    }
+    setActiveUpload(null);
+  };
+
+  // Drag State for segments
+  const [dragState, setDragState] = useState<{ 
+    id: number; 
+    startX: number; 
+    startY: number;
+    initialStart: number; 
+    currentStart: number;
+    initialTrack: number;
+    currentTrack: number;
+    type: 'video' | 'audio';
+  } | null>(null);
+
+  const handleSegmentMouseDown = (e: React.MouseEvent, seg: any, type: 'video' | 'audio', currentTrackIndex: number) => {
+    e.stopPropagation();
+    setSelectedSegmentId(seg.id);
+    const startX = e.clientX;
+    const startY = e.clientY;
+    const initialStart = seg.start;
+    const initialTrack = currentTrackIndex;
+    let currentStart = initialStart;
+    let currentTrack = initialTrack;
+
+    const handleMouseMove = (mvEvent: MouseEvent) => {
+      // Cálculo de X (Tempo)
+      const deltaX = mvEvent.clientX - startX;
+      currentStart = Math.max(0, initialStart + deltaX / zoomLevel);
+
+      // Cálculo de Y (Faixa/Track)
+      // O deltaY será usado para ver quantos "blocos" de altura o mouse subiu ou desceu.
+      // Altura da track de vídeo: 60px. Altura de track de áudio: 50px.
+      const deltaY = mvEvent.clientY - startY;
+      const trackHeight = type === 'video' ? 60 : 50;
+      const trackOffset = Math.round(deltaY / trackHeight);
+      
+      const maxTracks = type === 'video' ? videoTrackCount : audioTrackCount;
+      if (type === 'video') {
+        // V2 fica acima de V1 visualmente (arrastar pra baixo = deltaY > 0 = diminuir track index)
+        currentTrack = Math.max(1, Math.min(maxTracks, initialTrack - trackOffset));
+      } else {
+        // A2 fica abaixo de A1 visualmente (arrastar pra baixo = deltaY > 0 = aumentar track index)
+        currentTrack = Math.max(1, Math.min(maxTracks, initialTrack + trackOffset));
+      }
+
+      setDragState({ id: seg.id, startX, startY, initialStart, currentStart, initialTrack, currentTrack, type });
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      
+      setDragState(prev => {
+        if (prev && (prev.currentStart !== prev.initialStart || prev.currentTrack !== prev.initialTrack)) {
+          onSegmentMove(prev.id, prev.currentStart, prev.currentTrack);
+        }
+        return null;
+      });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const [showAddMenu, setShowAddMenu] = useState(false);
+
   return (
     <div className="flex-shrink-0 relative overflow-hidden" style={{ background: FILMORA.bgDarker, minHeight: '160px' }}>
+      <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
 
       {/* Tooltip */}
       {hoveredSegment && hoveredSeg && (
@@ -76,36 +176,81 @@ export function Timeline({
 
       <div className="flex h-full">
         {/* Track Labels (esquerda fixa) */}
-        <div className="flex-shrink-0 w-[80px] z-20" style={{ background: FILMORA.bgDark, borderRight: `1px solid ${FILMORA.border}` }}>
-          <div className="h-[24px] border-b" style={{ borderColor: FILMORA.border }} />
+        <div className="flex-shrink-0 w-[100px] z-20" style={{ background: FILMORA.bgDark, borderRight: `1px solid ${FILMORA.border}` }}>
+          <div className="h-[24px] border-b relative flex items-center px-1.5" style={{ borderColor: FILMORA.border }}>
+             <button 
+               className="text-[10px] bg-[#3B82F6]/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 w-[18px] h-[18px] rounded flex items-center justify-center transition-all"
+               onClick={() => setShowAddMenu(!showAddMenu)}
+               title="Adicionar Linha (De Vídeo ou Áudio)"
+             >
+               {Icons.plus}
+             </button>
+             {showAddMenu && (
+               <>
+                 <div className="fixed inset-0 z-40" onClick={() => setShowAddMenu(false)} />
+                 <div className="absolute top-[22px] left-1 bg-[#252528] border border-[#3e3e42] rounded shadow-2xl z-50 flex flex-col py-1 w-32">
+                   <button className="text-left px-3 py-1.5 text-[10px] text-gray-300 hover:bg-white/10 hover:text-white transition-colors" onClick={() => { onAddVideoTrack(); setShowAddMenu(false); }}>
+                      + Faixa de Vídeo
+                   </button>
+                   <button className="text-left px-3 py-1.5 text-[10px] text-gray-300 hover:bg-white/10 hover:text-white transition-colors" onClick={() => { onAddAudioTrack(); setShowAddMenu(false); }}>
+                      + Faixa de Áudio
+                   </button>
+                 </div>
+               </>
+             )}
+          </div>
           
-          {/* Track 1: Video */}
-          <div className="h-[60px] flex items-center px-2 gap-1.5 border-b" style={{ borderColor: `${FILMORA.border}80` }}>
-            <div className="flex items-center gap-1" style={{ color: FILMORA.textDim }}>
-              {Icons.film}
-            </div>
-            <div className="flex flex-col min-w-0">
-              <span className="text-[9px] font-semibold truncate" style={{ color: FILMORA.textMuted }}>V1</span>
-              <div className="flex gap-0.5 mt-0.5" style={{ color: FILMORA.textDim }}>
-                {Icons.lock}
-                {Icons.eye}
+          {/* Video Tracks */}
+          {Array.from({ length: videoTrackCount }).reverse().map((_, i) => {
+            const trackIndex = videoTrackCount - i;
+            return (
+              <div key={`vl-${trackIndex}`} className="h-[60px] flex items-center px-2 gap-1.5 border-b relative group" style={{ borderColor: `${FILMORA.border}80` }}>
+                <div className="flex items-center gap-1" style={{ color: FILMORA.textDim }}>
+                  {Icons.film}
+                </div>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="text-[9px] font-semibold truncate" style={{ color: FILMORA.textMuted }}>V{trackIndex}</span>
+                  <div className="flex gap-0.5 mt-0.5" style={{ color: FILMORA.textDim }}>
+                    {Icons.lock}
+                    {Icons.eye}
+                  </div>
+                </div>
+                <button 
+                  className="opacity-0 group-hover:opacity-100 absolute right-2 w-5 h-5 flex items-center justify-center rounded bg-blue-600/20 text-blue-400 hover:bg-blue-600/40 transition-all border border-blue-500/30"
+                  title="Importar Mídia"
+                  onClick={() => handleUploadClick('video', trackIndex)}
+                >
+                  {Icons.plus}
+                </button>
               </div>
-            </div>
-          </div>
+            );
+          })}
 
-          {/* Track 2: Audio */}
-          <div className="h-[50px] flex items-center px-2 gap-1.5" style={{ borderColor: `${FILMORA.border}80` }}>
-            <div className="flex items-center gap-1" style={{ color: FILMORA.textDim }}>
-              {Icons.music}
-            </div>
-            <div className="flex flex-col min-w-0">
-              <span className="text-[9px] font-semibold truncate" style={{ color: FILMORA.textMuted }}>A1</span>
-              <div className="flex gap-0.5 mt-0.5" style={{ color: FILMORA.textDim }}>
-                {Icons.lock}
-                {Icons.eye}
+          {/* Audio Tracks */}
+          {Array.from({ length: audioTrackCount }).map((_, i) => {
+            const trackIndex = i + 1;
+            return (
+              <div key={`al-${trackIndex}`} className="h-[50px] flex items-center px-2 gap-1.5 border-b relative group" style={{ borderColor: `${FILMORA.border}80` }}>
+                <div className="flex items-center gap-1" style={{ color: FILMORA.textDim }}>
+                  {Icons.music}
+                </div>
+                <div className="flex flex-col min-w-0 flex-1">
+                  <span className="text-[9px] font-semibold truncate" style={{ color: FILMORA.textMuted }}>A{trackIndex}</span>
+                  <div className="flex gap-0.5 mt-0.5" style={{ color: FILMORA.textDim }}>
+                    {Icons.lock}
+                    {Icons.eye}
+                  </div>
+                </div>
+                <button 
+                  className="opacity-0 group-hover:opacity-100 absolute right-2 w-5 h-5 flex items-center justify-center rounded bg-green-600/20 text-green-400 hover:bg-green-600/40 transition-all border border-green-500/30"
+                  title="Importar Áudio"
+                  onClick={() => handleUploadClick('audio', trackIndex)}
+                >
+                  {Icons.plus}
+                </button>
               </div>
-            </div>
-          </div>
+            );
+          })}
         </div>
 
         {/* Scrollable timeline area */}
@@ -155,89 +300,153 @@ export function Timeline({
               })()}
             </div>
 
-            {/* ====== VIDEO TRACK ====== */}
-            <div className="relative h-[60px] border-b" style={{ background: FILMORA.bgDarker, borderColor: `${FILMORA.border}60` }}>
-              <div className="absolute inset-0 opacity-[0.02]" style={{
-                backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
-                backgroundSize: `${zoomLevel}px 100%`
-              }} />
+            {/* ====== VIDEO TRACKS ====== */}
+            {Array.from({ length: videoTrackCount }).reverse().map((_, i) => {
+              const trackIndex = videoTrackCount - i;
+              return (
+              <div key={`v-${trackIndex}`} className="relative h-[60px] border-b" style={{ background: FILMORA.bgDarker, borderColor: `${FILMORA.border}60` }}>
+                <div className="absolute inset-0 opacity-[0.02]" style={{
+                  backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
+                  backgroundSize: `${zoomLevel}px 100%`
+                }} />
 
-              {visualSegments.map((seg) => {
-                const left = seg.start * zoomLevel;
-                const width = Math.max(4, (seg.end - seg.start) * zoomLevel);
-                const isVideo = (seg.assetType || '').startsWith('video');
-                const isSelected = selectedSegmentId === seg.id;
-                const trackColor = isVideo ? FILMORA.trackVideo : FILMORA.trackImage;
+                {visualSegments
+                  .filter(s => !(s.assetType || '').startsWith('audio'))
+                  .filter(s => {
+                    const isDragging = dragState?.id === s.id;
+                    const trackToRender = isDragging ? dragState.currentTrack : (s.track || 1);
+                    return trackToRender === trackIndex;
+                  })
+                  .map((seg) => {
+                  const isDragging = dragState?.id === seg.id;
+                  const currentStart = isDragging ? dragState.currentStart : seg.start;
+                  const duration = seg.end - seg.start;
+                  const left = currentStart * zoomLevel;
+                  const width = Math.max(4, duration * zoomLevel);
+                  
+                  const isVideo = (seg.assetType || '').startsWith('video');
+                  const isSelected = selectedSegmentId === seg.id;
+                  const trackColor = isVideo ? FILMORA.trackVideo : FILMORA.trackImage;
 
-                return (
-                  <div
-                    key={seg.id}
-                    className={`absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden cursor-pointer transition-shadow group/clip ${
-                      isSelected ? 'z-10' : 'hover:z-10'
-                    }`}
+                  return (
+                    <div
+                      key={seg.id}
+                      className={`absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden cursor-pointer transition-shadow group/clip ${
+                        isSelected ? 'z-10' : 'hover:z-10'
+                      } ${isDragging ? 'opacity-80 z-20 scale-[1.05] shadow-2xl' : ''}`}
+                      style={{ 
+                        left, 
+                        width,
+                        background: `linear-gradient(180deg, ${trackColor}35 0%, ${trackColor}18 100%)`,
+                        border: `1px solid ${isSelected ? trackColor : `${trackColor}40`}`,
+                        boxShadow: isSelected ? `0 0 10px ${trackColor}30, inset 0 1px 0 ${trackColor}20` : 'none',
+                      }}
+                      onMouseDown={(e) => handleSegmentMouseDown(e, seg, 'video', trackIndex)}
+                      onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
+                      onMouseLeave={handleSegmentMouseLeave}
+                    >
+                      <SceneThumbnail imageUrl={seg.imageUrl || seg.asset_url} text={seg.text} />
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40" />
+                      <div className="absolute inset-0 flex items-center px-1.5 z-10">
+                        <span className="text-[8px] font-medium truncate" style={{ color: '#ffffffcc' }}>
+                          {seg.text}
+                        </span>
+                      </div>
+                      <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: trackColor }} />
+                    </div>
+                  );
+                })}
+              </div>
+            )})}
+
+            {/* ====== AUDIO TRACKS ====== */}
+            {Array.from({ length: audioTrackCount }).map((_, i) => {
+              const trackIndex = i + 1;
+              return (
+              <div key={`a-${trackIndex}`} className="relative h-[50px] border-b" style={{ background: FILMORA.bgDarker, borderColor: `${FILMORA.border}60` }}>
+                <div className="absolute inset-0 opacity-[0.02]" style={{
+                  backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
+                  backgroundSize: `${zoomLevel}px 100%`
+                }} />
+
+                {/* Se for a primeira faixa de áudio e tiver o audioUrl base do projeto */}
+                {trackIndex === 1 && audioUrl && (
+                  <div 
+                    className="absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden"
                     style={{ 
-                      left, 
-                      width,
-                      background: `linear-gradient(180deg, ${trackColor}35 0%, ${trackColor}18 100%)`,
-                      border: `1px solid ${isSelected ? trackColor : `${trackColor}40`}`,
-                      boxShadow: isSelected ? `0 0 10px ${trackColor}30, inset 0 1px 0 ${trackColor}20` : 'none',
+                      left: 0, 
+                      width: Math.max(4, durationInSeconds * zoomLevel),
+                      background: `linear-gradient(180deg, ${FILMORA.trackAudio}25 0%, ${FILMORA.trackAudio}10 100%)`,
+                      border: `1px solid ${FILMORA.trackAudio}40`,
                     }}
-                    onClick={(e) => { e.stopPropagation(); setSelectedSegmentId(seg.id); }}
-                    onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
-                    onMouseLeave={handleSegmentMouseLeave}
                   >
-                    <SceneThumbnail imageUrl={seg.imageUrl || seg.asset_url} text={seg.text} />
-                    <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40" />
-                    <div className="absolute inset-0 flex items-center px-1.5 z-10">
-                      <span className="text-[8px] font-medium truncate" style={{ color: '#ffffffcc' }}>
-                        {seg.text}
+                    <AudioWaveformDisplay 
+                      audioUrl={audioUrl} 
+                      color={FILMORA.trackAudio} 
+                      duration={durationInSeconds} 
+                      widthScale={zoomLevel} 
+                    />
+                    <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: FILMORA.trackAudio }} />
+                    <div className="absolute top-1 left-1.5 z-10">
+                      <span className="text-[7px] font-bold uppercase tracking-wider px-1 py-[1px] rounded-sm" 
+                        style={{ background: `${FILMORA.trackAudio}40`, color: `${FILMORA.trackAudio}` }}>
+                        ♫ Base
                       </span>
                     </div>
-                    <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: trackColor }} />
                   </div>
-                );
-              })}
-            </div>
+                )}
 
-            {/* ====== AUDIO TRACK ====== */}
-            <div className="relative h-[50px]" style={{ background: FILMORA.bgDarker }}>
-              <div className="absolute inset-0 opacity-[0.02]" style={{
-                backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
-                backgroundSize: `${zoomLevel}px 100%`
-              }} />
+                {/* Segmentos de áudio upados pra essa faixa */}
+                {visualSegments
+                  .filter(s => (s.assetType || '').startsWith('audio'))
+                  .filter(s => {
+                    const isDragging = dragState?.id === s.id;
+                    const trackToRender = isDragging ? dragState.currentTrack : (s.track || 1);
+                    return trackToRender === trackIndex;
+                  })
+                  .map((seg) => {
+                  const isDragging = dragState?.id === seg.id;
+                  const currentStart = isDragging ? dragState.currentStart : seg.start;
+                  const duration = seg.end - seg.start;
+                  const left = currentStart * zoomLevel;
+                  const width = Math.max(4, duration * zoomLevel);
+                  const isSelected = selectedSegmentId === seg.id;
+                  
+                  return (
+                    <div
+                      key={seg.id}
+                      className={`absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden cursor-pointer transition-shadow group/clip ${
+                        isSelected ? 'z-10' : 'hover:z-10'
+                      } ${isDragging ? 'opacity-80 z-20 scale-[1.05] shadow-2xl' : ''}`}
+                      style={{ 
+                        left, 
+                        width,
+                        background: `linear-gradient(180deg, ${FILMORA.trackAudio}35 0%, ${FILMORA.trackAudio}18 100%)`,
+                        border: `1px solid ${isSelected ? FILMORA.trackAudio : `${FILMORA.trackAudio}40`}`,
+                        boxShadow: isSelected ? `0 0 10px ${FILMORA.trackAudio}30, inset 0 1px 0 ${FILMORA.trackAudio}20` : 'none',
+                      }}
+                      onMouseDown={(e) => handleSegmentMouseDown(e, seg, 'audio', trackIndex)}
+                      onMouseEnter={(e) => handleSegmentMouseEnter(e, seg.id)}
+                      onMouseLeave={handleSegmentMouseLeave}
+                    >
+                      <div className="absolute inset-0 bg-gradient-to-r from-black/50 via-transparent to-black/40" />
+                      <div className="absolute inset-0 flex items-center px-1.5 z-10">
+                        <span className="text-[8px] font-medium truncate" style={{ color: '#ffffffcc' }}>
+                          ♫ {seg.text}
+                        </span>
+                      </div>
+                      <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: FILMORA.trackAudio }} />
+                    </div>
+                  );
+                })}
 
-              {audioUrl && (
-                <div 
-                  className="absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden"
-                  style={{ 
-                    left: 0, 
-                    width: Math.max(4, durationInSeconds * zoomLevel),
-                    background: `linear-gradient(180deg, ${FILMORA.trackAudio}25 0%, ${FILMORA.trackAudio}10 100%)`,
-                    border: `1px solid ${FILMORA.trackAudio}40`,
-                  }}
-                >
-                  <AudioWaveformDisplay 
-                    audioUrl={audioUrl} 
-                    color={FILMORA.trackAudio} 
-                    duration={durationInSeconds} 
-                    widthScale={zoomLevel} 
-                  />
-                  <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: FILMORA.trackAudio }} />
-                  <div className="absolute top-1 left-1.5 z-10">
-                    <span className="text-[7px] font-bold uppercase tracking-wider px-1 py-[1px] rounded-sm" 
-                      style={{ background: `${FILMORA.trackAudio}40`, color: `${FILMORA.trackAudio}` }}>
-                      ♫ Audio
-                    </span>
+                {trackIndex === 1 && !audioUrl && visualSegments.filter(s => (s.track || 1) === trackIndex && (s.assetType || '').startsWith('audio')).length === 0 && (
+                  <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                    <span className="text-[10px]" style={{ color: FILMORA.textDim }}>Sem áudio</span>
                   </div>
-                </div>
-              )}
-
-              {!audioUrl && (
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <span className="text-[10px]" style={{ color: FILMORA.textDim }}>Sem áudio</span>
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )})}
 
             {/* ====== PLAYHEAD ====== */}
             <div 

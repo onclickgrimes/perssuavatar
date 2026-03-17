@@ -48,6 +48,7 @@ export interface VideoProjectSegment {
     assetType?: string;
     cameraMovement?: string;
     transition?: string;
+    track?: number;
     // Palavras individuais com timing do Deepgram
     words?: Array<{
         word: string;
@@ -528,7 +529,7 @@ export class VideoProjectService extends EventEmitter {
         if (!filePath) return '';
 
         // Se já é uma URL HTTP, retornar como está
-        if (filePath.startsWith('http://') || filePath.startsWith('https://')) {
+        if (filePath.startsWith('http://') || filePath.startsWith('https://') || filePath.startsWith('blob:')) {
             return filePath;
         }
 
@@ -1297,6 +1298,8 @@ Responda APENAS com um objeto JSON válido no formato:
                 transition: segment.transition,
                 highlightWords: segment.highlightWords,
                 timeline_config: segment.timeline_config,
+                track: segment.track,
+                asset_duration: segment.asset_duration,
                 words: segment.words, // Words fica por último
             })),
         };

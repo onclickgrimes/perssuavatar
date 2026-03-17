@@ -82,6 +82,7 @@ export interface VideoSegment {
   assetType?: string;
   cameraMovement?: string;
   transition?: string;
+  track?: number;
   
   // Media
   imageUrl?: string;
@@ -125,7 +126,7 @@ export interface VideoProject {
 
 const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'id', 'text', 'start', 'end', 'speaker', 'words',
-  'emotion', 'imagePrompt', 'assetType', 'cameraMovement', 'transition',
+  'emotion', 'imagePrompt', 'assetType', 'cameraMovement', 'transition', 'track',
   'imageUrl', 'asset_url', 'asset_duration',
   'highlightWords', 'chroma_key', 'background', 'timeline_config',
 ];
@@ -188,6 +189,7 @@ export function fromSaveFormat(loaded: any): VideoProject {
 export function segmentToRemotionScene(seg: VideoSegment): any {
   return {
     id: seg.id,
+    track: seg.track || 1,
     start_time: seg.start,
     end_time: seg.end,
     transcript_segment: seg.text,
@@ -267,6 +269,6 @@ export const ASPECT_RATIO_DIMENSIONS: Record<string, { width: number; height: nu
 
 export function audioPathToUrl(audioPath: string | undefined, baseUrl = 'http://localhost:9999'): string | undefined {
   if (!audioPath) return undefined;
-  if (audioPath.startsWith('http')) return audioPath;
+  if (audioPath.startsWith('http') || audioPath.startsWith('blob:')) return audioPath;
   return `${baseUrl}/${audioPath.split(/[\\/]/).pop()}`;
 }

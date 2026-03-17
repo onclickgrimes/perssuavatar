@@ -61,6 +61,92 @@ export function PreviewStep({
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Estados para as faixas (tracks)
+  const [videoTrackCount, setVideoTrackCount] = useState(1);
+  const [audioTrackCount, setAudioTrackCount] = useState(1);
+
+  // Recalcular quantidade de faixas se o projeto tiver segmentos em faixas maiores
+  useEffect(() => {
+    let maxV = 1;
+    let maxA = 1;
+    project.segments.forEach(seg => {
+      if (seg.track) {
+        if ((seg.assetType || '').startsWith('audio')) {
+          if (seg.track > maxA) maxA = seg.track;
+        } else {
+          if (seg.track > maxV) maxV = seg.track;
+        }
+      }
+    });
+    if (maxV > videoTrackCount) setVideoTrackCount(maxV);
+    if (maxA > audioTrackCount) setAudioTrackCount(maxA);
+  }, [project.segments]);
+
+  const handleAddVideoTrack = () => setVideoTrackCount(prev => prev + 1);
+  const handleAddAudioTrack = () => setAudioTrackCount(prev => prev + 1);
+
+  const handleFileUploadToTrack = async (type: 'video' | 'audio', trackId: number, file: File) => {
+    if (!onSegmentsUpdate) return;
+    const isVideo = file.type.startsWith('video');
+    const isImage = file.type.startsWith('image');
+    const isAudio = file.type.startsWith('audio');
+    
+    // Fallback se type for video mas for um arquivo de audio:
+    const assetType = isVideo ? 'video_file' : isAudio ? 'audio' : isImage ? 'image_static' : 'image_static';
+
+    const maxId = project.segments.reduce((acc, curr) => Math.max(acc, curr.id), 0);
+    const newId = maxId + 1;
+
+    let url = URL.createObjectURL(file);
+    let assetDuration: number | undefined = 5; // Duração padrão
+
+    if (window.electron?.videoProject?.saveImage) {
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.electron.videoProject.saveImage(arrayBuffer, file.name, newId);
+        if (result.success && result.httpUrl) {
+          url = result.httpUrl;
+          if (result.durationMs) {
+            assetDuration = Number((result.durationMs / 1000).toFixed(2));
+          }
+        }
+      } catch (e) {
+        console.error('Error saving track media:', e);
+      }
+    }
+
+    const newSegment: any = {
+      id: newId,
+      text: file.name,
+      start: currentTimeRef.current,
+      end: currentTimeRef.current + (assetDuration || 5),
+      speaker: 0,
+      assetType: assetType,
+      imageUrl: url,
+      track: trackId,
+      asset_duration: assetDuration,
+    };
+
+    const updated = [...project.segments, newSegment];
+    onSegmentsUpdate(updated);
+    setHasUnsavedChanges(true);
+  };
+
+  const handleSegmentMove = useCallback((id: number, newStart: number, newTrack: number) => {
+    if (!onSegmentsUpdate) return;
+    const updated = project.segments.map(s => {
+      if (s.id === id) {
+        const duration = s.end - s.start;
+        return { ...s, start: newStart, end: newStart + duration, track: newTrack };
+      }
+      return s;
+    });
+    // Ordena pelo tempo de início para manter a timeline consistente
+    updated.sort((a, b) => a.start - b.start);
+    onSegmentsUpdate(updated);
+    setHasUnsavedChanges(true);
+  }, [project.segments, onSegmentsUpdate]);
+
   const handleBackClick = () => {
     if (hasUnsavedChanges) {
       if (!window.confirm("Você tem alterações não salvas. Tem certeza que deseja voltar? As alterações podem ser perdidas.")) {
@@ -509,6 +595,12 @@ export function PreviewStep({
         totalTimelineWidth={totalTimelineWidth}
         selectedSegmentId={selectedSegmentId}
         setSelectedSegmentId={setSelectedSegmentId}
+        videoTrackCount={videoTrackCount}
+        audioTrackCount={audioTrackCount}
+        onAddVideoTrack={handleAddVideoTrack}
+        onAddAudioTrack={handleAddAudioTrack}
+        onFileUploadToTrack={handleFileUploadToTrack}
+        onSegmentMove={handleSegmentMove}
         hoveredSegment={hoveredSegment}
         hoveredSeg={hoveredSeg}
         handleSegmentMouseEnter={handleSegmentMouseEnter}

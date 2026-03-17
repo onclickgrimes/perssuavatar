@@ -47,6 +47,14 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
   
   // Pré-calcular informações das cenas
   const sceneInfos = useMemo(() => {
+    // Agrupa por track para identificar a primeira e última cena de cada faixa
+    const trackGroups = new Map<number, number[]>();
+    project.scenes.forEach((scene, index) => {
+      const t = scene.track || 1;
+      if (!trackGroups.has(t)) trackGroups.set(t, []);
+      trackGroups.get(t)!.push(index);
+    });
+
     return project.scenes.map((scene, index) => {
       const startFrame = Math.round(scene.start_time * fps);
       const endFrame = Math.round(scene.end_time * fps);
@@ -56,13 +64,15 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
         fps
       );
       
-      const isFirstScene = index === 0;
-      const isLastScene = index === project.scenes.length - 1;
+      const track = scene.track || 1;
+      const trackGroup = trackGroups.get(track)!;
+      const isFirstScene = trackGroup[0] === index;
+      const isLastScene = trackGroup[trackGroup.length - 1] === index;
       
       // Ajustar o início da Sequence:
-      // - Primeira cena: começa no frame original
+      // - Primeira cena da faixa: começa no frame original
       // - Demais cenas: começam ANTES do tempo original (para sobrepor com saída da anterior)
-      const sequenceStart = isFirstScene ? startFrame : startFrame - transitionFrames;
+      const sequenceStart = isFirstScene ? startFrame : Math.max(0, startFrame - transitionFrames);
       
       // Ajustar a duração da Sequence:
       // - Se for a última cena: duração base + transição de entrada (se não for a primeira)
@@ -186,6 +196,7 @@ const SceneWithTransition: React.FC<SceneWithTransitionProps> = ({
     <AbsoluteFill
       style={{
         ...transitionStyles,
+        zIndex: scene.track || 1,
       }}
     >
       <Scene
