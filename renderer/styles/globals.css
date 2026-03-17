@@ -151,3 +151,20 @@ body {
   scrollbar-width: thin;
   scrollbar-color: rgba(99, 102, 241, 0.3) transparent;
 }
+
+/* Filmora Global Scrollbar */
+.filmora-scrollbar::-webkit-scrollbar { 
+  height: 8px; 
+  width: 8px;
+}
+.filmora-scrollbar::-webkit-scrollbar-track { 
+  background: #14151a; 
+}
+.filmora-scrollbar::-webkit-scrollbar-thumb { 
+  background: #383a45; 
+  border-radius: 4px; 
+}
+.filmora-scrollbar::-webkit-scrollbar-thumb:hover { 
+  background: #4d505f; 
+}
+

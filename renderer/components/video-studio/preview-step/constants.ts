@@ -2,25 +2,25 @@
 // FILMORA DARK PALETTE  
 // ========================================
 export const FILMORA = {
-  bg:         '#1a1a2e',   // Fundo geral
-  bgDark:     '#0f0f1e',   // Painéis laterais / timeline
-  bgDarker:   '#0a0a16',   // Fundo da timeline
-  surface:    '#21213b',   // Cards / Containers
-  surfaceAlt: '#2a2a4a',   // Containers hover
-  border:     '#2d2d52',   // Bordas
-  borderLight:'#3a3a60',   // Bordas mais claras
-  accent:     '#00d4aa',   // Verde/Teal Filmora (primário)
-  accentDark: '#00b894',   // Verde escuro
-  accentHover:'#00e8bc',   // Verde hover
-  text:       '#e8e8f0',   // Texto principal
-  textMuted:  '#8888aa',   // Texto secundário
-  textDim:    '#555570',   // Texto dim
+  bg:         '#14151a',   // Fundo geral (preto azulado)
+  bgDark:     '#1e1f26',   // Painéis laterais / TopBar / Timeline Header
+  bgDarker:   '#0d0e12',   // Fundo base da timeline
+  surface:    '#2b2d38',   // Cards / Inputs / Containers internos
+  surfaceAlt: '#383a48',   // Containers em hover
+  border:     '#313340',   // Bordas sutis de divisão
+  borderLight:'#474a5c',   // Bordas de destaque
+  accent:     '#00e5ff',   // Ciano do Filmora (primário)
+  accentDark: '#00b3cc',   // Ciano escuro
+  accentHover:'#33ebff',   // Ciano hover
+  text:       '#e1e1e3',   // Texto principal claro
+  textMuted:  '#9ca3af',   // Texto secundário (ícones inativos)
+  textDim:    '#6b7280',   // Texto terciário
   playhead:   '#ff3b5c',   // Playhead vermelho
-  trackVideo: '#6c5ce7',   // Trilha vídeo — roxo
-  trackImage: '#0984e3',   // Trilha imagem — azul
-  trackAudio: '#00b894',   // Trilha áudio — verde (matching accent)
-  ruler:      '#16162e',   // Régua
-  rulerText:  '#6666aa',   // Texto régua
+  trackVideo: '#818cf8',   // Trilha de vídeo
+  trackImage: '#38bdf8',   // Trilha de imagem
+  trackAudio: '#34d399',   // Trilha de áudio
+  ruler:      '#1e1f26',   // Fundo da Régua
+  rulerText:  '#9ca3af',   // Texto da Régua
 };
 
 // ========================================

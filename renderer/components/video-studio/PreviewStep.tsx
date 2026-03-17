@@ -639,8 +639,7 @@ export function PreviewStep({
 
   return (
     <div 
-      className="flex flex-col w-full h-screen overflow-hidden" 
-      style={{ background: FILMORA.bg, color: FILMORA.text, fontFamily: "'Segoe UI', system-ui, sans-serif" }}
+      className="flex flex-col w-full h-screen overflow-hidden bg-filmora-bg text-filmora-text font-sans" 
     >
       <TopBar
         onBackClick={handleBackClick}
@@ -652,19 +651,14 @@ export function PreviewStep({
 
       <div className={`flex flex-1 min-h-0 overflow-hidden ${isVerticalLayout ? 'flex-row' : 'flex-col'}`}>
         {isVerticalLayout ? (
-          /* =========================================================
-             LAYOUT VERTICAL (9:16)
-             Esquerda: [Media | Properties] + Timeline
-             Direita: Preview Player (Altura total)
-             ========================================================= */
           <>
-            <div className="flex flex-col flex-1 min-w-0 h-full border-r" style={{ borderColor: FILMORA.border }}>
+            <div className="flex flex-col flex-1 min-w-0 h-full border-r border-filmora-border bg-filmora-panel">
               {/* Meio Esquerda: Mídia e Propriedades */}
-              <div className="flex flex-1 min-h-0 border-b" style={{ borderColor: FILMORA.border }}>
-                <div className="flex-1 flex items-center justify-center border-r text-xs opacity-50" style={{ borderColor: FILMORA.border }}>
+              <div className="flex flex-1 min-h-0 border-b border-filmora-border">
+                <div className="flex-1 flex items-center justify-center border-r border-filmora-border text-xs text-filmora-textMuted">
                   [ Painel de Mídia / Biblioteca ]
                 </div>
-                  <div className="w-[350px] shrink-0">
+                <div className="w-[350px] shrink-0 bg-filmora-panel">
                   <Sidebar
                     sidebarTab={sidebarTab}
                     setSidebarTab={setSidebarTab}
@@ -685,8 +679,8 @@ export function PreviewStep({
                 </div>
               </div>
 
-              {/* Timeline: Estende apenas até o preview */}
-              <div className="flex flex-col h-auto max-h-[45%] flex-shrink-0">
+              {/* Timeline */}
+              <div className="flex flex-col h-auto max-h-[45%] flex-shrink-0 bg-filmora-bg">
                 <TimelineToolbar
                   zoomLevel={zoomLevel}
                   setZoomLevel={setZoomLevel}
@@ -765,14 +759,9 @@ export function PreviewStep({
             </div>
           </>
         ) : (
-          /* =========================================================
-             LAYOUT HORIZONTAL (16:9)
-             Cima: [Media | Player | Properties]
-             Baixo: Timeline (Largura total)
-             ========================================================= */
           <>
-            <div className="flex flex-1 min-h-0 border-b" style={{ borderColor: FILMORA.border }}>
-              <div className="w-[280px] shrink-0 flex items-center justify-center border-r text-xs opacity-50" style={{ borderColor: FILMORA.border }}>
+            <div className="flex flex-1 min-h-0 border-b border-filmora-border bg-filmora-panel">
+              <div className="w-[280px] shrink-0 flex items-center justify-center border-r border-filmora-border text-xs text-filmora-textMuted">
                 [ Painel de Mídia / Biblioteca ]
               </div>
 
@@ -803,7 +792,7 @@ export function PreviewStep({
                 timecodeRef={timecodeRef}
               />
 
-              <div className="w-[350px] shrink-0 border-l" style={{ borderColor: FILMORA.border }}>
+              <div className="w-[350px] shrink-0 border-l border-filmora-border bg-filmora-panel">
                 <Sidebar
                   sidebarTab={sidebarTab}
                   setSidebarTab={setSidebarTab}
@@ -824,7 +813,7 @@ export function PreviewStep({
               </div>
             </div>
 
-            <div className="flex flex-col h-auto max-h-[45%] flex-shrink-0">
+            <div className="flex flex-col h-auto max-h-[45%] flex-shrink-0 bg-filmora-bg">
               <TimelineToolbar
                 zoomLevel={zoomLevel}
                 setZoomLevel={setZoomLevel}
@@ -873,15 +862,7 @@ export function PreviewStep({
           </>
         )}
       </div>
-
-      {/* Estilos Globais do Componente */}
-      <style dangerouslySetInnerHTML={{__html: `
-        .filmora-scrollbar::-webkit-scrollbar { height: 6px; }
-        .filmora-scrollbar::-webkit-scrollbar-track { background: ${FILMORA.bgDarker}; }
-        .filmora-scrollbar::-webkit-scrollbar-thumb { background: ${FILMORA.border}; border-radius: 3px; }
-        .filmora-scrollbar::-webkit-scrollbar-thumb:hover { background: ${FILMORA.borderLight}; }
-        .line-clamp-2 { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-      `}} />
     </div>
   );
+
 }
