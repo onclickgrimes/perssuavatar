@@ -71,6 +71,13 @@ export interface TransformConfig {
   opacity?: number;
 }
 
+/** Configuração de Áudio */
+export interface AudioConfig {
+  volume?: number;
+  fadeIn?: number;
+  fadeOut?: number;
+}
+
 /**
  * ⭐ SEGMENTO - Adicione novas propriedades aqui!
  */
@@ -104,6 +111,7 @@ export interface VideoSegment {
   background?: BackgroundConfig;
   timeline_config?: TimelineConfig;
   transform?: TransformConfig;
+  audio?: AudioConfig;
 }
 
 /**
@@ -126,6 +134,7 @@ export interface VideoProject {
     fps?: number;
     backgroundColor?: string;
     fitVideoToScene?: boolean;
+    mainAudioVolume?: number;
   };
 }
 
@@ -137,7 +146,7 @@ const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'id', 'text', 'start', 'end', 'speaker', 'words',
   'emotion', 'imagePrompt', 'assetType', 'cameraMovement', 'transition', 'track',
   'imageUrl', 'asset_url', 'asset_duration',
-  'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform',
+  'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio',
 ];
 
 const PROJECT_PROPERTIES: (keyof VideoProject)[] = [
@@ -226,6 +235,11 @@ export function segmentToRemotionScene(seg: VideoSegment): any {
     ...(seg.background && { background: seg.background }),
     ...(seg.timeline_config && { timeline_config: seg.timeline_config }),
     ...(seg.transform && { transform: seg.transform }),
+    audio: {
+      volume: seg.audio?.volume ?? 1,
+      fadeIn: seg.audio?.fadeIn ?? 0,
+      fadeOut: seg.audio?.fadeOut ?? 0,
+    },
   };
 }
 
@@ -256,7 +270,10 @@ export function toRemotionFormat(
       defaultFont: options.defaultFont,
       fitVideoToScene: options.fitVideoToScene !== undefined ? options.fitVideoToScene : true,
       ...(options.audioUrl && {
-        backgroundMusic: { src: options.audioUrl, volume: 1.0 },
+        backgroundMusic: { 
+          src: options.audioUrl, 
+          volume: project.config?.mainAudioVolume ?? 1.0 
+        },
       }),
     },
     scenes: project.segments.map(segmentToRemotionScene),

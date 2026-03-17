@@ -310,8 +310,8 @@ export type TransformConfig = z.infer<typeof TransformConfigSchema>;
 export const AudioConfigSchema = z.object({
   /** URL ou path do arquivo de áudio */
   src: z.string().optional(),
-  /** Volume de 0 a 1 */
-  volume: z.number().min(0).max(1).default(1),
+  /** Volume de 0 a 2 (0% a 200%) */
+  volume: z.number().min(0).max(2).default(1),
   /** Fade in em segundos */
   fadeIn: z.number().optional(),
   /** Fade out em segundos */
@@ -401,6 +401,9 @@ export const SceneSchema = z.object({
   /** Configuração da transformação visual (PiP, zoom, opacidade, posição) */
   transform: TransformConfigSchema,
   
+  /** Silenciar áudio (usado internamente para evitar duplicação em efeitos) */
+  muteAudio: z.boolean().optional(),
+
   /** Metadados extras */
   metadata: z.record(z.string(), z.unknown()).optional(),
 });

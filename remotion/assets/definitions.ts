@@ -203,6 +203,15 @@ Exemplo da estrutura do JSON:
     badgeColor: 'bg-amber-500/20 text-amber-300',
     aiDescription: 'Linha do tempo 3D histórica (ideal para documentários, história, cronologias)',
   },
+
+  // ==================== ÁUDIOS ====================
+  audio: {
+    label: 'Áudio',
+    description: 'Arquivo de áudio (narração extra, trilha, efeito)',
+    icon: '🎵',
+    badgeColor: 'bg-orange-500/20 text-orange-300',
+    aiDescription: 'Arquivo de áudio (narração, música ou efeitos)',
+  },
 } as const;
 
 // ========================================

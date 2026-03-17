@@ -33,6 +33,8 @@ interface PreviewStepProps {
   selectedNiche: ChannelNiche | null;
   fitVideoToScene: boolean;
   onFitVideoToSceneChange: (val: boolean) => void;
+  mainAudioVolume: number;
+  onMainAudioVolumeChange: (val: number) => void;
 }
 
 // ========================================
@@ -50,6 +52,8 @@ export function PreviewStep({
   selectedNiche,
   fitVideoToScene,
   onFitVideoToSceneChange,
+  mainAudioVolume,
+  onMainAudioVolumeChange,
 }: PreviewStepProps) {
   // Aspect ratio
   const [selectedRatio, setSelectedRatio] = useState<string>(() => {
@@ -487,6 +491,19 @@ export function PreviewStep({
     handleSegmentsChange(updated);
   }, [project.segments, handleSegmentsChange, onSegmentsUpdate]);
 
+  const handleAudioChange = useCallback((segmentId: number, audio: any) => {
+    if (!onSegmentsUpdate) return;
+    const updated = project.segments.map(seg =>
+      seg.id === segmentId ? { ...seg, audio: { ...seg.audio, ...audio } } : seg
+    );
+    handleSegmentsChange(updated);
+  }, [project.segments, handleSegmentsChange]);
+
+  const handleMainAudioVolumeChange = useCallback((volume: number) => {
+    onMainAudioVolumeChange(volume);
+    setHasUnsavedChanges(true);
+  }, [onMainAudioVolumeChange]);
+
   // ========================================
   // ACTIONS (SPLIT, DELETE)
   // ========================================
@@ -663,8 +680,11 @@ export function PreviewStep({
           handleTransitionChange={handleTransitionChange}
           handleApplyTransitionToAll={handleApplyTransitionToAll}
           handleTransformChange={handleTransformChange}
+          handleAudioChange={handleAudioChange}
           fitVideoToScene={fitVideoToScene}
           onFitVideoToSceneChange={(val) => { onFitVideoToSceneChange(val); setHasUnsavedChanges(true); }}
+          mainAudioVolume={mainAudioVolume}
+          handleMainAudioVolumeChange={handleMainAudioVolumeChange}
         />
       </div>
 
@@ -701,6 +721,7 @@ export function PreviewStep({
         onFileUploadToTrack={handleFileUploadToTrack}
         onSegmentMove={handleSegmentMove}
         onSegmentTrim={handleSegmentTrim}
+        onAudioChange={handleAudioChange}
         hoveredSegment={hoveredSegment}
         hoveredSeg={hoveredSeg}
         handleSegmentMouseEnter={handleSegmentMouseEnter}

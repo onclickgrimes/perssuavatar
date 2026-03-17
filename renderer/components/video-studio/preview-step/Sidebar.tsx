@@ -14,8 +14,11 @@ interface SidebarProps {
   handleTransitionChange: (segmentId: number, transition: string) => void;
   handleApplyTransitionToAll: (transition: string) => void;
   handleTransformChange?: (segmentId: number, transform: any) => void;
+  handleAudioChange?: (segmentId: number, audioConfig: any) => void;
   fitVideoToScene: boolean;
   onFitVideoToSceneChange: (value: boolean) => void;
+  mainAudioVolume?: number;
+  handleMainAudioVolumeChange?: (volume: number) => void;
 }
 
 // ========================================
@@ -32,8 +35,11 @@ export function Sidebar({
   handleTransitionChange,
   handleApplyTransitionToAll,
   handleTransformChange,
+  handleAudioChange,
   fitVideoToScene,
   onFitVideoToSceneChange,
+  mainAudioVolume = 1.0,
+  handleMainAudioVolumeChange,
 }: SidebarProps) {
   return (
     <div className="w-[240px] flex-shrink-0 flex flex-col border-l overflow-hidden" style={{ background: FILMORA.bgDark, borderColor: FILMORA.border }}>
@@ -85,9 +91,31 @@ export function Sidebar({
             </div>
 
             <div className="rounded p-3" style={{ background: FILMORA.surface }}>
-              <div className="text-[9px] uppercase tracking-wider mb-1.5" style={{ color: FILMORA.textDim }}>Áudio</div>
-              <div className="text-xs font-medium truncate" style={{ color: audioUrl ? FILMORA.accent : FILMORA.textDim }}>
-                {audioUrl ? '✓ Carregado' : '— Sem áudio'}
+              <div className="flex justify-between items-center mb-1.5">
+                <div className="text-[9px] uppercase tracking-wider" style={{ color: FILMORA.textDim }}>Áudio Base</div>
+                <div className="text-[9px] font-bold" style={{ color: mainAudioVolume > 0 ? FILMORA.accent : FILMORA.textMuted }}>
+                  {Math.round(mainAudioVolume * 100)}%
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="range" 
+                  min="0" max="100" step="1"
+                  value={Math.round(mainAudioVolume * 100)}
+                  onChange={(e) => handleMainAudioVolumeChange?.(Number(e.target.value) / 100)}
+                  className="flex-1 h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                />
+                <button 
+                  onClick={() => handleMainAudioVolumeChange?.(mainAudioVolume > 0 ? 0 : 1)}
+                  className="p-1 hover:bg-white/10 rounded"
+                  style={{ color: mainAudioVolume > 0 ? FILMORA.text : FILMORA.textMuted }}
+                >
+                  {mainAudioVolume > 0 ? (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
+                  ) : (
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
+                  )}
+                </button>
               </div>
             </div>
 
@@ -119,7 +147,7 @@ export function Sidebar({
 
             {/* Transformações (PiP) */}
             {selectedSeg && handleTransformChange && (
-              <div className="rounded p-3 mt-4" style={{ background: FILMORA.surface }}>
+              <div className="rounded p-3 bg-opacity-50" style={{ background: FILMORA.surface }}>
                 <div className="text-[10px] font-bold tracking-wider mb-3 uppercase" style={{ color: FILMORA.text }}>
                   Transformação (Cena #{selectedSeg.id})
                 </div>
@@ -181,6 +209,60 @@ export function Sidebar({
                     value={Math.round((selectedSeg.transform?.opacity ?? 1) * 100)}
                     onChange={(e) => handleTransformChange(selectedSeg.id, { opacity: Number(e.target.value) / 100 })}
                     className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Configurações de Áudio */}
+            {selectedSeg && handleAudioChange && (
+              <div className="rounded p-3 bg-opacity-50" style={{ background: FILMORA.surface }}>
+                <div className="text-[10px] font-bold tracking-wider mb-3 uppercase" style={{ color: FILMORA.text }}>
+                  Áudio (Cena #{selectedSeg.id})
+                </div>
+
+                {/* Volume */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-[9px] mb-1">
+                    <span style={{ color: FILMORA.textDim }}>Volume / Ganho</span>
+                    <span style={{ color: FILMORA.textMuted }}>{Math.round((selectedSeg.audio?.volume ?? 1) * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0" max="200" step="1"
+                    value={Math.round((selectedSeg.audio?.volume ?? 1) * 100)}
+                    onChange={(e) => handleAudioChange(selectedSeg.id, { volume: Number(e.target.value) / 100 })}
+                    className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                  />
+                </div>
+
+                {/* Fade In */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-[9px] mb-1">
+                    <span style={{ color: FILMORA.textDim }}>Fade-in (seg)</span>
+                    <span style={{ color: FILMORA.textMuted }}>{(selectedSeg.audio?.fadeIn ?? 0).toFixed(1)}s</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0" max="10" step="0.1"
+                    value={selectedSeg.audio?.fadeIn ?? 0}
+                    onChange={(e) => handleAudioChange(selectedSeg.id, { fadeIn: Number(e.target.value) })}
+                    className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                  />
+                </div>
+
+                {/* Fade Out */}
+                <div>
+                  <div className="flex justify-between text-[9px] mb-1">
+                    <span style={{ color: FILMORA.textDim }}>Fade-out (seg)</span>
+                    <span style={{ color: FILMORA.textMuted }}>{(selectedSeg.audio?.fadeOut ?? 0).toFixed(1)}s</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0" max="10" step="0.1"
+                    value={selectedSeg.audio?.fadeOut ?? 0}
+                    onChange={(e) => handleAudioChange(selectedSeg.id, { fadeOut: Number(e.target.value) })}
+                    className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                   />
                 </div>
               </div>

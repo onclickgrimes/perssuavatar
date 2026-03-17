@@ -23,6 +23,7 @@ interface TimelineProps {
   onFileUploadToTrack: (type: 'video' | 'audio', trackId: number, file: File) => void;
   onSegmentMove: (id: number, newStart: number, newTrack: number) => void;
   onSegmentTrim: (id: number, newStart: number, newEnd: number) => void;
+  onAudioChange: (id: number, audio: any) => void;
 
   // Hover
   hoveredSegment: { id: number; x: number; y: number } | null;
@@ -60,6 +61,7 @@ export function Timeline({
   onFileUploadToTrack,
   onSegmentMove,
   onSegmentTrim,
+  onAudioChange,
 
   hoveredSegment,
   hoveredSeg,
@@ -265,6 +267,35 @@ export function Timeline({
       });
     };
 
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  // Fade handle logic
+  const handleFadeMouseDown = (e: React.MouseEvent, seg: any, type: 'fadeIn' | 'fadeOut') => {
+    e.stopPropagation();
+    e.preventDefault();
+    const startX = e.clientX;
+    const initialDuration = seg.audio?.[type] ?? 0;
+    
+    const handleMouseMove = (mvEvent: MouseEvent) => {
+      const deltaX = mvEvent.clientX - startX;
+      const deltaTime = deltaX / zoomLevel;
+      // Para fadeIn, arrastar para a direita aumenta
+      // Para fadeOut, arrastar para a esquerda aumenta (deltaX negativo)
+      let newDuration = type === 'fadeIn' ? initialDuration + deltaTime : initialDuration - deltaTime;
+      
+      const maxFade = (seg.end - seg.start) / 2.1; // Limita a quase metade
+      newDuration = Math.max(0, Math.min(newDuration, maxFade));
+      
+      onAudioChange(seg.id, { [type]: newDuration });
+    };
+    
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+    
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   };
@@ -489,6 +520,35 @@ export function Timeline({
                           {seg.text}
                         </span>
                       </div>
+                      
+                      {/* FADE HANDLES (VIDEO) */}
+                      {isSelected && (
+                        <>
+                          <div 
+                            className="absolute top-0 left-0 w-3 h-3 cursor-alias z-40 flex items-center justify-center group/fade"
+                            onMouseDown={(e) => handleFadeMouseDown(e, seg, 'fadeIn')}
+                            title="Fade In"
+                          >
+                            <div className="w-1.5 h-1.5 bg-white rounded-full opacity-0 group-hover/fade:opacity-100 shadow-sm" />
+                            <div 
+                              className="absolute top-0 left-0 border-l-[12px] border-l-white/20 border-b-[12px] border-b-transparent pointer-events-none" 
+                              style={{ width: (seg.audio?.fadeIn ?? 0) * zoomLevel }}
+                            />
+                          </div>
+                          <div 
+                            className="absolute top-0 right-0 w-3 h-3 cursor-alias z-40 flex items-center justify-center group/fade"
+                            onMouseDown={(e) => handleFadeMouseDown(e, seg, 'fadeOut')}
+                            title="Fade Out"
+                          >
+                            <div className="w-1.5 h-1.5 bg-white rounded-full opacity-0 group-hover/fade:opacity-100 shadow-sm" />
+                            <div 
+                              className="absolute top-0 right-0 border-r-[12px] border-r-white/20 border-b-[12px] border-b-transparent pointer-events-none" 
+                              style={{ width: (seg.audio?.fadeOut ?? 0) * zoomLevel }}
+                            />
+                          </div>
+                        </>
+                      )}
+
                       <div className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none" style={{ background: trackColor }} />
                     </div>
                   );
@@ -591,6 +651,41 @@ export function Timeline({
                           ♫ {seg.text}
                         </span>
                       </div>
+
+                      {/* FADE HANDLES (AUDIO) */}
+                      {isSelected && (
+                        <>
+                          <div 
+                            className="absolute top-0 left-0 w-3 h-3 cursor-alias z-40 flex items-center justify-center group/fade"
+                            onMouseDown={(e) => handleFadeMouseDown(e, seg, 'fadeIn')}
+                            title="Fade In"
+                          >
+                            <div className="w-1.5 h-1.5 bg-white rounded-full opacity-0 group-hover/fade:opacity-100 shadow-sm" />
+                            <div 
+                              className="absolute top-0 left-0 bg-white/20 h-full pointer-events-none" 
+                              style={{ 
+                                width: (seg.audio?.fadeIn ?? 0) * zoomLevel,
+                                clipPath: 'polygon(0 0, 100% 100%, 0 100%)'
+                              }}
+                            />
+                          </div>
+                          <div 
+                            className="absolute top-0 right-0 w-3 h-3 cursor-alias z-40 flex items-center justify-center group/fade"
+                            onMouseDown={(e) => handleFadeMouseDown(e, seg, 'fadeOut')}
+                            title="Fade Out"
+                          >
+                            <div className="w-1.5 h-1.5 bg-white rounded-full opacity-0 group-hover/fade:opacity-100 shadow-sm" />
+                            <div 
+                              className="absolute top-0 right-0 bg-white/20 h-full pointer-events-none" 
+                              style={{ 
+                                width: (seg.audio?.fadeOut ?? 0) * zoomLevel,
+                                clipPath: 'polygon(100% 0, 100% 100%, 0 100%)'
+                              }}
+                            />
+                          </div>
+                        </>
+                      )}
+
                       <div className="absolute top-0 left-0 right-0 h-[2px] pointer-events-none" style={{ background: FILMORA.trackAudio }} />
                     </div>
                   );

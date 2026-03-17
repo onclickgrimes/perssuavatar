@@ -211,7 +211,11 @@ const TrailPrintingEffect: React.FC<TrailPrintingEffectProps> = ({
                 mixBlendMode: 'screen',
               }}
             >
-              <AssetRenderer scene={scene} sceneDurationFrames={sceneDurationFrames} fps={fps} />
+              <AssetRenderer 
+                scene={{ ...scene, muteAudio: true }} 
+                sceneDurationFrames={sceneDurationFrames} 
+                fps={fps} 
+              />
             </div>
           );
         })}

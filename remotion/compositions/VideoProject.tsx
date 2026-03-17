@@ -140,9 +140,9 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
         
         {/* Áudio de fundo (música) */}
         {config.backgroundMusic?.src && (
-          <Html5Audio
+          <Audio
             src={config.backgroundMusic.src}
-            volume={config.backgroundMusic.volume || 0.3}
+            volume={config.backgroundMusic.volume ?? 0.3}
           />
         )}
       </AbsoluteFill>

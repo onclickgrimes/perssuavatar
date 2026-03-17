@@ -9,7 +9,7 @@
  * 2. Crie o componente aqui e adicione ao ASSET_COMPONENTS
  */
 import React from 'react';
-import { AbsoluteFill, Img, Video, useVideoConfig } from 'remotion';
+import { AbsoluteFill, Img, Video, Audio, useVideoConfig, useCurrentFrame, interpolate } from 'remotion';
 import { ASSET_DEFINITIONS, type AssetType } from './definitions';
 import { GeometricPatterns } from '../components/GeometricPatterns';
 import { WavyGrid } from '../components/WavyGrid';
@@ -43,6 +43,13 @@ export interface SceneProps {
       image?: string;
     }>;
   };
+  audio?: {
+    volume?: number;
+    fadeIn?: number;
+    fadeOut?: number;
+  };
+  /** Prop interna para silenciar áudio em camadas de efeito */
+  muteAudio?: boolean;
 }
 
 export interface AssetComponentProps {
@@ -93,7 +100,8 @@ const ImageAsset: AssetComponent = ({ scene }) => {
 
 /** Renderiza vídeos (genérico para todos os tipos de vídeo) */
 const VideoAsset: AssetComponent = ({ scene, sceneDurationSeconds }) => {
-  const { width, height } = useVideoConfig();
+  const { width, height, fps } = useVideoConfig();
+  const frame = useCurrentFrame();
   const projectConfig = useProjectConfig();
   
   // Calcular playbackRate se fitVideoToScene estiver ativo e temos as durações
@@ -102,12 +110,6 @@ const VideoAsset: AssetComponent = ({ scene, sceneDurationSeconds }) => {
   
   if (fitVideoToScene && scene.asset_duration && sceneDurationSeconds && scene.asset_duration > 0 && sceneDurationSeconds > 0) {
     playbackRate = calculatePlaybackRate(scene.asset_duration, sceneDurationSeconds);
-    
-    // Log de debug (apenas na primeira renderização)
-    if (playbackRate !== 1.0) {
-      const info = getPlaybackRateInfo(scene.asset_duration, sceneDurationSeconds);
-      console.log(`🎬 Video fit: ${info.speedLabel} (vídeo: ${info.videoDuration.toFixed(1)}s → cena: ${info.sceneDuration.toFixed(1)}s)`);
-    }
   }
   
   if (!scene.asset_url) {
@@ -126,6 +128,16 @@ const VideoAsset: AssetComponent = ({ scene, sceneDurationSeconds }) => {
     );
   }
   
+  const baseVolume = scene.audio?.volume ?? 1;
+  const fadeInFrames = (scene.audio?.fadeIn ?? 0) * fps;
+  const fadeOutFrames = (scene.audio?.fadeOut ?? 0) * fps;
+  const durationFrames = (sceneDurationSeconds || 0) * fps;
+
+  // Cálculo de volume com fades lineares (evita erros de monotonicidade do interpolate)
+  const fadeInScale = fadeInFrames > 0 ? Math.min(1, frame / fadeInFrames) : 1;
+  const fadeOutScale = fadeOutFrames > 0 ? Math.max(0, Math.min(1, (durationFrames - frame) / fadeOutFrames)) : 1;
+  const volume = baseVolume * fadeInScale * fadeOutScale;
+  
   return (
     <AbsoluteFill>
       <Video
@@ -135,10 +147,36 @@ const VideoAsset: AssetComponent = ({ scene, sceneDurationSeconds }) => {
           height,
           objectFit: 'cover',
         }}
-        volume={0}
+        volume={Math.max(0, volume)}
         playbackRate={playbackRate}
+        muted={scene.muteAudio || volume <= 0}
       />
     </AbsoluteFill>
+  );
+};
+
+/** Renderiza áudios extras */
+const AudioAsset: AssetComponent = ({ scene, sceneDurationSeconds }) => {
+  const { fps } = useVideoConfig();
+  const frame = useCurrentFrame();
+  const baseVolume = scene.audio?.volume ?? 1;
+  const fadeInFrames = (scene.audio?.fadeIn ?? 0) * fps;
+  const fadeOutFrames = (scene.audio?.fadeOut ?? 0) * fps;
+  const durationFrames = (sceneDurationSeconds || 0) * fps;
+
+  if (!scene.asset_url) return null;
+
+  // Cálculo de volume com fades lineares
+  const fadeInScale = fadeInFrames > 0 ? Math.min(1, frame / fadeInFrames) : 1;
+  const fadeOutScale = fadeOutFrames > 0 ? Math.max(0, Math.min(1, (durationFrames - frame) / fadeOutFrames)) : 1;
+  const volume = baseVolume * fadeInScale * fadeOutScale;
+
+  return (
+    <Audio
+      src={scene.asset_url}
+      volume={Math.max(0, volume)}
+      muted={scene.muteAudio || volume <= 0}
+    />
   );
 };
 
@@ -261,6 +299,7 @@ const ASSET_COMPONENTS: Record<AssetType, AssetComponent> = {
   geometric_patterns: GeometricPatternsAsset,
   wavy_grid: WavyGridAsset,
   timeline_3d: Timeline3DAsset,
+  audio: AudioAsset,
   
   // Não implementados ainda
   avatar: PlaceholderAsset,
@@ -269,6 +308,15 @@ const ASSET_COMPONENTS: Record<AssetType, AssetComponent> = {
 // ========================================
 // FUNÇÕES EXPORTADAS
 // ========================================
+
+/**
+ * Helper para detectar se é áudio pela extensão do arquivo
+ */
+export const isAudioUrl = (url: string | undefined): boolean => {
+  if (!url) return false;
+  const audioExtensions = ['.mp3', '.wav', '.ogg', '.m4a', '.aac', '.flac'];
+  return audioExtensions.some(ext => url.toLowerCase().endsWith(ext));
+};
 
 /**
  * Obtém o componente para um determinado tipo de asset.

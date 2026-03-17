@@ -98,6 +98,11 @@ export interface VideoProjectSegment {
         positionY?: number;
         opacity?: number;
     };
+    audio?: {
+        volume?: number;
+        fadeIn?: number;
+        fadeOut?: number;
+    };
 }
 
 
@@ -119,6 +124,7 @@ export interface VideoProjectData {
         fps?: number;
         backgroundColor?: string;
         fitVideoToScene?: boolean;
+        mainAudioVolume?: number;
     };
 }
 
@@ -1165,6 +1171,12 @@ Responda APENAS com um objeto JSON válido no formato:
             ...(seg.transform && {
                 transform: seg.transform
             }),
+            // Audio (Volume, Fade-in, Fade-out)
+            audio: {
+                volume: seg.audio?.volume ?? 1,
+                fadeIn: seg.audio?.fadeIn ?? 0,
+                fadeOut: seg.audio?.fadeOut ?? 0,
+            },
         }));
 
         console.log('🔧 Scene 1 text_overlay.words:', scenes[0]?.text_overlay?.words?.length || 0, 'words');
@@ -1186,7 +1198,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 ...(project.audioPath && {
                     backgroundMusic: {
                         src: this.convertToHttpUrl(project.audioPath),
-                        volume: 1.0, // Volume máximo para narração
+                        volume: project.config?.mainAudioVolume ?? 1.0,
                     },
                 }),
             },
@@ -1319,6 +1331,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 track: segment.track,
                 asset_duration: segment.asset_duration,
                 transform: segment.transform,
+                audio: segment.audio,
                 words: segment.words, // Words fica por último
             })),
         };
