@@ -77,6 +77,7 @@ export function Timeline({
   currentTimeRef,
 }: TimelineProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const labelsScrollRef = useRef<HTMLDivElement>(null);
   const [activeUpload, setActiveUpload] = useState<{type: 'video'|'audio', trackId: number} | null>(null);
 
   const handleUploadClick = (type: 'video' | 'audio', trackId: number) => {
@@ -438,7 +439,7 @@ export function Timeline({
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   return (
-    <div className="flex-shrink-0 relative overflow-hidden select-none" style={{ background: FILMORA.bgDarker, minHeight: '160px' }}>
+    <div className="flex-1 flex flex-col relative overflow-hidden select-none h-full" style={{ background: FILMORA.bgDarker }}>
       <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
 
       {/* Tooltip */}
@@ -479,10 +480,14 @@ export function Timeline({
         </div>
       )}
 
-      <div className="flex h-auto">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
         {/* Track Labels (esquerda fixa) */}
-        <div className="flex-shrink-0 w-[100px] z-20" style={{ background: FILMORA.bgDark, borderRight: `1px solid ${FILMORA.border}` }}>
-          <div className="h-[24px] border-b relative flex items-center px-1.5" style={{ borderColor: FILMORA.border }}>
+        <div 
+          ref={labelsScrollRef}
+          className="flex-shrink-0 w-[100px] z-20 overflow-hidden" 
+          style={{ background: FILMORA.bgDark, borderRight: `1px solid ${FILMORA.border}` }}
+        >
+          <div className="h-[24px] sticky top-0 bg-[#1e1e1e] border-b flex items-center px-1.5 z-30" style={{ borderColor: FILMORA.border }}>
              <button 
                className="text-[10px] bg-[#3B82F6]/20 text-blue-400 border border-blue-500/30 hover:bg-blue-600/40 w-[18px] h-[18px] rounded flex items-center justify-center transition-all"
                onClick={() => setShowAddMenu(!showAddMenu)}
@@ -561,7 +566,12 @@ export function Timeline({
         {/* Scrollable timeline area */}
         <div 
           ref={scrollWrapperRef}
-          className="relative flex-1 min-w-0 overflow-x-auto overflow-y-hidden filmora-scrollbar"
+          className="relative flex-1 min-w-0 overflow-auto filmora-scrollbar"
+          onScroll={(e) => {
+            if (labelsScrollRef.current) {
+              labelsScrollRef.current.scrollTop = e.currentTarget.scrollTop;
+            }
+          }}
         >
           <div 
             className="relative"
@@ -583,7 +593,7 @@ export function Timeline({
             )}
             {/* ====== RULER ====== */}
             <div 
-              className="relative h-[24px] border-b cursor-text z-40"
+              className="sticky top-0 h-[24px] border-b cursor-text z-40"
               style={{ background: FILMORA.ruler, borderColor: FILMORA.border }}
               onMouseDown={handleRulerMouseDown}
               title="Clique para buscar / Arraste para zoom"
@@ -895,7 +905,7 @@ export function Timeline({
               }}
             >
               <div 
-                className="playhead-handle absolute -top-[0px] left-1/2 -translate-x-1/2 w-8 h-6 cursor-pointer flex items-start justify-center pointer-events-auto group/handle z-50"
+                className="playhead-handle sticky top-0 left-1/2 -translate-x-1/2 w-8 h-6 cursor-pointer flex items-start justify-center pointer-events-auto group/handle z-50"
                 onMouseDown={handlePlayheadMouseDown}
               >
                 <div className="flex flex-col items-center">
