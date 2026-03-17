@@ -479,7 +479,7 @@ export function Timeline({
         </div>
       )}
 
-      <div className="flex h-full">
+      <div className="flex h-auto">
         {/* Track Labels (esquerda fixa) */}
         <div className="flex-shrink-0 w-[100px] z-20" style={{ background: FILMORA.bgDark, borderRight: `1px solid ${FILMORA.border}` }}>
           <div className="h-[24px] border-b relative flex items-center px-1.5" style={{ borderColor: FILMORA.border }}>

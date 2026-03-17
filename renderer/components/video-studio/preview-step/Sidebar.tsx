@@ -42,7 +42,7 @@ export function Sidebar({
   handleMainAudioVolumeChange,
 }: SidebarProps) {
   return (
-    <div className="w-[240px] flex-shrink-0 flex flex-col border-l overflow-hidden" style={{ background: FILMORA.bgDark, borderColor: FILMORA.border }}>
+    <div className="w-full h-full flex flex-col overflow-hidden" style={{ background: FILMORA.bgDark, borderColor: FILMORA.border }}>
       {/* Tabs */}
       <div className="flex border-b flex-shrink-0" style={{ borderColor: FILMORA.border }}>
         {(['info', 'transitions'] as const).map(tab => (
@@ -332,15 +332,6 @@ export function Sidebar({
             )}
           </div>
         )}
-      </div>
-
-      {/* Dica */}
-      <div className="mt-auto p-3 flex-shrink-0">
-        <div className="rounded p-2.5" style={{ background: `${FILMORA.accent}10`, border: `1px solid ${FILMORA.accent}30` }}>
-          <p className="text-[9px] leading-relaxed" style={{ color: FILMORA.accent }}>
-            💡 O preview usa qualidade reduzida. O vídeo final será renderizado em alta qualidade.
-          </p>
-        </div>
       </div>
     </div>
   );
