@@ -288,6 +288,21 @@ export const ChromaKeyConfigSchema = z.object({
   smoothing: z.number().min(0).max(1).default(0.2),
 }).optional();
 
+export type ChromaKeyConfig = z.infer<typeof ChromaKeyConfigSchema>;
+
+// ========================================
+// PIP / TRANSFORM CONFIG
+// ========================================
+
+export const TransformConfigSchema = z.object({
+  scale: z.number().optional().describe('Escala de tamanho do clipe'),
+  positionX: z.number().optional().describe('Posição X no eixo horizontal (%)'),
+  positionY: z.number().optional().describe('Posição Y no eixo vertical (%)'),
+  opacity: z.number().optional().describe('Opacidade (0 a 1)'),
+}).optional();
+
+export type TransformConfig = z.infer<typeof TransformConfigSchema>;
+
 // ========================================
 // AUDIO CONFIG
 // ========================================
@@ -308,8 +323,6 @@ export const AudioConfigSchema = z.object({
 }).optional();
 
 export type AudioConfig = z.infer<typeof AudioConfigSchema>;
-
-export type ChromaKeyConfig = z.infer<typeof ChromaKeyConfigSchema>;
 
 // ========================================
 // BACKGROUND CONFIG
@@ -384,6 +397,9 @@ export const SceneSchema = z.object({
 
   /** Configuração de background (opcional) */
   background: BackgroundConfigSchema,
+
+  /** Configuração da transformação visual (PiP, zoom, opacidade, posição) */
+  transform: TransformConfigSchema,
   
   /** Metadados extras */
   metadata: z.record(z.string(), z.unknown()).optional(),

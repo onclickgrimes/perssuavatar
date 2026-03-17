@@ -63,6 +63,14 @@ export interface TimelineConfig {
   }>;
 }
 
+/** Configuração de Transformação Visual (PiP) */
+export interface TransformConfig {
+  scale?: number;
+  positionX?: number;
+  positionY?: number;
+  opacity?: number;
+}
+
 /**
  * ⭐ SEGMENTO - Adicione novas propriedades aqui!
  */
@@ -95,6 +103,7 @@ export interface VideoSegment {
   chroma_key?: ChromaKeyConfig;
   background?: BackgroundConfig;
   timeline_config?: TimelineConfig;
+  transform?: TransformConfig;
 }
 
 /**
@@ -128,7 +137,7 @@ const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'id', 'text', 'start', 'end', 'speaker', 'words',
   'emotion', 'imagePrompt', 'assetType', 'cameraMovement', 'transition', 'track',
   'imageUrl', 'asset_url', 'asset_duration',
-  'highlightWords', 'chroma_key', 'background', 'timeline_config',
+  'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform',
 ];
 
 const PROJECT_PROPERTIES: (keyof VideoProject)[] = [
@@ -216,6 +225,7 @@ export function segmentToRemotionScene(seg: VideoSegment): any {
     ...(seg.highlightWords?.length && { highlight_words: seg.highlightWords }),
     ...(seg.background && { background: seg.background }),
     ...(seg.timeline_config && { timeline_config: seg.timeline_config }),
+    ...(seg.transform && { transform: seg.transform }),
   };
 }
 

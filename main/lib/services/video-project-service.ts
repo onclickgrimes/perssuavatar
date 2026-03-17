@@ -92,6 +92,12 @@ export interface VideoProjectSegment {
         url?: string;
         color?: string;
     };
+    transform?: {
+        scale?: number;
+        positionX?: number;
+        positionY?: number;
+        opacity?: number;
+    };
 }
 
 
@@ -142,6 +148,7 @@ export interface RemotionProject {
     };
     scenes: Array<{
         id: number;
+        track?: number;
         start_time: number;
         end_time: number;
         transcript_segment?: string;
@@ -169,6 +176,12 @@ export interface RemotionProject {
                 label: string;
                 image?: string;
             }>;
+        };
+        transform?: {
+            scale?: number;
+            positionX?: number;
+            positionY?: number;
+            opacity?: number;
         };
     }>;
     schema_version: string;
@@ -1100,6 +1113,7 @@ Responda APENAS com um objeto JSON válido no formato:
 
         const scenes = project.segments.map(seg => ({
             id: seg.id,
+            track: seg.track || 1,
             start_time: seg.start,
             end_time: seg.end,
             transcript_segment: seg.text,
@@ -1146,6 +1160,10 @@ Responda APENAS com um objeto JSON válido no formato:
             // Timeline 3D
             ...(seg.timeline_config && {
                 timeline_config: seg.timeline_config
+            }),
+            // Transform (PiP)
+            ...(seg.transform && {
+                transform: seg.transform
             }),
         }));
 
@@ -1300,6 +1318,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 timeline_config: segment.timeline_config,
                 track: segment.track,
                 asset_duration: segment.asset_duration,
+                transform: segment.transform,
                 words: segment.words, // Words fica por último
             })),
         };

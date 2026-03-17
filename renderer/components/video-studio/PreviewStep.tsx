@@ -473,6 +473,14 @@ export function PreviewStep({
     handleSegmentsChange(updated);
   }, [project.segments, handleSegmentsChange]);
 
+  const handleTransformChange = useCallback((segmentId: number, transform: any) => {
+    if (!onSegmentsUpdate) return;
+    const updated = project.segments.map(seg =>
+      seg.id === segmentId ? { ...seg, transform: { ...seg.transform, ...transform } } : seg
+    );
+    handleSegmentsChange(updated);
+  }, [project.segments, handleSegmentsChange]);
+
   const handleApplyTransitionToAll = useCallback((transition: string) => {
     if (!onSegmentsUpdate) return;
     const updated = project.segments.map(seg => ({ ...seg, transition }));
@@ -654,6 +662,7 @@ export function PreviewStep({
           selectedSeg={selectedSeg}
           handleTransitionChange={handleTransitionChange}
           handleApplyTransitionToAll={handleApplyTransitionToAll}
+          handleTransformChange={handleTransformChange}
           fitVideoToScene={fitVideoToScene}
           onFitVideoToSceneChange={(val) => { onFitVideoToSceneChange(val); setHasUnsavedChanges(true); }}
         />

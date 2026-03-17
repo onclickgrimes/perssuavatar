@@ -45,17 +45,29 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
   const config: Partial<ProjectConfig> = project.config || {};
   const backgroundColor = config.backgroundColor || '#000000';
   
+  // Garantir que as cenas estejam ordenadas por track (camada) e depois por tempo.
+  // Isso é crucial para que o z-index (ordem de renderização) no Remotion funcione:
+  // cenas em tracks superiores devem vir DEPOIS no DOM para ficarem por cima.
+  const sortedScenes = useMemo(() => {
+    return [...project.scenes].sort((a, b) => {
+      const trackA = a.track || 1;
+      const trackB = b.track || 1;
+      if (trackA !== trackB) return trackA - trackB;
+      return a.start_time - b.start_time;
+    });
+  }, [project.scenes]);
+
   // Pré-calcular informações das cenas
   const sceneInfos = useMemo(() => {
     // Agrupa por track para identificar a primeira e última cena de cada faixa
     const trackGroups = new Map<number, number[]>();
-    project.scenes.forEach((scene, index) => {
+    sortedScenes.forEach((scene, index) => {
       const t = scene.track || 1;
       if (!trackGroups.has(t)) trackGroups.set(t, []);
       trackGroups.get(t)!.push(index);
     });
 
-    return project.scenes.map((scene, index) => {
+    return sortedScenes.map((scene, index) => {
       const startFrame = Math.round(scene.start_time * fps);
       const endFrame = Math.round(scene.end_time * fps);
       const baseDuration = endFrame - startFrame;
@@ -92,7 +104,7 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
         isLastScene,
       };
     });
-  }, [project.scenes, fps]);
+  }, [sortedScenes, fps]);
   
   return (
     <ProjectConfigContext.Provider value={config}>
@@ -111,7 +123,7 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
             <Sequence
               key={scene.id}
               from={startFrame}
-              durationInFrames={durationFrames}
+              durationInFrames={Math.max(1, durationFrames)}
               name={`Cena ${scene.id}`}
             >
               <SceneWithTransition
@@ -196,14 +208,22 @@ const SceneWithTransition: React.FC<SceneWithTransitionProps> = ({
     <AbsoluteFill
       style={{
         ...transitionStyles,
-        zIndex: scene.track || 1,
+        zIndex: (scene.track || 1) * 10,
       }}
     >
-      <Scene
-        scene={scene}
-        relativeFrame={frame}
-        sceneDurationFrames={durationFrames}
-      />
+      <AbsoluteFill
+        style={{
+          transform: `translate(${scene.transform?.positionX || 0}%, ${scene.transform?.positionY || 0}%) scale(${scene.transform?.scale ?? 1})`,
+          opacity: scene.transform?.opacity ?? 1,
+        }}
+        className="will-change-transform"
+      >
+        <Scene
+          scene={scene}
+          relativeFrame={frame}
+          sceneDurationFrames={durationFrames}
+        />
+      </AbsoluteFill>
     </AbsoluteFill>
   );
 };

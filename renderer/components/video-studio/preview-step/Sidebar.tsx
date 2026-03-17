@@ -13,6 +13,7 @@ interface SidebarProps {
   selectedSeg: any | null;
   handleTransitionChange: (segmentId: number, transition: string) => void;
   handleApplyTransitionToAll: (transition: string) => void;
+  handleTransformChange?: (segmentId: number, transform: any) => void;
   fitVideoToScene: boolean;
   onFitVideoToSceneChange: (value: boolean) => void;
 }
@@ -30,6 +31,7 @@ export function Sidebar({
   selectedSeg,
   handleTransitionChange,
   handleApplyTransitionToAll,
+  handleTransformChange,
   fitVideoToScene,
   onFitVideoToSceneChange,
 }: SidebarProps) {
@@ -114,6 +116,75 @@ export function Sidebar({
                 </button>
               </div>
             </div>
+
+            {/* Transformações (PiP) */}
+            {selectedSeg && handleTransformChange && (
+              <div className="rounded p-3 mt-4" style={{ background: FILMORA.surface }}>
+                <div className="text-[10px] font-bold tracking-wider mb-3 uppercase" style={{ color: FILMORA.text }}>
+                  Transformação (Cena #{selectedSeg.id})
+                </div>
+                
+                {/* Escala (Zoom) */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-[9px] mb-1">
+                    <span style={{ color: FILMORA.textDim }}>Escala (Zoom)</span>
+                    <span style={{ color: FILMORA.textMuted }}>{Math.round((selectedSeg.transform?.scale || 1) * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="10" max="300" step="1"
+                    value={Math.round((selectedSeg.transform?.scale || 1) * 100)}
+                    onChange={(e) => handleTransformChange(selectedSeg.id, { scale: Number(e.target.value) / 100 })}
+                    className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+
+                {/* Posição X */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-[9px] mb-1">
+                    <span style={{ color: FILMORA.textDim }}>Posição X</span>
+                    <span style={{ color: FILMORA.textMuted }}>{selectedSeg.transform?.positionX || 0}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="-200" max="200" step="1"
+                    value={selectedSeg.transform?.positionX || 0}
+                    onChange={(e) => handleTransformChange(selectedSeg.id, { positionX: Number(e.target.value) })}
+                    className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+
+                {/* Posição Y */}
+                <div className="mb-3">
+                  <div className="flex justify-between text-[9px] mb-1">
+                    <span style={{ color: FILMORA.textDim }}>Posição Y</span>
+                    <span style={{ color: FILMORA.textMuted }}>{selectedSeg.transform?.positionY || 0}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="-200" max="200" step="1"
+                    value={selectedSeg.transform?.positionY || 0}
+                    onChange={(e) => handleTransformChange(selectedSeg.id, { positionY: Number(e.target.value) })}
+                    className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+
+                {/* Opacidade */}
+                <div>
+                  <div className="flex justify-between text-[9px] mb-1">
+                    <span style={{ color: FILMORA.textDim }}>Opacidade</span>
+                    <span style={{ color: FILMORA.textMuted }}>{Math.round((selectedSeg.transform?.opacity ?? 1) * 100)}%</span>
+                  </div>
+                  <input 
+                    type="range" 
+                    min="0" max="100" step="1"
+                    value={Math.round((selectedSeg.transform?.opacity ?? 1) * 100)}
+                    onChange={(e) => handleTransformChange(selectedSeg.id, { opacity: Number(e.target.value) / 100 })}
+                    className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           /* ====== TAB TRANSIÇÕES ====== */
