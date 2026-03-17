@@ -120,7 +120,7 @@ Exemplo da estrutura do JSON:
       "movement": "Static wide shot or very slow pan",
       "focus": "Deep focus on the forest environment, sharpening on the jaguar as he enters the light"
     },
-    "CharacterInTheScene": "[1, 3]",
+    "IdOfTheCharactersInTheScene": "[1, 3]",
     "main_text_prompt": "Wide shot of Ousado, the golden-yellow jaguar with black rosettes, emerging from a light mist in the Pantanal forest. He moves like a silent ghost through the trees. Soft natural morning light filtering through the canopy creates a majestic and contemplative atmosphere. 4k resolution, hyper-realistic textures.",
     "timeline_breakdown": [
       {

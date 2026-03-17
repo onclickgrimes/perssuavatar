@@ -95,22 +95,22 @@ export function ImagesStep({
     let charsRaw: any = null;
     
     if (typeof imagePrompt === 'object' && imagePrompt !== null) {
-      if ('CharacterInTheScene' in imagePrompt) {
-        charsRaw = (imagePrompt as any).CharacterInTheScene;
+      if ('IdOfTheCharactersInTheScene' in imagePrompt) {
+        charsRaw = (imagePrompt as any).IdOfTheCharactersInTheScene;
       } else if (
         'video_generation_prompt' in imagePrompt && 
         typeof (imagePrompt as any).video_generation_prompt === 'object' && 
-        'CharacterInTheScene' in (imagePrompt as any).video_generation_prompt
+        'IdOfTheCharactersInTheScene' in (imagePrompt as any).video_generation_prompt
       ) {
-        charsRaw = (imagePrompt as any).video_generation_prompt.CharacterInTheScene;
+        charsRaw = (imagePrompt as any).video_generation_prompt.IdOfTheCharactersInTheScene;
       }
     } else if (typeof imagePrompt === 'string') {
       try {
         const parsed = JSON.parse(imagePrompt);
-        if (parsed.CharacterInTheScene) {
-          charsRaw = parsed.CharacterInTheScene;
-        } else if (parsed.video_generation_prompt?.CharacterInTheScene) {
-          charsRaw = parsed.video_generation_prompt.CharacterInTheScene;
+        if (parsed.IdOfTheCharactersInTheScene) {
+          charsRaw = parsed.IdOfTheCharactersInTheScene;
+        } else if (parsed.video_generation_prompt?.IdOfTheCharactersInTheScene) {
+          charsRaw = parsed.video_generation_prompt.IdOfTheCharactersInTheScene;
         }
       } catch (e) {
         // Fallback: extract using regex from raw string if not valid JSON
