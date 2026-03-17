@@ -12,8 +12,8 @@ interface TimelineProps {
   zoomLevel: number;
   viewportWidth: number;
   totalTimelineWidth: number;
-  selectedSegmentId: number | null;
-  setSelectedSegmentId: (id: number | null) => void;
+  selectedSegmentIds: number[];
+  setSelectedSegmentIds: React.Dispatch<React.SetStateAction<number[]>>;
 
   // Tracks
   videoTrackCount: number;
@@ -23,7 +23,7 @@ interface TimelineProps {
   onFileUploadToTrack: (type: 'video' | 'audio', trackId: number, file: File) => void;
   onSegmentMove: (id: number, newStart: number, newTrack: number) => void;
   onSegmentTrim: (id: number, newStart: number, newEnd: number) => void;
-  onAudioChange: (id: number, audio: any) => void;
+  onAudioChange: (audio: any) => void;
 
   // Hover
   hoveredSegment: { id: number; x: number; y: number } | null;
@@ -51,8 +51,8 @@ export function Timeline({
   zoomLevel,
   viewportWidth,
   totalTimelineWidth,
-  selectedSegmentId,
-  setSelectedSegmentId,
+  selectedSegmentIds,
+  setSelectedSegmentIds,
   
   videoTrackCount,
   audioTrackCount,
@@ -107,6 +107,115 @@ export function Timeline({
     type: 'video' | 'audio';
   } | null>(null);
 
+  // Marquee Selection State
+  const [marqueeSelection, setMarqueeSelection] = useState<{
+    startX: number;
+    startY: number;
+    currentX: number;
+    currentY: number;
+  } | null>(null);
+
+  const handleTimelineMouseDown = (e: React.MouseEvent) => {
+    // Apenas se clicar no fundo (não em um segmento)
+    if (e.currentTarget !== e.target && !(e.target as HTMLElement).classList.contains('track-background')) return;
+    if (e.button !== 0) return;
+    e.preventDefault(); // Impede seleção de texto nativa do navegador
+
+    const rect = trackContainerRef.current?.getBoundingClientRect();
+    if (!rect) return;
+
+    const startX = e.clientX - rect.left;
+    const startY = e.clientY - rect.top;
+
+    setMarqueeSelection({
+      startX,
+      startY,
+      currentX: startX,
+      currentY: startY,
+    });
+
+    const isMultiSelect = e.ctrlKey || e.metaKey;
+    if (!isMultiSelect) {
+      setSelectedSegmentIds([]);
+    }
+
+    const handleMouseMove = (mvEvent: MouseEvent) => {
+      const currentX = mvEvent.clientX - rect.left;
+      const currentY = mvEvent.clientY - rect.top;
+
+      setMarqueeSelection({
+        startX,
+        startY,
+        currentX,
+        currentY,
+      });
+
+      // Calcular interseção
+      const left = Math.min(startX, currentX);
+      const right = Math.max(startX, currentX);
+      const top = Math.min(startY, currentY);
+      const bottom = Math.max(startY, currentY);
+
+      const newlySelectedIds: number[] = [];
+
+      visualSegments.forEach(seg => {
+        const segStart = seg.start * zoomLevel;
+        const segEnd = seg.end * zoomLevel;
+        const isAudio = (seg.assetType || '').startsWith('audio');
+        
+        let trackTop = 0;
+        let trackBottom = 0;
+
+        if (!isAudio) {
+          // Video tracks are h-[60px] starting after Ruler (24px)
+          // They are rendered as reverse: V2, V1...
+          const videoTrackIndex = seg.track || 1;
+          const displayIndex = videoTrackCount - videoTrackIndex;
+          trackTop = 24 + displayIndex * 60;
+          trackBottom = trackTop + 60;
+        } else {
+          // Audio tracks are h-[50px] starting after all Video tracks
+          const audioTrackIndex = seg.track || 1;
+          const displayIndex = audioTrackIndex - 1;
+          trackTop = 24 + videoTrackCount * 60 + displayIndex * 50;
+          trackBottom = trackTop + 50;
+        }
+
+        const horizontalOverlap = left < segEnd && right > segStart;
+        const verticalOverlap = top < trackBottom && bottom > trackTop;
+
+        if (horizontalOverlap && verticalOverlap) {
+          newlySelectedIds.push(seg.id);
+        }
+      });
+
+      if (isMultiSelect) {
+        setSelectedSegmentIds(prev => {
+          const combined = new Set([...prev, ...newlySelectedIds]);
+          return Array.from(combined);
+        });
+      } else {
+        setSelectedSegmentIds(newlySelectedIds);
+      }
+    };
+
+    const handleMouseUp = (upEvent: MouseEvent) => {
+      setMarqueeSelection(null);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+
+      // Se não arrastou quase nada, tratar como um clique simples no fundo
+      const deltaX = Math.abs(upEvent.clientX - (startX + rect.left));
+      const deltaY = Math.abs(upEvent.clientY - (startY + rect.top));
+      if (deltaX < 3 && deltaY < 3) {
+        handleBackgroundClick();
+      }
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
   const getSnappedTime = (time: number, ignoreSegId: number) => {
     const snapThreshold = 10 / zoomLevel; // ~10 pixels visual threshold
     let closestTime = time;
@@ -138,7 +247,16 @@ export function Timeline({
     if (e.button !== 0) return; // Só permite clique esquerdo
     e.stopPropagation();
     e.preventDefault(); // Previne o drag-and-drop nativo do HTML5 que causa o ícone de proibido (🚫)
-    setSelectedSegmentId(seg.id);
+    // Lógica de Multi-seleção
+    setSelectedSegmentIds(prev => {
+      if (e.ctrlKey || e.metaKey) {
+        // Se já está selecionado, remove. Se não, adiciona.
+        return prev.includes(seg.id) ? prev.filter(id => id !== seg.id) : [...prev, seg.id];
+      }
+      // Se não segurou Ctrl/Cmd, e clicou num item que não está selecionado, seleciona só ele.
+      // Se clicou num item já selecionado, mantém a seleção múltipla para permitir arrastar todos.
+      return prev.includes(seg.id) ? prev : [seg.id];
+    });
     const startX = e.clientX;
     const startY = e.clientY;
     const initialStart = seg.start;
@@ -222,7 +340,7 @@ export function Timeline({
     if (e.button !== 0) return; // Só permite clique esquerdo
     e.stopPropagation();
     e.preventDefault(); // Previne o drag-and-drop nativo
-    setSelectedSegmentId(seg.id);
+    setSelectedSegmentIds(prev => prev.includes(seg.id) ? prev : [seg.id]);
     const startX = e.clientX;
     const initialStart = seg.start;
     const initialEnd = seg.end;
@@ -288,7 +406,7 @@ export function Timeline({
       const maxFade = (seg.end - seg.start) / 2.1; // Limita a quase metade
       newDuration = Math.max(0, Math.min(newDuration, maxFade));
       
-      onAudioChange(seg.id, { [type]: newDuration });
+      onAudioChange({ [type]: newDuration });
     };
     
     const handleMouseUp = () => {
@@ -303,7 +421,7 @@ export function Timeline({
   const [showAddMenu, setShowAddMenu] = useState(false);
 
   return (
-    <div className="flex-shrink-0 relative overflow-hidden" style={{ background: FILMORA.bgDarker, minHeight: '160px' }}>
+    <div className="flex-shrink-0 relative overflow-hidden select-none" style={{ background: FILMORA.bgDarker, minHeight: '160px' }}>
       <input type="file" ref={fileInputRef} className="hidden" onChange={handleFileChange} />
 
       {/* Tooltip */}
@@ -406,13 +524,25 @@ export function Timeline({
         <div 
           ref={scrollWrapperRef}
           className="relative flex-1 min-w-0 overflow-x-auto overflow-y-hidden filmora-scrollbar"
-          onClick={handleBackgroundClick}
         >
           <div 
             className="relative"
             style={{ width: totalTimelineWidth }}
             ref={trackContainerRef}
+            onMouseDown={handleTimelineMouseDown}
           >
+            {/* MARQUEE SELECTION BOX */}
+            {marqueeSelection && (
+              <div 
+                className="absolute z-[60] border border-blue-500 bg-blue-500/20 pointer-events-none"
+                style={{
+                  left: Math.min(marqueeSelection.startX, marqueeSelection.currentX),
+                  top: Math.min(marqueeSelection.startY, marqueeSelection.currentY),
+                  width: Math.abs(marqueeSelection.currentX - marqueeSelection.startX),
+                  height: Math.abs(marqueeSelection.currentY - marqueeSelection.startY),
+                }}
+              />
+            )}
             {/* ====== RULER ====== */}
             <div 
               className="relative h-[24px] border-b cursor-text z-40"
@@ -454,7 +584,7 @@ export function Timeline({
               const trackIndex = videoTrackCount - i;
               return (
               <div key={`v-${trackIndex}`} className="relative h-[60px] border-b" style={{ background: FILMORA.bgDarker, borderColor: `${FILMORA.border}60` }}>
-                <div className="absolute inset-0 opacity-[0.02]" style={{
+                <div className="absolute inset-0 opacity-[0.02] track-background" style={{
                   backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
                   backgroundSize: `${zoomLevel}px 100%`
                 }} />
@@ -478,7 +608,7 @@ export function Timeline({
                   const width = Math.max(4, duration * zoomLevel);
                   
                   const isVideo = (seg.assetType || '').startsWith('video');
-                  const isSelected = selectedSegmentId === seg.id;
+                  const isSelected = selectedSegmentIds.includes(seg.id);
                   const trackColor = isVideo ? FILMORA.trackVideo : FILMORA.trackImage;
 
                   return (
@@ -561,7 +691,7 @@ export function Timeline({
               const trackIndex = i + 1;
               return (
               <div key={`a-${trackIndex}`} className="relative h-[50px] border-b" style={{ background: FILMORA.bgDarker, borderColor: `${FILMORA.border}60` }}>
-                <div className="absolute inset-0 opacity-[0.02]" style={{
+                <div className="absolute inset-0 opacity-[0.02] track-background" style={{
                   backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
                   backgroundSize: `${zoomLevel}px 100%`
                 }} />
@@ -611,7 +741,7 @@ export function Timeline({
 
                   const left = computedStart * zoomLevel;
                   const width = Math.max(4, duration * zoomLevel);
-                  const isSelected = selectedSegmentId === seg.id;
+                  const isSelected = selectedSegmentIds.includes(seg.id);
                   
                   return (
                     <div

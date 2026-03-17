@@ -14,7 +14,7 @@ interface SidebarProps {
   handleTransitionChange: (segmentId: number, transition: string) => void;
   handleApplyTransitionToAll: (transition: string) => void;
   handleTransformChange?: (segmentId: number, transform: any) => void;
-  handleAudioChange?: (segmentId: number, audioConfig: any) => void;
+  handleAudioChange?: (audioConfig: any) => void;
   fitVideoToScene: boolean;
   onFitVideoToSceneChange: (value: boolean) => void;
   mainAudioVolume?: number;
@@ -231,7 +231,7 @@ export function Sidebar({
                     type="range" 
                     min="0" max="200" step="1"
                     value={Math.round((selectedSeg.audio?.volume ?? 1) * 100)}
-                    onChange={(e) => handleAudioChange(selectedSeg.id, { volume: Number(e.target.value) / 100 })}
+                    onChange={(e) => handleAudioChange({ volume: Number(e.target.value) / 100 })}
                     className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                   />
                 </div>
@@ -246,7 +246,7 @@ export function Sidebar({
                     type="range" 
                     min="0" max="10" step="0.1"
                     value={selectedSeg.audio?.fadeIn ?? 0}
-                    onChange={(e) => handleAudioChange(selectedSeg.id, { fadeIn: Number(e.target.value) })}
+                    onChange={(e) => handleAudioChange({ fadeIn: Number(e.target.value) })}
                     className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                   />
                 </div>
@@ -261,7 +261,7 @@ export function Sidebar({
                     type="range" 
                     min="0" max="10" step="0.1"
                     value={selectedSeg.audio?.fadeOut ?? 0}
-                    onChange={(e) => handleAudioChange(selectedSeg.id, { fadeOut: Number(e.target.value) })}
+                    onChange={(e) => handleAudioChange({ fadeOut: Number(e.target.value) })}
                     className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
                   />
                 </div>

@@ -229,7 +229,7 @@ export function PreviewStep({
   // ========================================
   const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM);
   const currentTimeRef = useRef(0);
-  const [selectedSegmentId, setSelectedSegmentId] = useState<number | null>(null);
+  const [selectedSegmentIds, setSelectedSegmentIds] = useState<number[]>([]);
   const [hoveredSegment, setHoveredSegment] = useState<{ id: number; x: number; y: number } | null>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -491,13 +491,15 @@ export function PreviewStep({
     handleSegmentsChange(updated);
   }, [project.segments, handleSegmentsChange, onSegmentsUpdate]);
 
-  const handleAudioChange = useCallback((segmentId: number, audio: any) => {
-    if (!onSegmentsUpdate) return;
+  const handleAudioChange = useCallback((audio: any) => {
+    if (!onSegmentsUpdate || selectedSegmentIds.length === 0) return;
     const updated = project.segments.map(seg =>
-      seg.id === segmentId ? { ...seg, audio: { ...seg.audio, ...audio } } : seg
+      selectedSegmentIds.includes(seg.id) 
+        ? { ...seg, audio: { ...seg.audio, ...audio } } 
+        : seg
     );
     handleSegmentsChange(updated);
-  }, [project.segments, handleSegmentsChange]);
+  }, [project.segments, selectedSegmentIds, handleSegmentsChange, onSegmentsUpdate]);
 
   const handleMainAudioVolumeChange = useCallback((volume: number) => {
     onMainAudioVolumeChange(volume);
@@ -508,36 +510,46 @@ export function PreviewStep({
   // ACTIONS (SPLIT, DELETE)
   // ========================================
   const handleDeleteSegment = useCallback(() => {
-    if (selectedSegmentId === null) return;
-    const newSegments = project.segments.filter(s => s.id !== selectedSegmentId);
+    if (selectedSegmentIds.length === 0) return;
+    const newSegments = project.segments.filter(s => !selectedSegmentIds.includes(s.id));
     handleSegmentsChange(newSegments);
-    setSelectedSegmentId(null);
-  }, [project.segments, selectedSegmentId, handleSegmentsChange]);
+    setSelectedSegmentIds([]);
+  }, [project.segments, selectedSegmentIds, handleSegmentsChange]);
 
   const handleSplitSegment = useCallback(() => {
-    if (selectedSegmentId === null) return;
-    const segmentIndex = project.segments.findIndex(s => s.id === selectedSegmentId);
-    if (segmentIndex === -1) return;
+    if (selectedSegmentIds.length === 0) return;
     
-    const segment = project.segments[segmentIndex];
+    // Split all selected segments that intersect with playhead
     const currentTime = currentTimeRef.current;
+    let anySplit = false;
+    let newSegments = [...project.segments];
     
-    if (currentTime > segment.start + 0.1 && currentTime < segment.end - 0.1) {
-      const maxId = project.segments.reduce((acc, curr) => Math.max(acc, curr.id), 0);
-      const newId = maxId + 1;
+    // For simplicity, we split only the segments that are currently selected AND contain the playhead
+    selectedSegmentIds.forEach(id => {
+      const segmentIndex = newSegments.findIndex(s => s.id === id);
+      if (segmentIndex === -1) return;
       
-      const firstHalf = { ...segment, end: currentTime };
-      const secondHalf = { ...segment, id: newId, start: currentTime };
-      
-      const newSegments = [...project.segments];
-      newSegments.splice(segmentIndex, 1, firstHalf, secondHalf);
-      
+      const segment = newSegments[segmentIndex];
+      if (currentTime > segment.start + 0.1 && currentTime < segment.end - 0.1) {
+        const maxId = newSegments.reduce((acc, curr) => Math.max(acc, curr.id), 0);
+        const newId = maxId + 1;
+        
+        const firstHalf = { ...segment, end: currentTime };
+        const secondHalf = { ...segment, id: newId, start: currentTime };
+        
+        newSegments.splice(segmentIndex, 1, firstHalf, secondHalf);
+        anySplit = true;
+      }
+    });
+
+    if (anySplit) {
       handleSegmentsChange(newSegments);
     }
-  }, [project.segments, selectedSegmentId, handleSegmentsChange]);
+  }, [project.segments, selectedSegmentIds, handleSegmentsChange]);
 
   // Segmento selecionado
-  const selectedSeg = selectedSegmentId != null ? project.segments.find(s => s.id === selectedSegmentId) : null;
+  const selectedSegments = project.segments.filter(s => selectedSegmentIds.includes(s.id));
+  const selectedSeg = selectedSegments.length > 0 ? selectedSegments[0] : null;
 
   // ========================================
   // TIMELINE: Ruler Mouse Down
@@ -608,7 +620,7 @@ export function PreviewStep({
     setHoveredSegment(null);
   };
 
-  const handleBackgroundClick = () => setSelectedSegmentId(null);
+  const handleBackgroundClick = () => setSelectedSegmentIds([]);
 
   // Progress bar seek
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -700,8 +712,8 @@ export function PreviewStep({
         onDelete={handleDeleteSegment}
         canUndo={historyIndex > 0}
         canRedo={historyIndex < history.length - 1}
-        canSplit={selectedSegmentId !== null}
-        canDelete={selectedSegmentId !== null}
+        canSplit={selectedSegmentIds.length > 0}
+        canDelete={selectedSegmentIds.length > 0}
       />
 
       {/* TIMELINE */}
@@ -712,8 +724,8 @@ export function PreviewStep({
         zoomLevel={zoomLevel}
         viewportWidth={viewportWidth}
         totalTimelineWidth={totalTimelineWidth}
-        selectedSegmentId={selectedSegmentId}
-        setSelectedSegmentId={setSelectedSegmentId}
+        selectedSegmentIds={selectedSegmentIds}
+        setSelectedSegmentIds={setSelectedSegmentIds}
         videoTrackCount={videoTrackCount}
         audioTrackCount={audioTrackCount}
         onAddVideoTrack={handleAddVideoTrack}
