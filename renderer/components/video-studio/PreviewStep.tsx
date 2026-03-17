@@ -637,6 +637,59 @@ export function PreviewStep({
 
 
 
+  // ========================================
+  // ESTADOS E LÓGICA DE RESIZE DOS PAINÉIS
+  // ========================================
+  const [sidebarWidth, setSidebarWidth] = useState(350);
+  const [mediaPanelWidth, setMediaPanelWidth] = useState(280);
+  const [playerPanelWidth, setPlayerPanelWidth] = useState(400);
+  const [timelineHeight, setTimelineHeight] = useState(300);
+
+  // Função genérica para lidar com o arraste das divisórias
+  const startResize = (
+    e: React.MouseEvent,
+    setter: React.Dispatch<React.SetStateAction<number>>,
+    isHorizontal: boolean,
+    invert: boolean,
+    min: number,
+    max: number
+  ) => {
+    e.preventDefault();
+    let lastPos = isHorizontal ? e.clientX : e.clientY;
+
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const currentPos = isHorizontal ? moveEvent.clientX : moveEvent.clientY;
+      const delta = currentPos - lastPos;
+      lastPos = currentPos;
+
+      setter(prev => {
+        // Se invert for true, mover o mouse para a direita/baixo diminui o tamanho do painel
+        const newVal = invert ? prev - delta : prev + delta;
+        return Math.min(Math.max(newVal, min), max);
+      });
+    };
+
+    const handleMouseUp = () => {
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+      // Força a timeline a recalcular largura após o resize da janela
+      setViewportWidth(scrollWrapperRef.current?.clientWidth || 1000);
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+  };
+
+  // Componente visual da Divisória
+  const Divider = ({ onMouseDown, isHorizontal }: { onMouseDown: (e: React.MouseEvent) => void, isHorizontal?: boolean }) => (
+    <div
+      onMouseDown={onMouseDown}
+      className={`flex-shrink-0 bg-transparent transition-colors z-10 ${
+        isHorizontal ? 'h-1 w-full cursor-row-resize' : 'w-1 h-full cursor-col-resize'
+      }`}
+    />
+  );
+
   return (
     <div 
       className="flex flex-col w-full h-screen overflow-hidden bg-filmora-bg text-filmora-text font-sans" 
@@ -649,16 +702,28 @@ export function PreviewStep({
         isSaving={isSaving}
       />
 
-      <div className={`flex flex-1 min-h-0 overflow-hidden ${isVerticalLayout ? 'flex-row' : 'flex-col'}`}>
+      {/* Container principal com fundo escuro para criar os "espaços" entre os painéis */}
+      <div className={`flex flex-1 min-h-0 overflow-hidden bg-[#0d0d0d] p-px ${isVerticalLayout ? 'flex-row' : 'flex-col'}`}>
         {isVerticalLayout ? (
           <>
-            <div className="flex flex-col flex-1 min-w-0 h-full border-r border-filmora-border bg-filmora-panel">
-              {/* Meio Esquerda: Mídia e Propriedades */}
-              <div className="flex flex-1 min-h-0 border-b border-filmora-border">
-                <div className="flex-1 flex items-center justify-center border-r border-filmora-border text-xs text-filmora-textMuted">
+            {/* COLUNA ESQUERDA (Mídia, Sidebar, Timeline) */}
+            <div className="flex flex-col flex-1 min-w-0 h-full">
+              
+              {/* Linha Superior da Coluna Esquerda */}
+              <div className="flex flex-1 min-h-0">
+                {/* Painel de Mídia */}
+                <div className="flex-1 overflow-y-auto filmora-scrollbar flex items-center justify-center bg-filmora-panel rounded-md border border-filmora-border text-xs text-filmora-textMuted">
                   [ Painel de Mídia / Biblioteca ]
                 </div>
-                <div className="w-[350px] shrink-0 bg-filmora-panel">
+                
+                {/* Divisória Vertical (Mídia | Sidebar) */}
+                <Divider onMouseDown={(e) => startResize(e, setSidebarWidth, true, true, 250, 600)} />
+
+                {/* Sidebar */}
+                <div 
+                  className="shrink-0 bg-filmora-panel rounded border border-filmora-border flex flex-col overflow-hidden"
+                  style={{ width: `${sidebarWidth}px` }}
+                >
                   <Sidebar
                     sidebarTab={sidebarTab}
                     setSidebarTab={setSidebarTab}
@@ -679,184 +744,221 @@ export function PreviewStep({
                 </div>
               </div>
 
+              {/* Divisória Horizontal (Cima | Timeline) */}
+              <Divider isHorizontal onMouseDown={(e) => startResize(e, setTimelineHeight, false, true, 150, 600)} />
+
               {/* Timeline */}
-              <div className="flex flex-col h-auto max-h-[45%] flex-shrink-0 bg-filmora-bg">
-                <TimelineToolbar
-                  zoomLevel={zoomLevel}
-                  setZoomLevel={setZoomLevel}
-                  handleZoomIn={handleZoomIn}
-                  handleZoomOut={handleZoomOut}
-                  onUndo={handleUndo}
-                  onRedo={handleRedo}
-                  onSplit={handleSplitSegment}
-                  onDelete={handleDeleteSegment}
-                  canUndo={historyIndex > 0}
-                  canRedo={historyIndex < history.length - 1}
-                  canSplit={selectedSegmentIds.length > 0}
-                  canDelete={selectedSegmentIds.length > 0}
+              <div 
+                className="flex flex-col flex-shrink-0 bg-filmora-bg rounded border border-filmora-border"
+                style={{ height: `${timelineHeight}px` }}
+              >
+                <TimelineToolbar 
+                   zoomLevel={zoomLevel} 
+                   setZoomLevel={setZoomLevel} 
+                   handleZoomIn={handleZoomIn} 
+                   handleZoomOut={handleZoomOut} 
+                   onUndo={handleUndo} 
+                   onRedo={handleRedo} 
+                   onSplit={handleSplitSegment} 
+                   onDelete={handleDeleteSegment} 
+                   canUndo={historyIndex > 0} 
+                   canRedo={historyIndex < history.length - 1} 
+                   canSplit={selectedSegmentIds.length > 0} 
+                   canDelete={selectedSegmentIds.length > 0} 
                 />
-                <Timeline
-                  visualSegments={visualSegments}
-                  durationInSeconds={durationInSeconds}
-                  audioUrl={audioUrl}
-                  zoomLevel={zoomLevel}
-                  viewportWidth={viewportWidth}
-                  totalTimelineWidth={totalTimelineWidth}
-                  selectedSegmentIds={selectedSegmentIds}
-                  setSelectedSegmentIds={setSelectedSegmentIds}
-                  videoTrackCount={videoTrackCount}
-                  audioTrackCount={audioTrackCount}
-                  onAddVideoTrack={handleAddVideoTrack}
-                  onAddAudioTrack={handleAddAudioTrack}
-                  onFileUploadToTrack={handleFileUploadToTrack}
-                  onSegmentMove={handleSegmentMove}
-                  onSegmentTrim={handleSegmentTrim}
-                  onAudioChange={handleAudioChange}
-                  hoveredSegment={hoveredSegment}
-                  hoveredSeg={hoveredSeg}
-                  handleSegmentMouseEnter={handleSegmentMouseEnter}
-                  handleSegmentMouseLeave={handleSegmentMouseLeave}
-                  handleBackgroundClick={handleBackgroundClick}
-                  handleRulerMouseDown={handleRulerMouseDown}
-                  handlePlayheadMouseDown={handlePlayheadMouseDown}
-                  scrollWrapperRef={scrollWrapperRef}
-                  trackContainerRef={trackContainerRef}
-                  playheadRef={playheadRef}
-                  playheadLabelRef={playheadLabelRef}
-                  currentTimeRef={currentTimeRef}
+                <Timeline 
+                   visualSegments={visualSegments} 
+                   durationInSeconds={durationInSeconds} 
+                   audioUrl={audioUrl} 
+                   zoomLevel={zoomLevel} 
+                   viewportWidth={viewportWidth} 
+                   totalTimelineWidth={totalTimelineWidth} 
+                   selectedSegmentIds={selectedSegmentIds} 
+                   setSelectedSegmentIds={setSelectedSegmentIds} 
+                   videoTrackCount={videoTrackCount} 
+                   audioTrackCount={audioTrackCount} 
+                   onAddVideoTrack={handleAddVideoTrack} 
+                   onAddAudioTrack={handleAddAudioTrack} 
+                   onFileUploadToTrack={handleFileUploadToTrack} 
+                   onSegmentMove={handleSegmentMove} 
+                   onSegmentTrim={handleSegmentTrim} 
+                   onAudioChange={handleAudioChange} 
+                   hoveredSegment={hoveredSegment} 
+                   hoveredSeg={hoveredSeg} 
+                   handleSegmentMouseEnter={handleSegmentMouseEnter} 
+                   handleSegmentMouseLeave={handleSegmentMouseLeave} 
+                   handleBackgroundClick={handleBackgroundClick} 
+                   handleRulerMouseDown={handleRulerMouseDown} 
+                   handlePlayheadMouseDown={handlePlayheadMouseDown} 
+                   scrollWrapperRef={scrollWrapperRef} 
+                   trackContainerRef={trackContainerRef} 
+                   playheadRef={playheadRef} 
+                   playheadLabelRef={playheadLabelRef} 
+                   currentTimeRef={currentTimeRef} 
                 />
               </div>
             </div>
 
-            {/* Preview Direita */}
-            <div className="w-[400px] shrink-0 flex flex-col h-full bg-black">
-              <PlayerArea
-                subtitleMode={subtitleMode}
-                setSubtitleMode={setSubtitleMode}
-                setHasUnsavedChanges={setHasUnsavedChanges}
-                selectedRatio={selectedRatio}
-                setSelectedRatio={setSelectedRatio}
-                currentRatios={currentRatios}
-                showRatioMenu={showRatioMenu}
-                setShowRatioMenu={setShowRatioMenu}
-                toggleAspectRatio={toggleAspectRatio}
-                availableRatios={AVAILABLE_RATIOS}
-                remotionProject={remotionProject}
-                durationInFrames={durationInFrames}
-                fps={fps}
-                handlePlayerReady={handlePlayerReady}
-                getCssAspectRatio={getCssAspectRatio}
-                isPlaying={isPlaying}
-                handleTogglePlay={handleTogglePlay}
-                handleStepForward={handleStepForward}
-                handleStepBackward={handleStepBackward}
-                handleSkipToStart={handleSkipToStart}
-                handleSkipToEnd={handleSkipToEnd}
-                handleProgressClick={handleProgressClick}
-                progressRef={progressRef}
-                timecodeRef={timecodeRef}
+            {/* Divisória Vertical (Esquerda | Player) */}
+            <Divider onMouseDown={(e) => startResize(e, setPlayerPanelWidth, true, true, 300, 800)} />
+
+            {/* COLUNA DIREITA (Player) */}
+            <div 
+              className="shrink-0 flex flex-col h-full bg-black rounded overflow-hidden"
+              style={{ width: `${playerPanelWidth}px` }}
+            >
+              <PlayerArea 
+                 subtitleMode={subtitleMode} 
+                 setSubtitleMode={setSubtitleMode} 
+                 setHasUnsavedChanges={setHasUnsavedChanges} 
+                 selectedRatio={selectedRatio} 
+                 setSelectedRatio={setSelectedRatio} 
+                 currentRatios={currentRatios} 
+                 showRatioMenu={showRatioMenu} 
+                 setShowRatioMenu={setShowRatioMenu} 
+                 toggleAspectRatio={toggleAspectRatio} 
+                 availableRatios={AVAILABLE_RATIOS} 
+                 remotionProject={remotionProject} 
+                 durationInFrames={durationInFrames} 
+                 fps={fps} 
+                 handlePlayerReady={handlePlayerReady} 
+                 getCssAspectRatio={getCssAspectRatio} 
+                 isPlaying={isPlaying} 
+                 handleTogglePlay={handleTogglePlay} 
+                 handleStepForward={handleStepForward} 
+                 handleStepBackward={handleStepBackward} 
+                 handleSkipToStart={handleSkipToStart} 
+                 handleSkipToEnd={handleSkipToEnd} 
+                 handleProgressClick={handleProgressClick} 
+                 progressRef={progressRef} 
+                 timecodeRef={timecodeRef} 
               />
             </div>
           </>
         ) : (
           <>
-            <div className="flex flex-1 min-h-0 border-b border-filmora-border bg-filmora-panel">
-              <div className="w-[280px] shrink-0 flex items-center justify-center border-r border-filmora-border text-xs text-filmora-textMuted">
+            {/* LAYOUT HORIZONTAL (Cima: Mídia | Player | Sidebar) */}
+            <div className="flex flex-1 min-h-0">
+              {/* Painel de Mídia */}
+              <div 
+                className="shrink-0 flex items-center justify-center bg-filmora-panel rounded border border-filmora-border text-xs text-filmora-textMuted"
+                style={{ width: `${mediaPanelWidth}px` }}
+              >
                 [ Painel de Mídia / Biblioteca ]
               </div>
 
-              <PlayerArea
-                subtitleMode={subtitleMode}
-                setSubtitleMode={setSubtitleMode}
-                setHasUnsavedChanges={setHasUnsavedChanges}
-                selectedRatio={selectedRatio}
-                setSelectedRatio={setSelectedRatio}
-                currentRatios={currentRatios}
-                showRatioMenu={showRatioMenu}
-                setShowRatioMenu={setShowRatioMenu}
-                toggleAspectRatio={toggleAspectRatio}
-                availableRatios={AVAILABLE_RATIOS}
-                remotionProject={remotionProject}
-                durationInFrames={durationInFrames}
-                fps={fps}
-                handlePlayerReady={handlePlayerReady}
-                getCssAspectRatio={getCssAspectRatio}
-                isPlaying={isPlaying}
-                handleTogglePlay={handleTogglePlay}
-                handleStepForward={handleStepForward}
-                handleStepBackward={handleStepBackward}
-                handleSkipToStart={handleSkipToStart}
-                handleSkipToEnd={handleSkipToEnd}
-                handleProgressClick={handleProgressClick}
-                progressRef={progressRef}
-                timecodeRef={timecodeRef}
-              />
+              {/* Divisória Vertical */}
+              <Divider onMouseDown={(e) => startResize(e, setMediaPanelWidth, true, false, 200, 500)} />
 
-              <div className="w-[350px] shrink-0 border-l border-filmora-border bg-filmora-panel">
-                <Sidebar
-                  sidebarTab={sidebarTab}
-                  setSidebarTab={setSidebarTab}
-                  durationInSeconds={durationInSeconds}
-                  segmentsCount={project.segments.length}
-                  selectedRatio={selectedRatio}
-                  audioUrl={audioUrl}
-                  selectedSeg={selectedSeg}
-                  handleTransitionChange={handleTransitionChange}
-                  handleApplyTransitionToAll={handleApplyTransitionToAll}
-                  handleTransformChange={handleTransformChange}
-                  handleAudioChange={handleAudioChange}
-                  fitVideoToScene={fitVideoToScene}
-                  onFitVideoToSceneChange={(val) => { onFitVideoToSceneChange(val); setHasUnsavedChanges(true); }}
-                  mainAudioVolume={mainAudioVolume}
-                  handleMainAudioVolumeChange={handleMainAudioVolumeChange}
+              {/* Player (Ocupa o centro livre) */}
+              <div className="flex-1 min-w-[300px] flex flex-col h-full bg-black rounded overflow-hidden">
+                <PlayerArea 
+                   subtitleMode={subtitleMode} 
+                   setSubtitleMode={setSubtitleMode} 
+                   setHasUnsavedChanges={setHasUnsavedChanges} 
+                   selectedRatio={selectedRatio} 
+                   setSelectedRatio={setSelectedRatio} 
+                   currentRatios={currentRatios} 
+                   showRatioMenu={showRatioMenu} 
+                   setShowRatioMenu={setShowRatioMenu} 
+                   toggleAspectRatio={toggleAspectRatio} 
+                   availableRatios={AVAILABLE_RATIOS} 
+                   remotionProject={remotionProject} 
+                   durationInFrames={durationInFrames} 
+                   fps={fps} 
+                   handlePlayerReady={handlePlayerReady} 
+                   getCssAspectRatio={getCssAspectRatio} 
+                   isPlaying={isPlaying} 
+                   handleTogglePlay={handleTogglePlay} 
+                   handleStepForward={handleStepForward} 
+                   handleStepBackward={handleStepBackward} 
+                   handleSkipToStart={handleSkipToStart} 
+                   handleSkipToEnd={handleSkipToEnd} 
+                   handleProgressClick={handleProgressClick} 
+                   progressRef={progressRef} 
+                   timecodeRef={timecodeRef} 
+                />
+              </div>
+
+              {/* Divisória Vertical */}
+              <Divider onMouseDown={(e) => startResize(e, setSidebarWidth, true, true, 250, 600)} />
+
+              {/* Sidebar */}
+              <div 
+                className="shrink-0 bg-filmora-panel rounded border border-filmora-border flex flex-col"
+                style={{ width: `${sidebarWidth}px` }}
+              >
+                <Sidebar 
+                   sidebarTab={sidebarTab} 
+                   setSidebarTab={setSidebarTab} 
+                   durationInSeconds={durationInSeconds} 
+                   segmentsCount={project.segments.length} 
+                   selectedRatio={selectedRatio} 
+                   audioUrl={audioUrl} 
+                   selectedSeg={selectedSeg} 
+                   handleTransitionChange={handleTransitionChange} 
+                   handleApplyTransitionToAll={handleApplyTransitionToAll} 
+                   handleTransformChange={handleTransformChange} 
+                   handleAudioChange={handleAudioChange} 
+                   fitVideoToScene={fitVideoToScene} 
+                   onFitVideoToSceneChange={(val) => { onFitVideoToSceneChange(val); setHasUnsavedChanges(true); }} 
+                   mainAudioVolume={mainAudioVolume} 
+                   handleMainAudioVolumeChange={handleMainAudioVolumeChange} 
                 />
               </div>
             </div>
 
-            <div className="flex flex-col h-auto max-h-[45%] flex-shrink-0 bg-filmora-bg">
-              <TimelineToolbar
-                zoomLevel={zoomLevel}
-                setZoomLevel={setZoomLevel}
-                handleZoomIn={handleZoomIn}
-                handleZoomOut={handleZoomOut}
-                onUndo={handleUndo}
-                onRedo={handleRedo}
-                onSplit={handleSplitSegment}
-                onDelete={handleDeleteSegment}
-                canUndo={historyIndex > 0}
-                canRedo={historyIndex < history.length - 1}
-                canSplit={selectedSegmentIds.length > 0}
-                canDelete={selectedSegmentIds.length > 0}
+            {/* Divisória Horizontal */}
+            <Divider isHorizontal onMouseDown={(e) => startResize(e, setTimelineHeight, false, true, 150, 600)} />
+
+            {/* LAYOUT HORIZONTAL (Baixo: Timeline) */}
+            <div 
+              className="flex flex-col flex-shrink-0 bg-filmora-bg rounded border border-filmora-border"
+              style={{ height: `${timelineHeight}px` }}
+            >
+              <TimelineToolbar 
+                 zoomLevel={zoomLevel} 
+                 setZoomLevel={setZoomLevel} 
+                 handleZoomIn={handleZoomIn} 
+                 handleZoomOut={handleZoomOut} 
+                 onUndo={handleUndo} 
+                 onRedo={handleRedo} 
+                 onSplit={handleSplitSegment} 
+                 onDelete={handleDeleteSegment} 
+                 canUndo={historyIndex > 0} 
+                 canRedo={historyIndex < history.length - 1} 
+                 canSplit={selectedSegmentIds.length > 0} 
+                 canDelete={selectedSegmentIds.length > 0} 
               />
-              <Timeline
-                visualSegments={visualSegments}
-                durationInSeconds={durationInSeconds}
-                audioUrl={audioUrl}
-                zoomLevel={zoomLevel}
-                viewportWidth={viewportWidth}
-                totalTimelineWidth={totalTimelineWidth}
-                selectedSegmentIds={selectedSegmentIds}
-                setSelectedSegmentIds={setSelectedSegmentIds}
-                videoTrackCount={videoTrackCount}
-                audioTrackCount={audioTrackCount}
-                onAddVideoTrack={handleAddVideoTrack}
-                onAddAudioTrack={handleAddAudioTrack}
-                onFileUploadToTrack={handleFileUploadToTrack}
-                onSegmentMove={handleSegmentMove}
-                onSegmentTrim={handleSegmentTrim}
-                onAudioChange={handleAudioChange}
-                hoveredSegment={hoveredSegment}
-                hoveredSeg={hoveredSeg}
-                handleSegmentMouseEnter={handleSegmentMouseEnter}
-                handleSegmentMouseLeave={handleSegmentMouseLeave}
-                handleBackgroundClick={handleBackgroundClick}
-                handleRulerMouseDown={handleRulerMouseDown}
-                handlePlayheadMouseDown={handlePlayheadMouseDown}
-                scrollWrapperRef={scrollWrapperRef}
-                trackContainerRef={trackContainerRef}
-                playheadRef={playheadRef}
-                playheadLabelRef={playheadLabelRef}
-                currentTimeRef={currentTimeRef}
+              <Timeline 
+                 visualSegments={visualSegments} 
+                 durationInSeconds={durationInSeconds} 
+                 audioUrl={audioUrl} 
+                 zoomLevel={zoomLevel} 
+                 viewportWidth={viewportWidth} 
+                 totalTimelineWidth={totalTimelineWidth} 
+                 selectedSegmentIds={selectedSegmentIds} 
+                 setSelectedSegmentIds={setSelectedSegmentIds} 
+                 videoTrackCount={videoTrackCount} 
+                 audioTrackCount={audioTrackCount} 
+                 onAddVideoTrack={handleAddVideoTrack} 
+                 onAddAudioTrack={handleAddAudioTrack} 
+                 onFileUploadToTrack={handleFileUploadToTrack} 
+                 onSegmentMove={handleSegmentMove} 
+                 onSegmentTrim={handleSegmentTrim} 
+                 onAudioChange={handleAudioChange} 
+                 hoveredSegment={hoveredSegment} 
+                 hoveredSeg={hoveredSeg} 
+                 handleSegmentMouseEnter={handleSegmentMouseEnter} 
+                 handleSegmentMouseLeave={handleSegmentMouseLeave} 
+                 handleBackgroundClick={handleBackgroundClick} 
+                 handleRulerMouseDown={handleRulerMouseDown} 
+                 handlePlayheadMouseDown={handlePlayheadMouseDown} 
+                 scrollWrapperRef={scrollWrapperRef} 
+                 trackContainerRef={trackContainerRef} 
+                 playheadRef={playheadRef} 
+                 playheadLabelRef={playheadLabelRef} 
+                 currentTimeRef={currentTimeRef} 
               />
             </div>
           </>

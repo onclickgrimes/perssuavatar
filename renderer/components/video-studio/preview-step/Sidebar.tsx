@@ -60,7 +60,7 @@ export function Sidebar({
         ))}
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto filmora-scrollbar">
         {sidebarTab === 'info' ? (
           /* ====== TAB INFO ====== */
           <div className="p-3 space-y-3">
