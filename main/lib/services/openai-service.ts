@@ -79,14 +79,32 @@ export class OpenAIService {
         try {
             console.log('🧠 OpenAI VideoAnalysis: Requesting JSON response...');
 
-            const response = await this.openai.chat.completions.create({
+            const requestOptions: any = {
                 messages: messages,
                 //'reasoning_effort' does not support 'none' with this model. Supported values are: 'minimal', 'low', 'medium', and 'high'.
                 // model: "gpt-4.1-nano-2025-04-14"
                 model: this.model,
-                reasoning_effort: "low",
                 response_format: { type: "json_object" }
-            });
+            };
+
+            // Configurações específicas para os modelos GPT-5.4
+            if (this.model === "gpt-5.4-mini" || this.model === "gpt-5.4") {
+                requestOptions.store = false;
+                
+                // Mapear esforço de reasoning para o formato suportado reasoning_effort
+                // O GPT-5.4 parece não aceitar os objetos 'text' e 'reasoning' diretamente conforme o erro reportado
+                if (this.model === "gpt-5.4-mini") {
+                    requestOptions.reasoning_effort = "high"; // Aproximação de xhigh
+                } else {
+                    requestOptions.reasoning_effort = "medium";
+                }
+            } 
+            // Remove reasoning_effort for gpt-4.1-2025-04-14
+            else if (this.model !== "gpt-4.1-2025-04-14") {
+                requestOptions.reasoning_effort = "low";
+            }
+
+            const response = await this.openai.chat.completions.create(requestOptions);
 
             const content = response.choices[0].message.content || '{}';
             console.log(`🧠 OpenAI VideoAnalysis Response (${content.length} chars)`);

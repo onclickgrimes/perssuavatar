@@ -104,8 +104,8 @@ export function PromptsStep({
                      )}
                      {provider === 'openai' && (
                        <>
-                         <option value="gpt-5-mini-2025-08-07">GPT 5 Mini ($0.25 inputs / $2.00 outputs)</option>
-                         <option value="gpt-4.1-2025-04-14">GPT 4.1 ($2.00 inputs / $8.00 outputs)</option>
+                         <option value="gpt-5.4-mini">GPT 5.4 Mini ($0.75 inputs / $4.50 outputs)</option>
+                         <option value="gpt-5.4">GPT 5.4 ($2.50 inputs / $15.00 outputs)</option>
                        </>
                      )}
                      {provider === 'deepseek' && (
