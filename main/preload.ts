@@ -468,6 +468,22 @@ const handler = {
       return () => ipcRenderer.removeListener('video-project:veo2-progress', subscription);
     },
 
+    // Gerar vídeo via Google Veo 3.1 (API oficial)
+    generateVeo3Api: (options: {
+      prompt: string;
+      model: string;
+      aspectRatio?: string;
+      durationSeconds?: number;
+      referenceImagePath?: string;
+    }) => ipcRenderer.invoke('video-project:generate-veo3-api', options),
+
+    // Listener para progresso da geração Veo 3.1 (API oficial)
+    onVeo3ApiProgress: (callback: (data: { stage: string; message: string; percent?: number }) => void) => {
+      const subscription = (_: any, data: { stage: string; message: string; percent?: number }) => callback(data);
+      ipcRenderer.on('video-project:veo3-api-progress', subscription);
+      return () => ipcRenderer.removeListener('video-project:veo3-api-progress', subscription);
+    },
+
     // Gerar IMAGEM via Google Flow ("Criar imagens")
     generateFlowImage: (options: {
       prompt: string;

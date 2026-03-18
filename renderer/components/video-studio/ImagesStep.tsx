@@ -209,6 +209,18 @@ export function ImagesStep({
     return () => { cleanup?.(); };
   }, [generatingSegments]);
 
+  // Listener de progresso Veo3 (API oficial)
+  useEffect(() => {
+    const cleanup = window.electron?.videoProject?.onVeo3ApiProgress?.((data) => {
+      setVo3Progress(prev => {
+        const next = { ...prev };
+        generatingSegments.forEach(segId => { next[segId] = data.message; });
+        return next;
+      });
+    });
+    return () => { cleanup?.(); };
+  }, [generatingSegments]);
+
   // Listener de progresso Veo2 Flow (via puppeteer)
   useEffect(() => {
     const cleanup = window.electron?.videoProject?.onVo2FlowProgress?.((data) => {
@@ -354,11 +366,13 @@ export function ImagesStep({
 
   // Serviços disponíveis para geração
   const GENERATION_SERVICES = [
-    { id: 'veo3',       label: 'Veo 3 (Flow)',     icon: '🌊', description: 'Google Veo 3.1 via Google Flow' },
-    { id: 'grok',       label: 'Grok',             icon: '✖️', description: 'Geração de vídeo com Grok' },
-    { id: 'veo2-flow',  label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Google Veo 2 Fast via Google Flow' },
-    { id: 'flow-image', label: 'Imagem (Flow)',    icon: '🖼️', description: 'Gerar imagem com Google Flow' },
-    { id: 'veo2',       label: 'Veo 2 (API)',      icon: '🌊', description: 'Google Veo 2 via API oficial' },
+    { id: 'veo3',           label: 'Veo 3 (Flow)',     icon: '🌊', description: 'Google Veo 3.1 via Google Flow' },
+    { id: 'veo3-api',       label: 'Veo 3.1 (API)',    icon: '🚀', description: 'Google Veo 3.1 via API Oficial' },
+    { id: 'veo3-fast-api',  label: 'Veo 3.1 Fast',     icon: '⚡', description: 'Google Veo 3.1 Fast via API Oficial' },
+    { id: 'grok',           label: 'Grok',             icon: '✖️', description: 'Geração de vídeo com Grok' },
+    { id: 'veo2-flow',      label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Google Veo 2 Fast via Google Flow' },
+    { id: 'flow-image',     label: 'Imagem (Flow)',    icon: '🖼️', description: 'Gerar imagem com Google Flow' },
+    { id: 'veo2',           label: 'Veo 2 (API)',      icon: '🌊', description: 'Google Veo 2 via API oficial' },
   ];
 
   // Obtém o serviço efetivo a usar para um segmento
@@ -584,6 +598,42 @@ export function ImagesStep({
           if (!silent) alert(`Falha na geração de imagem via Flow: ${result?.error}`);
         }
 
+      // ── VEO 3.1 E VEO 3.1 FAST (API oficial) ──
+      } else if (service === 'veo3-api' || service === 'veo3-fast-api') {
+        console.log(`🚀 [Veo3 API] Gerando vídeo para segmento ${segmentId}...`);
+        
+        const isFast = service === 'veo3-fast-api';
+        const modelName = isFast ? 'veo-3.1-fast-generate-preview' : 'veo-3.1-generate-preview';
+
+        if (referenceImagePath) {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Animando imagem com Veo 3.1${isFast ? ' Fast' : ''}...` }));
+        } else {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando vídeo com Veo 3.1${isFast ? ' Fast' : ''}...` }));
+        }
+
+        const result = await window.electron?.videoProject?.generateVeo3Api({
+          prompt: extractPromptString(segment.imagePrompt) || `Cinematic animation of the scene: ${segment.text}`,
+          aspectRatio: aspectRatio,
+          referenceImagePath,
+          model: modelName
+        });
+        
+        if (result?.success && (result.httpUrl || result.videoPath)) {
+          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
+          success = true;
+        } else {
+          console.error(`❌ [Veo3 API] Falha:`, result?.error);
+          
+          if (result?.error?.includes('Limite diário')) {
+             alert(`🛑 ALERTA: ${result.error}\nA geração em lote será interrompida.`);
+             batchCancelledRef.current = true;
+             return false;
+          }
+          
+          if (!silent) alert(`Falha na geração Veo 3.1: ${result?.error}`);
+        }
+
       // ── VEO 2 (API oficial) ──
       } else {
         console.log(`🌊 [Veo2] Gerando vídeo para segmento ${segmentId}...`);
@@ -754,6 +804,8 @@ export function ImagesStep({
     }
     // Sem mídia → label baseado no serviço
     if (svc === 'grok') return '✖️ Gerar com Grok';
+    if (svc === 'veo3-api') return '🚀 Gerar com Veo 3.1';
+    if (svc === 'veo3-fast-api') return '⚡ Gerar com Veo 3.1 Fast';
     if (svc === 'veo3') return '🌊 Gerar com Veo 3';
     if (svc === 'veo2-flow') return '🌊 Gerar com Veo 2 Flow';
     if (svc === 'flow-image') return '🖼️ Imagem com Flow';
@@ -1100,7 +1152,7 @@ export function ImagesStep({
                   }
 
                   const svc = getEffectiveService(segment);
-                  const isVideoService = svc === 'veo3' || svc === 'veo2-flow' || svc === 'veo2' || svc === 'grok';
+                  const isVideoService = svc === 'veo3' || svc === 'veo3-api' || svc === 'veo3-fast-api' || svc === 'veo2-flow' || svc === 'veo2' || svc === 'grok';
                   const showCarousel = isVideoService && hasImage && !isVideo(segment.imageUrl) && ingredientMode[segment.id] !== 'ingredients';
                   const currentIndex = carouselIndices[segment.id] || 0;
                   const isIngredientsMode = ingredientMode[segment.id] === 'ingredients';

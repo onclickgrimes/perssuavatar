@@ -1325,6 +1325,60 @@ Lembre-se:
     }
   });
 
+  // Handler para gerar vídeo via Google Veo 3.1 (API oficial)
+  ipcMain.handle('video-project:generate-veo3-api', async (event, options: {
+    prompt: string;
+    model: string; // 'veo-3.1-generate-001' ou versão 'fast'
+    aspectRatio?: string;
+    durationSeconds?: number;
+    referenceImagePath?: string;
+  }) => {
+    try {
+      const { getVeo3VideoService } = require('../services/veo3-video-service');
+      const veo3Service = getVeo3VideoService();
+
+      const mode = options.referenceImagePath ? 'image-to-video' : 'text-to-video';
+      console.log(`🌊 [Veo3 API] Starting ${mode} generation with ${options.model} (ratio: ${options.aspectRatio || '16:9'})`);
+
+      const result = await veo3Service.generateVideo({
+        prompt: options.prompt,
+        model: options.model,
+        aspectRatio: (options.aspectRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16',
+        durationSeconds: options.durationSeconds || 8,
+        referenceImagePath: options.referenceImagePath,
+        onProgress: (percent: number, message: string) => {
+          event.sender.send('video-project:veo3-api-progress', { percent, message, stage: 'generating' });
+        },
+      });
+
+      if (!result.success) return { success: false, error: result.error };
+
+      let httpUrl = result.videoPath;
+      if (videoProjectService && result.videoPath) {
+        httpUrl = videoProjectService.convertToHttpUrl(result.videoPath);
+      }
+      
+      let realDurationMs = result.durationMs;
+      if (result.videoPath) {
+         const videoDur = await getVideoDuration(result.videoPath); // já existente no arquivo
+         if (videoDur !== undefined) realDurationMs = videoDur * 1000;
+      }
+
+      console.log(`✅ [Veo3 API] Video generated: ${result.videoPath} → ${httpUrl}`);
+
+      return {
+        success: true,
+        videoPath: result.videoPath,
+        httpUrl,
+        durationMs: realDurationMs,
+      };
+
+    } catch (error: any) {
+      console.error('❌ [Veo3 API] Generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Handler para gerar IMAGEM via Google Flow ("Criar imagens")
   ipcMain.handle('video-project:generate-flow-image', async (event, options: {
     prompt: string;
