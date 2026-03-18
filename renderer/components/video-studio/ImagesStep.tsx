@@ -370,7 +370,7 @@ export function ImagesStep({
     { id: 'veo3-api',       label: 'Veo 3.1 (API)',    icon: '🚀', description: 'Google Veo 3.1 via API Oficial' },
     { id: 'veo3-fast-api',  label: 'Veo 3.1 Fast',     icon: '⚡', description: 'Google Veo 3.1 Fast via API Oficial' },
     { id: 'grok',           label: 'Grok',             icon: '✖️', description: 'Geração de vídeo com Grok' },
-    { id: 'veo2-flow',      label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Google Veo 2 Fast via Google Flow' },
+    // { id: 'veo2-flow',      label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Google Veo 2 Fast via Google Flow' },
     { id: 'flow-image',     label: 'Imagem (Flow)',    icon: '🖼️', description: 'Gerar imagem com Google Flow' },
     { id: 'veo2',           label: 'Veo 2 (API)',      icon: '🌊', description: 'Google Veo 2 via API oficial' },
   ];
@@ -1075,14 +1075,14 @@ export function ImagesStep({
           return (
             <div
               key={segment.id}
-              className={`bg-white/5 border rounded-xl overflow-hidden transition-all ${
+              className={`bg-white/5 border rounded-xl transition-all ${
                 isBatchActive
                   ? 'border-cyan-400 ring-2 ring-cyan-400/30 shadow-lg shadow-cyan-500/10'
                   : 'border-white/10'
               }`}
             >
               {/* Preview de imagem ou área de upload */}
-              <div className="aspect-video relative group">
+              <div className="aspect-video relative group rounded-t-xl overflow-hidden">
 
                 {/* Select Modo: Frames / Ingredients (canto superior esquerdo, só Veo 3 e Flow Image) */}
                 {(getEffectiveService(segment) === 'veo3' || getEffectiveService(segment) === 'flow-image') && !isGenerating && (
@@ -1448,8 +1448,17 @@ export function ImagesStep({
                       {/* Dropdown de serviços */}
                       {openDropdown === segment.id && (
                         <div
-                          className="absolute bottom-full right-0 mb-1 z-50 bg-[#1a1a2e] border border-white/10 rounded-lg shadow-xl overflow-hidden min-w-[180px]"
+                          className="absolute bottom-full right-0 mb-1 z-50 bg-[#1a1a2e] border border-white/10 rounded-lg shadow-xl min-w-[220px] overflow-y-auto max-h-[350px] batch-dropdown-scroll"
                           onMouseLeave={() => setOpenDropdown(null)}
+                          style={{ overscrollBehavior: 'contain' }}
+                          onWheel={(e) => {
+                            const el = e.currentTarget;
+                            const atTop = el.scrollTop === 0 && e.deltaY < 0;
+                            const atBottom = Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop) < 1 && e.deltaY > 0;
+                            if (atTop || atBottom) {
+                              e.stopPropagation();
+                            }
+                          }}
                         >
                           <div className="px-3 py-2 text-white/40 text-xs border-b border-white/10 uppercase tracking-wider">
                             Serviço de geração
