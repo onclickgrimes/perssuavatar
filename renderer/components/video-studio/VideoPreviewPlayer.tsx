@@ -28,47 +28,7 @@ export function VideoPreviewPlayer({
     }
   }, [onPlayerReady]);
 
-  // Pré-carregar todos os vídeos e áudio antes de mostrar o player
-  // Isso elimina o dessincronismo causado pelo carregamento tardio durante a reprodução
-  const prefetchAll = React.useCallback(async () => {
-    if (!project?.scenes) return;
 
-    try {
-      const { prefetch } = await import('remotion');
-
-      // Coletar todas as URLs de vídeo das cenas
-      const videoUrls: string[] = project.scenes
-        .map((s: any) => s.asset_url)
-        .filter((url: string | undefined): url is string => {
-          if (!url) return false;
-          const videoExts = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
-          return videoExts.some(ext => url.toLowerCase().endsWith(ext));
-        });
-
-      // Adicionar URL do áudio principal se existir
-      const audioUrl = project.config?.audio?.src || project.scenes?.[0]?.audio_src;
-      if (audioUrl) videoUrls.push(audioUrl);
-
-      if (videoUrls.length === 0) return;
-
-      console.log(`🎬 [Preview] Pré-carregando ${videoUrls.length} mídia(s)...`);
-      setIsPrefetching(true);
-
-      // Pré-carregar em paralelo (sem await - deixa carregar em background)
-      // prefetch retorna um objeto com `waitUntilDone()` e `free()`
-      videoUrls.forEach(url => {
-        try {
-          prefetch(url, { method: 'blob-url' });
-        } catch (_) {
-          // Ignorar falhas de prefetch; o vídeo será carregado on-demand
-        }
-      });
-
-      setIsPrefetching(false);
-    } catch (err) {
-      setIsPrefetching(false);
-    }
-  }, [project]);
 
   // Carregar componentes dinamicamente (evita SSR)
   React.useEffect(() => {
@@ -85,8 +45,7 @@ export function VideoPreviewPlayer({
         
         setIsLoading(false);
 
-        // Iniciar pré-carregamento logo após o componente estar pronto
-        prefetchAll();
+
       } catch (err: any) {
         console.error('Error loading preview components:', err);
         setError(err.message || 'Failed to load preview');
@@ -97,10 +56,71 @@ export function VideoPreviewPlayer({
     loadComponents();
   }, []);
 
-  // Quando o projeto mudar (novo vídeo gerado), re-pré-carregar
+  // 1. Extraímos APENAS as URLs como uma string. 
+  // Se mudar só a opacidade ou o texto, essa string continua igual.
+  const mediaUrlsString = React.useMemo(() => {
+    if (!project?.scenes) return '';
+    
+    const videoUrls: string[] = project.scenes
+      .map((s: any) => s.asset_url)
+      .filter((url: string | undefined): url is string => {
+        if (!url) return false;
+        const videoExts = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
+        return videoExts.some(ext => url.toLowerCase().endsWith(ext));
+      });
+
+    const audioUrl = project.config?.audio?.src || project.scenes?.[0]?.audio_src;
+    if (audioUrl) videoUrls.push(audioUrl);
+
+    // Retorna algo como "url1.mp4,url2.mp4,audio.wav"
+    return videoUrls.join(','); 
+  }, [project]);
+
+  // Ref para guardar as funções que limpam a RAM
+  const cleanupPrefetchesRef = React.useRef<(() => void)[]>([]);
+
+  // 2. O useEffect AGORA depende só da string de URLs
   React.useEffect(() => {
-    prefetchAll();
-  }, [prefetchAll]);
+    if (!mediaUrlsString) return;
+
+    let isMounted = true;
+    const urls = mediaUrlsString.split(',');
+
+    const doPrefetch = async () => {
+      try {
+        const { prefetch } = await import('remotion');
+
+        // Limpa a RAM das mídias antigas antes de carregar novas
+        cleanupPrefetchesRef.current.forEach(free => free());
+        cleanupPrefetchesRef.current = [];
+
+        console.log(`🎬 [Preview] Pré-carregando ${urls.length} mídia(s)...`);
+        if (isMounted) setIsPrefetching(true);
+
+        urls.forEach(url => {
+          try {
+            // Nota: Se o seu app usar mídias 100% locais do HD muito pesadas, 
+            // você pode até remover esse prefetch e deixar o <video> nativo do Chrome gerenciar o buffer.
+            const { free } = prefetch(url, { method: 'blob-url' });
+            cleanupPrefetchesRef.current.push(free);
+          } catch (_) {}
+        });
+
+        if (isMounted) setIsPrefetching(false);
+      } catch (err) {
+        if (isMounted) setIsPrefetching(false);
+      }
+    };
+
+    doPrefetch();
+
+    // 3. Limpeza real apenas quando o player for totalmente desmontado
+    return () => {
+      isMounted = false;
+      cleanupPrefetchesRef.current.forEach(free => free());
+      cleanupPrefetchesRef.current = [];
+    };
+  }, [mediaUrlsString]); // <--- A MÁGICA ESTÁ AQUI: só re-executa se adicionar/remover um clipe
 
   if (isLoading) {
     return (
