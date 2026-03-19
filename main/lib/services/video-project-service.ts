@@ -494,6 +494,19 @@ export class VideoProjectService extends EventEmitter {
 
                         console.log(`📦 Range request: ${path.basename(filePath)} bytes ${start}-${end}/${fileSize}`);
                         const file = fs.createReadStream(filePath, { start, end });
+
+                        // 1. Tratar erro na stream para evitar que o processo morra
+                        file.on('error', (err) => {
+                            console.error(`❌ Stream error on ${path.basename(filePath)}:`, err);
+                            if (!res.headersSent) res.writeHead(500);
+                            res.end();
+                        });
+
+                        // 2. IMPORTANTE: Fechar a stream se o cliente (Remotion/Chrome) fechar a conexão
+                        res.on('close', () => {
+                            file.destroy(); // Garante que o descritor de arquivo seja liberado imediatamente
+                        });
+
                         file.pipe(res);
                     } else {
                         // Full content
@@ -503,7 +516,21 @@ export class VideoProjectService extends EventEmitter {
                             'Accept-Ranges': 'bytes',
                         });
                         console.log(`✅ Servindo: ${path.basename(filePath)} (${fileSize} bytes)`);
-                        fs.createReadStream(filePath).pipe(res);
+                        const file = fs.createReadStream(filePath);
+
+                        // 1. Tratar erro na stream para evitar que o processo morra
+                        file.on('error', (err) => {
+                            console.error(`❌ Stream error on ${path.basename(filePath)}:`, err);
+                            if (!res.headersSent) res.writeHead(500);
+                            res.end();
+                        });
+
+                        // 2. IMPORTANTE: Fechar a stream se o cliente (Remotion/Chrome) fechar a conexão
+                        res.on('close', () => {
+                            file.destroy(); // Garante que o descritor de arquivo seja liberado imediatamente
+                        });
+
+                        file.pipe(res);
                     }
                 } else {
                     console.warn(`⚠️ Asset not found: ${filePath}`);

@@ -452,12 +452,16 @@ export class VideoService extends EventEmitter {
         onProgress,
         // Aceleração por GPU (NVENC para NVIDIA, VideoToolbox para Mac, etc)
         hardwareAcceleration: hwAccel,
+        // Adicione ou reduza a concorrência (padrão é metade dos núcleos da CPU)
+        // Tente um valor baixo (ex: 2 ou 4) para ver se o erro EMFILE desaparece
+        concurrency: 4,
         // Habilitar GPU do Chromium para renderização (WebGL, sombras, etc)
         chromiumOptions: {
           gl: 'angle', // Recomendado para Windows
+          disableWebSecurity: true,
         },
         // Aumentar timeout para vídeos grandes ou primeira carga
-        timeoutInMilliseconds: 180000, // 3 minutos (antes: 90s não foi suficiente)
+        timeoutInMilliseconds: 300000, // 5 minutos (antes: 90s não foi suficiente)
       });
 
       const durationMs = Date.now() - startTime;
