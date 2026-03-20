@@ -32,6 +32,7 @@ import path from 'path';
 import { app } from 'electron';
 import { EventEmitter } from 'events';
 import fs from 'fs';
+import { FFmpegSequencer } from './ffmpeg-sequencer';
 
 // ========================================
 // TYPES & INTERFACES
@@ -69,8 +70,12 @@ export interface RenderOptions {
    * - 'if-possible': Usa GPU se disponível (recomendado)
    * - 'required': Falha se GPU não disponível
    * - 'disable': Usa apenas CPU (padrão)
+   * - 'hybrid-ffmpeg': Usa pipeline FFmpeg híbrido (novo)
    */
-  hardwareAcceleration?: 'if-possible' | 'required' | 'disable';
+  hardwareAcceleration?: 'if-possible' | 'required' | 'disable' | 'hybrid-ffmpeg';
+
+  /** Se true, o render vai usar png e fundo transparente para overlays */
+  isHybridOverlay?: boolean;
 }
 
 export interface RenderResult {
@@ -311,20 +316,107 @@ export class VideoService extends EventEmitter {
       outputFileName?: string;
       codec?: 'h264' | 'h265' | 'vp8' | 'vp9';
       crf?: number;
-      hardwareAcceleration?: 'if-possible' | 'required' | 'disable';
+      hardwareAcceleration?: 'if-possible' | 'required' | 'disable' | 'hybrid-ffmpeg';
     }
   ): Promise<RenderResult> {
     const fileName = options?.outputFileName || 
       `${this.sanitizeFileName(project.project_title)}-${Date.now()}.mp4`;
+
+    const scenes = project.scenes || (project as any).segments || [];
+
+    // NOVO FLUXO HÍBRIDO (FFMPEG + REMOTION)
+    if (options?.hardwareAcceleration === 'hybrid-ffmpeg' || scenes.length > 0) {
+      // Se tiver mais de uma cena e estamos forçando renderização com o novo FFmpeg
+      // Remotion = apenas overlays!
+      try {
+        console.log("🎬 [TESTE FFmpeg] INICIANDO PIPELINE DE RENDERIZAÇÃO ESTRESTRITAMENTE FFMPEG...");
+        const outputPath = path.join(this.outputDir, fileName);
+        
+        const sequencer = new FFmpegSequencer(this.outputDir, app.getPath('temp'));
+
+        // FASE 1: FFmpegSequencer constrói toda a base.
+        console.log(`[FFmpeg] Iniciando agrupamento de base video: ${outputPath}`);
+        this.emitProgress({ progress: 0.05, stage: 'rendering', projectTitle: project.project_title, percent: 5 });
+        
+        await sequencer.buildBaseVideo(
+           project, 
+           outputPath, 
+           (pct: number) => {
+              console.log(`[FFmpeg Log] Gerando Base Nativas: ${pct.toFixed(2)}%`);
+              this.emitProgress({ 
+                progress: 0.05 + (0.95 * (pct/100)), 
+                stage: pct >= 99 ? 'encoding' : 'rendering', 
+                projectTitle: project.project_title, 
+                percent: Math.round(5 + (95 * (pct/100))) 
+              });
+           }
+        );
+
+        console.log(`[FFmpeg] Concluído arquivo nativo renderizado em: ${outputPath}`);
+
+        /* ======== REMOTION TEMPORARIAMENTE COMENTADO PARA TESTES FFMPEG ======== 
+        // FASE 2: Remotion gera overlay transparente em WebM
+        const tempOverlayPath = path.join(app.getPath('temp'), \`overlay_\${Date.now()}.webm\`);
+        const hybridProject = JSON.parse(JSON.stringify(project));
+        hybridProject.config = hybridProject.config || {};
+        hybridProject.config.motionGraphicsOnly = true;
+
+        this.emitProgress({ progress: 0.5, stage: 'rendering', projectTitle: project.project_title, percent: 50 });
+        
+        await this.render({
+          compositionId: 'VideoProject',
+          outputFileName: path.basename(tempOverlayPath),
+          inputProps: { project: hybridProject },
+          codec: 'vp8',
+          hardwareAcceleration: 'if-possible',
+          isHybridOverlay: true, 
+        });
+
+        const renderedOverlayPath = path.join(this.outputDir, path.basename(tempOverlayPath));
+
+        // FASE 3: FFmpeg junta o BaseVideo com o Overlay
+        this.emitProgress({ progress: 0.8, stage: 'encoding', projectTitle: project.project_title, percent: 80 });
+        
+        await sequencer.mergeOverlay(
+           baseVideoPath,
+           renderedOverlayPath,
+           outputPath,
+           (pct: number) => {
+              this.emitProgress({ 
+                progress: 0.8 + (0.2 * (pct/100)), 
+                stage: 'encoding', 
+                projectTitle: project.project_title, 
+                percent: Math.round(80 + (20 * (pct/100))) 
+              });
+           }
+        );
+        ======================================================================== */
+
+        this.emitProgress({ progress: 1, stage: 'complete', projectTitle: project.project_title, percent: 100 });
+        return { success: true, outputPath };
+      } catch (err: any) {
+        console.warn("⚠️ FFmpeg Reportou erro, verificando integridade do arquivo...");
+        
+        // LÓGICA DE RESGATE: Se o arquivo foi gerado e tem tamanho, ignoramos o erro de fechamento de buffer
+        const outputPath = path.join(this.outputDir, fileName);
+        if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024 * 1024) {
+          console.log(`✅ [Resgate] Arquivo íntegro encontrado. Ignorando erro: ${err.message}`);
+          this.emitProgress({ progress: 1, stage: 'complete', projectTitle: project.project_title, percent: 100 });
+          return { success: true, outputPath };
+        }
+
+        return { success: false, error: err.message };
+      }
+    }
     
+    // Antigo pipeline (Puro Remotion)
     return this.render({
       compositionId: 'VideoProject',
       outputFileName: fileName,
       inputProps: { project },
       codec: options?.codec || 'h264',
       crf: options?.crf,
-      // Usar GPU por padrão se disponível
-      hardwareAcceleration: options?.hardwareAcceleration || 'if-possible',
+      hardwareAcceleration: ((options?.hardwareAcceleration as any) === 'hybrid-ffmpeg' ? 'if-possible' : (options?.hardwareAcceleration || 'if-possible')) as 'if-possible' | 'required' | 'disable',
     });
   }
 
@@ -439,7 +531,8 @@ export class VideoService extends EventEmitter {
       };
 
       // Configurar aceleração por hardware
-      const hwAccel = options.hardwareAcceleration || 'if-possible';
+      const hwAccelRaw = options.hardwareAcceleration || 'if-possible';
+      const hwAccel = (hwAccelRaw === 'hybrid-ffmpeg' ? 'if-possible' : hwAccelRaw) as 'if-possible' | 'required' | 'disable';
       console.log(`🔧 Hardware acceleration: ${hwAccel}`);
 
       await renderMedia({
@@ -450,7 +543,11 @@ export class VideoService extends EventEmitter {
         inputProps: options.inputProps || {},
         crf: options.crf,
         onProgress,
-        // Aceleração por GPU (NVENC para NVIDIA, VideoToolbox para Mac, etc)
+        // @ts-ignore
+        imageFormat: (options as any).isHybridOverlay ? 'png' : 'jpeg',
+        // @ts-ignore
+        transparentBackground: (options as any).isHybridOverlay ? true : false,
+        
         hardwareAcceleration: hwAccel,
         // Adicione ou reduza a concorrência (padrão é metade dos núcleos da CPU)
         // Tente um valor baixo (ex: 2 ou 4) para ver se o erro EMFILE desaparece

@@ -45,3 +45,34 @@ export interface ProjectState extends VideoProject {
   audioFile?: File; // Específico do frontend (objeto File do browser)
   audioUrl?: string;
 }
+
+// ========================================
+// HÍBRIDO (FFMPEG + REMOTION OVERLAYS)
+// ========================================
+
+/** 
+ * Representa um clipe de vídeo/imagem longo processado pelo FFmpeg nativamente.
+ * Contém dados essenciais de renderização (transições, effects...).
+ */
+export interface NativeVideoClip {
+  id: number | string;
+  sourceUrl: string;
+  startTime: number;
+  endTime: number;
+  cameraMovement?: string;
+  transition?: string;
+  transitionDuration?: number;
+}
+
+/** 
+ * Representa os gráficos, textos, e overlays que serão renderizados pelo 
+ * Remotion com fundo transparente (Alpha Channel / WebM).
+ */
+export interface RemotionOverlayClip {
+  id: number | string;
+  startTime: number;
+  endTime: number;
+  textOverlay?: any;
+  highlightWords?: any[];
+  animatedSvg?: any;
+}

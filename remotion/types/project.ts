@@ -411,6 +411,32 @@ export const SceneSchema = z.object({
 export type Scene = z.infer<typeof SceneSchema>;
 
 // ========================================
+// REFACTOR HÍBRIDO FFMPEG / REMOTION (Phase 3)
+// ========================================
+
+export const NativeVideoClipSchema = z.object({
+  id: z.number().or(z.string()),
+  sourceUrl: z.string(),
+  startTime: z.number(),
+  endTime: z.number(),
+  cameraMovement: CameraMovementSchema.optional(),
+  transition: TransitionSchema.optional(),
+  transitionDuration: z.number().optional(),
+});
+
+export type NativeVideoClip = z.infer<typeof NativeVideoClipSchema>;
+
+export const RemotionOverlayClipSchema = z.object({
+  id: z.number().or(z.string()),
+  startTime: z.number(),
+  endTime: z.number(),
+  textOverlay: TextOverlaySchema.optional(),
+  highlightWords: z.array(HighlightWordSchema).optional(),
+});
+
+export type RemotionOverlayClip = z.infer<typeof RemotionOverlayClipSchema>;
+
+// ========================================
 // SVG ANIMATIONS (Palavras → SVGs)
 // ========================================
 
@@ -473,6 +499,9 @@ export const ProjectConfigSchema = z.object({
 
   /** Se true, acelera/desacelera vídeos para caber na duração da cena (padrão: true) */
   fitVideoToScene: z.boolean().optional(),
+  
+  /** Apenas para renderização Híbrida/Preview: renderizar apenas overlays/textos com fundo transparente */
+  motionGraphicsOnly: z.boolean().optional(),
 });
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

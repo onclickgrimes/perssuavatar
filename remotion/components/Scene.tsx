@@ -55,11 +55,13 @@ export const Scene: React.FC<SceneProps> = ({
   if (scene.camera_movement === 'trail_printing') {
     return (
       <AbsoluteFill>
-        <TrailPrintingEffect
-          scene={scene}
-          relativeFrame={relativeFrame}
-          sceneDurationFrames={sceneDurationFrames}
-        />
+        {!projectConfig.motionGraphicsOnly && (
+          <TrailPrintingEffect
+            scene={scene}
+            relativeFrame={relativeFrame}
+            sceneDurationFrames={sceneDurationFrames}
+          />
+        )}
         
         {/* Overlay de texto */}
         {scene.text_overlay && (
@@ -108,14 +110,18 @@ export const Scene: React.FC<SceneProps> = ({
           style={{
             width: '100%',
             height: '100%',
-            ...cameraEffect,
+            ...(!projectConfig.motionGraphicsOnly ? cameraEffect : {}),
           }}
         >
-          {/* Renderiza o background se existir */}
-          {scene.background && <BackgroundRenderer scene={scene} />}
-          
-          {/* Renderiza o asset baseado no tipo */}
-          <AssetRenderer scene={scene} sceneDurationFrames={sceneDurationFrames} fps={fps} />
+          {!projectConfig.motionGraphicsOnly && (
+             <>
+               {/* Renderiza o background se existir */}
+               {scene.background && <BackgroundRenderer scene={scene} />}
+               
+               {/* Renderiza o asset baseado no tipo */}
+               <AssetRenderer scene={scene} sceneDurationFrames={sceneDurationFrames} fps={fps} />
+             </>
+          )}
         </div>
       </div>
       

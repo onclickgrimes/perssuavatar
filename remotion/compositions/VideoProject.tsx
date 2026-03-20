@@ -43,7 +43,11 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
   
   // Configurações do projeto com tipo correto
   const config: Partial<ProjectConfig> = project.config || {};
-  const backgroundColor = config.backgroundColor || '#000000';
+  let backgroundColor = config.backgroundColor || '#000000';
+  
+  if (config.motionGraphicsOnly) {
+    backgroundColor = 'transparent';
+  }
   
   // Garantir que as cenas estejam ordenadas por track (camada) e depois por tempo.
   // Isso é crucial para que o z-index (ordem de renderização) no Remotion funcione:
@@ -138,8 +142,8 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
           );
         })}
         
-        {/* Áudio de fundo (música) */}
-        {config.backgroundMusic?.src && (
+        {/* Áudio de fundo (música) - Não renderiza no modo motionGraphicsOnly */}
+        {!config.motionGraphicsOnly && config.backgroundMusic?.src && (
           <Audio
             src={config.backgroundMusic.src}
             volume={config.backgroundMusic.volume ?? 0.3}
