@@ -19,6 +19,14 @@ const handler = {
   // Window Control
   setIgnoreMouseEvents: (ignore: boolean, options?: { forward: boolean }) => 
     ipcRenderer.send('set-ignore-mouse-events', ignore, options),
+  windowControls: {
+    minimize: () => ipcRenderer.invoke('window:minimize'),
+    maximize: () => ipcRenderer.invoke('window:maximize'),
+    unmaximize: () => ipcRenderer.invoke('window:unmaximize'),
+    toggleMaximize: () => ipcRenderer.invoke('window:toggle-maximize'),
+    isMaximized: () => ipcRenderer.invoke('window:is-maximized'),
+    close: () => ipcRenderer.invoke('window:close'),
+  },
 
   // Events
   onTranscription: (callback: (text: string) => void) => {

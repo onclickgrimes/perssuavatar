@@ -624,7 +624,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   // Preview: tela cheia, sem header nem background
   if (currentStep === 'preview') {
     return (
-      <div className="h-screen w-screen overflow-hidden">
+      <div className="h-full w-full overflow-hidden">
         <PreviewStep
           project={project}
           subtitleMode={subtitleMode}

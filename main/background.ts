@@ -526,6 +526,55 @@ ipcMain.on('move-window', (event, x, y) => {
   }
 });
 
+// Generic window controls (usable by any frameless renderer window)
+ipcMain.handle('window:minimize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return false;
+  win.minimize();
+  return true;
+});
+
+ipcMain.handle('window:maximize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return false;
+  if (!win.isMaximized()) {
+    win.maximize();
+  }
+  return win.isMaximized();
+});
+
+ipcMain.handle('window:unmaximize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return false;
+  if (win.isMaximized()) {
+    win.unmaximize();
+  }
+  return win.isMaximized();
+});
+
+ipcMain.handle('window:toggle-maximize', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return false;
+  if (win.isMaximized()) {
+    win.unmaximize();
+  } else {
+    win.maximize();
+  }
+  return win.isMaximized();
+});
+
+ipcMain.handle('window:is-maximized', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return win ? win.isMaximized() : false;
+});
+
+ipcMain.handle('window:close', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  if (!win) return false;
+  win.close();
+  return true;
+});
+
 // Always on top toggle
 ipcMain.on('set-always-on-top', (event, enabled: boolean) => {
   const win = BrowserWindow.fromWebContents(event.sender);
@@ -1005,7 +1054,7 @@ async function openVideoStudioWindow() {
     height: Math.min(900, screenHeight - 100),
     minWidth: 1000,
     minHeight: 700,
-    frame: true,
+    frame: false,
     transparent: false,
     resizable: true,
     webPreferences: {

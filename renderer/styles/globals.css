@@ -168,3 +168,18 @@ body {
   background: #4d505f; 
 }
 
+/* Video Studio Global Scrollbar */
+.video-studio-scrollbar::-webkit-scrollbar { 
+  height: 12px;
+  width: 12px;
+}
+.video-studio-scrollbar::-webkit-scrollbar-track { 
+  background: #14151a; 
+}
+.video-studio-scrollbar::-webkit-scrollbar-thumb { 
+  background: #383a45; 
+  border-radius: 4px; 
+}
+.video-studio-scrollbar::-webkit-scrollbar-thumb:hover { 
+  background: #4d505f; 
+}

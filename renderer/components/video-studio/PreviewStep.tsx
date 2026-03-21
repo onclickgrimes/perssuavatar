@@ -14,7 +14,6 @@ import {
   formatTimecode,
 } from './preview-step/constants';
 
-import { TopBar } from './preview-step/TopBar';
 import { PlayerArea } from './preview-step/PlayerArea';
 import { Sidebar } from './preview-step/Sidebar';
 import { TimelineToolbar } from './preview-step/TimelineToolbar';
@@ -203,16 +202,16 @@ export function PreviewStep({
     handleSegmentsChange(updated);
   }, [project.segments, onSegmentsUpdate, handleSegmentsChange]);
 
-  const handleBackClick = () => {
+  const handleBackClick = useCallback(() => {
     if (hasUnsavedChanges) {
       if (!window.confirm("Você tem alterações não salvas. Tem certeza que deseja voltar? As alterações podem ser perdidas.")) {
         return;
       }
     }
     onBack();
-  };
+  }, [hasUnsavedChanges, onBack]);
 
-  const handleSaveClick = async () => {
+  const handleSaveClick = useCallback(async () => {
     if (onSave) {
       setIsSaving(true);
       try {
@@ -222,7 +221,54 @@ export function PreviewStep({
         setIsSaving(false);
       }
     }
-  };
+  }, [onSave]);
+
+  const toolbarBackRef = useRef<() => void>(() => {});
+  const toolbarSaveRef = useRef<(() => void | Promise<void>) | undefined>(undefined);
+  const toolbarExportRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    toolbarBackRef.current = handleBackClick;
+    toolbarSaveRef.current = onSave ? handleSaveClick : undefined;
+    toolbarExportRef.current = onContinue;
+  }, [handleBackClick, handleSaveClick, onContinue, onSave]);
+
+  const stableToolbarBack = useCallback(() => {
+    toolbarBackRef.current();
+  }, []);
+
+  const stableToolbarSave = useCallback(() => {
+    return toolbarSaveRef.current?.();
+  }, []);
+
+  const stableToolbarExport = useCallback(() => {
+    toolbarExportRef.current();
+  }, []);
+
+  const canSave = Boolean(onSave);
+
+  // Publica ações do preview para a barra de janela da página.
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('video-studio:preview-toolbar', {
+        detail: {
+          onBack: stableToolbarBack,
+          onSave: canSave ? stableToolbarSave : undefined,
+          onExport: stableToolbarExport,
+          canSave,
+          isSaving,
+        },
+      })
+    );
+
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent('video-studio:preview-toolbar', {
+          detail: null,
+        })
+      );
+    };
+  }, [stableToolbarBack, stableToolbarSave, stableToolbarExport, canSave, isSaving]);
 
   // ========================================
   // ESTADOS DA TIMELINE
@@ -722,16 +768,8 @@ export function PreviewStep({
 
   return (
     <div 
-      className="flex flex-col w-full h-screen overflow-hidden bg-filmora-bg text-filmora-text font-sans" 
+      className="flex flex-col w-full h-full overflow-hidden bg-filmora-bg text-filmora-text font-sans"
     >
-      <TopBar
-        onBackClick={handleBackClick}
-        onSaveClick={handleSaveClick}
-        onContinue={onContinue}
-        onSave={onSave}
-        isSaving={isSaving}
-      />
-
       {/* Container principal com fundo escuro para criar os "espaços" entre os painéis */}
       <div className={`flex flex-1 min-h-0 overflow-hidden bg-[#0d0d0d] p-px ${isVerticalLayout ? 'flex-row' : 'flex-col'}`}>
         {isVerticalLayout ? (
