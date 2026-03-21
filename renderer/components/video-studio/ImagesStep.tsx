@@ -492,7 +492,8 @@ export function ImagesStep({
     // Se modo Ingredients está ativo (e não trocou serviço), forçar veo3
     if (ingredientMode[segment.id] === 'ingredients') return 'veo3';
     if (segment.assetType === 'video_vo3') return 'veo3';
-    return 'veo2-flow'; // padrão
+    // return 'veo2-flow'; // Veo 2 não está mais disponível no submenu do Flow
+    return 'veo3'; // padrão
   };
 
   // Handler para gerar mídia com IA
@@ -507,9 +508,14 @@ export function ImagesStep({
     let success = false;
 
     try {
-      // Se já existe uma imagem (não vídeo), usa como referência
+      // Usa a imagem atual como referência ou, se o segmento já virou vídeo, a imagem-base preservada
       const isExistingVideo = isVideo(segment.imageUrl);
-      const referenceImagePath = (segment.imageUrl && !isExistingVideo) ? segment.imageUrl : undefined;
+      const preservedSourceImage = (segment.sourceImageUrl && !isVideo(segment.sourceImageUrl))
+        ? segment.sourceImageUrl
+        : undefined;
+      const referenceImagePath = (segment.imageUrl && !isExistingVideo)
+        ? segment.imageUrl
+        : preservedSourceImage;
       const finalImagePath = finalImages[segmentId];
 
       // ── VEO 2 FLOW (Google Flow via Puppeteer, modelo Veo 2 - Fast) ──
@@ -925,7 +931,7 @@ export function ImagesStep({
     if (svc === 'veo3-api') return '🚀 Gerar com Veo 3.1';
     if (svc === 'veo3-fast-api') return '⚡ Gerar com Veo 3.1 Fast';
     if (svc === 'veo3') return '🌊 Gerar com Veo 3';
-    if (svc === 'veo2-flow') return '🌊 Gerar com Veo 2 Flow';
+    // if (svc === 'veo2-flow') return '🌊 Gerar com Veo 2 Flow';
     if (svc === 'flow-image') return '🖼️ Imagem com Flow';
     return '🌊 Gerar com Veo 2';
   };
@@ -1389,10 +1395,24 @@ export function ImagesStep({
 
                   // 2. VÍDEO PRONTO
                   if (isVideo(segment.imageUrl)) {
+                     const hasReusableSource = !!segment.sourceImageUrl && !isVideo(segment.sourceImageUrl);
                      return (
                        <>
                         <SmartVideoPreview src={getMediaSrc(segment.imageUrl)} />
+                        {hasReusableSource && (
+                          <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded backdrop-blur-sm z-20 pointer-events-none">
+                            🖼️ Imagem base salva
+                          </div>
+                        )}
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-10">
+                          {hasReusableSource && (
+                            <button
+                              onClick={() => onUpdateImage(segment.id, segment.sourceImageUrl!)}
+                              className="px-3 py-2 bg-cyan-500/80 hover:bg-cyan-500 text-white rounded-lg text-sm transition-all"
+                            >
+                              🖼️ Reusar imagem
+                            </button>
+                          )}
                           <button
                             onClick={() => handleRemoveImage(segment.id)}
                             className="px-3 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg text-sm transition-all"
@@ -1528,21 +1548,20 @@ export function ImagesStep({
                     className={`flex-1 py-2 px-3 rounded-l-lg text-sm transition-all ${
                       isGenerating
                         ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                        : effectiveService === 'veo3'
-                          ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300'
-                          : effectiveService === 'grok'
-                            ? 'bg-zinc-500/20 hover:bg-zinc-500/30 text-zinc-300'
-                            : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
+                        : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
                     }`}
                   >
                     {getGenerateLabel(segment, isGenerating, effectiveService)}
+                    {!isGenerating && (
+                      <span className="text-[10px] opacity-60 ml-1 font-normal">
+                        ({GENERATION_SERVICES.find(s => s.id === effectiveService)?.label || effectiveService})
+                      </span>
+                    )}
                   </button>
 
                   {/* Separador | */}
                   <div className={`self-stretch w-px opacity-40 ${
-                    isGenerating ? 'bg-white/20' :
-                    effectiveService === 'veo3' ? 'bg-cyan-400' :
-                    effectiveService === 'grok' ? 'bg-zinc-400' : 'bg-orange-400'
+                    isGenerating ? 'bg-white/20' : 'bg-orange-400'
                   }`} />
 
                   {/* Botão: ✕ para cancelar se travado, ▼ para dropdown quando ocioso */}
@@ -1562,11 +1581,9 @@ export function ImagesStep({
                       <button
                         onClick={() => setOpenDropdown(openDropdown === segment.id ? null : segment.id)}
                         className={`px-2 py-2 rounded-r-lg text-sm transition-all ${
-                          effectiveService === 'veo3'
-                            ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300'
-                            : effectiveService === 'grok'
-                              ? 'bg-zinc-500/20 hover:bg-zinc-500/30 text-zinc-300'
-                              : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
+                          isGenerating
+                            ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                            : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
                         }`}
                       >
                         <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">

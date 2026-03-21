@@ -379,9 +379,10 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         
         // Determinar assetType baseado no conteúdo
         let assetType = seg.assetType;
+        const isVideoFile = !!imageUrl && ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']
+          .some(ext => imageUrl.toLowerCase().endsWith(ext));
+
         if (imageUrl) {
-          const isVideoFile = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']
-            .some(ext => imageUrl.toLowerCase().endsWith(ext));
           // Se o arquivo é imagem (não vídeo), sempre marcar como image_static
           // Isso evita que imagens do flow-image fiquem com assetType de vídeo
           if (!isVideoFile) {
@@ -390,10 +391,24 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         }
         
         const newSeg: any = { ...seg, imageUrl, assetType };
+
+        // Preserva a imagem-base quando o segmento vira vídeo para permitir reutilização
+        if (!imageUrl) {
+          delete newSeg.sourceImageUrl;
+        } else if (isVideoFile) {
+          const currentImageIsVideo = !!seg.imageUrl && ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']
+            .some(ext => seg.imageUrl.toLowerCase().endsWith(ext));
+          const fallbackSource = !currentImageIsVideo ? seg.imageUrl : undefined;
+          newSeg.sourceImageUrl = seg.sourceImageUrl || fallbackSource;
+        } else {
+          // Sempre que houver imagem estática ativa, ela vira a nova base de referência
+          newSeg.sourceImageUrl = imageUrl;
+        }
+
         if (duration !== undefined) {
           newSeg.asset_duration = duration;
-        } else if (!imageUrl) {
-          // Se removeu a imagem, remove a duração também
+        } else if (!imageUrl || !isVideoFile) {
+          // Se removeu ou voltou para imagem estática, remove duração do vídeo
           delete newSeg.asset_duration;
         }
         

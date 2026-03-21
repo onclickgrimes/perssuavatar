@@ -38,7 +38,7 @@ const getAssetTypeInfo = (assetType: string) => {
   }
   return {
     label: assetType || 'Desconhecido',
-    color: 'bg-white/10 text-white/60',
+    color: 'bg-zinc-800 text-zinc-100',
     icon: '❓',
   };
 };
@@ -173,7 +173,7 @@ export function PromptsStep({
         </div>
       )}
 
-      <div className="space-y-4">
+      <div className="space-y-4 prompts-scenes-scrollbar">
         {segments.map((segment) => {
           const assetInfo = getAssetTypeInfo(segment.assetType || 'image_flux');
           
@@ -211,7 +211,7 @@ export function PromptsStep({
                        }
                     }}
                     disabled={!onSegmentsUpdate}
-                    className={`appearance-none px-2 py-1 pr-6 ${assetInfo.color} rounded text-xs flex items-center gap-1 cursor-pointer focus:outline-none focus:ring-1 focus:ring-white/50`}
+                    className={`appearance-none px-2 py-1 pr-8 ${assetInfo.color} bg-black/40 border border-white/10 rounded-lg text-xs font-semibold flex items-center gap-1 cursor-pointer focus:outline-none focus:ring-2 focus:ring-pink-500/50 transition-all hover:bg-black/60 host:border-white/20`}
                   >
                     {(niche?.asset_types && niche.asset_types.length > 0 
                         ? niche.asset_types 

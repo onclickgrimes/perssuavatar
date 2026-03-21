@@ -183,3 +183,28 @@ body {
 .video-studio-scrollbar::-webkit-scrollbar-thumb:hover { 
   background: #4d505f; 
 }
+
+/* Scrollbar específica para a lista de cenas no PromptsStep */
+.prompts-scenes-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.prompts-scenes-scrollbar::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 10px;
+}
+
+.prompts-scenes-scrollbar::-webkit-scrollbar-thumb {
+  background: #1f193a;
+  border-radius: 10px;
+}
+
+.prompts-scenes-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: #2a2254;
+}
+
+/* Firefox */
+.prompts-scenes-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #1f193a rgba(255, 255, 255, 0.02);
+}

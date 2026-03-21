@@ -101,6 +101,8 @@ export interface VideoSegment {
   
   // Media
   imageUrl?: string;
+  /** Preserva a última imagem estática válida para poder reutilizar após gerar vídeo */
+  sourceImageUrl?: string;
   asset_url?: string;
   /** Duração real do asset de vídeo em segundos (para cálculo de playbackRate) */
   asset_duration?: number;
@@ -145,7 +147,7 @@ export interface VideoProject {
 const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'id', 'text', 'start', 'end', 'speaker', 'words',
   'emotion', 'imagePrompt', 'assetType', 'cameraMovement', 'transition', 'track',
-  'imageUrl', 'asset_url', 'asset_duration',
+  'imageUrl', 'sourceImageUrl', 'asset_url', 'asset_duration',
   'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio',
 ];
 

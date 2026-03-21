@@ -45,6 +45,7 @@ export interface VideoProjectSegment {
     emotion?: string;
     imagePrompt?: string;
     imageUrl?: string;
+    sourceImageUrl?: string;
     assetType?: string;
     cameraMovement?: string;
     transition?: string;
@@ -1414,6 +1415,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 emotion: segment.emotion,
                 imagePrompt: segment.imagePrompt,
                 imageUrl: segment.imageUrl,
+                sourceImageUrl: segment.sourceImageUrl,
                 asset_url: segment.asset_url,
                 chroma_key: segment.chroma_key,
                 background: segment.background,
