@@ -121,6 +121,7 @@ export interface VideoProjectInput {
     backgroundColor?: string;
     backgroundMusic?: {
       src: string;
+      src_local?: string;
       volume?: number;
     };
   };
@@ -137,6 +138,8 @@ export interface VideoProjectInput {
     };
     asset_type: string;
     asset_url?: string;
+    /** Caminho local bruto do asset (quando disponível), usado para evitar HTTP local no FFmpeg */
+    asset_local_path?: string;
     prompt_suggestion?: string;
     camera_movement?: string;
     transition?: string;
@@ -161,6 +164,9 @@ export interface VideoProjectInput {
 export class VideoService extends EventEmitter {
   private entryPoint: string;
   private outputDir: string;
+  private fallbackOutputDir: string;
+  private videosLibraryOutputDir: string;
+  private activeOutputDir: string;
   private bundleDir: string;
   private rootDir: string;
   private cachedBundlePath: string | null = null;
@@ -180,20 +186,23 @@ export class VideoService extends EventEmitter {
     
     // Diretório de saída dos vídeos
     this.outputDir = path.resolve(app.getPath('userData'), 'generated-videos');
+    this.fallbackOutputDir = path.resolve(process.cwd(), 'rendered-videos');
+    this.videosLibraryOutputDir = path.resolve(app.getPath('videos'), 'my-nextron-generated-videos');
+    this.activeOutputDir = this.outputDir;
     
     console.log('🎬 VideoService initialized');
     console.log('📂 Root dir:', this.rootDir);
     console.log('📂 Entry point:', this.entryPoint);
     console.log('📂 Bundle dir:', this.bundleDir);
     console.log('📂 Output dir:', this.outputDir);
+    console.log('📂 Fallback output dir:', this.fallbackOutputDir);
+    console.log('📂 Videos library output dir:', this.videosLibraryOutputDir);
     
     // Criar diretórios se não existirem
-    if (!fs.existsSync(this.outputDir)) {
-      fs.mkdirSync(this.outputDir, { recursive: true });
-    }
-    if (!fs.existsSync(this.bundleDir)) {
-      fs.mkdirSync(this.bundleDir, { recursive: true });
-    }
+    this.ensureDirectoryExists(this.outputDir);
+    this.ensureDirectoryExists(this.bundleDir);
+    this.ensureDirectoryExists(this.fallbackOutputDir);
+    this.ensureDirectoryExists(this.videosLibraryOutputDir);
   }
 
   /**
@@ -323,101 +332,73 @@ export class VideoService extends EventEmitter {
       `${this.sanitizeFileName(project.project_title)}-${Date.now()}.mp4`;
 
     const scenes = project.scenes || (project as any).segments || [];
+    let outputPath = '';
 
-    // NOVO FLUXO HÍBRIDO (FFMPEG + REMOTION)
-    if (options?.hardwareAcceleration === 'hybrid-ffmpeg' || scenes.length > 0) {
-      // Se tiver mais de uma cena e estamos forçando renderização com o novo FFmpeg
-      // Remotion = apenas overlays!
-      try {
-        console.log("🎬 [TESTE FFmpeg] INICIANDO PIPELINE DE RENDERIZAÇÃO ESTRESTRITAMENTE FFMPEG...");
-        const outputPath = path.join(this.outputDir, fileName);
-        
-        const sequencer = new FFmpegSequencer(this.outputDir, app.getPath('temp'));
+    if (scenes.length === 0) {
+      return { success: false, error: 'Projeto sem cenas para renderizar.' };
+    }
 
-        // FASE 1: FFmpegSequencer constrói toda a base.
-        console.log(`[FFmpeg] Iniciando agrupamento de base video: ${outputPath}`);
-        this.emitProgress({ progress: 0.05, stage: 'rendering', projectTitle: project.project_title, percent: 5 });
-        
-        await sequencer.buildBaseVideo(
-           project, 
-           outputPath, 
-           (pct: number) => {
-              console.log(`[FFmpeg Log] Gerando Base Nativas: ${pct.toFixed(2)}%`);
-              this.emitProgress({ 
-                progress: 0.05 + (0.95 * (pct/100)), 
-                stage: pct >= 99 ? 'encoding' : 'rendering', 
-                projectTitle: project.project_title, 
-                percent: Math.round(5 + (95 * (pct/100))) 
-              });
-           }
-        );
+    try {
+      console.log('🎬 [FFmpeg] INICIANDO PIPELINE DE RENDERIZAÇÃO (SEM REMOTION)...');
+      outputPath = this.resolveOutputPath(
+        fileName,
+        this.estimateProjectOutputSizeBytes(project),
+      );
 
-        console.log(`[FFmpeg] Concluído arquivo nativo renderizado em: ${outputPath}`);
+      const sequencer = new FFmpegSequencer(path.dirname(outputPath), app.getPath('temp'));
+      let lastNativeProgressPercent = -1;
 
-        /* ======== REMOTION TEMPORARIAMENTE COMENTADO PARA TESTES FFMPEG ======== 
-        // FASE 2: Remotion gera overlay transparente em WebM
-        const tempOverlayPath = path.join(app.getPath('temp'), \`overlay_\${Date.now()}.webm\`);
-        const hybridProject = JSON.parse(JSON.stringify(project));
-        hybridProject.config = hybridProject.config || {};
-        hybridProject.config.motionGraphicsOnly = true;
+      console.log(`[FFmpeg] Iniciando agrupamento de base video: ${outputPath}`);
+      this.emitProgress({ progress: 0.05, stage: 'rendering', projectTitle: project.project_title, percent: 5 });
 
-        this.emitProgress({ progress: 0.5, stage: 'rendering', projectTitle: project.project_title, percent: 50 });
-        
-        await this.render({
-          compositionId: 'VideoProject',
-          outputFileName: path.basename(tempOverlayPath),
-          inputProps: { project: hybridProject },
-          codec: 'vp8',
-          hardwareAcceleration: 'if-possible',
-          isHybridOverlay: true, 
-        });
+      await sequencer.buildBaseVideo(
+        project,
+        outputPath,
+        (pct: number) => {
+          if (!Number.isFinite(pct)) {
+            return;
+          }
 
-        const renderedOverlayPath = path.join(this.outputDir, path.basename(tempOverlayPath));
+          const boundedPct = Math.max(0, Math.min(100, pct));
+          const roundedPct = Math.round(boundedPct);
+          if (roundedPct === lastNativeProgressPercent) {
+            return;
+          }
+          lastNativeProgressPercent = roundedPct;
 
-        // FASE 3: FFmpeg junta o BaseVideo com o Overlay
-        this.emitProgress({ progress: 0.8, stage: 'encoding', projectTitle: project.project_title, percent: 80 });
-        
-        await sequencer.mergeOverlay(
-           baseVideoPath,
-           renderedOverlayPath,
-           outputPath,
-           (pct: number) => {
-              this.emitProgress({ 
-                progress: 0.8 + (0.2 * (pct/100)), 
-                stage: 'encoding', 
-                projectTitle: project.project_title, 
-                percent: Math.round(80 + (20 * (pct/100))) 
-              });
-           }
-        );
-        ======================================================================== */
+          console.log(`[FFmpeg Log] Gerando Base Nativas: ${boundedPct.toFixed(2)}%`);
+          this.emitProgress({
+            progress: 0.05 + (0.95 * (boundedPct / 100)),
+            stage: boundedPct >= 99 ? 'encoding' : 'rendering',
+            projectTitle: project.project_title,
+            percent: Math.round(5 + (95 * (boundedPct / 100))),
+          });
+        }
+      );
 
+      console.log(`[FFmpeg] Concluído arquivo nativo renderizado em: ${outputPath}`);
+      this.emitProgress({ progress: 1, stage: 'complete', projectTitle: project.project_title, percent: 100 });
+      return { success: true, outputPath };
+    } catch (err: any) {
+      console.warn('⚠️ FFmpeg reportou erro, verificando integridade do arquivo...');
+      const normalizedError = this.normalizeRenderError(err);
+      const isLikelyFalsePositive =
+        /No space left on device|ENOSPC|4294967268|Conversion failed/i.test(normalizedError);
+
+      // LÓGICA DE RESGATE: Se o arquivo foi gerado e tem tamanho, ignoramos o erro de fechamento de buffer
+      if (
+        isLikelyFalsePositive &&
+        outputPath &&
+        fs.existsSync(outputPath) &&
+        fs.statSync(outputPath).size > 1024 * 1024
+      ) {
+        console.log(`✅ [Resgate] Arquivo íntegro encontrado. Ignorando erro: ${err.message}`);
         this.emitProgress({ progress: 1, stage: 'complete', projectTitle: project.project_title, percent: 100 });
         return { success: true, outputPath };
-      } catch (err: any) {
-        console.warn("⚠️ FFmpeg Reportou erro, verificando integridade do arquivo...");
-        
-        // LÓGICA DE RESGATE: Se o arquivo foi gerado e tem tamanho, ignoramos o erro de fechamento de buffer
-        const outputPath = path.join(this.outputDir, fileName);
-        if (fs.existsSync(outputPath) && fs.statSync(outputPath).size > 1024 * 1024) {
-          console.log(`✅ [Resgate] Arquivo íntegro encontrado. Ignorando erro: ${err.message}`);
-          this.emitProgress({ progress: 1, stage: 'complete', projectTitle: project.project_title, percent: 100 });
-          return { success: true, outputPath };
-        }
-
-        return { success: false, error: err.message };
       }
+
+      return { success: false, error: normalizedError };
     }
-    
-    // Antigo pipeline (Puro Remotion)
-    return this.render({
-      compositionId: 'VideoProject',
-      outputFileName: fileName,
-      inputProps: { project },
-      codec: options?.codec || 'h264',
-      crf: options?.crf,
-      hardwareAcceleration: ((options?.hardwareAcceleration as any) === 'hybrid-ffmpeg' ? 'if-possible' : (options?.hardwareAcceleration || 'if-possible')) as 'if-possible' | 'required' | 'disable',
-    });
   }
 
   /**
@@ -499,7 +480,10 @@ export class VideoService extends EventEmitter {
       }
 
       // 3. Definir caminho de saída
-      const outputPath = path.join(this.outputDir, options.outputFileName);
+      const outputPath = this.resolveOutputPath(
+        options.outputFileName,
+        this.estimateCompositionOutputSizeBytes(composition, options.inputProps),
+      );
 
       // Remover arquivo existente se houver
       if (fs.existsSync(outputPath)) {
@@ -580,7 +564,7 @@ export class VideoService extends EventEmitter {
       console.error('❌ Erro na renderização:', error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : String(error),
+        error: this.normalizeRenderError(error),
       };
     } finally {
       this.isRendering = false;
@@ -650,7 +634,7 @@ export class VideoService extends EventEmitter {
    * Retorna o diretório onde os vídeos são salvos
    */
   public getOutputDirectory(): string {
-    return this.outputDir;
+    return this.activeOutputDir;
   }
 
   /**
@@ -665,38 +649,191 @@ export class VideoService extends EventEmitter {
    */
   public async openOutputDirectory(): Promise<void> {
     const { shell } = await import('electron');
-    shell.openPath(this.outputDir);
+    shell.openPath(this.activeOutputDir);
   }
 
   /**
    * Lista vídeos gerados
    */
   public listGeneratedVideos(): Array<{ name: string; path: string; size: number; createdAt: Date }> {
+    const videos: Array<{ name: string; path: string; size: number; createdAt: Date }> = [];
+
     try {
-      const files = fs.readdirSync(this.outputDir);
-      
-      return files
-        .filter(f => f.endsWith('.mp4') || f.endsWith('.webm') || f.endsWith('.gif'))
-        .map(name => {
-          const filePath = path.join(this.outputDir, name);
+      for (const directory of this.getOutputDirectories()) {
+        if (!fs.existsSync(directory)) {
+          continue;
+        }
+
+        const files = fs.readdirSync(directory);
+        for (const name of files) {
+          if (!name.endsWith('.mp4') && !name.endsWith('.webm') && !name.endsWith('.gif')) {
+            continue;
+          }
+
+          const filePath = path.join(directory, name);
           const stats = fs.statSync(filePath);
-          return {
+          videos.push({
             name,
             path: filePath,
             size: stats.size,
             createdAt: stats.birthtime,
-          };
-        })
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+          });
+        }
+      }
+
+      return videos.sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
     } catch (error) {
       console.error('Erro ao listar vídeos:', error);
-      return [];
+      return videos;
     }
   }
 
   // ========================================
   // PRIVATE METHODS
   // ========================================
+
+  private getOutputDirectories(): string[] {
+    const envOutputDir = process.env.VIDEO_RENDER_OUTPUT_DIR?.trim();
+    const candidates = [envOutputDir, this.outputDir, this.fallbackOutputDir, this.videosLibraryOutputDir]
+      .filter((value): value is string => Boolean(value))
+      .map(dir => path.resolve(dir));
+
+    return [...new Set(candidates)];
+  }
+
+  private ensureDirectoryExists(directory: string): boolean {
+    try {
+      if (!fs.existsSync(directory)) {
+        fs.mkdirSync(directory, { recursive: true });
+      }
+      return true;
+    } catch (error) {
+      console.warn(`⚠️ Não foi possível criar diretório de saída: ${directory}`, error);
+      return false;
+    }
+  }
+
+  private getFreeSpaceBytes(directory: string): number | null {
+    try {
+      const stats = fs.statfsSync(directory);
+      return Number(stats.bsize) * Number(stats.bavail);
+    } catch (error) {
+      console.warn(`⚠️ Não foi possível ler espaço livre em ${directory}:`, error);
+      return null;
+    }
+  }
+
+  private estimateOutputSizeBytes(params: {
+    durationSeconds: number;
+    width: number;
+    height: number;
+    fps: number;
+    hasAudio: boolean;
+  }): number {
+    const normalizedPixelsPerSecond =
+      (params.width * params.height * Math.max(1, params.fps)) / (1920 * 1080 * 30);
+    const estimatedVideoMbps = Math.max(4, 10 * Math.max(0.2, normalizedPixelsPerSecond));
+    const estimatedAudioMbps = params.hasAudio ? 0.192 : 0;
+    const totalMbps = estimatedVideoMbps + estimatedAudioMbps;
+    const rawBytes = (Math.max(1, params.durationSeconds) * totalMbps * 1_000_000) / 8;
+
+    // Margem de segurança para variabilidade do CRF/preset e overhead do contêiner.
+    return Math.ceil(rawBytes * 1.35);
+  }
+
+  private estimateProjectOutputSizeBytes(project: VideoProjectInput): number {
+    const scenes = project.scenes || (project as any).segments || [];
+    const durationSeconds = Math.max(
+      1,
+      scenes.reduce((maxEnd: number, scene: any) => {
+        const end = Number(scene.end_time ?? scene.end ?? 0);
+        return Math.max(maxEnd, Number.isFinite(end) ? end : 0);
+      }, 0),
+    );
+
+    const width = project.config?.width || 1080;
+    const height = project.config?.height || 1920;
+    const fps = project.config?.fps || 30;
+    const hasAudio = Boolean((project as any).audioPath || project.config?.backgroundMusic?.src);
+
+    return this.estimateOutputSizeBytes({
+      durationSeconds,
+      width,
+      height,
+      fps,
+      hasAudio,
+    });
+  }
+
+  private estimateCompositionOutputSizeBytes(
+    composition: { durationInFrames: number; fps: number; width: number; height: number },
+    inputProps?: Record<string, unknown>,
+  ): number {
+    const durationSeconds = Math.max(1, composition.durationInFrames / Math.max(1, composition.fps));
+    const hasAudio = this.hasProjectAudio(inputProps);
+
+    return this.estimateOutputSizeBytes({
+      durationSeconds,
+      width: composition.width,
+      height: composition.height,
+      fps: composition.fps,
+      hasAudio,
+    });
+  }
+
+  private hasProjectAudio(inputProps?: Record<string, unknown>): boolean {
+    const project = (inputProps?.project || {}) as any;
+    return Boolean(project?.audioPath || project?.config?.backgroundMusic?.src);
+  }
+
+  private resolveOutputPath(fileName: string, estimatedBytes?: number): string {
+    const directories = this.getOutputDirectories().filter((directory) => this.ensureDirectoryExists(directory));
+    const safetyBufferBytes = 300 * 1024 * 1024;
+
+    if (directories.length === 0) {
+      throw new Error('Nenhum diretório de saída está disponível para gravação.');
+    }
+
+    if (estimatedBytes === undefined) {
+      this.activeOutputDir = directories[0];
+      return path.join(this.activeOutputDir, fileName);
+    }
+
+    for (const directory of directories) {
+      const freeBytes = this.getFreeSpaceBytes(directory);
+      if (freeBytes === null || freeBytes >= estimatedBytes + safetyBufferBytes) {
+        if (directory !== directories[0]) {
+          console.warn(`⚠️ Espaço insuficiente no diretório padrão. Usando fallback: ${directory}`);
+        }
+        this.activeOutputDir = directory;
+        return path.join(directory, fileName);
+      }
+    }
+
+    const preferredDir = directories[0];
+    const freeBytes = this.getFreeSpaceBytes(preferredDir);
+    const requiredText = this.formatBytes(estimatedBytes + safetyBufferBytes);
+    const freeText = freeBytes === null ? 'desconhecido' : this.formatBytes(freeBytes);
+    throw new Error(
+      `Espaço em disco insuficiente para renderização. Necessário ~${requiredText}, disponível ${freeText} em ${preferredDir}. ` +
+      'Libere espaço ou defina VIDEO_RENDER_OUTPUT_DIR para outro disco.',
+    );
+  }
+
+  private normalizeRenderError(error: unknown): string {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/No space left on device|ENOSPC|4294967268/i.test(message)) {
+      const targetDir = this.activeOutputDir || this.outputDir;
+      return (
+        `${message}\n\n` +
+        `FFmpeg reportou ENOSPC ao renderizar em: ${targetDir}. ` +
+        'Isso pode ser falta real de espaço OU falso positivo do muxer em pipelines longos. ' +
+        'Se o arquivo final estiver íntegro, o erro pode ser ignorado.'
+      );
+    }
+
+    return message;
+  }
 
   private emitProgress(progress: RenderProgress): void {
     this.emit('progress', progress);
@@ -713,6 +850,22 @@ export class VideoService extends EventEmitter {
       .replace(/[^a-z0-9]/g, '-')
       .replace(/-+/g, '-')
       .substring(0, 50);
+  }
+
+  private formatBytes(bytes: number): string {
+    if (!Number.isFinite(bytes) || bytes <= 0) {
+      return '0 B';
+    }
+
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    let size = bytes;
+    let unitIndex = 0;
+    while (size >= 1024 && unitIndex < units.length - 1) {
+      size /= 1024;
+      unitIndex++;
+    }
+
+    return `${size.toFixed(unitIndex === 0 ? 0 : 1)} ${units[unitIndex]}`;
   }
 
   private formatDuration(ms: number): string {

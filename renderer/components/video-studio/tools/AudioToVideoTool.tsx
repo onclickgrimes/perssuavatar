@@ -8,7 +8,7 @@
  * 3. Geração de prompts → Criação de imagens
  * 4. Aprovação do usuário → Renderização (Remotion)
  */
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import { WorkflowStep, ProjectState } from '../../../types/video-studio';
 import { UploadStep } from '../UploadStep';
 import { ChannelNiche } from '../NicheModal';
@@ -404,6 +404,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
 
   // Estado para armazenar caminho do vídeo gerado
   const [outputPath, setOutputPath] = useState<string | null>(null);
+  const [renderTotalSeconds, setRenderTotalSeconds] = useState<number | null>(null);
+  const renderStartedAtRef = useRef<number | null>(null);
 
   const ASPECT_RATIO_DIMENSIONS: Record<string, { width: number; height: number }> = {
     '16:9': { width: 1920, height: 1080 },
@@ -419,6 +421,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     setCurrentStep('rendering');
     setRenderProgress(0);
     setError(null);
+    setRenderTotalSeconds(null);
+    renderStartedAtRef.current = Date.now();
 
     try {
       if (!window.electron?.videoProject) {
@@ -468,6 +472,11 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       }
 
       if (outputPaths.length > 0) {
+        const totalSeconds = renderStartedAtRef.current
+          ? Math.max(0, Math.round((Date.now() - renderStartedAtRef.current) / 1000))
+          : null;
+
+        setRenderTotalSeconds(totalSeconds);
         // Show the last generated video or handle logic for multiple
         setOutputPath(outputPaths[outputPaths.length - 1]);
         setCurrentStep('complete');
@@ -482,6 +491,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       console.error('Render error:', err);
       setError(err instanceof Error ? err.message : 'Erro ao renderizar');
       setCurrentStep('images'); // Voltar para step anterior
+      renderStartedAtRef.current = null;
     }
   }, [project, subtitleMode, selectedNiche]);
 
@@ -591,9 +601,12 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         return (
           <CompleteStep 
             outputPath={outputPath}
+            renderTotalSeconds={renderTotalSeconds}
             onNewProject={() => {
               setCurrentStep('upload');
               setOutputPath(null);
+              setRenderTotalSeconds(null);
+              renderStartedAtRef.current = null;
               setProject({
                 title: '',
                 duration: 0,

@@ -2,7 +2,6 @@ import React from 'react';
 import { FILMORA } from './constants';
 import { Icons } from './Icons';
 import { VideoPreviewPlayer } from '../VideoPreviewPlayer';
-import { ASPECT_RATIO_DIMENSIONS } from '../../../shared/utils/project-converter';
 
 interface PlayerAreaProps {
   // Subtitle mode
@@ -20,7 +19,7 @@ interface PlayerAreaProps {
   availableRatios: string[];
 
   // Player
-  remotionProject: any;
+  previewProject: any;
   durationInFrames: number;
   fps: number;
   handlePlayerReady: (player: any) => void;
@@ -54,7 +53,7 @@ export function PlayerArea({
   setShowRatioMenu,
   toggleAspectRatio,
   availableRatios,
-  remotionProject,
+  previewProject,
   durationInFrames,
   fps,
   handlePlayerReady,
@@ -158,7 +157,7 @@ export function PlayerArea({
           maxWidth: '100%',
         }}>
           <VideoPreviewPlayer
-            project={remotionProject}
+            project={previewProject}
             durationInFrames={durationInFrames}
             fps={fps}
             onPlayerReady={handlePlayerReady}

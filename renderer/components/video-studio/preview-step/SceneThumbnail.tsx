@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 
 interface SceneThumbnailProps {
   imageUrl?: string;
@@ -8,67 +8,69 @@ interface SceneThumbnailProps {
 }
 
 // ========================================
-// SCENE THUMBNAIL (COM FILMSTRIP DE VÍDEO)
+// SCENE THUMBNAIL (LEVE PARA TIMELINE)
 // ========================================
 export function SceneThumbnail({ imageUrl, text, isVideo, duration }: SceneThumbnailProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [frameCount, setFrameCount] = useState(1);
+  const videoRef = useRef<HTMLVideoElement>(null);
 
-  // Calcula quantos frames exibir baseado na largura do segmento na timeline
+  const src = useMemo(() => {
+    if (!imageUrl) return '';
+
+    if (imageUrl.startsWith('http') || imageUrl.startsWith('blob:') || imageUrl.startsWith('data:')) {
+      return imageUrl;
+    }
+
+    const filename = imageUrl.split(/[/\\]/).pop();
+    return `http://localhost:9999/${filename}`;
+  }, [imageUrl]);
+
+  const isVideoAsset = !!src && (isVideo || /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(src));
+
   useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      const width = entries[0].contentRect.width;
-      // Estima 1 frame a cada ~60 pixels de largura
-      const count = Math.max(1, Math.ceil(width / 60));
-      setFrameCount(count);
-    });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
+    if (!isVideoAsset || !videoRef.current) return;
 
-  if (!imageUrl) return null;
+    const video = videoRef.current;
 
-  let src = imageUrl;
-  if (!src.startsWith('http') && !src.startsWith('blob:') && !src.startsWith('data:')) {
-    const filename = src.split(/[/\\]/).pop();
-    src = `http://localhost:9999/${filename}`;
-  }
+    const handleLoadedMetadata = () => {
+      const mediaDuration = Number.isFinite(video.duration) && video.duration > 0 ? video.duration : (duration || 0);
+      const previewTime = mediaDuration > 0
+        ? Math.min(Math.max(mediaDuration * 0.15, 0.05), Math.max(0, mediaDuration - 0.05))
+        : 0.1;
 
-  // Verifica se a mídia é um vídeo (passado por prop ou pela extensão do arquivo)
-  const isVideoAsset = isVideo || /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(src);
+      try {
+        video.currentTime = previewTime;
+        video.pause();
+      } catch (_) {
+        // no-op
+      }
+    };
+
+    video.addEventListener('loadedmetadata', handleLoadedMetadata);
+    return () => {
+      video.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+  }, [isVideoAsset, duration, src]);
+
+  if (!src) return null;
 
   if (isVideoAsset) {
     return (
-      <div ref={containerRef} className="absolute inset-0 flex overflow-hidden pointer-events-none">
-        {Array.from({ length: frameCount }).map((_, i) => {
-          return (
-            <div key={i} className="flex-1 h-full relative border-r border-black/20 last:border-0 min-w-[40px]">
-              <video 
-                src={src} 
-                className="absolute inset-0 w-full h-full object-cover"
-                preload="metadata"
-                onLoadedMetadata={(e) => {
-                  const video = e.currentTarget;
-                  // Distribui o tempo dos frames ao longo da duração da mídia
-                  const safeDuration = duration || video.duration || 5;
-                  const time = (i / frameCount) * safeDuration;
-                  if (!isNaN(time) && isFinite(time)) {
-                    video.currentTime = time;
-                  }
-                }}
-              />
-            </div>
-          );
-        })}
+      <div className="absolute inset-0 pointer-events-none">
+        <video
+          ref={videoRef}
+          src={src}
+          className="absolute inset-0 w-full h-full object-cover"
+          preload="metadata"
+          muted
+          playsInline
+        />
       </div>
     );
   }
 
-  // Fallback normal para Imagens
   return (
-    <img 
-      src={src} 
+    <img
+      src={src}
       alt={text}
       className="absolute inset-0 w-full h-full object-cover pointer-events-none"
       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}

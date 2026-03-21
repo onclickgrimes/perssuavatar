@@ -148,6 +148,7 @@ export interface RemotionProject {
         fitVideoToScene?: boolean;
         backgroundMusic?: {
             src: string;
+            src_local?: string;
             volume?: number;
         };
         assetsBaseUrl?: string;
@@ -165,6 +166,7 @@ export interface RemotionProject {
         };
         asset_type: string;
         asset_url?: string;
+        asset_local_path?: string;
         prompt_suggestion?: string;
         camera_movement: string;
         transition: string;
@@ -441,11 +443,6 @@ export class VideoProjectService extends EventEmitter {
                     return;
                 }
 
-
-                // Log detalhado para debug
-                console.log(`📡 Requisição: ${url}`);
-                console.log(`📂 Caminho resolvido: ${filePath}`);
-
                 if (fs.existsSync(filePath)) {
                     const stats = fs.statSync(filePath);
                     const fileSize = stats.size;
@@ -475,8 +472,13 @@ export class VideoProjectService extends EventEmitter {
                         '.woff2': 'font/woff2',
                     };
                     const contentType = mimeTypes[ext] || 'application/octet-stream';
-
+                    const verboseAssetLogs = process.env.VIDEO_ASSET_SERVER_DEBUG === '1';
                     const range = req.headers.range;
+
+                    if (verboseAssetLogs) {
+                        console.log(`📡 Requisição: ${url}`);
+                        console.log(`📂 Caminho resolvido: ${filePath}`);
+                    }
 
                     if (range) {
                         // Range request (Partial Content)
@@ -492,7 +494,9 @@ export class VideoProjectService extends EventEmitter {
                             'Content-Type': contentType,
                         });
 
-                        console.log(`📦 Range request: ${path.basename(filePath)} bytes ${start}-${end}/${fileSize}`);
+                        if (verboseAssetLogs) {
+                            console.log(`📦 Range request: ${path.basename(filePath)} bytes ${start}-${end}/${fileSize}`);
+                        }
                         const file = fs.createReadStream(filePath, { start, end });
 
                         // 1. Tratar erro na stream para evitar que o processo morra
@@ -515,7 +519,9 @@ export class VideoProjectService extends EventEmitter {
                             'Content-Type': contentType,
                             'Accept-Ranges': 'bytes',
                         });
-                        console.log(`✅ Servindo: ${path.basename(filePath)} (${fileSize} bytes)`);
+                        if (verboseAssetLogs) {
+                            console.log(`✅ Servindo: ${path.basename(filePath)} (${fileSize} bytes)`);
+                        }
                         const file = fs.createReadStream(filePath);
 
                         // 1. Tratar erro na stream para evitar que o processo morra
@@ -601,6 +607,57 @@ export class VideoProjectService extends EventEmitter {
         
         // Se for um caminho absoluto fora das pastas conhecidas, usar a rota /absolute/
         return `http://localhost:${this.imageServerPort}/absolute/${encodeURIComponent(filePath.replace(/\\/g, '/'))}`;
+    }
+
+    /**
+     * Retorna caminho local utilizável pelo FFmpeg quando o asset não é remoto.
+     */
+    private toLocalFsPath(filePath: string | undefined): string | undefined {
+        if (!filePath) return undefined;
+
+        if (filePath.startsWith('file:///')) {
+            return decodeURIComponent(filePath.replace('file:///', ''));
+        }
+
+        if (/^(https?:\/\/)/i.test(filePath)) {
+            try {
+                const parsed = new URL(filePath);
+                const host = parsed.hostname.toLowerCase();
+                const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]';
+                if (!isLocalHost) {
+                    return undefined;
+                }
+                if (parsed.port && parsed.port !== String(this.imageServerPort)) {
+                    return undefined;
+                }
+
+                const pathname = decodeURIComponent(parsed.pathname || '');
+                if (!pathname) {
+                    return undefined;
+                }
+
+                if (pathname.startsWith('/absolute/')) {
+                    const absolutePath = pathname.replace('/absolute/', '');
+                    return absolutePath.replace(/\//g, path.sep);
+                }
+
+                if (pathname.startsWith('/videos/')) {
+                    const relativeVideoPath = pathname.replace('/videos/', '');
+                    return path.join('L:\\Video-Maker', ...relativeVideoPath.split('/'));
+                }
+
+                const relativePath = pathname.replace(/^\/+/, '');
+                return path.join(this.projectsDir, ...relativePath.split('/'));
+            } catch {
+                return undefined;
+            }
+        }
+
+        if (/^(blob:|data:)/i.test(filePath)) {
+            return undefined;
+        }
+
+        return filePath;
     }
 
     // ========================================
@@ -1144,67 +1201,72 @@ Responda APENAS com um objeto JSON válido no formato:
     public convertToRemotionProject(project: VideoProjectData): RemotionProject {
         console.log('🔧 convertToRemotionProject - subtitleMode:', project.subtitleMode);
 
-        const scenes = project.segments.map(seg => ({
-            id: seg.id,
-            track: seg.track || 1,
-            start_time: seg.start,
-            end_time: seg.end,
-            transcript_segment: seg.text,
-            visual_concept: {
-                description: seg.text,
-                art_style: 'photorealistic',
-                emotion: seg.emotion || 'neutro',
-            },
-            asset_type: seg.assetType || 'image_flux',
-            // Converter caminho local para URL HTTP
-            // Se tiver asset_url explícito (vídeo), usa ele. Senão usa imageUrl.
-            asset_url: this.convertToHttpUrl(seg.asset_url || seg.imageUrl),
-            ...(seg.asset_duration != null && { asset_duration: seg.asset_duration }),
-            chroma_key: seg.chroma_key, // ✅ Configuração de Chroma Key
-            prompt_suggestion: seg.imagePrompt || '',
-            camera_movement: seg.cameraMovement || 'static',
-            transition: seg.transition || 'fade',
-            transition_duration: 0.5,
-            text_overlay: {
-                text: seg.text,
-                position: 'bottom',
-                style: 'subtitle',
-                animation: 'fade',
-                words: seg.words, // ✅ Palavras do Deepgram para word-by-word
-            },
-            // Incluir palavras destacadas (se houver)
-            ...(seg.highlightWords && seg.highlightWords.length > 0 && {
-                highlight_words: seg.highlightWords,
-            }),
-            // Background
-            ...(seg.background && {
-                background: {
-                    type: seg.background.type,
-                    // Se for solid_color, usa color OU url como cor. Se não, usa color original.
-                    color: seg.background.type === 'solid_color'
-                        ? (seg.background.color || seg.background.url)
-                        : seg.background.color,
-                    // Se for solid_color, URL deve ser undefined. Se não, converte URL.
-                    url: seg.background.type !== 'solid_color'
-                        ? this.convertToHttpUrl(seg.background.url)
-                        : undefined,
-                }
-            }),
-            // Timeline 3D
-            ...(seg.timeline_config && {
-                timeline_config: seg.timeline_config
-            }),
-            // Transform (PiP)
-            ...(seg.transform && {
-                transform: seg.transform
-            }),
-            // Audio (Volume, Fade-in, Fade-out)
-            audio: {
-                volume: seg.audio?.volume ?? 1,
-                fadeIn: seg.audio?.fadeIn ?? 0,
-                fadeOut: seg.audio?.fadeOut ?? 0,
-            },
-        }));
+        const scenes = project.segments.map(seg => {
+            const rawAssetPath = seg.asset_url || seg.imageUrl;
+            const localAssetPath = this.toLocalFsPath(rawAssetPath);
+
+            return {
+                id: seg.id,
+                track: seg.track || 1,
+                start_time: seg.start,
+                end_time: seg.end,
+                transcript_segment: seg.text,
+                visual_concept: {
+                    description: seg.text,
+                    art_style: 'photorealistic',
+                    emotion: seg.emotion || 'neutro',
+                },
+                asset_type: seg.assetType || 'image_flux',
+                // Para Remotion (Chromium), usamos URL HTTP; para FFmpeg, também mandamos o caminho local bruto.
+                asset_url: this.convertToHttpUrl(rawAssetPath),
+                ...(localAssetPath && { asset_local_path: localAssetPath }),
+                ...(seg.asset_duration != null && { asset_duration: seg.asset_duration }),
+                chroma_key: seg.chroma_key, // ✅ Configuração de Chroma Key
+                prompt_suggestion: seg.imagePrompt || '',
+                camera_movement: seg.cameraMovement || 'static',
+                transition: seg.transition || 'fade',
+                transition_duration: 0.5,
+                text_overlay: {
+                    text: seg.text,
+                    position: 'bottom',
+                    style: 'subtitle',
+                    animation: 'fade',
+                    words: seg.words, // ✅ Palavras do Deepgram para word-by-word
+                },
+                // Incluir palavras destacadas (se houver)
+                ...(seg.highlightWords && seg.highlightWords.length > 0 && {
+                    highlight_words: seg.highlightWords,
+                }),
+                // Background
+                ...(seg.background && {
+                    background: {
+                        type: seg.background.type,
+                        // Se for solid_color, usa color OU url como cor. Se não, usa color original.
+                        color: seg.background.type === 'solid_color'
+                            ? (seg.background.color || seg.background.url)
+                            : seg.background.color,
+                        // Se for solid_color, URL deve ser undefined. Se não, converte URL.
+                        url: seg.background.type !== 'solid_color'
+                            ? this.convertToHttpUrl(seg.background.url)
+                            : undefined,
+                    }
+                }),
+                // Timeline 3D
+                ...(seg.timeline_config && {
+                    timeline_config: seg.timeline_config
+                }),
+                // Transform (PiP)
+                ...(seg.transform && {
+                    transform: seg.transform
+                }),
+                // Audio (Volume, Fade-in, Fade-out)
+                audio: {
+                    volume: seg.audio?.volume ?? 1,
+                    fadeIn: seg.audio?.fadeIn ?? 0,
+                    fadeOut: seg.audio?.fadeOut ?? 0,
+                },
+            };
+        });
 
         console.log('🔧 Scene 1 text_overlay.words:', scenes[0]?.text_overlay?.words?.length || 0, 'words');
 
@@ -1225,6 +1287,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 ...(project.audioPath && {
                     backgroundMusic: {
                         src: this.convertToHttpUrl(project.audioPath),
+                        src_local: this.toLocalFsPath(project.audioPath),
                         volume: project.config?.mainAudioVolume ?? 1.0,
                     },
                 }),
@@ -1253,12 +1316,16 @@ Responda APENAS com um objeto JSON válido no formato:
             console.log(`🌐 Image server ready on port ${this.imageServerPort}`);
 
             const remotionProject = this.convertToRemotionProject(project);
+            const verboseAssetLogs = process.env.VIDEO_ASSET_SERVER_DEBUG === '1';
+            const localAssetCount = remotionProject.scenes.filter((scene: any) => Boolean(scene.asset_local_path)).length;
+            console.log(`📸 Assets: ${remotionProject.scenes.length} cenas (${localAssetCount} locais, ${remotionProject.scenes.length - localAssetCount} via URL)`);
 
-            // Log das URLs das imagens para debug
-            console.log('📸 Image URLs:');
-            remotionProject.scenes.forEach((scene, i) => {
-                console.log(`  Scene ${i + 1}: ${scene.asset_url}`);
-            });
+            if (verboseAssetLogs) {
+                console.log('📸 Image URLs:');
+                remotionProject.scenes.forEach((scene, i) => {
+                    console.log(`  Scene ${i + 1}: ${scene.asset_url}`);
+                });
+            }
 
             const result = await this.videoService.renderProject(remotionProject, {
                 outputFileName: `${this.sanitizeFileName(project.title)}-${Date.now()}.mp4`,

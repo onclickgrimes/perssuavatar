@@ -1,6 +1,31 @@
 import React from 'react';
 
-export function CompleteStep({ outputPath, onNewProject }: { outputPath: string | null; onNewProject: () => void }) {
+function formatDuration(seconds: number | null | undefined): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) {
+    return '--:--';
+  }
+
+  const safeSeconds = Math.max(0, Math.floor(seconds));
+  const hours = Math.floor(safeSeconds / 3600);
+  const minutes = Math.floor((safeSeconds % 3600) / 60);
+  const secs = safeSeconds % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  return `${minutes}:${String(secs).padStart(2, '0')}`;
+}
+
+export function CompleteStep({
+  outputPath,
+  renderTotalSeconds,
+  onNewProject,
+}: {
+  outputPath: string | null;
+  renderTotalSeconds?: number | null;
+  onNewProject: () => void;
+}) {
   const handleOpenFolder = async () => {
     if (outputPath) {
       // Abrir pasta contendo o arquivo
@@ -17,7 +42,10 @@ export function CompleteStep({ outputPath, onNewProject }: { outputPath: string 
         </svg>
       </div>
       <h2 className="text-2xl font-bold text-white mb-2">Vídeo Pronto!</h2>
-      <p className="text-white/60 mb-4">Seu vídeo foi renderizado com sucesso</p>
+      <p className="text-white/60 mb-1">Seu vídeo foi renderizado com sucesso</p>
+      {renderTotalSeconds !== null && renderTotalSeconds !== undefined && (
+        <p className="text-white/50 mb-4">Tempo total: {formatDuration(renderTotalSeconds)}</p>
+      )}
       
       {outputPath && (
         <p className="text-white/40 text-sm mb-6 max-w-md text-center break-all bg-white/5 px-4 py-2 rounded-lg">

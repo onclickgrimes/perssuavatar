@@ -2,7 +2,6 @@ import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { ProjectState } from '../../types/video-studio';
 import type { ChannelNiche } from './NicheModal';
 import { 
-  toRemotionFormat, 
   audioPathToUrl, 
   ASPECT_RATIO_DIMENSIONS 
 } from '../../shared/utils/project-converter';
@@ -249,6 +248,7 @@ export function PreviewStep({
   const isSeekingFromTimelineRef = useRef(false);
   const frameListenerCleanupRef = useRef<(() => void) | null>(null);
   const zoomLevelRef = useRef(DEFAULT_ZOOM);
+  const durationProbeCacheRef = useRef<Set<string>>(new Set());
   const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
@@ -264,19 +264,22 @@ export function PreviewStep({
   const hoveredSeg = hoveredSegment ? project.segments.find(s => s.id === hoveredSegment.id) : null;
   const visualSegments = project.segments;
 
-  // Remotion project
-  const remotionProject = useMemo(() => {
+  // Preview project (sem Remotion)
+  const previewProject = useMemo(() => {
     const dims = ASPECT_RATIO_DIMENSIONS[selectedRatio] || { width: 1080, height: 1920 };
-    return toRemotionFormat(project as any, {
+    return {
+      ...project,
       subtitleMode,
-      width: dims.width,
-      height: dims.height,
-      fps: 30,
-      componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed,
-      audioUrl: audioPathToUrl(project.audioPath),
-      defaultFont: selectedNiche?.default_font,
-      fitVideoToScene,
-    });
+      config: {
+        ...(project.config || {}),
+        width: dims.width,
+        height: dims.height,
+        fps: project.config?.fps || 30,
+        fitVideoToScene,
+        componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed,
+        defaultFont: selectedNiche?.default_font,
+      },
+    };
   }, [project, subtitleMode, selectedRatio, selectedNiche, fitVideoToScene]);
   
   useEffect(() => {
@@ -306,46 +309,73 @@ export function PreviewStep({
   // RECOVER VIDEO DURATIONS IF MISSING
   // ========================================
   useEffect(() => {
-    if (!onSegmentsUpdate || !project?.segments) return;
+    if (!onSegmentsUpdate || !project?.segments?.length) return;
 
-    let hasMissingDurations = false;
+    let cancelled = false;
     const segmentsToUpdate = [...project.segments];
     const promises: Promise<void>[] = [];
 
     segmentsToUpdate.forEach((seg, index) => {
       const isVideoAsset = seg.assetType?.startsWith('video_') || (seg as any).asset_type?.startsWith('video_');
-      const isVideoFile = seg.imageUrl && /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(seg.imageUrl);
-      const isBlob = seg.imageUrl?.startsWith('blob:');
+      const rawUrl = seg.imageUrl || (seg as any).asset_url;
+      const isVideoFile = rawUrl && /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(rawUrl);
+      const isBlob = rawUrl?.startsWith('blob:');
       
       const isVideo = isVideoAsset || isVideoFile || isBlob;
 
-      if (isVideo && seg.imageUrl && !seg.asset_duration) {
-        hasMissingDurations = true;
+      if (isVideo && rawUrl && !seg.asset_duration) {
+        const probeKey = `${seg.id}|${rawUrl}`;
+        if (durationProbeCacheRef.current.has(probeKey)) {
+          return;
+        }
+        durationProbeCacheRef.current.add(probeKey);
+
         const promise = new Promise<void>((resolve) => {
           const video = document.createElement('video');
           video.preload = 'metadata';
+
+          const cleanup = () => {
+            video.onloadedmetadata = null;
+            video.onerror = null;
+            video.removeAttribute('src');
+            try {
+              video.load();
+            } catch (_) {
+              // no-op
+            }
+          };
+
           video.onloadedmetadata = () => {
             if (video.duration && video.duration !== Infinity && video.duration > 0) {
               segmentsToUpdate[index] = { ...seg, asset_duration: video.duration };
             }
+            cleanup();
             resolve();
           };
-          video.onerror = () => resolve();
-          video.src = seg.imageUrl;
+          video.onerror = () => {
+            cleanup();
+            resolve();
+          };
+          video.src = rawUrl;
         });
         promises.push(promise);
       }
     });
 
-    if (hasMissingDurations) {
-      Promise.all(promises).then(() => {
-         // Atualizamos se foi encontrada ao menos uma duração nova
-         const actuallyChanged = segmentsToUpdate.some((seg, i) => seg.asset_duration !== project.segments[i].asset_duration);
-         if (actuallyChanged) {
-           onSegmentsUpdate(segmentsToUpdate);
-         }
-      });
-    }
+    if (!promises.length) return;
+
+    Promise.all(promises).then(() => {
+      if (cancelled) return;
+      // Atualizamos se foi encontrada ao menos uma duração nova
+      const actuallyChanged = segmentsToUpdate.some((seg, i) => seg.asset_duration !== project.segments[i].asset_duration);
+      if (actuallyChanged) {
+        onSegmentsUpdate(segmentsToUpdate);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
   }, [project.segments, onSegmentsUpdate]);
 
   // ========================================
@@ -818,7 +848,7 @@ export function PreviewStep({
                  setShowRatioMenu={setShowRatioMenu} 
                  toggleAspectRatio={toggleAspectRatio} 
                  availableRatios={AVAILABLE_RATIOS} 
-                 remotionProject={remotionProject} 
+                 previewProject={previewProject} 
                  durationInFrames={durationInFrames} 
                  fps={fps} 
                  handlePlayerReady={handlePlayerReady} 
@@ -863,7 +893,7 @@ export function PreviewStep({
                    setShowRatioMenu={setShowRatioMenu} 
                    toggleAspectRatio={toggleAspectRatio} 
                    availableRatios={AVAILABLE_RATIOS} 
-                   remotionProject={remotionProject} 
+                   previewProject={previewProject} 
                    durationInFrames={durationInFrames} 
                    fps={fps} 
                    handlePlayerReady={handlePlayerReady} 

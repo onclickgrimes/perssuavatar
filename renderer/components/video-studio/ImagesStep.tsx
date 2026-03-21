@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
 
 interface ImagesStepProps {
@@ -9,6 +9,75 @@ interface ImagesStepProps {
   aspectRatio?: string;
   onAspectRatioChange?: (value: string) => void;
 }
+
+interface SmartVideoPreviewProps {
+  src: string;
+}
+
+const SmartVideoPreview = React.memo(function SmartVideoPreview({ src }: SmartVideoPreviewProps) {
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const [isNearViewport, setIsNearViewport] = useState(false);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (!wrapperRef.current) return;
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        const intersecting = entry.isIntersecting;
+        if (intersecting) {
+          setIsNearViewport(true);
+        }
+        setIsVisible(intersecting && entry.intersectionRatio > 0.1);
+      },
+      {
+        root: null,
+        // Renderiza o elemento um pouco antes de entrar na área visível.
+        rootMargin: '320px 0px',
+        threshold: [0, 0.1, 0.3],
+      }
+    );
+
+    observer.observe(wrapperRef.current);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    if (isVisible) {
+      const playPromise = video.play();
+      if (playPromise && typeof playPromise.catch === 'function') {
+        playPromise.catch(() => {});
+      }
+      return;
+    }
+
+    video.pause();
+  }, [isVisible, src]);
+
+  return (
+    <div ref={wrapperRef} className="w-full h-full bg-black/30">
+      {isNearViewport ? (
+        <video
+          ref={videoRef}
+          src={src}
+          className="w-full h-full object-cover"
+          loop
+          muted
+          playsInline
+          preload="metadata"
+        />
+      ) : (
+        <div className="w-full h-full flex items-center justify-center text-white/40 text-xs">
+          Preview pausado fora da tela
+        </div>
+      )}
+    </div>
+  );
+});
 
 export function ImagesStep({
   segments,
@@ -164,23 +233,80 @@ export function ImagesStep({
   const [batchResults, setBatchResults] = useState<Record<number, 'success' | 'error' | 'skipped'>>({});
   const batchCancelledRef = useRef(false);
   const activeServicesRef = useRef<Record<number, string>>({});
+  const generatingSegmentsRef = useRef<Set<number>>(new Set());
+  const pendingProgressMessageRef = useRef<string | null>(null);
+  const progressFlushTimerRef = useRef<any>(null);
+  const hasVo3Segments = useMemo(
+    () => segments.some(s => s.assetType === 'video_vo3' || s.assetType === 'video_veo2'),
+    [segments]
+  );
+  const segmentsWithMediaCount = useMemo(
+    () => segments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
+    [segments]
+  );
+  const batchStats = useMemo(() => {
+    const values = Object.values(batchResults);
+    const success = values.filter(v => v === 'success').length;
+    const error = values.filter(v => v === 'error').length;
+    return { success, error };
+  }, [batchResults]);
+
+  const queueProgressUpdate = useCallback((message: string) => {
+    pendingProgressMessageRef.current = message || 'Gerando...';
+    if (progressFlushTimerRef.current !== null) return;
+
+    progressFlushTimerRef.current = window.setTimeout(() => {
+      progressFlushTimerRef.current = null;
+      const pendingMessage = pendingProgressMessageRef.current;
+      const activeIds = Array.from(generatingSegmentsRef.current);
+
+      if (!pendingMessage || activeIds.length === 0) return;
+
+      setVo3Progress(prev => {
+        let changed = false;
+        const next = { ...prev };
+        activeIds.forEach(segId => {
+          if (next[segId] !== pendingMessage) {
+            next[segId] = pendingMessage;
+            changed = true;
+          }
+        });
+        return changed ? next : prev;
+      });
+    }, 150);
+  }, []);
+
+  useEffect(() => {
+    generatingSegmentsRef.current = generatingSegments;
+  }, [generatingSegments]);
+
+  useEffect(() => {
+    return () => {
+      if (progressFlushTimerRef.current !== null) {
+        clearTimeout(progressFlushTimerRef.current);
+      }
+    };
+  }, []);
+
   // Quando os segmentos mudam, atualizar a seleção para incluir novos segmentos
   useEffect(() => {
     setSelectedScenes(prev => {
+      let changed = false;
       const next = new Set(prev);
       segments.forEach(s => {
-        if (!prev.has(s.id)) next.add(s.id);
+        if (!prev.has(s.id)) {
+          next.add(s.id);
+          changed = true;
+        }
       });
-      return next;
+      return changed ? next : prev;
     });
-  }, [segments.length]);
+  }, [segments]);
   
   // Buscar créditos iniciais
   useEffect(() => {
     const fetchCredits = async () => {
-      // Se tiver pelo menos um segmento vo3, buscar os créditos iniciais
-      const hasVo3 = segments.some(s => s.assetType === 'video_vo3' || s.assetType === 'video_veo2');
-      if (hasVo3) {
+      if (hasVo3Segments) {
         setIsCheckingCredits(true);
         try {
           const result = await window.electron?.videoProject?.getVo3Credits?.();
@@ -195,55 +321,39 @@ export function ImagesStep({
       }
     };
     fetchCredits();
-  }, [segments]);
+  }, [hasVo3Segments]);
 
   // Listener de progresso Veo3
   useEffect(() => {
     const cleanup = window.electron?.videoProject?.onVo3Progress?.((data) => {
-      setVo3Progress(prev => {
-        const next = { ...prev };
-        generatingSegments.forEach(segId => { next[segId] = data.message; });
-        return next;
-      });
+      queueProgressUpdate(data?.message || 'Gerando com Veo 3...');
     });
     return () => { cleanup?.(); };
-  }, [generatingSegments]);
+  }, [queueProgressUpdate]);
 
   // Listener de progresso Veo3 (API oficial)
   useEffect(() => {
     const cleanup = window.electron?.videoProject?.onVeo3ApiProgress?.((data) => {
-      setVo3Progress(prev => {
-        const next = { ...prev };
-        generatingSegments.forEach(segId => { next[segId] = data.message; });
-        return next;
-      });
+      queueProgressUpdate(data?.message || 'Gerando com API oficial...');
     });
     return () => { cleanup?.(); };
-  }, [generatingSegments]);
+  }, [queueProgressUpdate]);
 
   // Listener de progresso Veo2 Flow (via puppeteer)
   useEffect(() => {
     const cleanup = window.electron?.videoProject?.onVo2FlowProgress?.((data) => {
-      setVo3Progress(prev => {
-        const next = { ...prev };
-        generatingSegments.forEach(segId => { next[segId] = data.message; });
-        return next;
-      });
+      queueProgressUpdate(data?.message || 'Gerando com Veo 2 Flow...');
     });
     return () => { cleanup?.(); };
-  }, [generatingSegments]);
+  }, [queueProgressUpdate]);
 
   // Listener de progresso Veo2 (API oficial)
   useEffect(() => {
     const cleanup = window.electron?.videoProject?.onVeo2Progress?.((data) => {
-      setVo3Progress(prev => {
-        const next = { ...prev };
-        generatingSegments.forEach(segId => { next[segId] = data.message; });
-        return next;
-      });
+      queueProgressUpdate(data?.message || 'Gerando com Veo 2...');
     });
     return () => { cleanup?.(); };
-  }, [generatingSegments]);
+  }, [queueProgressUpdate]);
 
   // Handler para upload de mídia (imagem ou vídeo) - salva no disco
   const handleMediaUpload = async (segmentId: number, file: File) => {
@@ -684,8 +794,6 @@ export function ImagesStep({
     onUpdateImage(segmentId, '');
   };
 
-  const segmentsWithMedia = segments.filter(seg => !!seg.imageUrl);
-
   // ── Funções de seleção de cenas ──
   const handleToggleScene = useCallback((segmentId: number, event?: React.MouseEvent) => {
     if (event?.shiftKey && lastClickedSceneRef.current !== null) {
@@ -779,6 +887,12 @@ export function ImagesStep({
   const handleBatchCancel = useCallback(() => {
     batchCancelledRef.current = true;
     // 1. Workers param de puxar novas tarefas imediatamente (frontend)
+    generatingSegmentsRef.current = new Set();
+    pendingProgressMessageRef.current = null;
+    if (progressFlushTimerRef.current !== null) {
+      clearTimeout(progressFlushTimerRef.current);
+      progressFlushTimerRef.current = null;
+    }
     setGeneratingSegments(new Set());
     setVo3Progress({});
     setBatchProcessing(false);
@@ -787,7 +901,11 @@ export function ImagesStep({
   }, []);
 
   // Helper para label do botão principal
-  const getGenerateLabel = (segment: TranscriptionSegment, isGenerating: boolean): string => {
+  const getGenerateLabel = (
+    segment: TranscriptionSegment,
+    isGenerating: boolean,
+    serviceOverride?: string
+  ): string => {
     if (isGenerating) {
       const progress = vo3Progress[segment.id];
       if (progress) return progress;
@@ -796,7 +914,7 @@ export function ImagesStep({
     // Se já tem vídeo → "Gerar novamente"
     if (isVideo(segment.imageUrl)) return '↻ Gerar novamente';
     // Se tem imagem (não vídeo) → label depende do serviço
-    const svc = getEffectiveService(segment);
+    const svc = serviceOverride || getEffectiveService(segment);
     if (segment.imageUrl && !isVideo(segment.imageUrl)) {
       if (svc === 'flow-image') return '🖼️ Gerar nova Imagem';
       if (finalImages[segment.id]) return '🎬 Gerar Cena';
@@ -848,7 +966,7 @@ export function ImagesStep({
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500"></div>
           <span className="text-white/60 text-sm">
-            {segmentsWithMedia.length} de {segments.length} prontas
+            {segmentsWithMediaCount} de {segments.length} prontas
           </span>
         </div>
 
@@ -868,7 +986,7 @@ export function ImagesStep({
         )}
 
         {/* Mostra créditos do Veo 3 se existir algum segmento configurado */}
-        {segments.some(s => s.assetType === 'video_vo3' || s.assetType === 'video_veo2') && (
+        {hasVo3Segments && (
           <div className="flex items-center gap-2 px-3 py-1 bg-[#1a73e8]/20 rounded-full border border-[#1a73e8]/30">
             <span className="text-xl">✨</span>
             <span className="text-[#8ab4f8] font-medium text-sm">
@@ -1046,11 +1164,11 @@ export function ImagesStep({
           {/* Resultado do batch */}
           {!batchProcessing && Object.keys(batchResults).length > 0 && (
             <div className="flex items-center gap-1.5">
-              {Object.values(batchResults).filter(r => r === 'success').length > 0 && (
-                <span className="text-green-400 text-xs">✅{Object.values(batchResults).filter(r => r === 'success').length}</span>
+              {batchStats.success > 0 && (
+                <span className="text-green-400 text-xs">✅{batchStats.success}</span>
               )}
-              {Object.values(batchResults).filter(r => r === 'error').length > 0 && (
-                <span className="text-red-400 text-xs">❌{Object.values(batchResults).filter(r => r === 'error').length}</span>
+              {batchStats.error > 0 && (
+                <span className="text-red-400 text-xs">❌{batchStats.error}</span>
               )}
               <button
                 onClick={() => setBatchResults({})}
@@ -1071,6 +1189,7 @@ export function ImagesStep({
           const isUploading = uploadingSegments.has(segment.id);
           const hasImage = !!segment.imageUrl;
           const isBatchActive = batchProcessing && batchProgress.currentSceneId === segment.id;
+          const effectiveService = getEffectiveService(segment);
 
           return (
             <div
@@ -1080,12 +1199,13 @@ export function ImagesStep({
                   ? 'border-cyan-400 ring-2 ring-cyan-400/30 shadow-lg shadow-cyan-500/10'
                   : 'border-white/10'
               }`}
+              style={{ contentVisibility: 'auto', containIntrinsicSize: '430px' }}
             >
               {/* Preview de imagem ou área de upload */}
               <div className="aspect-video relative group rounded-t-xl overflow-hidden">
 
                 {/* Select Modo: Frames / Ingredients (canto superior esquerdo, só Veo 3 e Flow Image) */}
-                {(getEffectiveService(segment) === 'veo3' || getEffectiveService(segment) === 'flow-image') && !isGenerating && (
+                {(effectiveService === 'veo3' || effectiveService === 'flow-image') && !isGenerating && (
                   <div className="absolute top-2 left-2 z-20">
                     <select
                       value={ingredientMode[segment.id] || 'frames'}
@@ -1103,7 +1223,7 @@ export function ImagesStep({
                 )}
 
                 {/* Mini-select de quantidade (Flow Image) */}
-                {getEffectiveService(segment) === 'flow-image' && !isGenerating && (
+                {effectiveService === 'flow-image' && !isGenerating && (
                   <div className="absolute top-2 right-2 z-10">
                     <select
                       value={imageCount[segment.id] ?? 1}
@@ -1121,7 +1241,7 @@ export function ImagesStep({
                 )}
 
                 {/* Mini-select de quantidade (Vídeo Flow: veo3 / veo2-flow) */}
-                {(getEffectiveService(segment) === 'veo3' || getEffectiveService(segment) === 'veo2-flow') && !isGenerating && (
+                {(effectiveService === 'veo3' || effectiveService === 'veo2-flow') && !isGenerating && (
                   <div className="absolute top-2 right-2 z-10">
                     <select
                       value={imageCount[segment.id] ?? 1}
@@ -1151,7 +1271,7 @@ export function ImagesStep({
                     );
                   }
 
-                  const svc = getEffectiveService(segment);
+                  const svc = effectiveService;
                   const isVideoService = svc === 'veo3' || svc === 'veo3-api' || svc === 'veo3-fast-api' || svc === 'veo2-flow' || svc === 'veo2' || svc === 'grok';
                   const showCarousel = isVideoService && hasImage && !isVideo(segment.imageUrl) && ingredientMode[segment.id] !== 'ingredients';
                   const currentIndex = carouselIndices[segment.id] || 0;
@@ -1168,7 +1288,13 @@ export function ImagesStep({
                             if (imgUrl) {
                               return (
                                 <div key={idx} className="relative w-1/3 aspect-square rounded-xl overflow-hidden border-2 border-cyan-500/30 group/slot">
-                                  <img src={getMediaSrc(imgUrl)} className="w-full h-full object-cover" alt={`Ingrediente ${idx + 1}`} />
+                                  <img
+                                    src={getMediaSrc(imgUrl)}
+                                    className="w-full h-full object-cover"
+                                    alt={`Ingrediente ${idx + 1}`}
+                                    loading="lazy"
+                                    decoding="async"
+                                  />
                                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/slot:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
                                     <button
                                       onClick={(e) => { e.stopPropagation(); handleRemoveIngredient(segment.id, idx); }}
@@ -1265,14 +1391,7 @@ export function ImagesStep({
                   if (isVideo(segment.imageUrl)) {
                      return (
                        <>
-                        <video
-                          src={getMediaSrc(segment.imageUrl)}
-                          className="w-full h-full object-cover"
-                          autoPlay
-                          loop
-                          muted
-                          playsInline
-                        />
+                        <SmartVideoPreview src={getMediaSrc(segment.imageUrl)} />
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-10">
                           <button
                             onClick={() => handleRemoveImage(segment.id)}
@@ -1291,7 +1410,12 @@ export function ImagesStep({
                      if (finalImgUrl) {
                         return (
                           <>
-                            <img src={getMediaSrc(finalImgUrl)} className="w-full h-full object-cover" />
+                            <img
+                              src={getMediaSrc(finalImgUrl)}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              decoding="async"
+                            />
                             <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded backdrop-blur-sm z-20 pointer-events-none">🎬 Final</div>
                             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center gap-2 z-10 transition-opacity">
                                <button onClick={() => handleRemoveFinalImage(segment.id)} className="px-3 py-2 bg-red-500/80 hover:bg-red-500 text-white rounded-lg text-sm transition-all shadow-md">🗑️ Remover</button>
@@ -1332,7 +1456,12 @@ export function ImagesStep({
                   // 4. CARROSSEL: QUADRO INICIAL (com botão Right se for video service)
                   return (
                     <>
-                      <img src={getMediaSrc(segment.imageUrl)} className="w-full h-full object-cover" />
+                      <img
+                        src={getMediaSrc(segment.imageUrl)}
+                        className="w-full h-full object-cover"
+                        loading="lazy"
+                        decoding="async"
+                      />
                       {showCarousel && (
                         <div className="absolute top-2 left-2 px-2 py-1 bg-black/60 text-white text-xs rounded backdrop-blur-sm z-20 pointer-events-none">🎬 Inicial</div>
                       )}
@@ -1399,21 +1528,21 @@ export function ImagesStep({
                     className={`flex-1 py-2 px-3 rounded-l-lg text-sm transition-all ${
                       isGenerating
                         ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                        : getEffectiveService(segment) === 'veo3'
+                        : effectiveService === 'veo3'
                           ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300'
-                          : getEffectiveService(segment) === 'grok'
+                          : effectiveService === 'grok'
                             ? 'bg-zinc-500/20 hover:bg-zinc-500/30 text-zinc-300'
                             : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
                     }`}
                   >
-                    {getGenerateLabel(segment, isGenerating)}
+                    {getGenerateLabel(segment, isGenerating, effectiveService)}
                   </button>
 
                   {/* Separador | */}
                   <div className={`self-stretch w-px opacity-40 ${
                     isGenerating ? 'bg-white/20' :
-                    getEffectiveService(segment) === 'veo3' ? 'bg-cyan-400' : 
-                    getEffectiveService(segment) === 'grok' ? 'bg-zinc-400' : 'bg-orange-400'
+                    effectiveService === 'veo3' ? 'bg-cyan-400' :
+                    effectiveService === 'grok' ? 'bg-zinc-400' : 'bg-orange-400'
                   }`} />
 
                   {/* Botão: ✕ para cancelar se travado, ▼ para dropdown quando ocioso */}
@@ -1433,9 +1562,9 @@ export function ImagesStep({
                       <button
                         onClick={() => setOpenDropdown(openDropdown === segment.id ? null : segment.id)}
                         className={`px-2 py-2 rounded-r-lg text-sm transition-all ${
-                          getEffectiveService(segment) === 'veo3'
+                          effectiveService === 'veo3'
                             ? 'bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-300'
-                            : getEffectiveService(segment) === 'grok'
+                            : effectiveService === 'grok'
                               ? 'bg-zinc-500/20 hover:bg-zinc-500/30 text-zinc-300'
                               : 'bg-orange-500/20 hover:bg-orange-500/30 text-orange-300'
                         }`}
@@ -1464,7 +1593,7 @@ export function ImagesStep({
                             Serviço de geração
                           </div>
                           {GENERATION_SERVICES.map(svc => {
-                            const isActive = getEffectiveService(segment) === svc.id;
+                            const isActive = effectiveService === svc.id;
                             return (
                               <button
                                 key={svc.id}
@@ -1540,6 +1669,8 @@ export function ImagesStep({
                       src={getMediaSrc(url)}
                       alt={`Opção ${idx + 1}`}
                       className="w-full aspect-video object-cover"
+                      loading="lazy"
+                      decoding="async"
                     />
                     {pickerSelectedIdx === idx && (
                       <div className="absolute top-2 right-2 w-6 h-6 bg-pink-500 rounded-full flex items-center justify-center">
@@ -1619,7 +1750,13 @@ export function ImagesStep({
                       <div className="aspect-square relative group rounded-xl border-2 border-dashed border-white/20 hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all overflow-hidden flex items-center justify-center bg-white/5 cursor-pointer">
                         {imgUrl ? (
                           <>
-                            <img src={getMediaSrc(imgUrl)} alt={`Personagem ${charId}`} className="w-full h-full object-cover" />
+                            <img
+                              src={getMediaSrc(imgUrl)}
+                              alt={`Personagem ${charId}`}
+                              className="w-full h-full object-cover"
+                              loading="lazy"
+                              decoding="async"
+                            />
                             <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
                               <label className="text-white text-sm font-medium px-3 py-1.5 bg-black/50 rounded-lg cursor-pointer hover:bg-black/70 transition-all">
                                 📁 Trocar
