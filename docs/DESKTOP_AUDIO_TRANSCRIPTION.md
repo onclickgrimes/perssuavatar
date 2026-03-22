@@ -141,11 +141,7 @@ Veja `renderer/components/DesktopAudioTranscriptionExample.tsx` para um exemplo 
 
 ### 1. API Key do Deepgram
 
-Certifique-se de ter a API key configurada no `.env`:
-
-```env
-DEEPGRAM_API_KEY=sua_api_key_aqui
-```
+Certifique-se de ter uma credencial ativa do Deepgram cadastrada no banco de dados (Configurações > API e Modelos).
 
 ### 2. Permissões do Sistema
 

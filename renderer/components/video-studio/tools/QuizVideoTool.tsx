@@ -1331,7 +1331,7 @@ export function QuizVideoTool({ onBack }: QuizVideoToolProps) {
       </div>
 
       <p className="mt-4 text-xs text-white/40 text-center">
-        💡 Certifique-se de que a API key do provedor está configurada no arquivo .env
+        💡 Certifique-se de que a API key do provedor está cadastrada no banco (Configurações - API e Modelos)
       </p>
     </div>
   );

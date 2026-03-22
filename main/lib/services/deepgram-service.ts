@@ -1,26 +1,44 @@
 import { createClient, LiveTranscriptionEvents } from '@deepgram/sdk';
 import { EventEmitter } from 'events';
 import { Readable } from 'stream';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
+import { getPrimaryApiKey } from '../credentials';
 
 export class DeepgramService extends EventEmitter {
     private deepgramLive: any;
-    private apiKey: string;
-    private client: any;
+    private client: any = null;
+    private clientApiKey: string | null = null;
 
     constructor() {
         super();
-        this.apiKey = process.env.DEEPGRAM_API_KEY || '';
-        if (!this.apiKey) {
-            console.error("Deepgram API Key missing!");
+    }
+
+    private ensureClient(): boolean {
+        const apiKey = getPrimaryApiKey('deepgram');
+        if (!apiKey) {
+            this.client = null;
+            this.clientApiKey = null;
+            return false;
         }
-        this.client = createClient(this.apiKey);
+
+        if (this.client && this.clientApiKey === apiKey) {
+            return true;
+        }
+
+        this.client = createClient(apiKey);
+        this.clientApiKey = apiKey;
+        return true;
     }
 
     public start(audioStream?: Readable) {
         if (this.deepgramLive) return;
+
+        if (!this.ensureClient()) {
+            const error = new Error('Deepgram API key não configurada. Cadastre uma chave em Configurações > API e Modelos.');
+            console.error("Deepgram API Key missing!");
+            this.emit('error', error);
+            this.emit('status', 'Idle');
+            return;
+        }
 
         console.log('Iniciando DeepgramService...');
         this.deepgramLive = this.client.listen.live({

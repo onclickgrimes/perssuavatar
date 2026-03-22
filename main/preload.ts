@@ -142,6 +142,35 @@ const handler = {
     getAssistantMode: () => ipcRenderer.invoke('db:get-assistant-mode'),
     setAssistantMode: (mode: 'classic' | 'live') => 
       ipcRenderer.invoke('db:set-assistant-mode', mode),
+
+    // API Credentials
+    getApiCredentials: (service?: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'aws_polly' | 'pexels') =>
+      ipcRenderer.invoke('db:get-api-credentials', service),
+    createApiCredential: (input: {
+      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'aws_polly' | 'pexels';
+      label?: string;
+      apiKey?: string;
+      accessKeyId?: string;
+      secretAccessKey?: string;
+      region?: string;
+      voiceId?: string;
+      isActive?: boolean;
+    }) => ipcRenderer.invoke('db:create-api-credential', input),
+    updateApiCredential: (credentialId: string, updates: {
+      label?: string;
+      apiKey?: string;
+      accessKeyId?: string;
+      secretAccessKey?: string;
+      region?: string;
+      voiceId?: string;
+      isActive?: boolean;
+    }) => ipcRenderer.invoke('db:update-api-credential', credentialId, updates),
+    deleteApiCredential: (credentialId: string) =>
+      ipcRenderer.invoke('db:delete-api-credential', credentialId),
+    setActiveApiCredential: (
+      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'aws_polly' | 'pexels',
+      credentialId: string
+    ) => ipcRenderer.invoke('db:set-active-api-credential', service, credentialId),
     
     // Conversation History
     getConversationHistory: () => ipcRenderer.invoke('db:get-conversation-history'),

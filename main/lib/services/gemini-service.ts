@@ -1,8 +1,6 @@
 import { GoogleGenerativeAI, FunctionDeclaration, Content, FunctionCallingMode } from "@google/generative-ai";
-import * as dotenv from 'dotenv';
 import { EventEmitter } from 'events';
-
-dotenv.config();
+import { getNextApiKey } from '../credentials';
 
 export interface GeminiMessage {
     role: 'user' | 'assistant' | 'system' | 'tool';
@@ -24,20 +22,30 @@ export interface GeminiChatResponse {
 }
 
 export class GeminiService extends EventEmitter {
-    private genAI: GoogleGenerativeAI;
-    private model: any;
+    private genAI: GoogleGenerativeAI | null = null;
+    private model: any = null;
     private modelName: string = "gemini-3.1-flash-lite-preview";
-    private chatModel: any;
+    private chatModel: any = null;
+    private currentApiKey: string | null = null;
 
     constructor() {
         super();
-        const apiKey = process.env.GOOGLE_API_KEY_2 || '';
+    }
+
+    private ensureClient(): void {
+        const apiKey = getNextApiKey('gemini');
         if (!apiKey) {
-            console.error("Google API Key missing!");
+            throw new Error('Google Gemini API key não configurada.');
         }
+
+        if (this.genAI && this.currentApiKey === apiKey) {
+            return;
+        }
+
         this.genAI = new GoogleGenerativeAI(apiKey);
-        this.model = this.genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
-        this.chatModel = this.genAI.getGenerativeModel({ model: "gemini-3.1-flash-lite-preview" });
+        this.currentApiKey = apiKey;
+        this.model = this.genAI.getGenerativeModel({ model: this.modelName });
+        this.chatModel = this.genAI.getGenerativeModel({ model: this.modelName });
     }
 
     /**
@@ -45,6 +53,9 @@ export class GeminiService extends EventEmitter {
      */
     public async getChatCompletion(messages: GeminiMessage[], tools?: FunctionDeclaration[]): Promise<GeminiChatResponse> {
         try {
+            this.ensureClient();
+            const genAI = this.genAI as GoogleGenerativeAI;
+
             // Convert messages to Gemini format
             const systemInstruction = messages.find(m => m.role === 'system')?.content || '';
             const chatMessages = messages.filter(m => m.role !== 'system');
@@ -92,7 +103,7 @@ export class GeminiService extends EventEmitter {
                 };
             }
 
-            const model = this.genAI.getGenerativeModel(modelConfig);
+            const model = genAI.getGenerativeModel(modelConfig);
             
             const result = await model.generateContent({
                 contents: contents
@@ -146,6 +157,8 @@ export class GeminiService extends EventEmitter {
      */
      public async analyzeVideo(videoBuffer: Buffer, mimeType: string = 'video/webm', userContext?: string): Promise<string> {
         try {
+            this.ensureClient();
+
             console.log("Iniciando análise de vídeo com GeminiService...");
             this.emit('status', 'Thinking');
             
@@ -184,8 +197,13 @@ export class GeminiService extends EventEmitter {
 
     public setModel(modelName: string) {
         this.modelName = modelName;
-        this.model = this.genAI.getGenerativeModel({ model: modelName });
-        this.chatModel = this.genAI.getGenerativeModel({ model: modelName });
+        try {
+            this.ensureClient();
+            this.model = (this.genAI as GoogleGenerativeAI).getGenerativeModel({ model: modelName });
+            this.chatModel = (this.genAI as GoogleGenerativeAI).getGenerativeModel({ model: modelName });
+        } catch {
+            // Sem credencial, apenas persiste o nome do modelo para quando houver chave.
+        }
     }
 
     /**
@@ -193,6 +211,8 @@ export class GeminiService extends EventEmitter {
      */
     public async getChatVideoAnalysis(messages: GeminiMessage[]): Promise<any> {
         try {
+            this.ensureClient();
+            const genAI = this.genAI as GoogleGenerativeAI;
             console.log('🧠 Gemini VideoAnalysis: Requesting JSON response...');
 
             const systemInstruction = messages.find(m => m.role === 'system')?.content || 'Respond with valid JSON.';
@@ -206,7 +226,7 @@ export class GeminiService extends EventEmitter {
                 }));
 
             // Use generation config for JSON
-            const model = this.genAI.getGenerativeModel({
+            const model = genAI.getGenerativeModel({
                 model: this.modelName, // use dynamic model name
                 systemInstruction: systemInstruction,
             });

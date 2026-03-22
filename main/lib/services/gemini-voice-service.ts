@@ -1,9 +1,7 @@
 import { GoogleGenAI } from '@google/genai';
-import * as dotenv from 'dotenv';
 import * as fs from 'fs';
 import * as path from 'path';
-
-dotenv.config();
+import { getNextApiKey } from '../credentials';
 
 // ===========================
 // Types e Interfaces
@@ -82,9 +80,9 @@ export class GeminiVoiceService {
     private defaultTemperature: number = 1;
 
     constructor() {
-        const apiKey = process.env.GOOGLE_API_KEY_2;
+        const apiKey = getNextApiKey('gemini');
         if (!apiKey) {
-            throw new Error("Missing GOOGLE_API_KEY_2");
+            throw new Error("Missing Gemini API key");
         }
         this.ai = new GoogleGenAI({ apiKey });
     }

@@ -39,6 +39,30 @@ export function registerDatabaseHandlers() {
     db.setAssistantMode(mode);
     return true;
   });
+
+  // ===============================================
+  // API CREDENTIALS
+  // ===============================================
+
+  ipcMain.handle('db:get-api-credentials', (event, service?: db.ApiCredentialService) => {
+    return db.getApiCredentials(service);
+  });
+
+  ipcMain.handle('db:create-api-credential', (event, input: db.UpsertApiCredentialInput) => {
+    return db.createApiCredential(input);
+  });
+
+  ipcMain.handle('db:update-api-credential', (event, credentialId: string, updates: any) => {
+    return db.updateApiCredential(credentialId, updates);
+  });
+
+  ipcMain.handle('db:delete-api-credential', (event, credentialId: string) => {
+    return db.deleteApiCredential(credentialId);
+  });
+
+  ipcMain.handle('db:set-active-api-credential', (event, service: db.ApiCredentialService, credentialId: string) => {
+    return db.setActiveApiCredential(service, credentialId);
+  });
   
   // ===============================================
   // CONVERSATION HISTORY
@@ -254,6 +278,13 @@ export function unregisterDatabaseHandlers() {
     'db:set-tts-provider',
     'db:get-assistant-mode',
     'db:set-assistant-mode',
+
+    // API Credentials
+    'db:get-api-credentials',
+    'db:create-api-credential',
+    'db:update-api-credential',
+    'db:delete-api-credential',
+    'db:set-active-api-credential',
     
     // Conversation History
     'db:get-conversation-history',

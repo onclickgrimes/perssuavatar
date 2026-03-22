@@ -19,6 +19,7 @@ import type {
   MediaImageSizes,
   MediaAuthor,
 } from './types';
+import { getPrimaryApiKey } from '../credentials';
 
 // ========================================
 // TIPOS ESPECÍFICOS DO PEXELS
@@ -118,9 +119,9 @@ export class PexelsService implements MediaSearchService {
   private rateLimitReset: number = 0;
   
   constructor(apiKey?: string) {
-    const key = apiKey || process.env.PEXELS_API_KEY;
+    const key = apiKey || getPrimaryApiKey('pexels');
     if (!key) {
-      throw new Error('PEXELS_API_KEY não encontrada. Defina no .env ou passe como parâmetro.');
+      throw new Error('Chave da Pexels não configurada. Cadastre em Configurações > API e Modelos.');
     }
     this.apiKey = key;
   }

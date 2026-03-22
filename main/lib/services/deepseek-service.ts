@@ -1,8 +1,6 @@
 import { OpenAI } from 'openai';
-import * as dotenv from 'dotenv';
 import { ChatCompletionTool } from 'openai/resources/chat/completions';
-
-dotenv.config();
+import { getNextApiKey } from '../credentials';
 
 export interface DeepSeekMessage {
     role: 'user' | 'assistant' | 'system' | 'tool';
@@ -28,20 +26,29 @@ export interface DeepSeekChatResponse {
  * Usa a API compatível com OpenAI do DeepSeek
  */
 export class DeepSeekService {
-    private client: OpenAI;
+    private client: OpenAI | null = null;
+    private currentApiKey: string | null = null;
     private model: string = "deepseek-chat";
 
     constructor() {
-        const apiKey = process.env.DEEPSEEK_API_KEY || '';
+    }
+
+    private getClient(): OpenAI {
+        const apiKey = getNextApiKey('deepseek');
         if (!apiKey) {
-            console.error("DeepSeek API Key missing! Please add DEEPSEEK_API_KEY to your .env file");
+            throw new Error('DeepSeek API key não configurada.');
         }
-        
-        // DeepSeek usa uma API compatível com OpenAI
-        this.client = new OpenAI({ 
-            apiKey: apiKey,
+
+        if (this.client && this.currentApiKey === apiKey) {
+            return this.client;
+        }
+
+        this.client = new OpenAI({
+            apiKey,
             baseURL: 'https://api.deepseek.com'
         });
+        this.currentApiKey = apiKey;
+        return this.client;
     }
 
     /**
@@ -145,7 +152,7 @@ export class DeepSeekService {
                 requestConfig.tool_choice = 'auto';
             }
 
-            const response = await this.client.chat.completions.create(requestConfig);
+            const response = await this.getClient().chat.completions.create(requestConfig);
 
             const message = response.choices[0].message;
             
@@ -222,7 +229,7 @@ export class DeepSeekService {
 
             console.log('🧠 DeepSeek VideoAnalysis: Requesting JSON response...');
             
-            const response = await this.client.chat.completions.create({
+            const response = await this.getClient().chat.completions.create({
                 model: this.model,
                 messages: messages as any,
                 temperature: 0.3, // Lower temperature for more deterministic JSON

@@ -1,29 +1,40 @@
 import { OpenAI } from 'openai';
 import { getSupabaseService, VideoRecord } from './supabase-service';
+import { getPrimaryApiKey } from '../credentials';
 
 /**
  * Serviço de busca vetorial/semântica de vídeos
  * Toda a lógica de IA roda no app Electron, não no Supabase
  */
 export class VideoSearchService {
-  private openai: OpenAI;
+  private openai: OpenAI | null = null;
+  private openaiApiKey: string | null = null;
   private supabase: ReturnType<typeof getSupabaseService>;
   
   constructor() {
-    const apiKey = process.env.OPENAI_API_KEY;
+    this.supabase = getSupabaseService();
+  }
+
+  private getOpenAIClient(): OpenAI {
+    const apiKey = getPrimaryApiKey('openai');
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY não encontrada no .env');
+      throw new Error('OpenAI API key não encontrada. Cadastre em Configurações > API e Modelos.');
+    }
+
+    if (this.openai && this.openaiApiKey === apiKey) {
+      return this.openai;
     }
 
     this.openai = new OpenAI({ apiKey });
-    this.supabase = getSupabaseService();
+    this.openaiApiKey = apiKey;
+    return this.openai;
   }
 
   /**
    * Gera embedding para um texto usando OpenAI
    */
   async generateEmbedding(text: string): Promise<number[]> {
-    const response = await this.openai.embeddings.create({
+    const response = await this.getOpenAIClient().embeddings.create({
       model: 'text-embedding-3-small',
       input: text,
       encoding_format: 'float',

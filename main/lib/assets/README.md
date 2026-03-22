@@ -11,11 +11,7 @@ Este módulo contém serviços para busca de mídias (fotos e vídeos) de difere
 
 ## Configuração
 
-Adicione a seguinte variável de ambiente no arquivo `.env`:
-
-```env
-PEXELS_API_KEY=sua_chave_aqui
-```
+Cadastre a chave do Pexels no banco de dados pelo app (Configurações > API e Modelos).
 
 Para obter uma chave de API:
 1. Crie uma conta em https://www.pexels.com

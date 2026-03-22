@@ -7,12 +7,10 @@ import {
     Session,
 } from '@google/genai';
 import { EventEmitter } from 'events';
-import * as dotenv from 'dotenv';
 import { Buffer } from 'buffer';
 import * as fs from 'fs';
 import { geminiLiveTools } from '../tools';
-
-dotenv.config();
+import { getNextApiKey } from '../credentials';
 
 export class GeminiLiveService extends EventEmitter {
     private session: Session | undefined = undefined;
@@ -40,8 +38,8 @@ export class GeminiLiveService extends EventEmitter {
 
         try {
             this.isConnecting = true;
-            const apiKey = process.env.GOOGLE_API_KEY_2;
-            if (!apiKey) throw new Error("Missing GOOGLE_API_KEY_2");
+            const apiKey = getNextApiKey('gemini');
+            if (!apiKey) throw new Error("Missing Gemini API key");
 
             const ai = new GoogleGenAI({ apiKey });
 

@@ -28,6 +28,80 @@ interface ProviderConfig {
   isLoggedIn?: boolean;
 }
 
+type ApiCredentialService =
+  | 'deepgram'
+  | 'elevenlabs'
+  | 'openai'
+  | 'deepseek'
+  | 'gemini'
+  | 'aws_polly'
+  | 'pexels';
+
+interface ApiCredential {
+  id: string;
+  service: ApiCredentialService;
+  label: string;
+  apiKey?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  region?: string;
+  voiceId?: string;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+const API_SERVICE_META: Record<ApiCredentialService, {
+  label: string;
+  icon: string;
+  multi: boolean;
+}> = {
+  deepgram: { label: 'Deepgram', icon: '🎤', multi: true },
+  elevenlabs: { label: 'ElevenLabs', icon: '🎙️', multi: true },
+  openai: { label: 'OpenAI', icon: '🤖', multi: true },
+  deepseek: { label: 'DeepSeek', icon: '🧠', multi: true },
+  gemini: { label: 'Google Gemini', icon: '⚡', multi: true },
+  aws_polly: { label: 'AWS Polly', icon: '☁️', multi: false },
+  pexels: { label: 'Pexels', icon: '📷', multi: false },
+};
+
+const API_SERVICE_ORDER: ApiCredentialService[] = [
+  'deepgram',
+  'elevenlabs',
+  'openai',
+  'deepseek',
+  'gemini',
+  'aws_polly',
+  'pexels',
+];
+
+interface ApiCredentialFormState {
+  label: string;
+  apiKey: string;
+  accessKeyId: string;
+  secretAccessKey: string;
+  region: string;
+  voiceId: string;
+}
+
+function buildServiceRecord<T>(factory: (service: ApiCredentialService) => T): Record<ApiCredentialService, T> {
+  return API_SERVICE_ORDER.reduce((acc, service) => {
+    acc[service] = factory(service);
+    return acc;
+  }, {} as Record<ApiCredentialService, T>);
+}
+
+function createEmptyCredentialForm(service: ApiCredentialService): ApiCredentialFormState {
+  return {
+    label: '',
+    apiKey: '',
+    accessKeyId: '',
+    secretAccessKey: '',
+    region: service === 'aws_polly' ? 'sa-east-1' : '',
+    voiceId: '',
+  };
+}
+
 export default function Settings({ 
   onSizeChange, 
   onDragToggle, 
@@ -72,6 +146,21 @@ export default function Settings({
   const [isCreatingProvider, setIsCreatingProvider] = useState(false);
   const [isOpeningProvider, setIsOpeningProvider] = useState<string | null>(null);
   const [providerError, setProviderError] = useState<string | null>(null);
+
+  // API credentials (chaves salvas no banco)
+  const [apiCredentialsByService, setApiCredentialsByService] = useState<Record<ApiCredentialService, ApiCredential[]>>(
+    () => buildServiceRecord(() => [])
+  );
+  const [apiCredentialForms, setApiCredentialForms] = useState<Record<ApiCredentialService, ApiCredentialFormState>>(
+    () => buildServiceRecord((service) => createEmptyCredentialForm(service))
+  );
+  const [editingApiCredentialByService, setEditingApiCredentialByService] = useState<Record<ApiCredentialService, string | null>>(
+    () => buildServiceRecord(() => null)
+  );
+  const [isApiCredentialLoading, setIsApiCredentialLoading] = useState(false);
+  const [apiCredentialBusyAction, setApiCredentialBusyAction] = useState<string | null>(null);
+  const [apiCredentialMessage, setApiCredentialMessage] = useState<string | null>(null);
+  const [apiCredentialError, setApiCredentialError] = useState<string | null>(null);
   
   // Continuous recorder & Screen Share
   const { isRecording, startRecording, stopRecording, saveLastSeconds, getBufferInfo } = useContinuousRecorder({ maxBufferSeconds: 600 });
@@ -357,6 +446,179 @@ export default function Settings({
   };
 
   // ================================================
+  // FUNÇÕES DE CREDENCIAIS DE API
+  // ================================================
+
+  const maskSecret = (value?: string): string => {
+    if (!value) return 'não configurado';
+    if (value.length <= 8) return `${value.slice(0, 2)}••••`;
+    return `${value.slice(0, 4)}••••${value.slice(-4)}`;
+  };
+
+  const resetApiCredentialForm = (service: ApiCredentialService) => {
+    setApiCredentialForms(prev => ({
+      ...prev,
+      [service]: createEmptyCredentialForm(service),
+    }));
+    setEditingApiCredentialByService(prev => ({
+      ...prev,
+      [service]: null,
+    }));
+  };
+
+  const handleApiCredentialFieldChange = (
+    service: ApiCredentialService,
+    field: keyof ApiCredentialFormState,
+    value: string
+  ) => {
+    setApiCredentialForms(prev => ({
+      ...prev,
+      [service]: {
+        ...prev[service],
+        [field]: value,
+      },
+    }));
+  };
+
+  const loadApiCredentials = async () => {
+    setIsApiCredentialLoading(true);
+    try {
+      const credentials = await window.electron.db.getApiCredentials() as ApiCredential[];
+      const grouped = buildServiceRecord<ApiCredential[]>((service) =>
+        credentials.filter(credential => credential.service === service)
+      );
+      setApiCredentialsByService(grouped);
+      setApiCredentialError(null);
+    } catch (error: any) {
+      console.error('❌ Erro ao carregar credenciais:', error);
+      setApiCredentialError(error?.message || 'Falha ao carregar credenciais de API.');
+    } finally {
+      setIsApiCredentialLoading(false);
+    }
+  };
+
+  const handleEditApiCredential = (service: ApiCredentialService, credential: ApiCredential) => {
+    setApiCredentialForms(prev => ({
+      ...prev,
+      [service]: {
+        label: credential.label || '',
+        apiKey: credential.apiKey || '',
+        accessKeyId: credential.accessKeyId || '',
+        secretAccessKey: credential.secretAccessKey || '',
+        region: credential.region || (service === 'aws_polly' ? 'sa-east-1' : ''),
+        voiceId: credential.voiceId || '',
+      },
+    }));
+    setEditingApiCredentialByService(prev => ({
+      ...prev,
+      [service]: credential.id,
+    }));
+    setApiCredentialMessage(null);
+    setApiCredentialError(null);
+  };
+
+  const handleSaveApiCredential = async (service: ApiCredentialService) => {
+    const form = apiCredentialForms[service];
+    const editingId = editingApiCredentialByService[service];
+    const busyId = `save:${service}`;
+
+    setApiCredentialMessage(null);
+    setApiCredentialError(null);
+
+    if (service === 'aws_polly') {
+      if (!form.accessKeyId.trim() || !form.secretAccessKey.trim()) {
+        setApiCredentialError('AWS Polly requer Access Key ID e Secret Access Key.');
+        return;
+      }
+    } else if (!form.apiKey.trim()) {
+      setApiCredentialError(`A chave de API de ${API_SERVICE_META[service].label} é obrigatória.`);
+      return;
+    }
+
+    const payload: any = {
+      label: form.label.trim() || undefined,
+    };
+
+    if (service === 'aws_polly') {
+      payload.accessKeyId = form.accessKeyId.trim();
+      payload.secretAccessKey = form.secretAccessKey.trim();
+      payload.region = form.region.trim() || 'sa-east-1';
+    } else {
+      payload.apiKey = form.apiKey.trim();
+      if (service === 'elevenlabs') {
+        payload.voiceId = form.voiceId.trim() || undefined;
+      }
+    }
+
+    setApiCredentialBusyAction(busyId);
+
+    try {
+      if (editingId) {
+        await window.electron.db.updateApiCredential(editingId, payload);
+        setApiCredentialMessage(`${API_SERVICE_META[service].label} atualizado com sucesso.`);
+      } else {
+        await window.electron.db.createApiCredential({
+          service,
+          ...payload,
+        });
+        setApiCredentialMessage(`Credencial de ${API_SERVICE_META[service].label} adicionada.`);
+      }
+
+      await loadApiCredentials();
+      resetApiCredentialForm(service);
+    } catch (error: any) {
+      console.error('❌ Erro ao salvar credencial:', error);
+      setApiCredentialError(error?.message || 'Falha ao salvar credencial de API.');
+    } finally {
+      setApiCredentialBusyAction(null);
+    }
+  };
+
+  const handleDeleteApiCredential = async (service: ApiCredentialService, credentialId: string) => {
+    const busyId = `delete:${credentialId}`;
+
+    if (!confirm(`Deseja remover esta credencial de ${API_SERVICE_META[service].label}?`)) {
+      return;
+    }
+
+    setApiCredentialBusyAction(busyId);
+    setApiCredentialMessage(null);
+    setApiCredentialError(null);
+
+    try {
+      await window.electron.db.deleteApiCredential(credentialId);
+      if (editingApiCredentialByService[service] === credentialId) {
+        resetApiCredentialForm(service);
+      }
+      await loadApiCredentials();
+      setApiCredentialMessage('Credencial removida com sucesso.');
+    } catch (error: any) {
+      console.error('❌ Erro ao remover credencial:', error);
+      setApiCredentialError(error?.message || 'Falha ao remover credencial de API.');
+    } finally {
+      setApiCredentialBusyAction(null);
+    }
+  };
+
+  const handleSetActiveApiCredential = async (service: ApiCredentialService, credentialId: string) => {
+    const busyId = `active:${credentialId}`;
+    setApiCredentialBusyAction(busyId);
+    setApiCredentialMessage(null);
+    setApiCredentialError(null);
+
+    try {
+      await window.electron.db.setActiveApiCredential(service, credentialId);
+      await loadApiCredentials();
+      setApiCredentialMessage(`Chave ativa de ${API_SERVICE_META[service].label} atualizada.`);
+    } catch (error: any) {
+      console.error('❌ Erro ao ativar credencial:', error);
+      setApiCredentialError(error?.message || 'Falha ao definir chave ativa.');
+    } finally {
+      setApiCredentialBusyAction(null);
+    }
+  };
+
+  // ================================================
   // FUNÇÕES DE EMBEDDING
   // ================================================
 
@@ -605,6 +867,13 @@ export default function Settings({
     }
   }, [activeTab]);
 
+  // Carregar credenciais ao abrir a aba de APIs
+  useEffect(() => {
+    if (activeTab === 'api') {
+      loadApiCredentials();
+    }
+  }, [activeTab]);
+
   // Helper para obter configurações de plataforma
   const getPlatformConfig = (platform: ProviderPlatform) => {
     const configs: Record<ProviderPlatform, { label: string; icon: string; color: string; bgColor: string }> = {
@@ -808,13 +1077,209 @@ export default function Settings({
                         </div>
                      </div>
 
-                     <div className="opacity-50 pointer-events-none">
-                        <h3 className="text-lg font-medium text-white mb-4">Chave de API</h3>
-                        <div className="bg-[#111] border border-[#222] rounded-lg p-3 flex items-center justify-between">
-                           <code className="text-gray-400 tracking-widest text-sm">Gerenciado via .env</code>
-                           <button className="text-gray-500 hover:text-white px-2">Configurado</button>
+                     <div>
+                        <div className="flex items-start justify-between mb-4 gap-4">
+                           <div>
+                              <h3 className="text-lg font-medium text-white">Credenciais de API</h3>
+                              <p className="text-xs text-gray-500 mt-1">
+                                 Gerencie as chaves no banco local. Supabase não é editado aqui.
+                              </p>
+                           </div>
+                           <button
+                              onClick={loadApiCredentials}
+                              disabled={isApiCredentialLoading}
+                              className="px-3 py-1.5 bg-blue-600/20 hover:bg-blue-600/30 disabled:opacity-60 text-blue-400 rounded-lg text-xs font-medium transition-colors"
+                           >
+                              {isApiCredentialLoading ? 'Carregando...' : 'Atualizar'}
+                           </button>
                         </div>
-                        <p className="text-xs text-gray-600 mt-2">As chaves de API são configuradas no arquivo .env do projeto.</p>
+
+                        {apiCredentialError && (
+                           <div className="mb-4 bg-red-900/20 border border-red-500/30 rounded-lg p-3">
+                              <p className="text-xs text-red-300">❌ {apiCredentialError}</p>
+                           </div>
+                        )}
+
+                        {apiCredentialMessage && (
+                           <div className="mb-4 bg-green-900/20 border border-green-500/30 rounded-lg p-3">
+                              <p className="text-xs text-green-300">✅ {apiCredentialMessage}</p>
+                           </div>
+                        )}
+
+                        <div className="space-y-4">
+                           {API_SERVICE_ORDER.map((service) => {
+                              const meta = API_SERVICE_META[service];
+                              const serviceCredentials = apiCredentialsByService[service] || [];
+                              const form = apiCredentialForms[service];
+                              const editingId = editingApiCredentialByService[service];
+                              const showForm = meta.multi || serviceCredentials.length === 0 || Boolean(editingId);
+
+                              return (
+                                 <div key={service} className="bg-[#111] border border-[#222] rounded-xl p-4">
+                                    <div className="flex items-center justify-between mb-3">
+                                       <div className="flex items-center gap-2">
+                                          <span className="text-lg">{meta.icon}</span>
+                                          <h4 className="text-sm font-semibold text-white">{meta.label}</h4>
+                                          <span className={`text-[10px] px-2 py-0.5 rounded-full ${
+                                            meta.multi ? 'bg-blue-500/20 text-blue-300' : 'bg-amber-500/20 text-amber-300'
+                                          }`}>
+                                            {meta.multi ? 'Múltiplas chaves' : 'Chave única'}
+                                          </span>
+                                       </div>
+                                       <span className="text-xs text-gray-500">
+                                          {serviceCredentials.length} {serviceCredentials.length === 1 ? 'credencial' : 'credenciais'}
+                                       </span>
+                                    </div>
+
+                                    <div className="space-y-2 mb-3">
+                                      {serviceCredentials.length === 0 ? (
+                                        <p className="text-xs text-gray-500">Nenhuma credencial cadastrada.</p>
+                                      ) : (
+                                        serviceCredentials.map((credential) => (
+                                          <div
+                                            key={credential.id}
+                                            className={`border rounded-lg p-3 flex items-center justify-between gap-3 ${
+                                              credential.isActive ? 'border-green-500/30 bg-green-900/10' : 'border-[#333] bg-black/20'
+                                            }`}
+                                          >
+                                            <div className="min-w-0">
+                                              <p className="text-sm text-white truncate">
+                                                {credential.label || meta.label}
+                                              </p>
+                                              <p className="text-xs text-gray-500 mt-1 truncate">
+                                                {service === 'aws_polly'
+                                                  ? `Access Key: ${maskSecret(credential.accessKeyId)} • Região: ${credential.region || 'sa-east-1'}`
+                                                  : `API Key: ${maskSecret(credential.apiKey)}`}
+                                                {service === 'elevenlabs' && credential.voiceId
+                                                  ? ` • Voice ID: ${credential.voiceId}`
+                                                  : ''}
+                                              </p>
+                                            </div>
+
+                                            <div className="flex items-center gap-2">
+                                              {meta.multi && !credential.isActive && (
+                                                <button
+                                                  onClick={() => handleSetActiveApiCredential(service, credential.id)}
+                                                  disabled={apiCredentialBusyAction === `active:${credential.id}`}
+                                                  className="px-2.5 py-1 text-xs rounded-md bg-green-600/20 hover:bg-green-600/30 text-green-300 disabled:opacity-60"
+                                                >
+                                                  Ativar
+                                                </button>
+                                              )}
+
+                                              <button
+                                                onClick={() => handleEditApiCredential(service, credential)}
+                                                disabled={Boolean(apiCredentialBusyAction)}
+                                                className="px-2.5 py-1 text-xs rounded-md bg-white/10 hover:bg-white/20 text-gray-200 disabled:opacity-60"
+                                              >
+                                                Editar
+                                              </button>
+
+                                              <button
+                                                onClick={() => handleDeleteApiCredential(service, credential.id)}
+                                                disabled={apiCredentialBusyAction === `delete:${credential.id}`}
+                                                className="px-2.5 py-1 text-xs rounded-md bg-red-600/20 hover:bg-red-600/30 text-red-300 disabled:opacity-60"
+                                              >
+                                                Excluir
+                                              </button>
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                    </div>
+
+                                    {showForm ? (
+                                      <div className="border-t border-[#222] pt-3 space-y-3">
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                          <input
+                                            type="text"
+                                            value={form.label}
+                                            onChange={(e) => handleApiCredentialFieldChange(service, 'label', e.target.value)}
+                                            placeholder={`Rótulo (${meta.label})`}
+                                            className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                                          />
+
+                                          {service !== 'aws_polly' && (
+                                            <input
+                                              type="password"
+                                              value={form.apiKey}
+                                              onChange={(e) => handleApiCredentialFieldChange(service, 'apiKey', e.target.value)}
+                                              placeholder="API Key"
+                                              className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                                            />
+                                          )}
+
+                                          {service === 'aws_polly' && (
+                                            <>
+                                              <input
+                                                type="text"
+                                                value={form.accessKeyId}
+                                                onChange={(e) => handleApiCredentialFieldChange(service, 'accessKeyId', e.target.value)}
+                                                placeholder="AWS Access Key ID"
+                                                className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                                              />
+                                              <input
+                                                type="password"
+                                                value={form.secretAccessKey}
+                                                onChange={(e) => handleApiCredentialFieldChange(service, 'secretAccessKey', e.target.value)}
+                                                placeholder="AWS Secret Access Key"
+                                                className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                                              />
+                                              <input
+                                                type="text"
+                                                value={form.region}
+                                                onChange={(e) => handleApiCredentialFieldChange(service, 'region', e.target.value)}
+                                                placeholder="Região (ex: sa-east-1)"
+                                                className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none md:col-span-2"
+                                              />
+                                            </>
+                                          )}
+
+                                          {service === 'elevenlabs' && (
+                                            <input
+                                              type="text"
+                                              value={form.voiceId}
+                                              onChange={(e) => handleApiCredentialFieldChange(service, 'voiceId', e.target.value)}
+                                              placeholder="Voice ID (opcional)"
+                                              className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none md:col-span-2"
+                                            />
+                                          )}
+                                        </div>
+
+                                        <div className="flex items-center gap-2">
+                                          <button
+                                            onClick={() => handleSaveApiCredential(service)}
+                                            disabled={apiCredentialBusyAction === `save:${service}`}
+                                            className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-60 text-white rounded-lg text-xs font-medium transition-colors"
+                                          >
+                                            {apiCredentialBusyAction === `save:${service}`
+                                              ? 'Salvando...'
+                                              : editingId
+                                                ? 'Atualizar credencial'
+                                                : `Salvar ${meta.multi ? 'nova chave' : 'chave'}`}
+                                          </button>
+
+                                          {editingId && (
+                                            <button
+                                              onClick={() => resetApiCredentialForm(service)}
+                                              className="px-3 py-2 bg-white/10 hover:bg-white/20 text-gray-200 rounded-lg text-xs font-medium transition-colors"
+                                            >
+                                              Cancelar edição
+                                            </button>
+                                          )}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      <div className="border-t border-[#222] pt-3">
+                                        <p className="text-xs text-amber-300/80">
+                                          Este serviço aceita apenas 1 credencial. Use "Editar" para atualizar os dados.
+                                        </p>
+                                      </div>
+                                    )}
+                                 </div>
+                              );
+                           })}
+                        </div>
                      </div>
                   </div>
                 )}
@@ -1288,11 +1753,11 @@ export default function Settings({
                             <div className="flex items-start gap-3">
                                <span className="text-xl">ℹ️</span>
                                <div>
-                                  <h4 className="text-sm font-semibold text-green-300 mb-1">OpenAI Embeddings</h4>
-                                  <p className="text-xs text-green-200/70">
-                                     Usando o modelo <strong>text-embedding-3-small</strong>. 
-                                     Certifique-se de ter a variável <code className="bg-black/30 px-1 rounded">OPENAI_API_KEY</code> configurada no arquivo .env.
-                                  </p>
+                                 <h4 className="text-sm font-semibold text-green-300 mb-1">OpenAI Embeddings</h4>
+                                 <p className="text-xs text-green-200/70">
+                                    Usando o modelo <strong>text-embedding-3-small</strong>. 
+                                    Certifique-se de ter uma credencial ativa de OpenAI na aba <strong>API e Modelos</strong>.
+                                 </p>
                                </div>
                             </div>
                          </div>

@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { getUserSettings } from '../database';
 
 export interface VideoMetadata {
   name: string; // Será mapeado para filename
@@ -27,11 +28,12 @@ export class SupabaseService {
   private tableName = 'stock_videos'; // Usando a tabela existente no Supabase
 
   constructor() {
-    const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseKey = process.env.SUPABASE_PUBLISH_KEY;
+    const settings = getUserSettings();
+    const supabaseUrl = settings?.supabaseUrl?.trim();
+    const supabaseKey = settings?.supabasePublishKey?.trim();
 
     if (!supabaseUrl || !supabaseKey) {
-      throw new Error('As variáveis SUPABASE_URL e SUPABASE_PUBLISH_KEY devem estar definidas no .env');
+      throw new Error('Credenciais do Supabase não configuradas no banco de dados.');
     }
 
     this.client = createClient(supabaseUrl, supabaseKey);

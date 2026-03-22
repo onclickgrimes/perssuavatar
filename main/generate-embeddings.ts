@@ -1,4 +1,3 @@
-import 'dotenv/config';
 import { OpenAI } from 'openai';
 import { getSupabaseService, VideoMetadata } from './lib/services/supabase-service';
 import * as fs from 'fs';
@@ -45,10 +44,9 @@ class EmbeddingGenerator {
   private supabase: ReturnType<typeof getSupabaseService>;
   private cache: ProcessedCache;
 
-  constructor() {
-    const apiKey = process.env.OPENAI_API_KEY;
+  constructor(apiKey?: string) {
     if (!apiKey) {
-      throw new Error('OPENAI_API_KEY não encontrada no .env');
+      throw new Error('OpenAI API key não informada. Use --api-key=SEU_TOKEN.');
     }
 
     this.openai = new OpenAI({ apiKey });
@@ -330,7 +328,7 @@ class EmbeddingGenerator {
           console.error(`   Verifique a configuração do Supabase e tente novamente.\n`);
           console.error('💡 Dica: Certifique-se de que:');
           console.error('   1. A tabela "stock_videos" existe no Supabase');
-          console.error('   2. As variáveis SUPABASE_URL e SUPABASE_PUBLISH_KEY estão corretas');
+          console.error('   2. As credenciais do Supabase estão salvas no banco de dados');
           console.error('   3. As políticas RLS estão configuradas corretamente\n');
           break;
         }
@@ -430,19 +428,22 @@ class EmbeddingGenerator {
 // Executa o script
 async function main() {
   try {
-    const generator = new EmbeddingGenerator();
-    
-    const arg = process.argv[2];
+    const rawArgs = process.argv.slice(2);
+    const apiKeyArg = rawArgs.find((value) => value.startsWith('--api-key='));
+    const apiKey = apiKeyArg ? apiKeyArg.slice('--api-key='.length).trim() : undefined;
+    const arg = rawArgs.find((value) => !value.startsWith('--api-key='));
+
+    const generator = new EmbeddingGenerator(apiKey);
 
     if (!arg) {
       console.error('❌ Uso incorreto!\n');
       console.log('Opções:');
       console.log('  1. Processar todos os JSONs de uma pasta:');
-      console.log(`     npm run embeddings:generate -- --from-folder\n`);
+      console.log(`     npm run embeddings:generate -- --api-key=SEU_TOKEN --from-folder\n`);
       console.log('  2. Processar um JSON específico:');
-      console.log('     npm run embeddings:generate <caminho-do-json>\n');
+      console.log('     npm run embeddings:generate -- --api-key=SEU_TOKEN <caminho-do-json>\n');
       console.log('  3. Processar vídeos já no Supabase:');
-      console.log('     npm run embeddings:from-supabase\n');
+      console.log('     npm run embeddings:from-supabase -- --api-key=SEU_TOKEN\n');
       console.log(`📂 Pasta padrão: ${VIDEOS_FOLDER}`);
       console.log(`💾 Cache: ${CACHE_FILE}\n`);
       process.exit(1);

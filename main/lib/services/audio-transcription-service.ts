@@ -7,6 +7,7 @@
 import { createClient, DeepgramClient } from '@deepgram/sdk';
 import * as fs from 'fs';
 import * as path from 'path';
+import { getPrimaryApiKey } from '../credentials';
 
 // ========================================
 // TYPES
@@ -61,29 +62,38 @@ export interface TranscriptionSegment {
 
 export class AudioTranscriptionService {
   private client: DeepgramClient | null = null;
+  private clientApiKey: string | null = null;
 
   constructor() {
-    this.initClient();
+    this.ensureClient();
   }
 
-  private initClient(): void {
-    const apiKey = process.env.DEEPGRAM_API_KEY;
-    if (apiKey) {
-      this.client = createClient(apiKey);
-      console.log('🎤 AudioTranscriptionService initialized');
-    } else {
-      console.warn('⚠️ DEEPGRAM_API_KEY not found - transcription will not work');
+  private ensureClient(): boolean {
+    const apiKey = getPrimaryApiKey('deepgram');
+    if (!apiKey) {
+      this.client = null;
+      this.clientApiKey = null;
+      return false;
     }
+
+    if (this.client && this.clientApiKey === apiKey) {
+      return true;
+    }
+
+    this.client = createClient(apiKey);
+    this.clientApiKey = apiKey;
+    console.log('🎤 AudioTranscriptionService initialized');
+    return true;
   }
 
   /**
    * Transcreve um arquivo de áudio local
    */
   public async transcribeFile(filePath: string): Promise<TranscriptionResult> {
-    if (!this.client) {
+    if (!this.ensureClient() || !this.client) {
       return {
         success: false,
-        error: 'Deepgram client not initialized. Check DEEPGRAM_API_KEY.',
+        error: 'Deepgram não configurado. Cadastre uma chave em Configurações > API e Modelos.',
         duration: 0,
         transcript: '',
         confidence: 0,
@@ -226,10 +236,10 @@ export class AudioTranscriptionService {
    * Transcreve um arquivo de áudio a partir de uma URL
    */
   public async transcribeUrl(audioUrl: string): Promise<TranscriptionResult> {
-    if (!this.client) {
+    if (!this.ensureClient() || !this.client) {
       return {
         success: false,
-        error: 'Deepgram client not initialized. Check DEEPGRAM_API_KEY.',
+        error: 'Deepgram não configurado. Cadastre uma chave em Configurações > API e Modelos.',
         duration: 0,
         transcript: '',
         confidence: 0,

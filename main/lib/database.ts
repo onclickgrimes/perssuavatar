@@ -1,6 +1,53 @@
 import Store from 'electron-store';
 import { getUserDataPath } from './app-config';
 
+export type ApiCredentialService =
+  | 'deepgram'
+  | 'elevenlabs'
+  | 'openai'
+  | 'deepseek'
+  | 'gemini'
+  | 'aws_polly'
+  | 'pexels';
+
+export interface ApiCredential {
+  id: string;
+  service: ApiCredentialService;
+  label: string;
+  apiKey?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  region?: string;
+  voiceId?: string;
+  isActive: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface UpsertApiCredentialInput {
+  service: ApiCredentialService;
+  label?: string;
+  apiKey?: string;
+  accessKeyId?: string;
+  secretAccessKey?: string;
+  region?: string;
+  voiceId?: string;
+  isActive?: boolean;
+}
+
+const MULTI_KEY_SERVICES = new Set<ApiCredentialService>([
+  'deepgram',
+  'elevenlabs',
+  'openai',
+  'deepseek',
+  'gemini',
+]);
+
+const SINGLE_KEY_SERVICES = new Set<ApiCredentialService>([
+  'aws_polly',
+  'pexels',
+]);
+
 // Schema de tipos para o banco de dados
 interface DatabaseSchema {
   // Configurações do usuário
@@ -17,6 +64,9 @@ interface DatabaseSchema {
     // Configurações de Embedding para Base de Conhecimento
     embeddingProvider?: 'openai' | 'ollama';
     ollamaEmbeddingModel?: string;
+    // Integrações externas
+    supabaseUrl?: string;
+    supabasePublishKey?: string;
   };
 
   // Histórico de conversas
@@ -77,6 +127,9 @@ interface DatabaseSchema {
     avatarInteractionMode: 'fixed' | 'dynamic';
     avatarResponseChance: number;
   };
+
+  // Credenciais de APIs externas
+  apiCredentials: ApiCredential[];
 }
 
 // Valores padrão
@@ -313,7 +366,8 @@ This assistant must explain concepts with increasing depth, provide code solutio
     avatarInteractionCount: 10,
     avatarInteractionMode: 'fixed',
     avatarResponseChance: 50
-  }
+  },
+  apiCredentials: []
 };
 
 // Singleton da store
@@ -370,6 +424,9 @@ export function initializeDatabase(): Store<DatabaseSchema> {
             avatarInteractionMode: { type: 'string', enum: ['fixed', 'dynamic'] },
             avatarResponseChance: { type: 'number', minimum: 40, maximum: 90 }
           }
+        },
+        apiCredentials: {
+          type: 'array'
         }
       }
     });
@@ -388,6 +445,231 @@ export function getDatabase(): Store<DatabaseSchema> {
     return initializeDatabase();
   }
   return storeInstance;
+}
+
+// ===============================================
+// FUNÇÕES DE CREDENCIAIS DE API
+// ===============================================
+
+function newCredentialId(service: ApiCredentialService): string {
+  return `${service}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function normalizeLabel(service: ApiCredentialService, label?: string): string {
+  if (label && label.trim()) return label.trim();
+
+  const map: Record<ApiCredentialService, string> = {
+    deepgram: 'Deepgram',
+    elevenlabs: 'ElevenLabs',
+    openai: 'OpenAI',
+    deepseek: 'DeepSeek',
+    gemini: 'Google Gemini',
+    aws_polly: 'AWS Polly',
+    pexels: 'Pexels',
+  };
+
+  return map[service];
+}
+
+function assertCredentialPayload(service: ApiCredentialService, input: Partial<UpsertApiCredentialInput>) {
+  if (service === 'aws_polly') {
+    if (!input.accessKeyId?.trim() || !input.secretAccessKey?.trim()) {
+      throw new Error('AWS Polly requer Access Key ID e Secret Access Key.');
+    }
+    return;
+  }
+
+  if (!input.apiKey?.trim()) {
+    throw new Error(`A chave de API para ${service} é obrigatória.`);
+  }
+}
+
+function sanitizeInput(input: Partial<UpsertApiCredentialInput>): Partial<UpsertApiCredentialInput> {
+  return {
+    ...input,
+    label: input.label?.trim(),
+    apiKey: input.apiKey?.trim(),
+    accessKeyId: input.accessKeyId?.trim(),
+    secretAccessKey: input.secretAccessKey?.trim(),
+    region: input.region?.trim(),
+    voiceId: input.voiceId?.trim(),
+  };
+}
+
+function sortCredentials(credentials: ApiCredential[]): ApiCredential[] {
+  return [...credentials].sort((a, b) => b.createdAt - a.createdAt);
+}
+
+function setActiveForService(
+  credentials: ApiCredential[],
+  service: ApiCredentialService,
+  activeId: string
+): ApiCredential[] {
+  return credentials.map((c) => {
+    if (c.service !== service) return c;
+    return { ...c, isActive: c.id === activeId };
+  });
+}
+
+export function getApiCredentials(service?: ApiCredentialService): ApiCredential[] {
+  const db = getDatabase();
+  const credentials = db.get('apiCredentials');
+  const filtered = service ? credentials.filter(c => c.service === service) : credentials;
+  return sortCredentials(filtered);
+}
+
+export function getActiveApiCredential(service: ApiCredentialService): ApiCredential | null {
+  const credentials = getApiCredentials(service);
+  if (credentials.length === 0) return null;
+
+  const active = credentials.find(c => c.isActive);
+  return active || credentials[0];
+}
+
+export function hasApiCredential(service: ApiCredentialService): boolean {
+  return getApiCredentials(service).length > 0;
+}
+
+export function createApiCredential(input: UpsertApiCredentialInput): ApiCredential {
+  const db = getDatabase();
+  const sanitized = sanitizeInput(input);
+  const service = sanitized.service as ApiCredentialService;
+  const credentials = db.get('apiCredentials');
+  const sameService = credentials.filter(c => c.service === service);
+
+  assertCredentialPayload(service, sanitized);
+
+  const now = Date.now();
+
+  // Serviços de chave única funcionam como upsert
+  if (SINGLE_KEY_SERVICES.has(service) && sameService.length > 0) {
+    const existing = sameService[0];
+    return updateApiCredential(existing.id, {
+      label: sanitized.label,
+      apiKey: sanitized.apiKey,
+      accessKeyId: sanitized.accessKeyId,
+      secretAccessKey: sanitized.secretAccessKey,
+      region: sanitized.region,
+      voiceId: sanitized.voiceId,
+      isActive: true,
+    }) as ApiCredential;
+  }
+
+  const shouldActivate = SINGLE_KEY_SERVICES.has(service)
+    ? true
+    : sanitized.isActive ?? sameService.length === 0;
+
+  let created: ApiCredential = {
+    id: newCredentialId(service),
+    service,
+    label: normalizeLabel(service, sanitized.label),
+    apiKey: sanitized.apiKey,
+    accessKeyId: sanitized.accessKeyId,
+    secretAccessKey: sanitized.secretAccessKey,
+    region: sanitized.region,
+    voiceId: sanitized.voiceId,
+    isActive: shouldActivate,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  let next = [...credentials, created];
+
+  if (created.isActive) {
+    next = setActiveForService(next, service, created.id);
+  }
+
+  db.set('apiCredentials', sortCredentials(next));
+  return created;
+}
+
+export function updateApiCredential(
+  credentialId: string,
+  updates: Partial<Omit<ApiCredential, 'id' | 'createdAt' | 'updatedAt' | 'service'>>
+): ApiCredential | null {
+  const db = getDatabase();
+  const credentials = db.get('apiCredentials');
+  const index = credentials.findIndex(c => c.id === credentialId);
+  if (index === -1) return null;
+
+  const current = credentials[index];
+  const mergedInput = sanitizeInput({
+    service: current.service,
+    label: updates.label ?? current.label,
+    apiKey: updates.apiKey ?? current.apiKey,
+    accessKeyId: updates.accessKeyId ?? current.accessKeyId,
+    secretAccessKey: updates.secretAccessKey ?? current.secretAccessKey,
+    region: updates.region ?? current.region,
+    voiceId: updates.voiceId ?? current.voiceId,
+    isActive: updates.isActive ?? current.isActive,
+  });
+
+  assertCredentialPayload(current.service, mergedInput);
+
+  const nextCredential: ApiCredential = {
+    ...current,
+    label: normalizeLabel(current.service, mergedInput.label),
+    apiKey: mergedInput.apiKey,
+    accessKeyId: mergedInput.accessKeyId,
+    secretAccessKey: mergedInput.secretAccessKey,
+    region: mergedInput.region,
+    voiceId: mergedInput.voiceId,
+    isActive: SINGLE_KEY_SERVICES.has(current.service) ? true : Boolean(mergedInput.isActive),
+    updatedAt: Date.now(),
+  };
+
+  let next = [...credentials];
+  next[index] = nextCredential;
+
+  if (nextCredential.isActive) {
+    next = setActiveForService(next, nextCredential.service, nextCredential.id);
+  } else {
+    const hasAnyActive = next.some(c => c.service === nextCredential.service && c.isActive);
+    if (!hasAnyActive) {
+      next = setActiveForService(next, nextCredential.service, nextCredential.id);
+      next[index] = { ...next[index], isActive: true };
+    }
+  }
+
+  db.set('apiCredentials', sortCredentials(next));
+  return nextCredential;
+}
+
+export function deleteApiCredential(credentialId: string): boolean {
+  const db = getDatabase();
+  const credentials = db.get('apiCredentials');
+  const index = credentials.findIndex(c => c.id === credentialId);
+  if (index === -1) return false;
+
+  const removed = credentials[index];
+  let next = credentials.filter(c => c.id !== credentialId);
+
+  if (removed.isActive) {
+    const sameService = next.filter(c => c.service === removed.service);
+    if (sameService.length > 0) {
+      next = setActiveForService(next, removed.service, sameService[0].id);
+    }
+  }
+
+  db.set('apiCredentials', sortCredentials(next));
+  return true;
+}
+
+export function setActiveApiCredential(service: ApiCredentialService, credentialId: string): boolean {
+  const db = getDatabase();
+  const credentials = db.get('apiCredentials');
+  const target = credentials.find(c => c.id === credentialId && c.service === service);
+  if (!target) return false;
+
+  const next = setActiveForService(credentials, service, credentialId).map((credential) => {
+    if (credential.service === service && credential.id === credentialId) {
+      return { ...credential, updatedAt: Date.now() };
+    }
+    return credential;
+  });
+
+  db.set('apiCredentials', sortCredentials(next));
+  return true;
 }
 
 // ===============================================
@@ -674,6 +956,7 @@ export function getDatabaseStats() {
     recordingCount: db.get('recordings').length,
     screenshotCount: db.get('screenshots').length,
     assistantCount: db.get('assistants').length,
+    apiCredentialCount: db.get('apiCredentials').length,
     settings: db.get('userSettings')
   };
 }
@@ -689,6 +972,15 @@ export default {
   setTTSProvider,
   getAssistantMode,
   setAssistantMode,
+
+  // API Credentials
+  getApiCredentials,
+  getActiveApiCredential,
+  hasApiCredential,
+  createApiCredential,
+  updateApiCredential,
+  deleteApiCredential,
+  setActiveApiCredential,
 
   // Conversation History
   getConversationHistory,
@@ -728,4 +1020,3 @@ export default {
   getDatabasePath,
   getDatabaseStats
 };
-

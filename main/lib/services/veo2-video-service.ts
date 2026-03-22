@@ -17,6 +17,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import https from 'https';
 import http from 'http';
+import { getPrimaryApiKey } from '../credentials';
 
 // ========================================
 // INTERFACES
@@ -28,7 +29,7 @@ export interface Veo2GenerationOptions {
   aspectRatio?: '16:9' | '9:16';
   /** Duração em segundos (padrão 8, máx 8) */
   durationSeconds?: number;
-  /** Chave de API do Gemini (usa GEMINI_API_KEY do env por padrão) */
+  /** Chave de API do Gemini */
   apiKey?: string;
   /** Caminho local ou URL HTTP de uma imagem de referência para image-to-video */
   referenceImagePath?: string;
@@ -73,9 +74,9 @@ export class Veo2VideoService {
       onProgress,
     } = options;
 
-    const apiKey = options.apiKey || process.env.GOOGLE_API_KEY_2 || process.env.GOOGLE_API_KEY_1;
+    const apiKey = options.apiKey || getPrimaryApiKey('gemini');
     if (!apiKey) {
-      return { success: false, error: 'GEMINI_API_KEY não configurada.' };
+      return { success: false, error: 'Chave do Gemini não configurada. Cadastre em Configurações > API e Modelos.' };
     }
 
     const startTime = Date.now();

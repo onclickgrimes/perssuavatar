@@ -19,6 +19,7 @@ import { OpenAIService } from './openai-service';
 import { DeepSeekService } from './deepseek-service';
 import { getVideoSearchService } from './video-search-service';
 import { getPexelsService } from '../assets';
+import { hasCredential } from '../credentials';
 import {
     CAMERA_MOVEMENTS,
     TRANSITIONS,
@@ -222,19 +223,19 @@ export class VideoProjectService extends EventEmitter {
         }
 
         // Inicializar Gemini Service
-        if (process.env.GOOGLE_API_KEY_1) {
+        if (hasCredential('gemini')) {
             this.geminiService = new GeminiService();
             console.log('🎬 VideoProjectService initialized with GeminiService');
         }
 
         // Inicializar OpenAI
-        if (process.env.OPENAI_API_KEY) {
+        if (hasCredential('openai')) {
             this.openAIService = new OpenAIService();
             console.log('🎬 VideoProjectService initialized with OpenAI');
         }
 
         // Inicializar DeepSeek
-        if (process.env.DEEPSEEK_API_KEY) {
+        if (hasCredential('deepseek')) {
             this.deepSeekService = new DeepSeekService();
             console.log('🎬 VideoProjectService initialized with DeepSeek');
         }

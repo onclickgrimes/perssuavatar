@@ -1,19 +1,28 @@
 import { OpenAI } from 'openai';
-import * as dotenv from 'dotenv';
 import { ChatCompletionTool } from 'openai/resources/chat/completions';
-
-dotenv.config();
+import { getNextApiKey } from '../credentials';
 
 export class OpenAIService {
-    private openai: OpenAI;
+    private openai: OpenAI | null = null;
+    private currentApiKey: string | null = null;
     private model: string = "gpt-5-nano-2025-08-07";
 
     constructor() {
-        const apiKey = process.env.OPENAI_API_KEY || '';
+    }
+
+    private getClient(): OpenAI {
+        const apiKey = getNextApiKey('openai');
         if (!apiKey) {
-            console.error("OpenAI API Key missing!");
+            throw new Error('OpenAI API key não configurada.');
         }
-        this.openai = new OpenAI({ apiKey: apiKey });
+
+        if (this.openai && this.currentApiKey === apiKey) {
+            return this.openai;
+        }
+
+        this.openai = new OpenAI({ apiKey });
+        this.currentApiKey = apiKey;
+        return this.openai;
     }
 
     public setModel(model: string) {
@@ -23,7 +32,7 @@ export class OpenAIService {
 
     public async getChatCompletion(messages: any[], tools?: ChatCompletionTool[]) {
         try {
-            const response = await this.openai.chat.completions.create({
+            const response = await this.getClient().chat.completions.create({
                 model: this.model,
                 temperature: 0.7,
                 messages: messages,
@@ -45,7 +54,7 @@ export class OpenAIService {
                 ? `${userContext}`
                 : "O usuário pediu para olhar a tela. O que você vê? Identifique apps, textos ou erros.";
 
-            const response = await this.openai.chat.completions.create({
+            const response = await this.getClient().chat.completions.create({
                 model: "gpt-4.1-nano", // Supports vision
                 messages: [
                     {
@@ -104,7 +113,7 @@ export class OpenAIService {
                 requestOptions.reasoning_effort = "low";
             }
 
-            const response = await this.openai.chat.completions.create(requestOptions);
+            const response = await this.getClient().chat.completions.create(requestOptions);
 
             const content = response.choices[0].message.content || '{}';
             console.log(`🧠 OpenAI VideoAnalysis Response (${content.length} chars)`);

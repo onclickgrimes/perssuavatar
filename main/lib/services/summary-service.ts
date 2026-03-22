@@ -1,10 +1,8 @@
 import { EventEmitter } from 'events';
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { OpenAI } from 'openai';
-import * as dotenv from 'dotenv';
 import { getUserSettings, getAssistants, getAssistantById } from '../database';
-
-dotenv.config();
+import { getNextApiKey } from '../credentials';
 
 /**
  * SummaryService - Serviço para gerar resumos baseados no assistente selecionado
@@ -12,37 +10,64 @@ dotenv.config();
  * Suporta streaming para ir gerando respostas em tempo real
  */
 export class SummaryService extends EventEmitter {
-    private genAI: GoogleGenerativeAI;
-    private openai: OpenAI;
-    private deepseek: OpenAI;
+    private genAI: GoogleGenerativeAI | null = null;
+    private openai: OpenAI | null = null;
+    private deepseek: OpenAI | null = null;
+    private geminiApiKey: string | null = null;
+    private openaiApiKey: string | null = null;
+    private deepseekApiKey: string | null = null;
     private abortController: AbortController | null = null;
 
     constructor() {
         super();
-        
-        // Inicializar Gemini
-        const geminiApiKey = process.env.GOOGLE_API_KEY_1 || '';
-        if (!geminiApiKey) {
-            console.warn("[SummaryService] Google API Key missing!");
+    }
+
+    private getGeminiClient(): GoogleGenerativeAI {
+        const apiKey = getNextApiKey('gemini');
+        if (!apiKey) {
+            throw new Error('Google Gemini API key não configurada.');
         }
-        this.genAI = new GoogleGenerativeAI(geminiApiKey);
-        
-        // Inicializar OpenAI
-        const openaiApiKey = process.env.OPENAI_API_KEY || '';
-        if (!openaiApiKey) {
-            console.warn("[SummaryService] OpenAI API Key missing!");
+
+        if (this.genAI && this.geminiApiKey === apiKey) {
+            return this.genAI;
         }
-        this.openai = new OpenAI({ apiKey: openaiApiKey });
-        
-        // Inicializar DeepSeek
-        const deepseekApiKey = process.env.DEEPSEEK_API_KEY || '';
-        if (!deepseekApiKey) {
-            console.warn("[SummaryService] DeepSeek API Key missing!");
+
+        this.genAI = new GoogleGenerativeAI(apiKey);
+        this.geminiApiKey = apiKey;
+        return this.genAI;
+    }
+
+    private getOpenAIClient(): OpenAI {
+        const apiKey = getNextApiKey('openai');
+        if (!apiKey) {
+            throw new Error('OpenAI API key não configurada.');
         }
-        this.deepseek = new OpenAI({ 
-            apiKey: deepseekApiKey,
+
+        if (this.openai && this.openaiApiKey === apiKey) {
+            return this.openai;
+        }
+
+        this.openai = new OpenAI({ apiKey });
+        this.openaiApiKey = apiKey;
+        return this.openai;
+    }
+
+    private getDeepSeekClient(): OpenAI {
+        const apiKey = getNextApiKey('deepseek');
+        if (!apiKey) {
+            throw new Error('DeepSeek API key não configurada.');
+        }
+
+        if (this.deepseek && this.deepseekApiKey === apiKey) {
+            return this.deepseek;
+        }
+
+        this.deepseek = new OpenAI({
+            apiKey,
             baseURL: 'https://api.deepseek.com'
         });
+        this.deepseekApiKey = apiKey;
+        return this.deepseek;
     }
 
     /**
@@ -74,7 +99,7 @@ export class SummaryService extends EventEmitter {
      * Gera conteúdo usando Gemini com streaming
      */
     private async generateWithGemini(prompt: string, onChunk: (chunk: string) => void): Promise<string> {
-        const model = this.genAI.getGenerativeModel({ 
+        const model = this.getGeminiClient().getGenerativeModel({ 
             model: "gemini-2.0-flash",
             generationConfig: {
                 temperature: 0.7,
@@ -110,7 +135,7 @@ export class SummaryService extends EventEmitter {
      */
     private async generateWithOpenAI(prompt: string, onChunk: (chunk: string) => void): Promise<string> {
         // Passar o signal do AbortController para a API do OpenAI
-        const stream = await this.openai.chat.completions.create({
+        const stream = await this.getOpenAIClient().chat.completions.create({
             model: "gpt-4o-mini",
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.7,
@@ -144,7 +169,7 @@ export class SummaryService extends EventEmitter {
      */
     private async generateWithDeepSeek(prompt: string, onChunk: (chunk: string) => void): Promise<string> {
         // Passar o signal do AbortController para a API do DeepSeek
-        const stream = await this.deepseek.chat.completions.create({
+        const stream = await this.getDeepSeekClient().chat.completions.create({
             model: "deepseek-chat",
             messages: [{ role: 'user', content: prompt }],
             temperature: 0.7,

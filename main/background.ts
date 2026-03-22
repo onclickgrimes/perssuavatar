@@ -1215,7 +1215,7 @@ ipcMain.on('audio-data', (event, buffer) => {
 });
 
 // Handler para mudar o provedor de IA (OpenAI vs Gemini) no modo classic
-ipcMain.handle('set-ai-provider', async (event, provider: 'openai' | 'gemini') => {
+ipcMain.handle('set-ai-provider', async (event, provider: 'openai' | 'gemini' | 'deepseek') => {
   console.log(`🤖 Mudando provedor de IA para: ${provider}`);
   assistant.setAIProvider(provider);
   return { success: true };
@@ -1526,7 +1526,9 @@ ipcMain.on('analyze-video', (event, buffer) => {
 
 // Eventos do Assistant -> Frontend
 ipcMain.on('set-assistant-mode', (event, mode: 'classic' | 'live') => {
-  assistant.setMode(mode);
+  assistant.setMode(mode).catch((error) => {
+    console.error('❌ Erro ao alternar modo do assistente:', error);
+  });
 });
 
 // Screen sharing for Gemini Live

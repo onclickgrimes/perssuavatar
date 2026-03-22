@@ -124,7 +124,7 @@ export const DesktopAudioTranscriptionExample: React.FC = () => {
                     <li>As transcrições aparecerão aqui em tempo real</li>
                     <li>Clique em "Parar Transcrição" quando terminar</li>
                 </ol>
-                <p><strong>Nota:</strong> Certifique-se de ter a API key do Deepgram configurada no .env</p>
+                <p><strong>Nota:</strong> Certifique-se de ter uma credencial ativa do Deepgram na aba API e Modelos</p>
             </div>
         </div>
     );

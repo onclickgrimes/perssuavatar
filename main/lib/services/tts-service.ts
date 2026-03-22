@@ -2,33 +2,45 @@ import AWS from 'aws-sdk';
 import { ElevenLabsClient } from '@elevenlabs/elevenlabs-js';
 import * as fs from 'fs';
 import * as path from 'path';
-import { Readable } from 'stream';
-import * as dotenv from 'dotenv';
 import { EventEmitter } from 'events';
-
-dotenv.config();
+import { getElevenLabsVoiceId, getNextApiKey, getPollyCredentials } from '../credentials';
 
 export class TTSService extends EventEmitter {
-    private polly: AWS.Polly;
-    private elevenlabs: ElevenLabsClient;
+    private elevenlabs: ElevenLabsClient | null = null;
+    private elevenlabsApiKey: string | null = null;
 
     constructor() {
         super();
-        
-        // AWS Polly Config
-        if (process.env.AWS_ACCESS_KEY_ID) {
-            AWS.config.update({
-                region: 'sa-east-1',
-                accessKeyId: process.env.AWS_ACCESS_KEY_ID,
-                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
-            });
-        }
-        this.polly = new AWS.Polly();
+    }
 
-        // ElevenLabs Config
-        this.elevenlabs = new ElevenLabsClient({
-            apiKey: process.env.ELEVENLABS_API_KEY_4 
+    private getPollyClient(): AWS.Polly {
+        const credentials = getPollyCredentials();
+        if (!credentials) {
+            throw new Error('Credenciais da AWS Polly não configuradas.');
+        }
+
+        AWS.config.update({
+            region: credentials.region,
+            accessKeyId: credentials.accessKeyId,
+            secretAccessKey: credentials.secretAccessKey,
         });
+
+        return new AWS.Polly();
+    }
+
+    private getElevenLabsClient(): ElevenLabsClient {
+        const apiKey = getNextApiKey('elevenlabs');
+        if (!apiKey) {
+            throw new Error('Chave da ElevenLabs não configurada.');
+        }
+
+        if (this.elevenlabs && this.elevenlabsApiKey === apiKey) {
+            return this.elevenlabs;
+        }
+
+        this.elevenlabs = new ElevenLabsClient({ apiKey });
+        this.elevenlabsApiKey = apiKey;
+        return this.elevenlabs;
     }
 
     public async generateAudio(text: string, provider: 'polly' | 'elevenlabs' = 'elevenlabs'): Promise<{ filePath: string, buffer: Buffer }> {
@@ -64,13 +76,14 @@ export class TTSService extends EventEmitter {
     }
 
     private async generatePollyAudio(text: string): Promise<Buffer> {
+        const polly = this.getPollyClient();
         const params = {
             OutputFormat: 'mp3',
             Text: text,
             VoiceId: 'Camila', 
             LanguageCode: 'pt-BR',
         };
-        const data = await this.polly.synthesizeSpeech(params).promise();
+        const data = await polly.synthesizeSpeech(params).promise();
         if (data.AudioStream instanceof Buffer) {
             return data.AudioStream;
         } else if (data.AudioStream instanceof Uint8Array) {
@@ -86,8 +99,8 @@ export class TTSService extends EventEmitter {
                 this.emit('audio-chunk', buffer);
                 this.emit('audio-end');
             } else {
-                const voiceId = process.env.VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; 
-                const response = await this.elevenlabs.textToSpeech.convert(voiceId, {
+                const voiceId = getElevenLabsVoiceId();
+                const response = await this.getElevenLabsClient().textToSpeech.convert(voiceId, {
                     text: text,
                     modelId: 'eleven_v3',
                     outputFormat: 'mp3_44100_128',
@@ -105,8 +118,8 @@ export class TTSService extends EventEmitter {
     }
 
     private async generateElevenLabsAudio(text: string): Promise<Buffer> {
-        const voiceId = process.env.VOICE_ID || 'EXAVITQu4vr4xnSDxMaL'; 
-        const response = await this.elevenlabs.textToSpeech.convert(voiceId, {
+        const voiceId = getElevenLabsVoiceId();
+        const response = await this.getElevenLabsClient().textToSpeech.convert(voiceId, {
             text: text,
             modelId: 'eleven_v3',
             outputFormat: 'mp3_44100_128',

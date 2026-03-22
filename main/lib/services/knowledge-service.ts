@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as crypto from 'crypto';
 import db from '../../../db';
+import { getPrimaryApiKey } from '../credentials';
 
 // pdf-parse para extração de texto de PDFs
 let pdfParse: any = null;
@@ -125,6 +126,7 @@ const DEFAULT_EXCLUDES = [
 
 class KnowledgeService {
   private openai: OpenAI | null = null;
+  private openaiApiKey: string | null = null;
   private progressCallback: ((progress: SyncProgress) => void) | null = null;
   private embeddingProvider: 'openai' | 'ollama' = 'openai';
   private ollamaModel: string = 'nomic-embed-text';
@@ -135,20 +137,31 @@ class KnowledgeService {
   }
 
   private initOpenAI(): void {
-    const apiKey = process.env.OPENAI_API_KEY;
+    const apiKey = getPrimaryApiKey('openai');
     if (apiKey) {
       this.openai = new OpenAI({ apiKey });
+      this.openaiApiKey = apiKey;
     }
   }
 
   private ensureOpenAI(): OpenAI {
-    if (!this.openai) {
-      const apiKey = process.env.OPENAI_API_KEY;
-      if (!apiKey) {
-        throw new Error('OPENAI_API_KEY não encontrada. Configure no arquivo .env');
-      }
-      this.openai = new OpenAI({ apiKey });
+    const apiKey = getPrimaryApiKey('openai');
+    if (!apiKey) {
+      throw new Error('OpenAI API key não encontrada. Cadastre uma chave em Configurações > API e Modelos.');
     }
+
+    if (!this.openai) {
+      this.openai = new OpenAI({ apiKey });
+      this.openaiApiKey = apiKey;
+      return this.openai;
+    }
+
+    // Atualiza cliente se a chave ativa mudou.
+    if (this.openaiApiKey !== apiKey) {
+      this.openai = new OpenAI({ apiKey });
+      this.openaiApiKey = apiKey;
+    }
+
     return this.openai;
   }
 

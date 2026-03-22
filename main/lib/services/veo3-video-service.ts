@@ -4,6 +4,7 @@ import * as path from 'path';
 import { app } from 'electron';
 import https from 'https';
 import http from 'http';
+import { getPrimaryApiKey } from '../credentials';
 
 export interface Veo3GenerationOptions {
   prompt: string;
@@ -129,8 +130,8 @@ export class Veo3VideoService {
       onProgress,
     } = options;
 
-    const apiKey = options.apiKey || process.env.GOOGLE_API_KEY_2 || process.env.GOOGLE_API_KEY_1;
-    if (!apiKey) return { success: false, error: 'GEMINI_API_KEY não configurada.' };
+    const apiKey = options.apiKey || getPrimaryApiKey('gemini');
+    if (!apiKey) return { success: false, error: 'Chave do Gemini não configurada. Cadastre em Configurações > API e Modelos.' };
 
     const startTime = Date.now();
     const emit = (percent: number, message: string) => {
