@@ -247,7 +247,7 @@ export function registerVideoEditorHandlers(): void {
     try {
       console.log(`🔍 [VideoProject] Buscando vídeos com query: "${query}"`);
       
-      const { getVideoSearchService } = require('./services/video-search-service');
+      const { getVideoSearchService } = require('../services/video-search-service');
       const searchService = getVideoSearchService();
       
       const results = await searchService.semanticSearch(query, limit, 0.5);
@@ -1332,12 +1332,14 @@ Lembre-se:
     aspectRatio?: string;
     durationSeconds?: number;
     referenceImagePath?: string;
+    ingredientImagePaths?: string[]; // Imagens de referência (asset) para o Veo 3
   }) => {
     try {
       const { getVeo3VideoService } = require('../services/veo3-video-service');
       const veo3Service = getVeo3VideoService();
 
-      const mode = options.referenceImagePath ? 'image-to-video' : 'text-to-video';
+      const hasIngredients = options.ingredientImagePaths && options.ingredientImagePaths.length > 0;
+      const mode = hasIngredients ? `reference(${options.ingredientImagePaths!.length} imgs)` : options.referenceImagePath ? 'image-to-video' : 'text-to-video';
       console.log(`🌊 [Veo3 API] Starting ${mode} generation with ${options.model} (ratio: ${options.aspectRatio || '16:9'})`);
 
       const result = await veo3Service.generateVideo({
@@ -1346,6 +1348,7 @@ Lembre-se:
         aspectRatio: (options.aspectRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16',
         durationSeconds: options.durationSeconds || 8,
         referenceImagePath: options.referenceImagePath,
+        ingredientImagePaths: options.ingredientImagePaths,
         onProgress: (percent: number, message: string) => {
           event.sender.send('video-project:veo3-api-progress', { percent, message, stage: 'generating' });
         },

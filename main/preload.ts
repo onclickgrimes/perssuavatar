@@ -483,6 +483,7 @@ const handler = {
       aspectRatio?: string;
       durationSeconds?: number;
       referenceImagePath?: string;
+      ingredientImagePaths?: string[];
     }) => ipcRenderer.invoke('video-project:generate-veo3-api', options),
 
     // Listener para progresso da geração Veo 3.1 (API oficial)

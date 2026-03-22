@@ -12,6 +12,7 @@ export interface Veo3GenerationOptions {
   durationSeconds?: number;
   apiKey?: string;
   referenceImagePath?: string;
+  ingredientImagePaths?: string[]; // Imagens de referência (asset) para o Veo 3
   onProgress?: (percent: number, message: string) => void;
 }
 
@@ -143,35 +144,60 @@ export class Veo3VideoService {
       // BLOQUEIA AQUI: Aguarda na fila e consome as cotas RPM/RPD antes de continuar
       await this.waitInQueueAndConsume(model, emit);
 
+      // Helper para carregar uma imagem (local ou URL) e retornar { imageBytes, mimeType }
+      const loadImage = async (imgPath: string): Promise<{ imageBytes: string; mimeType: string }> => {
+        let imageBuffer: Buffer;
+        if (imgPath.startsWith('http://') || imgPath.startsWith('https://')) {
+          imageBuffer = await new Promise<Buffer>((resolve, reject) => {
+            const protocol = imgPath.startsWith('https://') ? https : http;
+            const chunks: Buffer[] = [];
+            protocol.get(imgPath, (res) => {
+              res.on('data', (chunk) => chunks.push(chunk));
+              res.on('end', () => resolve(Buffer.concat(chunks)));
+              res.on('error', reject);
+            }).on('error', reject);
+          });
+        } else {
+          imageBuffer = fs.readFileSync(imgPath);
+        }
+        const ext = imgPath.toLowerCase().split('.').pop() || 'jpg';
+        const mimeMap: Record<string, string> = {
+          jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
+        };
+        return {
+          imageBytes: imageBuffer.toString('base64'),
+          mimeType: mimeMap[ext] || 'image/jpeg',
+        };
+      };
+
+      // Carregar imagens de referência (ingredientes) se fornecidas
+      const hasIngredients = options.ingredientImagePaths && options.ingredientImagePaths.length > 0;
+      let referenceImages: Array<{ image: { imageBytes: string; mimeType: string }; referenceType: string }> | undefined;
+
+      if (hasIngredients) {
+        emit(7, `Carregando ${options.ingredientImagePaths!.length} imagem(ns) de referência...`);
+        referenceImages = [];
+        for (let i = 0; i < options.ingredientImagePaths!.length; i++) {
+          try {
+            const imgData = await loadImage(options.ingredientImagePaths![i]);
+            referenceImages.push({
+              image: imgData,
+              referenceType: 'asset',
+            });
+            emit(8, `Imagem de referência ${i + 1}/${options.ingredientImagePaths!.length} carregada`);
+          } catch (imgErr: any) {
+            console.warn(`[Veo3 API] Falha ao carregar imagem de referência ${i + 1}: ${imgErr.message}`);
+          }
+        }
+        if (referenceImages.length === 0) referenceImages = undefined;
+      }
+
+      // Carregar imagem singular (image-to-video) se não houver ingredientes
       let imageInput: { imageBytes: string; mimeType: string } | undefined;
-      if (options.referenceImagePath) {
+      if (!hasIngredients && options.referenceImagePath) {
         emit(7, 'Carregando imagem de referência...');
         try {
-          let imageBuffer: Buffer;
-          const refPath = options.referenceImagePath;
-
-          if (refPath.startsWith('http://') || refPath.startsWith('https://')) {
-            imageBuffer = await new Promise<Buffer>((resolve, reject) => {
-              const protocol = refPath.startsWith('https://') ? https : http;
-              const chunks: Buffer[] = [];
-              protocol.get(refPath, (res) => {
-                res.on('data', (chunk) => chunks.push(chunk));
-                res.on('end', () => resolve(Buffer.concat(chunks)));
-                res.on('error', reject);
-              }).on('error', reject);
-            });
-          } else {
-            imageBuffer = fs.readFileSync(refPath);
-          }
-
-          const ext = refPath.toLowerCase().split('.').pop() || 'jpg';
-          const mimeMap: Record<string, string> = {
-            jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp', gif: 'image/gif',
-          };
-          imageInput = {
-            imageBytes: imageBuffer.toString('base64'),
-            mimeType: mimeMap[ext] || 'image/jpeg',
-          };
+          imageInput = await loadImage(options.referenceImagePath);
           emit(9, 'Imagem de referência carregada');
         } catch (imgErr: any) {
           console.warn(`[Veo3 API] Falha ao carregar imagem: ${imgErr.message}`);
@@ -180,7 +206,8 @@ export class Veo3VideoService {
 
       // Define a permissão correta baseada na presença de imagem de referência
       // Veo 3.1 exige 'allow_adult' para imagem-para-vídeo e 'allow_all' para texto-para-vídeo
-      const personGen = imageInput ? 'allow_adult' : 'allow_all';
+      const hasAnyImage = !!imageInput || !!referenceImages;
+      const personGen = hasAnyImage ? 'allow_adult' : 'allow_all';
 
       let operation = await ai.models.generateVideos({
         model: model, // Usando o modelo dinâmico passado nas opções
@@ -190,11 +217,12 @@ export class Veo3VideoService {
           numberOfVideos: 1,
           aspectRatio,
           negativePrompt: "Watermark, text, logo, bad quality, low quality",
-          ...(imageInput ? {} : { resolution: '1080p' }),
+          ...(hasAnyImage ? {} : { resolution: '1080p' }),
           personGeneration: personGen,
-          durationSeconds: Math.min(durationSeconds, 8), // Veo 3.1 pode suportar mais, ajuste se a API permitir
+          durationSeconds: Math.min(durationSeconds, 8),
+          ...(referenceImages ? { referenceImages } : {}),
         },
-      });
+      } as any);
 
       emit(10, 'Operação enviada. Aguardando...');
 

@@ -721,7 +721,19 @@ export function ImagesStep({
         const isFast = service === 'veo3-fast-api';
         const modelName = isFast ? 'veo-3.1-fast-generate-preview' : 'veo-3.1-generate-preview';
 
-        if (referenceImagePath) {
+        // Verificar modo Ingredients e Personagens
+        const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
+        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
+        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
+        
+        const isIngredients = isIngredientsExplicit || charsReferencePaths.length > 0;
+        const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths])).slice(0, 3);
+
+        if (isIngredients && ingredientPaths.length > 0) {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com ${ingredientPaths.length} referência(s) via Veo 3.1${isFast ? ' Fast' : ''}...` }));
+        } else if (referenceImagePath) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: `Animando imagem com Veo 3.1${isFast ? ' Fast' : ''}...` }));
         } else {
           setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando vídeo com Veo 3.1${isFast ? ' Fast' : ''}...` }));
@@ -730,7 +742,8 @@ export function ImagesStep({
         const result = await window.electron?.videoProject?.generateVeo3Api({
           prompt: extractPromptString(segment.imagePrompt) || `Cinematic animation of the scene: ${segment.text}`,
           aspectRatio: aspectRatio,
-          referenceImagePath,
+          referenceImagePath: isIngredients ? undefined : referenceImagePath,
+          ingredientImagePaths: isIngredients && ingredientPaths.length > 0 ? ingredientPaths : undefined,
           model: modelName
         });
         
@@ -1211,7 +1224,7 @@ export function ImagesStep({
               <div className="aspect-video relative group rounded-t-xl overflow-hidden">
 
                 {/* Select Modo: Frames / Ingredients (canto superior esquerdo, só Veo 3 e Flow Image) */}
-                {(effectiveService === 'veo3' || effectiveService === 'flow-image') && !isGenerating && (
+                {(effectiveService === 'veo3' || effectiveService === 'flow-image' || effectiveService === 'veo3-api' || effectiveService === 'veo3-fast-api') && !isGenerating && (
                   <div className="absolute top-2 left-2 z-20">
                     <select
                       value={ingredientMode[segment.id] || 'frames'}
@@ -1620,8 +1633,8 @@ export function ImagesStep({
                                   if (svc.id === 'veo3' || svc.id === 'veo2-flow' || svc.id === 'grok') {
                                     setImageCount(prev => ({ ...prev, [segment.id]: 1 }));
                                   }
-                                  // Resetar modo ingredients se saiu de veo3 ou flow-image
-                                  if (svc.id !== 'veo3' && svc.id !== 'flow-image' && ingredientMode[segment.id] === 'ingredients') {
+                                  // Resetar modo ingredients se saiu de veo3, flow-image ou veo3-api/fast
+                                  if (svc.id !== 'veo3' && svc.id !== 'flow-image' && svc.id !== 'veo3-api' && svc.id !== 'veo3-fast-api' && ingredientMode[segment.id] === 'ingredients') {
                                     setIngredientMode(prev => ({ ...prev, [segment.id]: 'frames' }));
                                   }
                                   setOpenDropdown(null);
