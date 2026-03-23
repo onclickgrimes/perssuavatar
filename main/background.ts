@@ -112,7 +112,7 @@ import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import { VoiceAssistant } from './lib/voice-assistant';
 import ffmpeg from 'fluent-ffmpeg';
-import { initializeDatabase, getTranscriptionSettings, setTranscriptionSettings } from './lib/database';
+import { initializeDatabase, getTranscriptionSettings, getUserSettings, setTranscriptionSettings } from './lib/database';
 import { registerDatabaseHandlers } from './lib/handlers/database-handlers';
 import { registerNicheHandlers } from './lib/handlers/niche-handlers';
 import { registerKnowledgeHandlers } from './lib/handlers/knowledge-handlers';
@@ -170,6 +170,30 @@ if (isProd) {
   registerSocialMediaHandlers();
   registerProviderHandlers(null);
 
+  // Inicializa o VoiceAssistant com o modo salvo no banco.
+  // Se faltar API key necessária para o modo, o próprio VoiceAssistant bloqueia o start do serviço.
+  try {
+    const settings = getUserSettings();
+
+    if (settings.aiProvider) {
+      assistant.setAIProvider(settings.aiProvider);
+    }
+
+    if (settings.voiceModel) {
+      assistant.setTTSProvider(settings.voiceModel);
+    }
+
+    const startupMode: 'classic' | 'live' =
+      settings.assistantMode === 'classic' || settings.assistantMode === 'live'
+        ? settings.assistantMode
+        : 'classic';
+
+    await assistant.setMode(startupMode);
+    console.log(`[VoiceAssistant] Startup mode loaded from DB: ${startupMode}`);
+  } catch (error) {
+    console.error('[VoiceAssistant] Failed to initialize from DB settings:', error);
+  }
+
   // Permissão de Microfone
   app.on('web-contents-created', (event, contents) => {
     contents.session.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -201,12 +225,16 @@ if (isProd) {
   })
 
   // Global Mouse Tracking Loop
+  let lastMousePoint: { x: number; y: number } | null = null;
   setInterval(() => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       const point = screen.getCursorScreenPoint();
-      mainWindow.webContents.send('global-mouse-move', point);
+      if (!lastMousePoint || point.x !== lastMousePoint.x || point.y !== lastMousePoint.y) {
+        mainWindow.webContents.send('global-mouse-move', point);
+        lastMousePoint = point;
+      }
     }
-  }, 50); // 20 FPS update rate
+  }, 100); // 10 FPS update rate
 
   if (isProd) {
     await mainWindow.loadURL('app://./home')

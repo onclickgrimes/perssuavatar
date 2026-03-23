@@ -3,6 +3,7 @@ import {
     getUserSettings, 
     getAssistants 
 } from './database';
+import { hasCredential } from './credentials';
 import { tools, geminiTools } from './tools';
 import { DeepgramService } from './services/deepgram-service';
 import { OpenAIService } from './services/openai-service';
@@ -49,6 +50,15 @@ export class VoiceAssistant extends EventEmitter {
     private geminiLiveService: GeminiLiveService;    // Gemini Live for real-time audio
     private screenshotShareService: ScreenshotShareService; // Screenshot sharing service
     private continuousRecordingEnabled: boolean = false; // Track if continuous recording is enabled
+    private modeCredentialAvailability: Record<'classic' | 'live', boolean | null> = {
+        classic: null,
+        live: null,
+    };
+    private modeCredentialLastCheckAt: Record<'classic' | 'live', number> = {
+        classic: 0,
+        live: 0,
+    };
+    private readonly credentialCheckIntervalMs = 3000;
 
     // ========================================
     // CONSTRUCTOR & INITIALIZATION
@@ -183,6 +193,51 @@ export class VoiceAssistant extends EventEmitter {
     // ========================================
     private setupSharedEvents() {
         this.geminiService.on('status', (status: string) => this.emit('status', status));
+    }
+
+    private checkRequiredCredentialForMode(mode: 'classic' | 'live'): boolean {
+        if (mode === 'live') {
+            return hasCredential('gemini');
+        }
+        return hasCredential('deepgram');
+    }
+
+    private hasRequiredCredentialForMode(mode: 'classic' | 'live', forceRefresh: boolean = false): boolean {
+        const now = Date.now();
+        const lastCheck = this.modeCredentialLastCheckAt[mode];
+        const cached = this.modeCredentialAvailability[mode];
+        const canUseCache =
+            !forceRefresh &&
+            cached !== null &&
+            (now - lastCheck) < this.credentialCheckIntervalMs;
+
+        if (canUseCache) {
+            return cached;
+        }
+
+        const hasRequiredCredential = this.checkRequiredCredentialForMode(mode);
+        this.modeCredentialAvailability[mode] = hasRequiredCredential;
+        this.modeCredentialLastCheckAt[mode] = now;
+        return hasRequiredCredential;
+    }
+
+    private ensureModeCanRun(mode: 'classic' | 'live', forceRefresh: boolean = false): boolean {
+        const previousAvailability = this.modeCredentialAvailability[mode];
+        const hasRequiredCredential = this.hasRequiredCredentialForMode(mode, forceRefresh);
+
+        if (previousAvailability !== hasRequiredCredential) {
+            if (!hasRequiredCredential) {
+                const missingService = mode === 'live' ? 'Gemini' : 'Deepgram';
+                const modeLabel = mode === 'live' ? 'Live' : 'Classic';
+                console.warn(`[VoiceAssistant] ${modeLabel} mode disabled: missing ${missingService} API key in database. Service will not start.`);
+                this.emit('status', `${modeLabel} disabled (missing ${missingService} API key)`);
+            } else {
+                const modeLabel = mode === 'live' ? 'Live' : 'Classic';
+                console.log(`[VoiceAssistant] ${modeLabel} mode enabled: required API key found in database.`);
+            }
+        }
+
+        return hasRequiredCredential;
     }
 
     // ========================================
@@ -704,13 +759,24 @@ export class VoiceAssistant extends EventEmitter {
     // ========================================
     public async setMode(mode: 'classic' | 'live') {
         console.log(`[VoiceAssistant] Switching mode to ${mode}`);
-        if (this.mode === mode) return;
-
-        this.mode = mode;
+        if (this.mode !== mode) {
+            this.mode = mode;
+        }
 
         if (mode === 'live') {
             // Switching to Live Mode
             this.stopDeepgram();
+
+            if (!this.ensureModeCanRun('live', true)) {
+                this.geminiLiveService.disconnect();
+                return;
+            }
+
+            if (this.geminiLiveService.isSessionConnected()) {
+                this.emit('status', 'Live Ready');
+                return;
+            }
+
             this.emit('status', 'Connecting Live...');
             await this.geminiLiveService.connect(this.getSystemPrompt('live'));
 
@@ -725,6 +791,12 @@ export class VoiceAssistant extends EventEmitter {
         } else {
             // Switching to Classic Mode
             this.geminiLiveService.disconnect();
+
+            if (!this.ensureModeCanRun('classic', true)) {
+                this.stopDeepgram();
+                return;
+            }
+
             this.emit('status', 'Classic Mode');
         }
     }
@@ -737,7 +809,7 @@ export class VoiceAssistant extends EventEmitter {
     // CLASSIC MODE - PUBLIC METHODS
     // ========================================
     public startDeepgram(audioStream?: Readable) {
-        if (this.mode === 'classic') {
+        if (this.mode === 'classic' && this.ensureModeCanRun('classic')) {
             this.deepgramService.start(audioStream);
         }
     }
@@ -822,8 +894,14 @@ export class VoiceAssistant extends EventEmitter {
     // ========================================
     public processAudioStream(chunk: Buffer) {
         if (this.mode === 'live') {
+            if (!this.ensureModeCanRun('live')) {
+                return;
+            }
             this.geminiLiveService.sendAudio(chunk);
         } else {
+            if (!this.ensureModeCanRun('classic')) {
+                return;
+            }
             this.deepgramService.processAudioStream(chunk);
         }
     }
