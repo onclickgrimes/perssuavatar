@@ -164,10 +164,16 @@ export class GeminiLiveService extends EventEmitter {
                     },
                     onerror: (e: any) => {
                         console.error('Gemini Live Error:', e);
+                        if (e instanceof Error) {
+                            console.error(e.stack);
+                        } else {
+                            console.error(JSON.stringify(e));
+                        }
                         this.emit('error', e);
                     },
                     onclose: (e: any) => {
-                        console.log('Gemini Live Closed:', e);
+                        console.log('Gemini Live Closed. Reason:', e?.reason, 'Code:', e?.code, 'Message:', e?.message, 'WasClean:', e?.wasClean);
+                        try { console.log(JSON.stringify(e)); } catch (er) {}
                         this.isConnected = false;
                         this.emit('status', 'Idle');
                         this.stopProcessing = true;
