@@ -2806,7 +2806,7 @@ export class FlowVideoProvider {
     prompt: string,
     count: number = 1,
     onProgress?: FlowProgressCallback,
-    model: string = '🍌 Nano Banana Pro',
+    model: string = '🍌 Nano Banana 2',
     aspectRatio?: string,
     ingredientImagePaths?: string[]
   ): Promise<FlowImageResult> {
