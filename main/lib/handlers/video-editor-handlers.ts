@@ -1408,7 +1408,7 @@ Lembre-se:
         (progress: any) => {
           event.sender.send('video-project:flow-image-progress', progress);
         },
-        '🍌 Nano Banana Pro',
+        '🍌 Nano Banana 2',
         options.aspectRatio,
         options.ingredientImagePaths
       );

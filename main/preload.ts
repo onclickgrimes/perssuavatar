@@ -818,6 +818,42 @@ const handler = {
   },
 
   // ========================================
+  // BILLING / MODULE ACCESS
+  // ========================================
+
+  billing: {
+    getModuleAccess: () => ipcRenderer.invoke('billing:get-module-access'),
+    createCheckout: (moduleCode: 'video-editor' | 'social-media' | 'meeting-assistance') =>
+      ipcRenderer.invoke('billing:create-checkout', moduleCode),
+    openCheckout: (moduleCode: 'video-editor' | 'social-media' | 'meeting-assistance') =>
+      ipcRenderer.invoke('billing:open-checkout', moduleCode),
+    onModuleAccessUpdated: (
+      callback: (data: {
+        success: boolean;
+        access?: Record<'video-editor' | 'social-media' | 'meeting-assistance', 'active' | 'locked' | 'pending_payment' | 'blocked'>;
+        error?: string;
+        source?: string;
+      }) => void
+    ) => {
+      const subscription = (_: any, data: any) => callback(data);
+      ipcRenderer.on('billing:module-access-updated', subscription);
+      return () => ipcRenderer.removeListener('billing:module-access-updated', subscription);
+    },
+  },
+
+  // ========================================
+  // AUTH / USER IDENTITY
+  // ========================================
+
+  auth: {
+    getIdentity: () => ipcRenderer.invoke('auth:get-identity'),
+    signInWithPassword: (email: string, password: string) =>
+      ipcRenderer.invoke('auth:sign-in-password', email, password),
+    refreshSession: () => ipcRenderer.invoke('auth:refresh-session'),
+    signOut: () => ipcRenderer.invoke('auth:sign-out'),
+  },
+
+  // ========================================
   // SOCIAL MEDIA SERVICE (Puppeteer)
   // ========================================
   

@@ -67,6 +67,13 @@ interface DatabaseSchema {
     // Integrações externas
     supabaseUrl?: string;
     supabasePublishKey?: string;
+    billingAuthToken?: string;
+    billingUserId?: string;
+    authEmail?: string;
+    authUserId?: string;
+    authAccessToken?: string;
+    authRefreshToken?: string;
+    authExpiresAt?: number;
   };
 
   // Histórico de conversas
@@ -140,7 +147,7 @@ const defaults: DatabaseSchema = {
     alwaysOnTop: true,
     volume: 0.8,
     selectedModel: 'Yuki',
-    selectedAssistant: 'general' // Assistente padrão
+    selectedAssistant: 'general', // Assistente padrão
   },
   conversationHistory: [],
   windowState: {
@@ -372,6 +379,7 @@ This assistant must explain concepts with increasing depth, provide code solutio
 
 // Singleton da store
 let storeInstance: Store<DatabaseSchema> | null = null;
+let apiCredentialsCache: ApiCredential[] | null = null;
 
 /**
  * Inicializa a store do electron (singleton)
@@ -390,7 +398,16 @@ export function initializeDatabase(): Store<DatabaseSchema> {
             assistantMode: { type: 'string', enum: ['classic', 'live'] },
             alwaysOnTop: { type: 'boolean' },
             volume: { type: 'number', minimum: 0, maximum: 1 },
-            selectedModel: { type: 'string' }
+            selectedModel: { type: 'string' },
+            supabaseUrl: { type: 'string' },
+            supabasePublishKey: { type: 'string' },
+            billingAuthToken: { type: 'string' },
+            billingUserId: { type: 'string' },
+            authEmail: { type: 'string' },
+            authUserId: { type: 'string' },
+            authAccessToken: { type: 'string' },
+            authRefreshToken: { type: 'string' },
+            authExpiresAt: { type: 'number' }
           }
         },
         conversationHistory: {
@@ -431,6 +448,13 @@ export function initializeDatabase(): Store<DatabaseSchema> {
       }
     });
 
+    // Limpa campo legado que não deve mais ficar salvo no JSON local.
+    const persistedUserSettings = (storeInstance.get('userSettings') || {}) as Record<string, any>;
+    if (persistedUserSettings && Object.prototype.hasOwnProperty.call(persistedUserSettings, 'billingBaseUrl')) {
+      delete persistedUserSettings.billingBaseUrl;
+      storeInstance.set('userSettings', persistedUserSettings as any);
+    }
+
     console.log('✅ Database initialized at:', storeInstance.path);
   }
 
@@ -445,6 +469,25 @@ export function getDatabase(): Store<DatabaseSchema> {
     return initializeDatabase();
   }
   return storeInstance;
+}
+
+function readStoredApiCredentials(): ApiCredential[] {
+  if (apiCredentialsCache) {
+    return apiCredentialsCache;
+  }
+
+  const db = getDatabase();
+  const credentials = db.get('apiCredentials');
+  apiCredentialsCache = sortCredentials(Array.isArray(credentials) ? credentials : []);
+  return apiCredentialsCache;
+}
+
+function writeStoredApiCredentials(credentials: ApiCredential[]): ApiCredential[] {
+  const db = getDatabase();
+  const sorted = sortCredentials(credentials);
+  db.set('apiCredentials', sorted);
+  apiCredentialsCache = sorted;
+  return sorted;
 }
 
 // ===============================================
@@ -512,10 +555,11 @@ function setActiveForService(
 }
 
 export function getApiCredentials(service?: ApiCredentialService): ApiCredential[] {
-  const db = getDatabase();
-  const credentials = db.get('apiCredentials');
-  const filtered = service ? credentials.filter(c => c.service === service) : credentials;
-  return sortCredentials(filtered);
+  const credentials = readStoredApiCredentials();
+  if (!service) {
+    return [...credentials];
+  }
+  return credentials.filter(c => c.service === service);
 }
 
 export function getActiveApiCredential(service: ApiCredentialService): ApiCredential | null {
@@ -527,14 +571,13 @@ export function getActiveApiCredential(service: ApiCredentialService): ApiCreden
 }
 
 export function hasApiCredential(service: ApiCredentialService): boolean {
-  return getApiCredentials(service).length > 0;
+  return readStoredApiCredentials().some(c => c.service === service);
 }
 
 export function createApiCredential(input: UpsertApiCredentialInput): ApiCredential {
-  const db = getDatabase();
   const sanitized = sanitizeInput(input);
   const service = sanitized.service as ApiCredentialService;
-  const credentials = db.get('apiCredentials');
+  const credentials = readStoredApiCredentials();
   const sameService = credentials.filter(c => c.service === service);
 
   assertCredentialPayload(service, sanitized);
@@ -579,7 +622,7 @@ export function createApiCredential(input: UpsertApiCredentialInput): ApiCredent
     next = setActiveForService(next, service, created.id);
   }
 
-  db.set('apiCredentials', sortCredentials(next));
+  writeStoredApiCredentials(next);
   return created;
 }
 
@@ -587,8 +630,7 @@ export function updateApiCredential(
   credentialId: string,
   updates: Partial<Omit<ApiCredential, 'id' | 'createdAt' | 'updatedAt' | 'service'>>
 ): ApiCredential | null {
-  const db = getDatabase();
-  const credentials = db.get('apiCredentials');
+  const credentials = readStoredApiCredentials();
   const index = credentials.findIndex(c => c.id === credentialId);
   if (index === -1) return null;
 
@@ -631,13 +673,12 @@ export function updateApiCredential(
     }
   }
 
-  db.set('apiCredentials', sortCredentials(next));
+  writeStoredApiCredentials(next);
   return nextCredential;
 }
 
 export function deleteApiCredential(credentialId: string): boolean {
-  const db = getDatabase();
-  const credentials = db.get('apiCredentials');
+  const credentials = readStoredApiCredentials();
   const index = credentials.findIndex(c => c.id === credentialId);
   if (index === -1) return false;
 
@@ -651,13 +692,12 @@ export function deleteApiCredential(credentialId: string): boolean {
     }
   }
 
-  db.set('apiCredentials', sortCredentials(next));
+  writeStoredApiCredentials(next);
   return true;
 }
 
 export function setActiveApiCredential(service: ApiCredentialService, credentialId: string): boolean {
-  const db = getDatabase();
-  const credentials = db.get('apiCredentials');
+  const credentials = readStoredApiCredentials();
   const target = credentials.find(c => c.id === credentialId && c.service === service);
   if (!target) return false;
 
@@ -668,7 +708,7 @@ export function setActiveApiCredential(service: ApiCredentialService, credential
     return credential;
   });
 
-  db.set('apiCredentials', sortCredentials(next));
+  writeStoredApiCredentials(next);
   return true;
 }
 
@@ -683,8 +723,10 @@ export function getUserSettings() {
 
 export function setUserSettings(settings: Partial<DatabaseSchema['userSettings']>) {
   const db = getDatabase();
-  const current = db.get('userSettings');
-  db.set('userSettings', { ...current, ...settings });
+  const current = db.get('userSettings') as Record<string, any>;
+  const nextSettings = { ...current, ...settings } as Record<string, any>;
+  delete nextSettings.billingBaseUrl;
+  db.set('userSettings', nextSettings as any);
   console.log('💾 User settings saved:', settings);
 }
 
@@ -926,6 +968,7 @@ export function setTranscriptionSettings(settings: Partial<DatabaseSchema['trans
 export function clearAllData() {
   const db = getDatabase();
   db.clear();
+  apiCredentialsCache = null;
   console.log('🗑️ All data cleared');
 }
 
@@ -956,7 +999,7 @@ export function getDatabaseStats() {
     recordingCount: db.get('recordings').length,
     screenshotCount: db.get('screenshots').length,
     assistantCount: db.get('assistants').length,
-    apiCredentialCount: db.get('apiCredentials').length,
+    apiCredentialCount: readStoredApiCredentials().length,
     settings: db.get('userSettings')
   };
 }
