@@ -104,3 +104,6 @@ desktop.ini
 config.local.json
 settings.local.json
 .embeddings-cache.json
+
+# Perssuavatar-web
+Perssuavatar-web/

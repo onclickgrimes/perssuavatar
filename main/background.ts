@@ -128,6 +128,16 @@ import {
 } from './lib/handlers/social-media-handlers';
 import { registerProviderHandlers } from './lib/handlers/provider-handlers';
 import { isProd, getUserDataPath } from './lib/app-config';
+import {
+  getModuleAccess,
+  createCheckout,
+  openCheckout,
+  BillingModuleCode,
+  setModuleAccessUpdateListener,
+  startModuleAccessRealtime,
+  stopModuleAccessRealtime,
+} from './lib/services/module-access-service';
+import { getAppIdentity, signInWithPassword, refreshAppSession, signOutApp } from './lib/services/app-auth-service';
 import { promisify } from 'util';
 import { exec as execCallback } from 'child_process';
 const execAsync = promisify(execCallback);
@@ -150,6 +160,12 @@ let screenshotGalleryWindow: BrowserWindow | null = null;
 const assistant = new VoiceAssistant('elevenlabs');
 let isMicrophonePaused = false; // Estado de pausa do microfone
 let isAvatarReactionDisabled = false; // Desabilita reação do avatar (transcrição continua)
+
+const LOCKED_MODULE_ACCESS = {
+  'video-editor': 'locked',
+  'social-media': 'locked',
+  'meeting-assistance': 'locked',
+} as const;
 
 if (isProd) {
   serve({ directory: 'app' })
@@ -247,6 +263,16 @@ if (isProd) {
   // Desabilitar menu de contexto nativo (para permitir menu radial customizado)
   mainWindow.webContents.on('context-menu', (event) => {
     event.preventDefault();
+  });
+
+  setModuleAccessUpdateListener((payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('billing:module-access-updated', payload);
+    }
+  });
+
+  startModuleAccessRealtime().catch(() => {
+    // Se não houver sessão autenticada no startup, seguimos sem assinatura.
   });
 
   // Screenshot Gallery Window será criada sob demanda quando houver screenshots
@@ -394,6 +420,9 @@ if (isProd) {
   // Limpar intervalo quando app fechar
   app.on('before-quit', () => {
     clearInterval(clipboardMonitorInterval);
+    stopModuleAccessRealtime().catch(() => {
+      // Sem impacto funcional durante shutdown.
+    });
   });
 
   console.log('📋 Clipboard monitor iniciado - Win+Shift+S e PrintScreen capturas serão detectadas');
@@ -524,6 +553,9 @@ function sendScreenshotToGallery(base64Data: string) {
 }
 
 app.on('window-all-closed', () => {
+  stopModuleAccessRealtime().catch(() => {
+    // Sem impacto funcional durante shutdown.
+  });
   app.quit()
 })
 
@@ -1169,6 +1201,87 @@ ipcMain.handle('open-social-media-window', async () => {
   return { success: true };
 });
 
+// ========================================
+// BILLING / MODULE ACCESS
+// ========================================
+
+ipcMain.handle('billing:get-module-access', async () => {
+  try {
+    return await getModuleAccess();
+  } catch (error: any) {
+    return {
+      success: false,
+      access: { ...LOCKED_MODULE_ACCESS },
+      error: error?.message || 'Falha ao consultar acesso de módulos',
+    };
+  }
+});
+
+ipcMain.handle('billing:create-checkout', async (_event, moduleCode: BillingModuleCode) => {
+  try {
+    return await createCheckout(moduleCode);
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error?.message || 'Falha ao criar checkout',
+    };
+  }
+});
+
+ipcMain.handle('billing:open-checkout', async (_event, moduleCode: BillingModuleCode) => {
+  try {
+    return await openCheckout(moduleCode);
+  } catch (error: any) {
+    return {
+      success: false,
+      error: error?.message || 'Falha ao abrir checkout',
+    };
+  }
+});
+
+// ========================================
+// APP AUTH / USER IDENTITY
+// ========================================
+
+ipcMain.handle('auth:get-identity', async () => {
+  return getAppIdentity();
+});
+
+ipcMain.handle('auth:sign-in-password', async (_event, email: string, password: string) => {
+  const result = await signInWithPassword(email, password);
+
+  if (result?.success && result.identity?.isAuthenticated) {
+    await startModuleAccessRealtime(true);
+  }
+
+  return result;
+});
+
+ipcMain.handle('auth:refresh-session', async () => {
+  const result = await refreshAppSession();
+
+  if (result?.success && result.identity?.isAuthenticated) {
+    await startModuleAccessRealtime(true);
+  }
+
+  return result;
+});
+
+ipcMain.handle('auth:sign-out', async () => {
+  const result = await signOutApp();
+  await stopModuleAccessRealtime();
+
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('billing:module-access-updated', {
+      success: true,
+      access: { ...LOCKED_MODULE_ACCESS },
+      source: 'local-signout',
+    });
+  }
+
+  return result;
+});
+
 // Register global shortcut for transcription window
 app.whenReady().then(() => {
   const { globalShortcut } = require('electron');
@@ -1224,6 +1337,9 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   const { globalShortcut } = require('electron');
   globalShortcut.unregisterAll();
+  stopModuleAccessRealtime().catch(() => {
+    // Sem impacto funcional durante shutdown.
+  });
   app.quit()
 })
 ipcMain.on('audio-data', (event, buffer) => {

@@ -67,6 +67,13 @@ interface DatabaseSchema {
     // Integrações externas
     supabaseUrl?: string;
     supabasePublishKey?: string;
+    billingAuthToken?: string;
+    billingUserId?: string;
+    authEmail?: string;
+    authUserId?: string;
+    authAccessToken?: string;
+    authRefreshToken?: string;
+    authExpiresAt?: number;
   };
 
   // Histórico de conversas
@@ -140,7 +147,7 @@ const defaults: DatabaseSchema = {
     alwaysOnTop: true,
     volume: 0.8,
     selectedModel: 'Yuki',
-    selectedAssistant: 'general' // Assistente padrão
+    selectedAssistant: 'general', // Assistente padrão
   },
   conversationHistory: [],
   windowState: {
@@ -391,7 +398,16 @@ export function initializeDatabase(): Store<DatabaseSchema> {
             assistantMode: { type: 'string', enum: ['classic', 'live'] },
             alwaysOnTop: { type: 'boolean' },
             volume: { type: 'number', minimum: 0, maximum: 1 },
-            selectedModel: { type: 'string' }
+            selectedModel: { type: 'string' },
+            supabaseUrl: { type: 'string' },
+            supabasePublishKey: { type: 'string' },
+            billingAuthToken: { type: 'string' },
+            billingUserId: { type: 'string' },
+            authEmail: { type: 'string' },
+            authUserId: { type: 'string' },
+            authAccessToken: { type: 'string' },
+            authRefreshToken: { type: 'string' },
+            authExpiresAt: { type: 'number' }
           }
         },
         conversationHistory: {
@@ -431,6 +447,13 @@ export function initializeDatabase(): Store<DatabaseSchema> {
         }
       }
     });
+
+    // Limpa campo legado que não deve mais ficar salvo no JSON local.
+    const persistedUserSettings = (storeInstance.get('userSettings') || {}) as Record<string, any>;
+    if (persistedUserSettings && Object.prototype.hasOwnProperty.call(persistedUserSettings, 'billingBaseUrl')) {
+      delete persistedUserSettings.billingBaseUrl;
+      storeInstance.set('userSettings', persistedUserSettings as any);
+    }
 
     console.log('✅ Database initialized at:', storeInstance.path);
   }
@@ -700,8 +723,10 @@ export function getUserSettings() {
 
 export function setUserSettings(settings: Partial<DatabaseSchema['userSettings']>) {
   const db = getDatabase();
-  const current = db.get('userSettings');
-  db.set('userSettings', { ...current, ...settings });
+  const current = db.get('userSettings') as Record<string, any>;
+  const nextSettings = { ...current, ...settings } as Record<string, any>;
+  delete nextSettings.billingBaseUrl;
+  db.set('userSettings', nextSettings as any);
   console.log('💾 User settings saved:', settings);
 }
 

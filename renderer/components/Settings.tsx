@@ -14,7 +14,7 @@ interface SettingsProps {
   onClose?: () => void;
 }
 
-type TabId = 'api' | 'audio' | 'avatar' | 'features' | 'shortcuts' | 'embeddings' | 'providers' | 'help';
+type TabId = 'account' | 'api' | 'audio' | 'avatar' | 'features' | 'shortcuts' | 'embeddings' | 'providers' | 'help';
 
 // Tipos para Providers
 type ProviderPlatform = 'gemini' | 'openai' | 'qwen';
@@ -49,6 +49,15 @@ interface ApiCredential {
   isActive: boolean;
   createdAt: number;
   updatedAt: number;
+}
+
+interface AppIdentity {
+  isAuthenticated: boolean;
+  email: string | null;
+  userId: string | null;
+  accessToken: string | null;
+  expiresAt: number | null;
+  hasSupabaseConfig: boolean;
 }
 
 const API_SERVICE_META: Record<ApiCredentialService, {
@@ -147,6 +156,14 @@ export default function Settings({
   const [isOpeningProvider, setIsOpeningProvider] = useState<string | null>(null);
   const [providerError, setProviderError] = useState<string | null>(null);
 
+  // Account / identity settings
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [identity, setIdentity] = useState<AppIdentity | null>(null);
+  const [isAuthLoading, setIsAuthLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState<string | null>(null);
+  const [authError, setAuthError] = useState<string | null>(null);
+
   // API credentials (chaves salvas no banco)
   const [apiCredentialsByService, setApiCredentialsByService] = useState<Record<ApiCredentialService, ApiCredential[]>>(
     () => buildServiceRecord(() => [])
@@ -165,6 +182,23 @@ export default function Settings({
   // Continuous recorder & Screen Share
   const { isRecording, startRecording, stopRecording, saveLastSeconds, getBufferInfo } = useContinuousRecorder({ maxBufferSeconds: 600 });
   const { isSharing, startSharing, stopSharing } = useScreenShare({ fps: 1 });
+
+  const loadIdentity = async () => {
+    try {
+      const result = await window.electron.auth.getIdentity();
+      setIdentity(result);
+    } catch (error) {
+      console.error('❌ Erro ao carregar identidade:', error);
+      setIdentity(null);
+    }
+  };
+
+  const scrubLegacyCredentialSettings = async () => {
+    await window.electron.db.setUserSettings({
+      supabaseUrl: undefined,
+      supabasePublishKey: undefined,
+    });
+  };
 
   // Effects (Logics)
   useEffect(() => {
@@ -256,6 +290,10 @@ export default function Settings({
             onModelChange(settings.selectedModel);
           }
 
+          if (settings.authEmail) {
+            setAuthEmail(settings.authEmail);
+          }
+
           // Carregar configurações de embedding
           if (settings.embeddingProvider) {
             setEmbeddingProvider(settings.embeddingProvider);
@@ -272,6 +310,10 @@ export default function Settings({
     }
     
     loadSettings();
+    loadIdentity();
+    scrubLegacyCredentialSettings().catch((error) => {
+      console.warn('⚠️ Não foi possível limpar credenciais legadas:', error);
+    });
   }, []);
 
   useEffect(() => {
@@ -396,6 +438,74 @@ export default function Settings({
       console.log('💾 Gravação contínua salva:', newState);
     } catch (error) {
       console.error('❌ Erro ao salvar gravação contínua:', error);
+    }
+  };
+
+  const handleSignIn = async () => {
+    setAuthError(null);
+    setAuthMessage(null);
+    setIsAuthLoading(true);
+
+    try {
+      const result = await window.electron.auth.signInWithPassword(authEmail.trim(), authPassword);
+
+      if (!result?.success) {
+        setAuthError(result?.error || 'Falha ao autenticar.');
+        return;
+      }
+
+      await scrubLegacyCredentialSettings();
+      setIdentity(result.identity || null);
+      setAuthPassword('');
+      setAuthMessage('Login realizado. Identidade sincronizada com billing.');
+      await loadIdentity();
+    } catch (error: any) {
+      setAuthError(error?.message || 'Erro ao autenticar usuário.');
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleRefreshSession = async () => {
+    setAuthError(null);
+    setAuthMessage(null);
+    setIsAuthLoading(true);
+
+    try {
+      const result = await window.electron.auth.refreshSession();
+      if (!result?.success) {
+        setAuthError(result?.error || 'Falha ao renovar sessão.');
+      } else {
+        setIdentity(result.identity || null);
+        setAuthMessage('Sessão renovada com sucesso.');
+      }
+      await loadIdentity();
+    } catch (error: any) {
+      setAuthError(error?.message || 'Erro ao renovar sessão.');
+    } finally {
+      setIsAuthLoading(false);
+    }
+  };
+
+  const handleSignOut = async () => {
+    setAuthError(null);
+    setAuthMessage(null);
+    setIsAuthLoading(true);
+
+    try {
+      const result = await window.electron.auth.signOut();
+      if (!result?.success) {
+        setAuthError(result?.error || 'Falha ao encerrar sessão.');
+      } else {
+        setIdentity(result.identity || null);
+        setAuthMessage('Sessão encerrada.');
+      }
+      setAuthPassword('');
+      await loadIdentity();
+    } catch (error: any) {
+      setAuthError(error?.message || 'Erro ao encerrar sessão.');
+    } finally {
+      setIsAuthLoading(false);
     }
   };
 
@@ -867,6 +977,12 @@ export default function Settings({
     }
   }, [activeTab]);
 
+  useEffect(() => {
+    if (activeTab === 'account') {
+      loadIdentity();
+    }
+  }, [activeTab]);
+
   // Carregar credenciais ao abrir a aba de APIs
   useEffect(() => {
     if (activeTab === 'api') {
@@ -946,6 +1062,7 @@ export default function Settings({
              {/* Sidebar */}
              <div className="w-64 bg-[#0a0a0a] border-r border-[#222] p-4 flex flex-col">
                 <nav className="flex-1 space-y-1">
+                   {renderSidebarItem('account', 'Conta', '👤')}
                    {renderSidebarItem('api', 'API e Modelos', '❖')}
                    {renderSidebarItem('audio', 'Áudio e Tela', '🎤')}
                    {renderSidebarItem('avatar', 'Avatar', '👤')}
@@ -971,6 +1088,99 @@ export default function Settings({
               scrollbarWidth: 'thin',
               scrollbarColor: '#1a1a1a #0a0a0a'
             }}>
+                {/* --- Conta / Identidade --- */}
+                {activeTab === 'account' && (
+                  <div className="space-y-8 animate-in fade-in slide-in-from-bottom-2 duration-300">
+
+                    <div className="bg-[#111] border border-[#222] rounded-xl p-5 space-y-4">
+                      <h4 className="text-sm font-semibold text-white">Login</h4>
+
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">E-mail</label>
+                        <input
+                          type="email"
+                          value={authEmail}
+                          onChange={(e) => setAuthEmail(e.target.value)}
+                          placeholder="usuario@dominio.com"
+                          className="w-full bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs text-gray-400 mb-1">Senha</label>
+                        <input
+                          type="password"
+                          value={authPassword}
+                          onChange={(e) => setAuthPassword(e.target.value)}
+                          placeholder="••••••••"
+                          className="w-full bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                        />
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={handleSignIn}
+                          disabled={isAuthLoading}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-600/50 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          {isAuthLoading ? 'Entrando...' : 'Entrar'}
+                        </button>
+                        <button
+                          onClick={handleRefreshSession}
+                          disabled={isAuthLoading}
+                          className="px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:bg-amber-600/50 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          Renovar sessão
+                        </button>
+                        <button
+                          onClick={handleSignOut}
+                          disabled={isAuthLoading}
+                          className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-600/50 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          Sair
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="bg-[#111] border border-[#222] rounded-xl p-5 space-y-3">
+                      <h4 className="text-sm font-semibold text-white">Status da Sessão</h4>
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <div className="bg-black/30 border border-[#222] rounded-lg p-3">
+                          <p className="text-gray-400 mb-1">Autenticado</p>
+                          <p className={identity?.isAuthenticated ? 'text-emerald-400 font-semibold' : 'text-red-400 font-semibold'}>
+                            {identity?.isAuthenticated ? 'Sim' : 'Não'}
+                          </p>
+                        </div>
+                        <div className="bg-black/30 border border-[#222] rounded-lg p-3">
+                          <p className="text-gray-400 mb-1">Usuário</p>
+                          <p className="text-white break-all">{identity?.email || '-'}</p>
+                        </div>
+                        <div className="bg-black/30 border border-[#222] rounded-lg p-3">
+                          <p className="text-gray-400 mb-1">User ID</p>
+                          <p className="text-white break-all">{identity?.userId || '-'}</p>
+                        </div>
+                        <div className="bg-black/30 border border-[#222] rounded-lg p-3">
+                          <p className="text-gray-400 mb-1">Expira em</p>
+                          <p className="text-white">
+                            {identity?.expiresAt ? new Date(identity.expiresAt * 1000).toLocaleString('pt-BR') : '-'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {authMessage && (
+                      <div className="bg-emerald-900/20 border border-emerald-500/20 rounded-xl p-3 text-sm text-emerald-300">
+                        {authMessage}
+                      </div>
+                    )}
+
+                    {authError && (
+                      <div className="bg-red-900/20 border border-red-500/20 rounded-xl p-3 text-sm text-red-300">
+                        {authError}
+                      </div>
+                    )}
+                  </div>
+                )}
                 
                 {/* --- API e Modelos --- */}
                 {activeTab === 'api' && (

@@ -1,10 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import Avatar from '../components/Avatar';
 import CodePopup from '../components/CodePopup';
 import Settings from '../components/Settings';
 import ActionBar from '../components/ActionBar';
-import RadialMenu from '../components/RadialMenu';
+import RadialMenu, { BillingModuleCode, ModuleAccessMap } from '../components/RadialMenu';
 import { useMicrophone } from '../hooks/useMicrophone';
+
+const INITIAL_MODULE_ACCESS: ModuleAccessMap = {
+  'video-editor': 'locked',
+  'social-media': 'locked',
+  'meeting-assistance': 'locked',
+};
 
 export default function HomePage() {
   // Initialize microphone
@@ -18,6 +24,7 @@ export default function HomePage() {
   const [isMicrophonePaused, setIsMicrophonePaused] = useState(false);
   const [isAvatarReactionDisabled, setIsAvatarReactionDisabled] = useState(false);
   const [isTranscriptionHidden, setIsTranscriptionHidden] = useState(false);
+  const [moduleAccess, setModuleAccess] = useState<ModuleAccessMap>(INITIAL_MODULE_ACCESS);
   const isHoveringAvatarRef = useRef(false);
   
   const models = [
@@ -75,6 +82,70 @@ export default function HomePage() {
     console.log('📱 Abrindo Social Media');
     window.electron.openSocialMediaWindow?.();
   };
+
+  const syncModuleAccess = useCallback(async () => {
+    try {
+      const identity = await window.electron.auth?.getIdentity?.();
+      if (identity && !identity.isAuthenticated) {
+        setModuleAccess(INITIAL_MODULE_ACCESS);
+        return;
+      }
+
+      const response = await window.electron.billing?.getModuleAccess?.();
+      if (response?.access) {
+        setModuleAccess((prev) => ({ ...prev, ...response.access }));
+      }
+    } catch (error) {
+      console.error('❌ Erro ao sincronizar acesso dos módulos:', error);
+    }
+  }, []);
+
+  const handleLockedModuleClick = useCallback(async (moduleCode: BillingModuleCode) => {
+    try {
+      const identity = await window.electron.auth?.getIdentity?.();
+      if (!identity?.isAuthenticated) {
+        setIsSettingsOpen(true);
+        alert('Faça login na aba "Conta" das configurações para comprar e liberar módulos.');
+        return;
+      }
+
+      const result = await window.electron.billing?.openCheckout?.(moduleCode);
+      if (!result?.success) {
+        console.error('❌ Falha ao abrir checkout:', result?.error || 'Erro desconhecido');
+      }
+
+      // Fallback leve: uma sincronização pontual após abrir checkout.
+      setTimeout(() => {
+        syncModuleAccess();
+      }, 1200);
+    } catch (error) {
+      console.error('❌ Erro ao abrir checkout:', error);
+    }
+  }, [syncModuleAccess]);
+
+  useEffect(() => {
+    syncModuleAccess();
+    const unsubscribe = window.electron.billing?.onModuleAccessUpdated?.((payload) => {
+      if (payload?.access) {
+        setModuleAccess((prev) => ({ ...prev, ...payload.access }));
+      }
+    });
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [syncModuleAccess]);
+
+  useEffect(() => {
+    const handleFocus = () => {
+      syncModuleAccess();
+    };
+
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [syncModuleAccess]);
 
   // When UI is open (ActionBar or Settings), disable click-through to allow interaction
   useEffect(() => {
@@ -165,6 +236,8 @@ export default function HomePage() {
         onAsk={handleAsk}
         onOpenVideoStudio={handleOpenVideoStudio}
         onOpenSocialMedia={handleOpenSocialMedia}
+        moduleAccess={moduleAccess}
+        onLockedModuleClick={handleLockedModuleClick}
       />
       <Settings 
         onSizeChange={handleSizeChange}

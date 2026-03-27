@@ -1,5 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { getUserSettings } from '../database';
+import { getObfuscatedSupabaseAnonKey, getObfuscatedSupabaseUrl } from './obfuscated-config';
 
 export interface VideoMetadata {
   name: string; // Será mapeado para filename
@@ -28,9 +29,8 @@ export class SupabaseService {
   private tableName = 'stock_videos'; // Usando a tabela existente no Supabase
 
   constructor() {
-    const settings = getUserSettings();
-    const supabaseUrl = settings?.supabaseUrl?.trim();
-    const supabaseKey = settings?.supabasePublishKey?.trim();
+    const supabaseUrl = getObfuscatedSupabaseUrl();
+    const supabaseKey = getObfuscatedSupabaseAnonKey();
 
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('Credenciais do Supabase não configuradas no banco de dados.');

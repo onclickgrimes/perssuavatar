@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 
+export type BillingModuleCode = 'video-editor' | 'social-media' | 'meeting-assistance';
+export type ModuleAccessStatus = 'active' | 'locked' | 'pending_payment' | 'blocked';
+export type ModuleAccessMap = Partial<Record<BillingModuleCode, ModuleAccessStatus>>;
+
 interface RadialMenuProps {
   onOpenSettings: () => void;
   onOpenHistory: () => void;
@@ -7,6 +11,8 @@ interface RadialMenuProps {
   onAsk: () => void;
   onOpenVideoStudio?: () => void;
   onOpenSocialMedia?: () => void;
+  moduleAccess?: ModuleAccessMap;
+  onLockedModuleClick?: (moduleCode: BillingModuleCode) => void;
 }
 
 interface MenuItem {
@@ -14,6 +20,7 @@ interface MenuItem {
   label: string;
   icon: JSX.Element;
   action: () => void;
+  moduleCode?: BillingModuleCode;
 }
 
 export default function RadialMenu({
@@ -23,6 +30,8 @@ export default function RadialMenu({
   onAsk,
   onOpenVideoStudio,
   onOpenSocialMedia,
+  moduleAccess,
+  onLockedModuleClick,
 }: RadialMenuProps) {
   const [isVisible, setIsVisible] = useState(false);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -44,6 +53,7 @@ export default function RadialMenu({
     {
       id: 'listen',
       label: 'Começar a Ouvir',
+      moduleCode: 'meeting-assistance',
       icon: (
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
@@ -81,6 +91,7 @@ export default function RadialMenu({
     {
       id: 'video-studio',
       label: 'Video Studio',
+      moduleCode: 'video-editor',
       icon: (
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="m22 8-6 4 6 4V8Z"></path>
@@ -96,6 +107,7 @@ export default function RadialMenu({
     {
       id: 'social-media',
       label: 'Social Media',
+      moduleCode: 'social-media',
       icon: (
         <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"></path>
@@ -131,6 +143,24 @@ export default function RadialMenu({
       action: onOpenHistory,
     },
   ];
+
+  const getModuleStatus = (item: MenuItem): ModuleAccessStatus => {
+    if (!item.moduleCode) return 'active';
+    return moduleAccess?.[item.moduleCode] || 'locked';
+  };
+
+  const isModuleLocked = (status: ModuleAccessStatus) =>
+    status === 'locked' || status === 'blocked';
+
+  const isModulePending = (status: ModuleAccessStatus) =>
+    status === 'pending_payment';
+
+  const getSegmentLabel = (item: MenuItem): string => {
+    const status = getModuleStatus(item);
+    if (isModulePending(status)) return `${item.label} (Pagamento pendente)`;
+    if (isModuleLocked(status)) return `${item.label} (Bloqueado)`;
+    return item.label;
+  };
 
   // Função para criar o path de um segmento (arco)
   const createSegmentPath = (index: number, total: number): string => {
@@ -262,7 +292,16 @@ export default function RadialMenu({
   if (!isVisible && !isHolding) return null;
 
   const handleSegmentClick = (index: number) => {
-    menuItems[index].action();
+    const item = menuItems[index];
+    const status = getModuleStatus(item);
+
+    if (item.moduleCode && status !== 'active') {
+      onLockedModuleClick?.(item.moduleCode);
+      setIsVisible(false);
+      return;
+    }
+
+    item.action();
     setIsVisible(false);
   };
 
@@ -342,13 +381,26 @@ export default function RadialMenu({
           {/* Segmentos do anel externo */}
           {menuItems.map((item, index) => {
             const isHovered = hoveredSegment === index;
+            const moduleStatus = getModuleStatus(item);
+            const locked = isModuleLocked(moduleStatus);
+            const pending = isModulePending(moduleStatus);
+            const defaultFill = locked
+              ? 'rgba(74, 22, 22, 0.88)'
+              : pending
+                ? 'rgba(92, 57, 10, 0.88)'
+                : 'rgba(30, 30, 30, 0.85)';
+            const hoverFill = locked
+              ? '#b91c1c'
+              : pending
+                ? '#d97706'
+                : '#22c55e';
             
             return (
               <g key={item.id}>
                 {/* Segmento (fatia do anel) */}
                 <path
                   d={createSegmentPath(index, menuItems.length)}
-                  fill={isHovered ? '#22c55e' : 'rgba(30, 30, 30, 0.85)'}
+                  fill={isHovered ? hoverFill : defaultFill}
                   className="transition-all duration-200 cursor-pointer"
                   onMouseEnter={() => setHoveredSegment(index)}
                   onMouseLeave={() => setHoveredSegment(null)}
@@ -404,6 +456,10 @@ export default function RadialMenu({
           {/* Ícones nos segmentos */}
           {menuItems.map((item, index) => {
             const pos = getIconPosition(index, menuItems.length);
+            const moduleStatus = getModuleStatus(item);
+            const locked = isModuleLocked(moduleStatus);
+            const pending = isModulePending(moduleStatus);
+
             return (
               <g
                 key={`icon-${item.id}`}
@@ -417,10 +473,38 @@ export default function RadialMenu({
                   height="32"
                   className="overflow-visible"
                 >
-                  <div className="flex items-center justify-center text-white w-full h-full">
+                  <div
+                    className={`flex items-center justify-center w-full h-full ${
+                      locked ? 'text-red-200' : pending ? 'text-amber-100' : 'text-white'
+                    }`}
+                  >
                     {item.icon}
                   </div>
                 </foreignObject>
+
+                {(locked || pending) && (
+                  <g transform="translate(11, -11)">
+                    <circle
+                      cx="0"
+                      cy="0"
+                      r="7"
+                      fill={locked ? '#7f1d1d' : '#78350f'}
+                      stroke="rgba(255,255,255,0.25)"
+                      strokeWidth="1"
+                    />
+                    {locked ? (
+                      <g transform="translate(-3.5, -4)">
+                        <rect x="1" y="4" width="5" height="4" rx="0.8" fill="white" />
+                        <path d="M2 4V2.8C2 1.8 2.7 1 3.5 1C4.3 1 5 1.8 5 2.8V4" stroke="white" strokeWidth="0.9" fill="none" />
+                      </g>
+                    ) : (
+                      <g transform="translate(-3.6, -3.6)" stroke="white" strokeWidth="1" fill="none" strokeLinecap="round">
+                        <circle cx="3.6" cy="3.6" r="2.4" />
+                        <path d="M3.6 2.2V3.8L4.7 4.3" />
+                      </g>
+                    )}
+                  </g>
+                )}
               </g>
             );
           })}
@@ -439,7 +523,7 @@ export default function RadialMenu({
           }}
         >
           <div className="px-4 py-2 bg-black/90 text-white text-sm rounded-lg shadow-lg whitespace-nowrap backdrop-blur-sm border border-white/20">
-            {menuItems[hoveredSegment].label}
+            {getSegmentLabel(menuItems[hoveredSegment])}
           </div>
         </div>
       )}
