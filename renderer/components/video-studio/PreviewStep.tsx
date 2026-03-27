@@ -5,6 +5,13 @@ import {
   audioPathToUrl, 
   ASPECT_RATIO_DIMENSIONS 
 } from '../../shared/utils/project-converter';
+import {
+  buildSilenceCompactionRanges,
+  compactTimelineSegments,
+  getCompactedDuration,
+  mapOutputTimeToSourceTime,
+  type TimelineKeepRange,
+} from '../../../remotion/utils/silence-compaction';
 
 import {
   FILMORA,
@@ -31,6 +38,8 @@ interface PreviewStepProps {
   selectedNiche: ChannelNiche | null;
   fitVideoToScene: boolean;
   onFitVideoToSceneChange: (val: boolean) => void;
+  removeAudioSilences: boolean;
+  onRemoveAudioSilencesChange: (val: boolean) => void;
   mainAudioVolume: number;
   onMainAudioVolumeChange: (val: number) => void;
 }
@@ -50,6 +59,8 @@ export function PreviewStep({
   selectedNiche,
   fitVideoToScene,
   onFitVideoToSceneChange,
+  removeAudioSilences,
+  onRemoveAudioSilencesChange,
   mainAudioVolume,
   onMainAudioVolumeChange,
 }: PreviewStepProps) {
@@ -129,11 +140,77 @@ export function PreviewStep({
   const handleAddVideoTrack = () => setVideoTrackCount(prev => prev + 1);
   const handleAddAudioTrack = () => setAudioTrackCount(prev => prev + 1);
 
+  // ========================================
+  // ESTADOS DA TIMELINE E COMPUTATIONS
+  // ========================================
+  const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM);
+  const currentTimeRef = useRef(0);
+  const [selectedSegmentIds, setSelectedSegmentIds] = useState<number[]>([]);
+  const [hoveredSegment, setHoveredSegment] = useState<{ id: number; x: number; y: number } | null>(null);
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const scrollWrapperRef = useRef<HTMLDivElement>(null);
+  const trackContainerRef = useRef<HTMLDivElement>(null);
+  const [viewportWidth, setViewportWidth] = useState(1000);
+
+  // Refs DOM para atualização direta (sem re-render)
+  const playheadRef = useRef<HTMLDivElement>(null);
+  const playheadLabelRef = useRef<HTMLDivElement>(null);
+  const timecodeRef = useRef<HTMLSpanElement>(null);
+  const progressRef = useRef<HTMLDivElement>(null);
+
+  // Player Remotion sync
+  const playerRef = useRef<any>(null);
+  const isSeekingFromTimelineRef = useRef(false);
+  const frameListenerCleanupRef = useRef<(() => void) | null>(null);
+  const zoomLevelRef = useRef(DEFAULT_ZOOM);
+  const durationProbeCacheRef = useRef<Set<string>>(new Set());
+  const [isPlaying, setIsPlaying] = useState(false);
+
+  useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
+
+  const AVAILABLE_RATIOS = Object.keys(ASPECT_RATIO_DIMENSIONS);
+  const currentRatios = project.selectedAspectRatios || ['9:16'];
+  const isVerticalLayout = selectedRatio === '9:16' || selectedRatio === '3:4';
+
+  const silenceCompactionRanges = useMemo<TimelineKeepRange[]>(() => {
+    if (!removeAudioSilences) {
+      return [];
+    }
+
+    return buildSilenceCompactionRanges(project.segments);
+  }, [project.segments, removeAudioSilences]);
+
+  const originalDurationInSeconds = useMemo(() => {
+    if (!project.segments.length) {
+      return 10;
+    }
+
+    return project.segments.reduce((maxDuration, segment) => {
+      return Math.max(maxDuration, Number(segment.end || 0));
+    }, 0);
+  }, [project.segments]);
+
+  const visualSegments = useMemo(() => {
+    if (!removeAudioSilences || silenceCompactionRanges.length === 0) {
+      return project.segments;
+    }
+
+    return compactTimelineSegments(project.segments, silenceCompactionRanges);
+  }, [project.segments, removeAudioSilences, silenceCompactionRanges]);
+
+  const durationInSeconds = removeAudioSilences && silenceCompactionRanges.length > 0
+    ? getCompactedDuration(silenceCompactionRanges, originalDurationInSeconds)
+    : originalDurationInSeconds;
+
   const handleFileUploadToTrack = async (type: 'video' | 'audio', trackId: number, file: File) => {
     if (!onSegmentsUpdate) return;
     const isVideo = file.type.startsWith('video');
     const isImage = file.type.startsWith('image');
     const isAudio = file.type.startsWith('audio');
+    const sourceInsertionStart = removeAudioSilences
+      ? mapOutputTimeToSourceTime(currentTimeRef.current, silenceCompactionRanges)
+      : currentTimeRef.current;
     
     // Fallback se type for video mas for um arquivo de audio:
     const assetType = isVideo ? 'video_file' : isAudio ? 'audio' : isImage ? 'image_static' : 'image_static';
@@ -163,8 +240,8 @@ export function PreviewStep({
       id: newId,
       text: '', // <-- Deixe vazio para não aparecer como legenda no vídeo
       fileName: file.name, // <-- Nova propriedade para guardar o nome na UI
-      start: currentTimeRef.current,
-      end: currentTimeRef.current + (assetDuration || 5),
+      start: sourceInsertionStart,
+      end: sourceInsertionStart + (assetDuration || 5),
       speaker: 0,
       assetType: assetType,
       imageUrl: url,
@@ -178,29 +255,40 @@ export function PreviewStep({
 
   const handleSegmentMove = useCallback((id: number, newStart: number, newTrack: number) => {
     if (!onSegmentsUpdate) return;
+    const sourceStart = removeAudioSilences
+      ? mapOutputTimeToSourceTime(newStart, silenceCompactionRanges)
+      : newStart;
+
     const updated = project.segments.map(s => {
       if (s.id === id) {
         const duration = s.end - s.start;
-        return { ...s, start: newStart, end: newStart + duration, track: newTrack };
+        return { ...s, start: sourceStart, end: sourceStart + duration, track: newTrack };
       }
       return s;
     });
     // Ordena pelo tempo de início para manter a timeline consistente
     updated.sort((a, b) => a.start - b.start);
     handleSegmentsChange(updated);
-  }, [project.segments, onSegmentsUpdate, handleSegmentsChange]);
+  }, [handleSegmentsChange, onSegmentsUpdate, project.segments, removeAudioSilences, silenceCompactionRanges]);
 
   const handleSegmentTrim = useCallback((id: number, newStart: number, newEnd: number) => {
     if (!onSegmentsUpdate) return;
+    const sourceStart = removeAudioSilences
+      ? mapOutputTimeToSourceTime(newStart, silenceCompactionRanges)
+      : newStart;
+    const sourceEnd = removeAudioSilences
+      ? mapOutputTimeToSourceTime(newEnd, silenceCompactionRanges)
+      : newEnd;
+
     const updated = project.segments.map(s => {
       if (s.id === id) {
-        return { ...s, start: newStart, end: newEnd };
+        return { ...s, start: sourceStart, end: sourceEnd };
       }
       return s;
     });
     updated.sort((a, b) => a.start - b.start);
     handleSegmentsChange(updated);
-  }, [project.segments, onSegmentsUpdate, handleSegmentsChange]);
+  }, [handleSegmentsChange, onSegmentsUpdate, project.segments, removeAudioSilences, silenceCompactionRanges]);
 
   const handleBackClick = useCallback(() => {
     if (hasUnsavedChanges) {
@@ -270,51 +358,18 @@ export function PreviewStep({
     };
   }, [stableToolbarBack, stableToolbarSave, stableToolbarExport, canSave, isSaving]);
 
-  // ========================================
-  // ESTADOS DA TIMELINE
-  // ========================================
-  const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM);
-  const currentTimeRef = useRef(0);
-  const [selectedSegmentIds, setSelectedSegmentIds] = useState<number[]>([]);
-  const [hoveredSegment, setHoveredSegment] = useState<{ id: number; x: number; y: number } | null>(null);
-  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  const scrollWrapperRef = useRef<HTMLDivElement>(null);
-  const trackContainerRef = useRef<HTMLDivElement>(null);
-  const [viewportWidth, setViewportWidth] = useState(1000);
 
-  // Refs DOM para atualização direta (sem re-render)
-  const playheadRef = useRef<HTMLDivElement>(null);
-  const playheadLabelRef = useRef<HTMLDivElement>(null);
-  const timecodeRef = useRef<HTMLSpanElement>(null);
-  const progressRef = useRef<HTMLDivElement>(null);
-
-  // Player Remotion sync
-  const playerRef = useRef<any>(null);
-  const isSeekingFromTimelineRef = useRef(false);
-  const frameListenerCleanupRef = useRef<(() => void) | null>(null);
-  const zoomLevelRef = useRef(DEFAULT_ZOOM);
-  const durationProbeCacheRef = useRef<Set<string>>(new Set());
-  const [isPlaying, setIsPlaying] = useState(false);
-
-  useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
-
-  const AVAILABLE_RATIOS = Object.keys(ASPECT_RATIO_DIMENSIONS);
-  const currentRatios = project.selectedAspectRatios || ['9:16'];
-  const isVerticalLayout = selectedRatio === '9:16' || selectedRatio === '3:4';
-
-  const lastScene = project.segments[project.segments.length - 1];
-  const durationInSeconds = lastScene ? lastScene.end : 10;
   // Computations
   const totalTimelineWidth = Math.max((durationInSeconds + 10) * zoomLevel, viewportWidth);
-  const hoveredSeg = hoveredSegment ? project.segments.find(s => s.id === hoveredSegment.id) : null;
-  const visualSegments = project.segments;
+  const hoveredSeg = hoveredSegment ? visualSegments.find(s => s.id === hoveredSegment.id) : null;
 
   // Preview project (sem Remotion)
   const previewProject = useMemo(() => {
     const dims = ASPECT_RATIO_DIMENSIONS[selectedRatio] || { width: 1080, height: 1920 };
     return {
       ...project,
+      segments: visualSegments,
       subtitleMode,
       config: {
         ...(project.config || {}),
@@ -322,11 +377,22 @@ export function PreviewStep({
         height: dims.height,
         fps: project.config?.fps || 30,
         fitVideoToScene,
+        removeAudioSilences,
+        audioKeepRanges: silenceCompactionRanges,
         componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed,
         defaultFont: selectedNiche?.default_font,
       },
     };
-  }, [project, subtitleMode, selectedRatio, selectedNiche, fitVideoToScene]);
+  }, [
+    fitVideoToScene,
+    project,
+    removeAudioSilences,
+    selectedNiche,
+    selectedRatio,
+    silenceCompactionRanges,
+    subtitleMode,
+    visualSegments,
+  ]);
   
   useEffect(() => {
     if (!currentRatios.includes(selectedRatio)) {
@@ -602,7 +668,9 @@ export function PreviewStep({
     if (selectedSegmentIds.length === 0) return;
     
     // Split all selected segments that intersect with playhead
-    const currentTime = currentTimeRef.current;
+    const currentTime = removeAudioSilences
+      ? mapOutputTimeToSourceTime(currentTimeRef.current, silenceCompactionRanges)
+      : currentTimeRef.current;
     let anySplit = false;
     let newSegments = [...project.segments];
     
@@ -627,7 +695,7 @@ export function PreviewStep({
     if (anySplit) {
       handleSegmentsChange(newSegments);
     }
-  }, [project.segments, selectedSegmentIds, handleSegmentsChange]);
+  }, [handleSegmentsChange, project.segments, removeAudioSilences, selectedSegmentIds, silenceCompactionRanges]);
 
   // Segmento selecionado
   const selectedSegments = project.segments.filter(s => selectedSegmentIds.includes(s.id));
@@ -806,6 +874,8 @@ export function PreviewStep({
                     handleAudioChange={handleAudioChange}
                     fitVideoToScene={fitVideoToScene}
                     onFitVideoToSceneChange={(val) => { onFitVideoToSceneChange(val); setHasUnsavedChanges(true); }}
+                    removeAudioSilences={removeAudioSilences}
+                    onRemoveAudioSilencesChange={(val) => { onRemoveAudioSilencesChange(val); setHasUnsavedChanges(true); }}
                     mainAudioVolume={mainAudioVolume}
                     handleMainAudioVolumeChange={handleMainAudioVolumeChange}
                   />
@@ -838,6 +908,7 @@ export function PreviewStep({
                    visualSegments={visualSegments} 
                    durationInSeconds={durationInSeconds} 
                    audioUrl={audioUrl} 
+                   audioKeepRanges={removeAudioSilences ? silenceCompactionRanges : undefined}
                    zoomLevel={zoomLevel} 
                    viewportWidth={viewportWidth} 
                    totalTimelineWidth={totalTimelineWidth} 
@@ -970,6 +1041,8 @@ export function PreviewStep({
                    handleAudioChange={handleAudioChange} 
                    fitVideoToScene={fitVideoToScene} 
                    onFitVideoToSceneChange={(val) => { onFitVideoToSceneChange(val); setHasUnsavedChanges(true); }} 
+                   removeAudioSilences={removeAudioSilences}
+                   onRemoveAudioSilencesChange={(val) => { onRemoveAudioSilencesChange(val); setHasUnsavedChanges(true); }}
                    mainAudioVolume={mainAudioVolume} 
                    handleMainAudioVolumeChange={handleMainAudioVolumeChange} 
                 />
@@ -1002,6 +1075,7 @@ export function PreviewStep({
                  visualSegments={visualSegments} 
                  durationInSeconds={durationInSeconds} 
                  audioUrl={audioUrl} 
+                 audioKeepRanges={removeAudioSilences ? silenceCompactionRanges : undefined}
                  zoomLevel={zoomLevel} 
                  viewportWidth={viewportWidth} 
                  totalTimelineWidth={totalTimelineWidth} 

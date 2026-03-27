@@ -58,8 +58,9 @@ export const RemotionRoot: React.FC = () => {
         calculateMetadata={async ({ props }) => {
           const project = props.project;
           const fps = project.config?.fps || 30;
-          const lastScene = project.scenes[project.scenes.length - 1];
-          const duration = lastScene ? lastScene.end_time : 10;
+          const duration = project.scenes.reduce((maxDuration, scene) => {
+            return Math.max(maxDuration, scene.end_time);
+          }, 10);
           
           return {
             durationInFrames: Math.ceil(duration * fps),

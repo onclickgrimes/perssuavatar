@@ -1,5 +1,9 @@
 import React, { useRef, useEffect, useState, useMemo, useImperativeHandle, useCallback } from 'react';
 import { calculatePlaybackRate } from '../../../remotion/utils/playback-rate';
+import {
+  mapOutputTimeToSourceTime,
+  type TimelineKeepRange,
+} from '../../../remotion/utils/silence-compaction';
 
 interface TimelineSegment {
   id: number | string;
@@ -45,7 +49,16 @@ const toPositiveNumber = (value: unknown): number | null => {
   const num = Number(value);
   return Number.isFinite(num) && num > 0 ? num : null;
 };
+const getRangeIndexForOutputTime = (timeSec: number, ranges: TimelineKeepRange[]) => {
+  for (let index = 0; index < ranges.length; index++) {
+    const range = ranges[index];
+    if (timeSec >= range.outputStart && timeSec < range.outputEnd) {
+      return index;
+    }
+  }
 
+  return -1;
+};
 const isVideoSegment = (segment: TimelineSegment, url: string) => {
   const assetType = (segment.assetType || segment.asset_type || '').toLowerCase();
   if (assetType.startsWith('audio')) return false;
@@ -109,6 +122,7 @@ export const HibridPreviewPlayer = React.forwardRef(({
   const pendingSeekRafRef = useRef<number | null>(null);
   const pendingCanPlayRef = useRef<WeakSet<HTMLMediaElement>>(new WeakSet());
   const layerVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const lastMainAudioRangeIndexRef = useRef<number>(-1);
   const layerAudioRefs = useRef<Record<string, HTMLAudioElement | null>>({});
   const mainAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -191,6 +205,10 @@ export const HibridPreviewPlayer = React.forwardRef(({
   }, [project?.config?.backgroundMusic?.volume, project?.config?.mainAudioVolume]);
 
   const fitVideoToScene = project?.config?.fitVideoToScene ?? true;
+  const removeAudioSilences = project?.config?.removeAudioSilences ?? false;
+  const audioKeepRanges = useMemo<TimelineKeepRange[]>(() => {
+    return Array.isArray(project?.config?.audioKeepRanges) ? project.config.audioKeepRanges : [];
+  }, [project?.config?.audioKeepRanges]);
 
   const syncMediaElement = useCallback((
     media: HTMLMediaElement,
@@ -226,7 +244,7 @@ export const HibridPreviewPlayer = React.forwardRef(({
     if (shouldPlay) {
       if (media.paused) {
         if (media.readyState >= 2) {
-          media.play().catch(() => {});
+          media.play().catch(() => { });
         } else {
           if (pendingCanPlayRef.current.has(media)) return;
           pendingCanPlayRef.current.add(media);
@@ -234,7 +252,7 @@ export const HibridPreviewPlayer = React.forwardRef(({
             media.removeEventListener('canplay', handleCanPlay);
             pendingCanPlayRef.current.delete(media);
             if (isPlayingRef.current) {
-              media.play().catch(() => {});
+              media.play().catch(() => { });
             }
           };
           media.addEventListener('canplay', handleCanPlay, { once: true });
@@ -267,8 +285,25 @@ export const HibridPreviewPlayer = React.forwardRef(({
 
   const syncMainAudio = useCallback((timeSec: number, shouldPlay: boolean) => {
     if (!mainAudioRef.current) return;
-    syncMediaElement(mainAudioRef.current, Math.max(0, timeSec), shouldPlay, mainAudioVolume);
-  }, [mainAudioVolume, syncMediaElement]);
+    const media = mainAudioRef.current;
+    const outputTime = Math.max(0, timeSec);
+    const sourceTime = removeAudioSilences && audioKeepRanges.length > 0
+      ? mapOutputTimeToSourceTime(outputTime, audioKeepRanges)
+      : outputTime;
+    const currentRangeIndex = removeAudioSilences && audioKeepRanges.length > 0
+      ? getRangeIndexForOutputTime(outputTime, audioKeepRanges)
+      : -1;
+    const crossedCompactionBoundary = currentRangeIndex !== lastMainAudioRangeIndexRef.current;
+    if (crossedCompactionBoundary && Math.abs(media.currentTime - sourceTime) > 0.001) {
+      try {
+        media.currentTime = sourceTime;
+      } catch (_) {
+        // no-op
+      }
+    }
+    lastMainAudioRangeIndexRef.current = currentRangeIndex;
+    syncMediaElement(media, sourceTime, shouldPlay, mainAudioVolume);
+  }, [audioKeepRanges, mainAudioVolume, removeAudioSilences, syncMediaElement]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;

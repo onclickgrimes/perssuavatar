@@ -499,6 +499,17 @@ export const ProjectConfigSchema = z.object({
 
   /** Se true, acelera/desacelera vídeos para caber na duração da cena (padrão: true) */
   fitVideoToScene: z.boolean().optional(),
+
+  /** Se true, remove intervalos de silêncio entre segmentos narrados e junta a timeline */
+  removeAudioSilences: z.boolean().optional(),
+
+  /** Intervalos do áudio original preservados após compactar a timeline */
+  audioKeepRanges: z.array(z.object({
+    sourceStart: z.number(),
+    sourceEnd: z.number(),
+    outputStart: z.number(),
+    outputEnd: z.number(),
+  })).optional(),
   
   /** Apenas para renderização Híbrida/Preview: renderizar apenas overlays/textos com fundo transparente */
   motionGraphicsOnly: z.boolean().optional(),
@@ -544,8 +555,9 @@ export type VideoProject = z.infer<typeof VideoProjectSchema>;
  */
 export function calculateProjectDuration(project: VideoProject): number {
   if (project.scenes.length === 0) return 0;
-  const lastScene = project.scenes[project.scenes.length - 1];
-  return lastScene.end_time;
+  return project.scenes.reduce((maxDuration, scene) => {
+    return Math.max(maxDuration, scene.end_time);
+  }, 0);
 }
 
 /**

@@ -203,6 +203,10 @@ export class FFmpegSequencer {
     const height = project.config?.height || 1920;
     const fps = project.config?.fps || 30;
     const fitVideoToScene = (project.config as any)?.fitVideoToScene ?? (project as any).fitVideoToScene ?? true;
+    const removeAudioSilences = (project.config as any)?.removeAudioSilences === true;
+    const audioKeepRanges = Array.isArray((project.config as any)?.audioKeepRanges)
+      ? (project.config as any).audioKeepRanges
+      : [];
 
     const rawScenes = project.scenes || (project as any).segments || [];
     const sortedScenes = rawScenes
@@ -529,6 +533,43 @@ export class FFmpegSequencer {
       // Áudio: clipes de vídeo + trilhas globais (narração/música).
       let nextInputIndex = overlayInputIndex;
       const audioStreams: string[] = [];
+      const addPrimaryAudioSegments = (
+        inputIndex: number,
+        volume: number,
+        sourceLabel: string,
+      ) => {
+        if (removeAudioSilences && audioKeepRanges.length > 0) {
+          audioKeepRanges.forEach((range: any, idx: number) => {
+            const sourceStart = Math.max(0, Number(range.sourceStart ?? 0));
+            const sourceEnd = Math.max(sourceStart, Number(range.sourceEnd ?? sourceStart));
+            const outputStart = Math.max(0, Number(range.outputStart ?? 0));
+            const delayMs = Math.max(0, Math.round(outputStart * 1000));
+            const audioLabel = `[${sourceLabel}_${idx}]`;
+
+            filterComplex.push(
+              `[${inputIndex}:a]` +
+              `aresample=async=1:first_pts=0,` +
+              `atrim=start=${sourceStart.toFixed(6)}:end=${sourceEnd.toFixed(6)},` +
+              `asetpts=PTS-STARTPTS,` +
+              `volume=${volume.toFixed(6)},` +
+              `adelay=${delayMs}:all=1` +
+              `${audioLabel}`,
+            );
+            audioStreams.push(audioLabel);
+          });
+          return;
+        }
+
+        const audioLabel = `[${sourceLabel}]`;
+        filterComplex.push(
+          `[${inputIndex}:a]aresample=async=1:first_pts=0,` +
+          `volume=${volume.toFixed(6)},` +
+          `atrim=duration=${projectDuration.toFixed(6)},` +
+          `asetpts=PTS-STARTPTS` +
+          `${audioLabel}`,
+        );
+        audioStreams.push(audioLabel);
+      };
 
       sceneAudioCandidates.forEach((candidate, idx) => {
         const duration = Math.max(0.05, candidate.duration);
@@ -559,10 +600,7 @@ export class FFmpegSequencer {
       if (mainAudioPath && (mainAudioPath.startsWith('http') || fs.existsSync(mainAudioPath))) {
         command.input(mainAudioPath);
         const vol = Math.max(0, Number((project.config as any)?.mainAudioVolume ?? 1.0));
-        filterComplex.push(
-          `[${nextInputIndex}:a]aresample=async=1:first_pts=0,volume=${vol},asetpts=PTS-STARTPTS[audio_main]`,
-        );
-        audioStreams.push('[audio_main]');
+        addPrimaryAudioSegments(nextInputIndex, vol, 'audio_main');
         nextInputIndex++;
       }
 
@@ -570,12 +608,19 @@ export class FFmpegSequencer {
       const bgMusicSrc = (bgMusic as any)?.src_local || bgMusic?.src;
       if (bgMusic && bgMusicSrc && (bgMusicSrc.startsWith('http') || fs.existsSync(bgMusicSrc))) {
         command.input(bgMusicSrc);
-        command.inputOptions('-stream_loop', '-1');
         const vol = Math.max(0, Number(bgMusic.volume ?? 0.1));
-        filterComplex.push(
-          `[${nextInputIndex}:a]aresample=async=1:first_pts=0,volume=${vol},asetpts=PTS-STARTPTS[audio_bg]`,
-        );
-        audioStreams.push('[audio_bg]');
+        const shouldTreatAsPrimaryAudio = !mainAudioPath;
+
+        if (shouldTreatAsPrimaryAudio) {
+          addPrimaryAudioSegments(nextInputIndex, vol, 'audio_bg');
+        } else {
+          command.inputOptions('-stream_loop', '-1');
+          filterComplex.push(
+            `[${nextInputIndex}:a]aresample=async=1:first_pts=0,volume=${vol.toFixed(6)},asetpts=PTS-STARTPTS[audio_bg]`,
+          );
+          audioStreams.push('[audio_bg]');
+        }
+
         nextInputIndex++;
       }
 

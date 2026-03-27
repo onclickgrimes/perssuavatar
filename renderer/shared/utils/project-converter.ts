@@ -136,6 +136,7 @@ export interface VideoProject {
     fps?: number;
     backgroundColor?: string;
     fitVideoToScene?: boolean;
+    removeAudioSilences?: boolean;
     mainAudioVolume?: number;
   };
 }

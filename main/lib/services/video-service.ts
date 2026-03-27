@@ -119,6 +119,13 @@ export interface VideoProjectInput {
     height?: number;
     fps?: number;
     backgroundColor?: string;
+    removeAudioSilences?: boolean;
+    audioKeepRanges?: Array<{
+      sourceStart: number;
+      sourceEnd: number;
+      outputStart: number;
+      outputEnd: number;
+    }>;
     backgroundMusic?: {
       src: string;
       src_local?: string;

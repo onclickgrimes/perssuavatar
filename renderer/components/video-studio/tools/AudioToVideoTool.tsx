@@ -475,6 +475,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             height: dims.height,
             fps: 30, // Default 30fps
             fitVideoToScene: project.config?.fitVideoToScene ?? true,
+            removeAudioSilences: project.config?.removeAudioSilences ?? false,
             mainAudioVolume: project.config?.mainAudioVolume ?? 1.0,
           }
         });
@@ -601,6 +602,11 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
               ...prev,
               config: { ...prev.config, fitVideoToScene: val }
             }))}
+            removeAudioSilences={project.config?.removeAudioSilences ?? false}
+            onRemoveAudioSilencesChange={(val) => setProject(prev => ({
+              ...prev,
+              config: { ...prev.config, removeAudioSilences: val }
+            }))}
             mainAudioVolume={project.config?.mainAudioVolume ?? 1.0}
             onMainAudioVolumeChange={(val) => setProject(prev => ({
               ...prev,
@@ -654,6 +660,11 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           onFitVideoToSceneChange={(val) => setProject(prev => ({
             ...prev,
             config: { ...prev.config, fitVideoToScene: val }
+          }))}
+          removeAudioSilences={project.config?.removeAudioSilences ?? false}
+          onRemoveAudioSilencesChange={(val) => setProject(prev => ({
+            ...prev,
+            config: { ...prev.config, removeAudioSilences: val }
           }))}
           mainAudioVolume={project.config?.mainAudioVolume ?? 1.0}
           onMainAudioVolumeChange={(val) => setProject(prev => ({

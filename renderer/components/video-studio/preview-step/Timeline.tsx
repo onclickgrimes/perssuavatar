@@ -3,12 +3,14 @@ import { FILMORA, getRulerSteps, formatRulerTime, formatTimecode } from './const
 import { Icons } from './Icons';
 import { SceneThumbnail } from './SceneThumbnail';
 import { AudioWaveformDisplay } from './AudioWaveformDisplay';
+import type { TimelineKeepRange } from '../../../../remotion/utils/silence-compaction';
 
 interface TimelineProps {
   // Data
   visualSegments: any[];
   durationInSeconds: number;
   audioUrl: string;
+  audioKeepRanges?: TimelineKeepRange[];
   zoomLevel: number;
   viewportWidth: number;
   totalTimelineWidth: number;
@@ -48,6 +50,7 @@ export function Timeline({
   visualSegments,
   durationInSeconds,
   audioUrl,
+  audioKeepRanges,
   zoomLevel,
   viewportWidth,
   totalTimelineWidth,
@@ -771,6 +774,7 @@ export function Timeline({
                       audioUrl={audioUrl} 
                       color={FILMORA.trackAudio} 
                       duration={durationInSeconds} 
+                      audioKeepRanges={audioKeepRanges}
                       widthScale={zoomLevel} 
                     />
                     <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: FILMORA.trackAudio }} />

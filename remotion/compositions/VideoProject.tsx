@@ -10,12 +10,10 @@
 import React, { useMemo } from 'react';
 import { 
   AbsoluteFill, 
-  Audio,
+  Html5Audio,
   Sequence, 
   useCurrentFrame, 
   useVideoConfig,
-  interpolate,
-  Html5Audio,
 } from 'remotion';
 import { z } from 'zod';
 import { 
@@ -44,6 +42,8 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
   // Configurações do projeto com tipo correto
   const config: Partial<ProjectConfig> = project.config || {};
   let backgroundColor = config.backgroundColor || '#000000';
+  const audioKeepRanges = config.audioKeepRanges || [];
+  const shouldCompactAudio = config.removeAudioSilences && audioKeepRanges.length > 0;
   
   if (config.motionGraphicsOnly) {
     backgroundColor = 'transparent';
@@ -144,10 +144,40 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
         
         {/* Áudio de fundo (música) - Não renderiza no modo motionGraphicsOnly */}
         {!config.motionGraphicsOnly && config.backgroundMusic?.src && (
-          <Audio
-            src={config.backgroundMusic.src}
-            volume={config.backgroundMusic.volume ?? 0.3}
-          />
+          shouldCompactAudio ? (
+            <>
+              {audioKeepRanges.map((range, index) => {
+                const from = Math.round(range.outputStart * fps);
+                const durationInFrames = Math.max(1, Math.round((range.outputEnd - range.outputStart) * fps));
+                const startFrom = Math.round(range.sourceStart * fps);
+                const endAt = Math.max(startFrom + 1, Math.round(range.sourceEnd * fps));
+                const bgMusic = config.backgroundMusic;
+
+                if (!bgMusic) return null;
+
+                return (
+                  <Sequence
+                    key={`audio-range-${index}-${range.sourceStart}-${range.sourceEnd}`}
+                    from={from}
+                    durationInFrames={durationInFrames}
+                    name={`Audio Base ${index + 1}`}
+                  >
+                    <Html5Audio
+                      src={bgMusic.src}
+                      volume={bgMusic.volume ?? 0.3}
+                      startFrom={startFrom}
+                      endAt={endAt}
+                    />
+                  </Sequence>
+                );
+              })}
+            </>
+          ) : (
+            <Html5Audio
+              src={config.backgroundMusic?.src || ''}
+              volume={config.backgroundMusic?.volume ?? 0.3}
+            />
+          )
         )}
       </AbsoluteFill>
     </ProjectConfigContext.Provider>

@@ -27,6 +27,10 @@ import {
     ENTRY_ANIMATION_OPTIONS,
     EXIT_ANIMATION_OPTIONS
 } from '../../../remotion/types/project';
+import {
+    buildSilenceCompactionRanges,
+    compactTimelineSegments,
+} from '../../../remotion/utils/silence-compaction';
 
 export type AIProvider = 'gemini' | 'openai' | 'deepseek';
 
@@ -126,6 +130,7 @@ export interface VideoProjectData {
         fps?: number;
         backgroundColor?: string;
         fitVideoToScene?: boolean;
+        removeAudioSilences?: boolean;
         mainAudioVolume?: number;
     };
 }
@@ -148,6 +153,13 @@ export interface RemotionProject {
         componentsAllowed?: string[]; // Componentes Remotion permitidos
         defaultFont?: string; // Fonte padrão do nicho (Google Fonts)
         fitVideoToScene?: boolean;
+        removeAudioSilences?: boolean;
+        audioKeepRanges?: Array<{
+            sourceStart: number;
+            sourceEnd: number;
+            outputStart: number;
+            outputEnd: number;
+        }>;
         backgroundMusic?: {
             src: string;
             src_local?: string;
@@ -1202,8 +1214,15 @@ Responda APENAS com um objeto JSON válido no formato:
      */
     public convertToRemotionProject(project: VideoProjectData): RemotionProject {
         console.log('🔧 convertToRemotionProject - subtitleMode:', project.subtitleMode);
+        const removeAudioSilences = project.config?.removeAudioSilences === true;
+        const audioKeepRanges = removeAudioSilences
+            ? buildSilenceCompactionRanges(project.segments)
+            : [];
+        const timelineSegments = removeAudioSilences
+            ? compactTimelineSegments(project.segments, audioKeepRanges, { compactWords: true })
+            : project.segments;
 
-        const scenes = project.segments.map(seg => {
+        const scenes = timelineSegments.map(seg => {
             const rawAssetPath = seg.asset_url || seg.imageUrl;
             const localAssetPath = this.toLocalFsPath(rawAssetPath);
 
@@ -1284,6 +1303,10 @@ Responda APENAS com um objeto JSON válido no formato:
                 componentsAllowed: project.componentsAllowed, // ✅ Componentes permitidos pelo nicho
                 defaultFont: project.defaultFont, // ✅ Fonte padrão do nicho
                 fitVideoToScene: project.config?.fitVideoToScene ?? true, // ✅ Acelerar/Desacelerar
+                removeAudioSilences,
+                ...(audioKeepRanges.length > 0 && {
+                    audioKeepRanges,
+                }),
                 assetsBaseUrl: `http://localhost:${this.imageServerPort}`, // ✅ URL base dinâmica
                 // Incluir áudio da narração/transcrição
                 ...(project.audioPath && {

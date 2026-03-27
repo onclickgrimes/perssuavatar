@@ -17,6 +17,8 @@ interface SidebarProps {
   handleAudioChange?: (audioConfig: any) => void;
   fitVideoToScene: boolean;
   onFitVideoToSceneChange: (value: boolean) => void;
+  removeAudioSilences: boolean;
+  onRemoveAudioSilencesChange: (value: boolean) => void;
   mainAudioVolume?: number;
   handleMainAudioVolumeChange?: (volume: number) => void;
 }
@@ -38,6 +40,8 @@ export function Sidebar({
   handleAudioChange,
   fitVideoToScene,
   onFitVideoToSceneChange,
+  removeAudioSilences,
+  onRemoveAudioSilencesChange,
   mainAudioVolume = 1.0,
   handleMainAudioVolumeChange,
 }: SidebarProps) {
@@ -139,6 +143,31 @@ export function Sidebar({
                     style={{
                       background: '#fff',
                       left: fitVideoToScene ? '16px' : '2px',
+                    }}
+                  />
+                </button>
+              </div>
+            </div>
+
+            <div className="rounded p-3" style={{ background: FILMORA.surface }}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-[9px] uppercase tracking-wider mb-0.5" style={{ color: FILMORA.textDim }}>Remover silêncios</div>
+                  <div className="text-[9px]" style={{ color: FILMORA.textMuted }}>Junta as cenas usando o intervalo entre end e start</div>
+                </div>
+                <button
+                  onClick={() => onRemoveAudioSilencesChange(!removeAudioSilences)}
+                  className="relative w-8 h-[18px] rounded-full transition-colors flex-shrink-0 ml-2"
+                  style={{
+                    background: removeAudioSilences ? FILMORA.accent : FILMORA.border,
+                  }}
+                  title={removeAudioSilences ? 'Desativar remoção de silêncios' : 'Ativar remoção de silêncios'}
+                >
+                  <div
+                    className="absolute top-[2px] w-[14px] h-[14px] rounded-full transition-transform"
+                    style={{
+                      background: '#fff',
+                      left: removeAudioSilences ? '16px' : '2px',
                     }}
                   />
                 </button>

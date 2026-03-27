@@ -1,12 +1,23 @@
 import React, { useRef, useState, useEffect } from 'react';
+import {
+  mapOutputTimeToSourceTime,
+  type TimelineKeepRange,
+} from '../../../../remotion/utils/silence-compaction';
 
 // ========================================
 // WAVEFORM COMPONENT
 // ========================================
-export function AudioWaveformDisplay({ audioUrl, color, duration, widthScale }: {
+export function AudioWaveformDisplay({
+  audioUrl,
+  color,
+  duration,
+  audioKeepRanges,
+  widthScale,
+}: {
   audioUrl: string;
   color: string;
   duration: number;
+  audioKeepRanges?: TimelineKeepRange[];
   widthScale: number;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -48,8 +59,8 @@ export function AudioWaveformDisplay({ audioUrl, color, duration, widthScale }: 
     ctx.scale(dpr, dpr);
 
     const data = buffer.getChannelData(0);
-    const step = Math.ceil(data.length / width);
     const amp = height / 2;
+    const sampleRate = buffer.sampleRate;
 
     ctx.clearRect(0, 0, width, height);
     ctx.fillStyle = color;
@@ -57,8 +68,21 @@ export function AudioWaveformDisplay({ audioUrl, color, duration, widthScale }: 
     for (let i = 0; i < width; i++) {
       let min = 1.0;
       let max = -1.0;
-      for (let j = 0; j < step; j++) {
-        const idx = (i * step) + j;
+
+      const outputStartSec = i / widthScale;
+      const outputEndSec = Math.min(duration, (i + 1) / widthScale);
+
+      const sourceStartSec = audioKeepRanges?.length
+        ? mapOutputTimeToSourceTime(outputStartSec, audioKeepRanges)
+        : outputStartSec;
+      const sourceEndSec = audioKeepRanges?.length
+        ? mapOutputTimeToSourceTime(outputEndSec, audioKeepRanges)
+        : outputEndSec;
+
+      const startIndex = Math.max(0, Math.floor(sourceStartSec * sampleRate));
+      const endIndex = Math.max(startIndex + 1, Math.ceil(sourceEndSec * sampleRate));
+
+      for (let idx = startIndex; idx < endIndex; idx++) {
         if (idx < data.length) {
           const datum = data[idx];
           if (datum < min) min = datum;
@@ -69,7 +93,7 @@ export function AudioWaveformDisplay({ audioUrl, color, duration, widthScale }: 
       const h = Math.max(1, (max - min) * amp);
       ctx.fillRect(i, y, 1, h);
     }
-  }, [buffer, duration, widthScale, color]);
+  }, [audioKeepRanges, buffer, color, duration, widthScale]);
 
   return (
     <canvas 
