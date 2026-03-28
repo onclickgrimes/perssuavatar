@@ -5,7 +5,7 @@
  * Gerencia comunicação entre o renderer e o serviço Social Media (Puppeteer).
  */
 
-import { ipcMain, BrowserWindow, dialog } from 'electron';
+import { ipcMain, BrowserWindow, dialog, IpcMainInvokeEvent } from 'electron';
 import { 
   SocialMediaService, 
   getSocialMediaService, 
@@ -13,6 +13,7 @@ import {
   SocialPlatform,
   PlatformVerificationResult
 } from '../services/social-media-service';
+import { ensureModuleActive, buildModuleAccessDeniedPayload } from '../services/module-access-service';
 
 // ========================================
 // STATE
@@ -20,6 +21,22 @@ import {
 
 let socialMediaService: SocialMediaService | null = null;
 let getWindowFn: (() => BrowserWindow | null) | null = null;
+
+function registerSocialMediaGuardedHandle(
+  channel: string,
+  handler: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<any>
+): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    const access = await ensureModuleActive('social-media');
+
+    if (!access.allowed) {
+      console.warn(`[Billing] Acesso negado ao canal ${channel} (social-media: ${access.status})`);
+      return buildModuleAccessDeniedPayload('social-media', access.status, channel);
+    }
+
+    return handler(event, ...args);
+  });
+}
 
 // ========================================
 // INITIALIZATION
@@ -80,7 +97,7 @@ function sendToRenderer(channel: string, ...args: any[]): void {
 export function registerSocialMediaHandlers(): void {
   
   // Handler: Verificar status do serviço
-  ipcMain.handle('social-media:get-status', async () => {
+  registerSocialMediaGuardedHandle('social-media:get-status', async () => {
     try {
       if (!socialMediaService) {
         return { success: false, error: 'Serviço Social Media não inicializado' };
@@ -97,7 +114,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Conectar a uma plataforma (abre Puppeteer)
-  ipcMain.handle('social-media:connect-platform', async (event, workspaceId: string, platform: SocialPlatform) => {
+  registerSocialMediaGuardedHandle('social-media:connect-platform', async (event, workspaceId: string, platform: SocialPlatform) => {
     try {
       if (!socialMediaService) {
         return { success: false, error: 'Serviço Social Media não inicializado' };
@@ -131,7 +148,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Cancelar conexão em andamento
-  ipcMain.handle('social-media:cancel-connection', async (event, workspaceId: string, platform: SocialPlatform) => {
+  registerSocialMediaGuardedHandle('social-media:cancel-connection', async (event, workspaceId: string, platform: SocialPlatform) => {
     try {
       if (!socialMediaService) {
         return { success: false, error: 'Serviço Social Media não inicializado' };
@@ -146,7 +163,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Verificar se tem credenciais salvas
-  ipcMain.handle('social-media:has-credentials', async (event, workspaceId: string, platform: SocialPlatform) => {
+  registerSocialMediaGuardedHandle('social-media:has-credentials', async (event, workspaceId: string, platform: SocialPlatform) => {
     try {
       if (!socialMediaService) {
         return { success: false, error: 'Serviço Social Media não inicializado' };
@@ -161,7 +178,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Remover credenciais salvas
-  ipcMain.handle('social-media:remove-credentials', async (event, workspaceId: string, platform: SocialPlatform) => {
+  registerSocialMediaGuardedHandle('social-media:remove-credentials', async (event, workspaceId: string, platform: SocialPlatform) => {
     try {
       if (!socialMediaService) {
         return { success: false, error: 'Serviço Social Media não inicializado' };
@@ -176,7 +193,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Abrir navegador para ver a conta
-  ipcMain.handle('social-media:open-browser', async (event, workspaceId: string, platform: SocialPlatform) => {
+  registerSocialMediaGuardedHandle('social-media:open-browser', async (event, workspaceId: string, platform: SocialPlatform) => {
     try {
       if (!socialMediaService) {
         return { success: false, error: 'Serviço Social Media não inicializado' };
@@ -191,7 +208,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Obter plataformas com cookies salvos
-  ipcMain.handle('social-media:get-stored-platforms', async (event, workspaceId: string) => {
+  registerSocialMediaGuardedHandle('social-media:get-stored-platforms', async (event, workspaceId: string) => {
     try {
       if (!socialMediaService) {
         return { success: false, error: 'Serviço Social Media não inicializado' };
@@ -206,7 +223,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Verificar login de uma plataforma específica (headless)
-  ipcMain.handle('social-media:verify-platform-login', async (event, workspaceId: string, platform: SocialPlatform) => {
+  registerSocialMediaGuardedHandle('social-media:verify-platform-login', async (event, workspaceId: string, platform: SocialPlatform) => {
     try {
       if (!socialMediaService) {
         return { success: false, error: 'Serviço Social Media não inicializado' };
@@ -221,7 +238,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Verificar login de todas as plataformas (headless)
-  ipcMain.handle('social-media:verify-all-platforms', async (event, workspaceId: string) => {
+  registerSocialMediaGuardedHandle('social-media:verify-all-platforms', async (event, workspaceId: string) => {
     try {
       if (!socialMediaService) {
         return { success: false, error: 'Serviço Social Media não inicializado' };
@@ -249,7 +266,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Upload de mídia para uma plataforma
-  ipcMain.handle('social-media:upload-media', async (
+  registerSocialMediaGuardedHandle('social-media:upload-media', async (
     event, 
     workspaceId: string, 
     platform: SocialPlatform,
@@ -304,7 +321,7 @@ export function registerSocialMediaHandlers(): void {
   });
 
   // Handler: Selecionar arquivos de mídia via dialog do sistema
-  ipcMain.handle('social-media:select-media', async (event) => {
+  registerSocialMediaGuardedHandle('social-media:select-media', async (event) => {
     try {
       const window = getWindowFn?.();
       if (!window) {
@@ -341,3 +358,4 @@ export function registerSocialMediaHandlers(): void {
 
   console.log('✅ [SocialMedia] Handlers registered');
 }
+

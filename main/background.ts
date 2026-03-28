@@ -133,6 +133,9 @@ import {
   createCheckout,
   openCheckout,
   BillingModuleCode,
+  ensureModuleActive,
+  buildModuleAccessDeniedPayload,
+  clearModuleAccessCache,
   setModuleAccessUpdateListener,
   startModuleAccessRealtime,
   stopModuleAccessRealtime,
@@ -166,6 +169,20 @@ const LOCKED_MODULE_ACCESS = {
   'social-media': 'locked',
   'meeting-assistance': 'locked',
 } as const;
+
+async function getModuleAccessDeniedPayload(
+  moduleCode: BillingModuleCode,
+  channel: string
+) {
+  const access = await ensureModuleActive(moduleCode);
+
+  if (access.allowed) {
+    return null;
+  }
+
+  console.warn(`[Billing] Acesso negado no canal ${channel} (${moduleCode}: ${access.status})`);
+  return buildModuleAccessDeniedPayload(moduleCode, access.status, channel);
+}
 
 if (isProd) {
   serve({ directory: 'app' })
@@ -988,6 +1005,9 @@ async function openTranscriptionWindow() {
 
 // Handler IPC para abrir a janela de transcrição
 ipcMain.handle('open-transcription-window', async () => {
+  const denied = await getModuleAccessDeniedPayload('meeting-assistance', 'open-transcription-window');
+  if (denied) return denied;
+
   await openTranscriptionWindow();
   return { success: true };
 });
@@ -1002,6 +1022,9 @@ ipcMain.on('minimize-transcription-window', () => {
 
 // Handler IPC para mostrar a janela de transcrição (se já existir)
 ipcMain.handle('show-transcription-window', async () => {
+  const denied = await getModuleAccessDeniedPayload('meeting-assistance', 'show-transcription-window');
+  if (denied) return denied;
+
   if (transcriptionWindow && !transcriptionWindow.isDestroyed()) {
     transcriptionWindow.show();
     transcriptionWindow.focus();
@@ -1141,6 +1164,9 @@ async function openVideoStudioWindow() {
 }
 
 ipcMain.handle('open-video-studio-window', async () => {
+  const denied = await getModuleAccessDeniedPayload('video-editor', 'open-video-studio-window');
+  if (denied) return denied;
+
   await openVideoStudioWindow();
   return { success: true };
 });
@@ -1197,6 +1223,9 @@ async function openSocialMediaWindow() {
 }
 
 ipcMain.handle('open-social-media-window', async () => {
+  const denied = await getModuleAccessDeniedPayload('social-media', 'open-social-media-window');
+  if (denied) return denied;
+
   await openSocialMediaWindow();
   return { success: true };
 });
@@ -1251,6 +1280,7 @@ ipcMain.handle('auth:sign-in-password', async (_event, email: string, password: 
   const result = await signInWithPassword(email, password);
 
   if (result?.success && result.identity?.isAuthenticated) {
+    clearModuleAccessCache();
     await startModuleAccessRealtime(true);
   }
 
@@ -1261,6 +1291,7 @@ ipcMain.handle('auth:refresh-session', async () => {
   const result = await refreshAppSession();
 
   if (result?.success && result.identity?.isAuthenticated) {
+    clearModuleAccessCache();
     await startModuleAccessRealtime(true);
   }
 
@@ -1269,6 +1300,7 @@ ipcMain.handle('auth:refresh-session', async () => {
 
 ipcMain.handle('auth:sign-out', async () => {
   const result = await signOutApp();
+  clearModuleAccessCache();
   await stopModuleAccessRealtime();
 
   if (mainWindow && !mainWindow.isDestroyed()) {
@@ -1287,6 +1319,8 @@ app.whenReady().then(() => {
   const { globalShortcut } = require('electron');
 
   globalShortcut.register('CommandOrControl+D', async () => {
+    const denied = await getModuleAccessDeniedPayload('meeting-assistance', 'shortcut:ctrl+d');
+    if (denied) return;
     await openTranscriptionWindow();
   });
 
@@ -2070,6 +2104,9 @@ let desktopTranscriptionWindow: Electron.WebContents | null = null;
 // Iniciar transcrição do desktop
 ipcMain.handle('start-desktop-transcription', async (event) => {
   try {
+    const denied = await getModuleAccessDeniedPayload('meeting-assistance', 'start-desktop-transcription');
+    if (denied) return denied;
+
     console.log('[DesktopTranscription] Iniciando serviço Deepgram...');
 
     // Guardar referência à janela que iniciou a transcrição

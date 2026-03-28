@@ -4,8 +4,9 @@
  * Handlers IPC para o Video Studio/Editor.
  * Gerencia transcrição, análise por IA, renderização e persistência de projetos.
  */
-import { ipcMain, BrowserWindow } from 'electron';
+import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron';
 import { VideoProjectSegment, VideoProjectData, VideoProjectService } from '../services/video-project-service';
+import { ensureModuleActive, buildModuleAccessDeniedPayload } from '../services/module-access-service';
 import ffmpeg from 'fluent-ffmpeg';
 
 /**
@@ -33,6 +34,22 @@ async function getVideoDuration(videoPath: string): Promise<number | undefined> 
 
 let videoProjectService: VideoProjectService | null = null;
 let getWindowFn: (() => BrowserWindow | null) | null = null;
+
+function registerVideoEditorGuardedHandle(
+  channel: string,
+  handler: (event: IpcMainInvokeEvent, ...args: any[]) => Promise<any>
+): void {
+  ipcMain.handle(channel, async (event, ...args) => {
+    const access = await ensureModuleActive('video-editor');
+
+    if (!access.allowed) {
+      console.warn(`[Billing] Acesso negado ao canal ${channel} (video-editor: ${access.status})`);
+      return buildModuleAccessDeniedPayload('video-editor', access.status, channel);
+    }
+
+    return handler(event, ...args);
+  });
+}
 
 // ========================================
 // INITIALIZATION
@@ -95,7 +112,7 @@ export function destroyVideoProjectService(): void {
  */
 export function registerVideoEditorHandlers(): void {
   // Handler para transcrever arquivo de áudio
-  ipcMain.handle('video-project:transcribe', async (event, audioPath: string) => {
+  registerVideoEditorGuardedHandle('video-project:transcribe', async (event, audioPath: string) => {
     try {
       if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
       console.log('🎤 [VideoProject] Transcribing audio:', audioPath);
@@ -108,7 +125,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para salvar arquivo de áudio enviado do renderer
-  ipcMain.handle('video-project:save-audio', async (event, arrayBuffer: ArrayBuffer, fileName: string) => {
+  registerVideoEditorGuardedHandle('video-project:save-audio', async (event, arrayBuffer: ArrayBuffer, fileName: string) => {
     try {
       if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
       const buffer = Buffer.from(arrayBuffer);
@@ -121,7 +138,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para salvar arquivo de imagem enviado do renderer
-  ipcMain.handle('video-project:save-image', async (
+  registerVideoEditorGuardedHandle('video-project:save-image', async (
     event, 
     arrayBuffer: ArrayBuffer, 
     fileName: string, 
@@ -139,7 +156,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para analisar segmentos com IA
-  ipcMain.handle('video-project:analyze', async (
+  registerVideoEditorGuardedHandle('video-project:analyze', async (
     event, 
     projectOrSegments: VideoProjectData | VideoProjectSegment[], 
     options?: { 
@@ -164,7 +181,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para converter projeto para formato Remotion
-  ipcMain.handle('video-project:convert-to-remotion', async (event, project: VideoProjectData) => {
+  registerVideoEditorGuardedHandle('video-project:convert-to-remotion', async (event, project: VideoProjectData) => {
     try {
       if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
       console.log('🎬 [VideoProject] Converting to Remotion format...');
@@ -177,7 +194,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para renderizar projeto
-  ipcMain.handle('video-project:render', async (event, project: VideoProjectData) => {
+  registerVideoEditorGuardedHandle('video-project:render', async (event, project: VideoProjectData) => {
     try {
       if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
       console.log('🎬 [VideoProject] Starting render...');
@@ -190,7 +207,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para carregar projeto salvo
-  ipcMain.handle('video-project:load', async (event, filePath: string) => {
+  registerVideoEditorGuardedHandle('video-project:load', async (event, filePath: string) => {
     try {
       if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
       const project = videoProjectService.loadProject(filePath);
@@ -205,7 +222,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para salvar projeto
-  ipcMain.handle('video-project:save', async (event, project: VideoProjectData) => {
+  registerVideoEditorGuardedHandle('video-project:save', async (event, project: VideoProjectData) => {
     try {
       if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
       const filePath = videoProjectService.saveProject(project);
@@ -216,7 +233,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para listar projetos salvos
-  ipcMain.handle('video-project:list', async () => {
+  registerVideoEditorGuardedHandle('video-project:list', async () => {
     try {
       if (!videoProjectService) {
         const tempService = new VideoProjectService();
@@ -232,7 +249,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para obter diretório de projetos
-  ipcMain.handle('video-project:get-directory', async () => {
+  registerVideoEditorGuardedHandle('video-project:get-directory', async () => {
     if (!videoProjectService) {
       const tempService = new VideoProjectService();
       const path = tempService.getProjectsDirectory();
@@ -243,7 +260,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para busca semântica de vídeos no Supabase
-  ipcMain.handle('video-project:search-videos', async (event, query: string, limit: number = 5) => {
+  registerVideoEditorGuardedHandle('video-project:search-videos', async (event, query: string, limit: number = 5) => {
     try {
       console.log(`🔍 [VideoProject] Buscando vídeos com query: "${query}"`);
       
@@ -284,7 +301,7 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para gerar questões de quiz com IA
-  ipcMain.handle('quiz:generate', async (
+  registerVideoEditorGuardedHandle('quiz:generate', async (
     event, 
     options: {
       theme: string;
@@ -532,7 +549,7 @@ Lembre-se:
 
   // Handler para gerar áudio do quiz com estratégia otimizada
   // Estrutura: [P1] + silêncio + [R1+P2] + silêncio + [R2+P3]...
-  ipcMain.handle('quiz:generate-audio', async (
+  registerVideoEditorGuardedHandle('quiz:generate-audio', async (
     event,
     options: {
       questions: Array<{
@@ -977,7 +994,7 @@ Lembre-se:
   });
 
   // Handler para renderizar vídeo de quiz
-  ipcMain.handle('quiz:render', async (
+  registerVideoEditorGuardedHandle('quiz:render', async (
     event,
     options: {
       theme: string;
@@ -1160,7 +1177,7 @@ Lembre-se:
   });
 
   // Handler para gerar vídeo via Google Flow (Veo 3)
-  ipcMain.handle('video-project:generate-vo3', async (
+  registerVideoEditorGuardedHandle('video-project:generate-vo3', async (
     event,
     options: {
       prompt: string;
@@ -1238,7 +1255,7 @@ Lembre-se:
   });
 
   // Handler para consultar créditos do Flow (sem gerar vídeo)
-  ipcMain.handle('video-project:get-vo3-credits', async () => {
+  registerVideoEditorGuardedHandle('video-project:get-vo3-credits', async () => {
     try {
       const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
       const flowProvider = getFlowVideoProvider({ headless: false });
@@ -1267,7 +1284,7 @@ Lembre-se:
   });
 
   // Handler para gerar vídeo via Google Veo 2 (API oficial)
-  ipcMain.handle('video-project:generate-veo2', async (event, options: {
+  registerVideoEditorGuardedHandle('video-project:generate-veo2', async (event, options: {
     prompt: string;
     aspectRatio?: string;
     durationSeconds?: number;
@@ -1326,7 +1343,7 @@ Lembre-se:
   });
 
   // Handler para gerar vídeo via Google Veo 3.1 (API oficial)
-  ipcMain.handle('video-project:generate-veo3-api', async (event, options: {
+  registerVideoEditorGuardedHandle('video-project:generate-veo3-api', async (event, options: {
     prompt: string;
     model: string; // 'veo-3.1-generate-001' ou versão 'fast'
     aspectRatio?: string;
@@ -1383,7 +1400,7 @@ Lembre-se:
   });
 
   // Handler para gerar IMAGEM via Google Flow ("Criar imagens")
-  ipcMain.handle('video-project:generate-flow-image', async (event, options: {
+  registerVideoEditorGuardedHandle('video-project:generate-flow-image', async (event, options: {
     prompt: string;
     count?: number;
     aspectRatio?: string;
@@ -1436,7 +1453,7 @@ Lembre-se:
   });
 
   // Handler para gerar VÍDEO via Google Flow com Veo 2
-  ipcMain.handle('video-project:generate-vo2-flow', async (event, options: {
+  registerVideoEditorGuardedHandle('video-project:generate-vo2-flow', async (event, options: {
     prompt: string;
     aspectRatio?: string;
     geminiProviderId?: string;
@@ -1503,7 +1520,7 @@ Lembre-se:
   });
 
   // Handler para gerar VÍDEO via Grok.com
-  ipcMain.handle('video-project:generate-grok-video', async (event, options: {
+  registerVideoEditorGuardedHandle('video-project:generate-grok-video', async (event, options: {
     prompt: string;
     referenceImagePaths?: string[];
   }) => {
@@ -1562,7 +1579,7 @@ Lembre-se:
   });
 
   // Handler para cancelar a fila de geração do Flow (esvazia mutex e slots)
-  ipcMain.handle('video-project:cancel-flow-queue', async () => {
+  registerVideoEditorGuardedHandle('video-project:cancel-flow-queue', async () => {
     try {
       const { cancelFlowQueue } = require('../libs/FlowVideoProvider');
       cancelFlowQueue();
@@ -1575,7 +1592,7 @@ Lembre-se:
   });
 
   // Handler para gerar TTS com Gemini
-  ipcMain.handle('video-project:generate-tts', async (event, options: {
+  registerVideoEditorGuardedHandle('video-project:generate-tts', async (event, options: {
     text: string;
     voiceName: string;
     model: string;
@@ -1643,3 +1660,4 @@ Lembre-se:
 
   console.log('✅ [VideoEditor] Handlers registered');
 }
+

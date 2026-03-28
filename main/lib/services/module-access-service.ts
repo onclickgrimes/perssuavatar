@@ -26,6 +26,14 @@ export interface BillingCheckoutResponse {
   error?: string;
 }
 
+export interface ModuleAccessGuardResult {
+  allowed: boolean;
+  moduleCode: BillingModuleCode;
+  status: BillingModuleStatus;
+  source?: string;
+  error?: string;
+}
+
 type ModuleAccessUpdateListener = (payload: BillingModuleAccessResponse) => void;
 
 interface BillingSettings {
@@ -52,6 +60,7 @@ const DEFAULT_ACCESS: Record<BillingModuleCode, BillingModuleStatus> = {
   'social-media': 'locked',
   'meeting-assistance': 'locked',
 };
+const ACCESS_CACHE_TTL_MS = 3000;
 
 let moduleAccessUpdateListener: ModuleAccessUpdateListener | null = null;
 let realtimeClient: ReturnType<typeof getRealtimeClient> | null = null;
@@ -61,6 +70,9 @@ let realtimeSyncTimer: NodeJS.Timeout | null = null;
 let realtimeReconnectTimer: NodeJS.Timeout | null = null;
 let realtimeReconnectInFlight = false;
 let realtimeReconnectAttempt = 0;
+let cachedAccessResponse: BillingModuleAccessResponse | null = null;
+let cachedAccessAt = 0;
+let cachedAccessInFlight: Promise<BillingModuleAccessResponse> | null = null;
 
 function readBillingSettings(): BillingSettings {
   const settings = (getUserSettings() || {}) as any;
@@ -445,6 +457,40 @@ function getCheckoutFallbackUrl(baseUrl: string, moduleCode: BillingModuleCode):
   return url.toString();
 }
 
+function cacheAccessResponse(response: BillingModuleAccessResponse) {
+  cachedAccessResponse = {
+    ...response,
+    access: ensureAllModules(response.access),
+  };
+  cachedAccessAt = Date.now();
+}
+
+async function getModuleAccessWithCache(forceRefresh = false): Promise<BillingModuleAccessResponse> {
+  const cacheIsFresh =
+    cachedAccessResponse &&
+    Date.now() - cachedAccessAt < ACCESS_CACHE_TTL_MS;
+
+  if (!forceRefresh && cacheIsFresh) {
+    return cachedAccessResponse;
+  }
+
+  if (!forceRefresh && cachedAccessInFlight) {
+    return cachedAccessInFlight;
+  }
+
+  cachedAccessInFlight = getModuleAccess()
+    .catch(() => ({
+      success: false,
+      access: { ...DEFAULT_ACCESS },
+      error: 'Falha ao consultar acesso dos módulos',
+    }))
+    .finally(() => {
+      cachedAccessInFlight = null;
+    });
+
+  return cachedAccessInFlight;
+}
+
 export async function getModuleAccess(): Promise<BillingModuleAccessResponse> {
   const settings = await resolveBillingSettings();
   const baseUrl = normalizeBaseUrl(settings.baseUrl);
@@ -466,11 +512,13 @@ export async function getModuleAccess(): Promise<BillingModuleAccessResponse> {
     if (result.ok) {
       const parsed = parseAccessPayload(result.data);
       if (parsed) {
-        return {
+        const response: BillingModuleAccessResponse = {
           success: true,
           access: ensureAllModules(parsed),
           source: endpoint,
         };
+        cacheAccessResponse(response);
+        return response;
       }
       lastError = 'Payload de acesso inválido';
       continue;
@@ -479,11 +527,13 @@ export async function getModuleAccess(): Promise<BillingModuleAccessResponse> {
     lastError = result.error || `Falha ao consultar acesso em ${endpoint}`;
   }
 
-  return {
+  const fallbackResponse: BillingModuleAccessResponse = {
     success: false,
     access: { ...DEFAULT_ACCESS },
     error: lastError || 'Não foi possível sincronizar acesso aos módulos',
   };
+  cacheAccessResponse(fallbackResponse);
+  return fallbackResponse;
 }
 
 export async function createCheckout(moduleCode: BillingModuleCode): Promise<BillingCheckoutResponse> {
@@ -548,6 +598,51 @@ export async function openCheckout(moduleCode: BillingModuleCode): Promise<Billi
       error: error?.message || 'Falha ao abrir checkout no navegador',
     };
   }
+}
+
+export async function ensureModuleActive(
+  moduleCode: BillingModuleCode,
+  options?: { forceRefresh?: boolean }
+): Promise<ModuleAccessGuardResult> {
+  const response = await getModuleAccessWithCache(Boolean(options?.forceRefresh));
+  const access = ensureAllModules(response.access);
+  const status = access[moduleCode] || 'locked';
+
+  return {
+    allowed: status === 'active',
+    moduleCode,
+    status,
+    source: response.source,
+    error: response.error,
+  };
+}
+
+export function buildModuleAccessDeniedPayload(
+  moduleCode: BillingModuleCode,
+  status: BillingModuleStatus,
+  channel?: string
+) {
+  const statusLabel =
+    status === 'pending_payment'
+      ? 'pagamento pendente'
+      : status === 'blocked'
+        ? 'bloqueado'
+        : 'sem acesso ativo';
+
+  return {
+    success: false,
+    code: 'MODULE_ACCESS_DENIED',
+    moduleCode,
+    status,
+    channel,
+    error: `Acesso negado ao módulo "${moduleCode}" (${statusLabel}).`,
+  };
+}
+
+export function clearModuleAccessCache() {
+  cachedAccessResponse = null;
+  cachedAccessAt = 0;
+  cachedAccessInFlight = null;
 }
 
 export function setModuleAccessUpdateListener(listener: ModuleAccessUpdateListener | null) {
