@@ -20,7 +20,8 @@ interface PromptsStepProps {
   onProviderChange?: (p: 'gemini' | 'openai' | 'deepseek') => void;
   providerModel?: string;
   onProviderModelChange?: (m: string) => void;
-  onAnalyze?: () => void;
+  onAnalyze?: (instruction?: string) => void | Promise<void>;
+  onAnalyzeScene?: (segmentId: number, instruction: string) => void | Promise<void>;
   isProcessing?: boolean;
   onSegmentsUpdate?: (newSegments: TranscriptionSegment[]) => void;
   niche?: ChannelNiche | null;
@@ -54,6 +55,7 @@ export function PromptsStep({
   providerModel,
   onProviderModelChange,
   onAnalyze,
+  onAnalyzeScene,
   isProcessing,
   onSegmentsUpdate,
   niche,
@@ -64,6 +66,35 @@ export function PromptsStep({
   );
   
   const hasPrompts = segments.some(s => s.imagePrompt);
+  const [globalInstruction, setGlobalInstruction] = React.useState('');
+  const [sceneInstructions, setSceneInstructions] = React.useState<Record<number, string>>({});
+  const [pendingSceneId, setPendingSceneId] = React.useState<number | null>(null);
+  const hasGlobalInstruction = globalInstruction.trim().length > 0;
+
+  const isAiBusy = Boolean(isProcessing) || pendingSceneId !== null;
+
+  const handleAnalyzeWithOptionalInstruction = async () => {
+    if (!onAnalyze || isAiBusy) return;
+    const instruction = hasPrompts && hasGlobalInstruction
+      ? globalInstruction.trim()
+      : undefined;
+    await onAnalyze(instruction);
+  };
+
+  const handleApplySceneInstruction = async (segmentId: number) => {
+    if (!onAnalyzeScene || isAiBusy) return;
+
+    const instruction = (sceneInstructions[segmentId] || '').trim();
+    if (!instruction) return;
+
+    setPendingSceneId(segmentId);
+    try {
+      await onAnalyzeScene(segmentId, instruction);
+      setSceneInstructions(prev => ({ ...prev, [segmentId]: '' }));
+    } finally {
+      setPendingSceneId(null);
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -120,47 +151,64 @@ export function PromptsStep({
             </div>
           )}
         </div>
-        <div className="flex gap-3 items-center">
-          <button
-            onClick={onBack}
-            className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
-          >
-            ← Voltar
-          </button>
-          
-          {onAnalyze && (
+        <div className="flex flex-col items-end gap-3">
+          <div className="flex gap-3 items-center">
             <button
-              onClick={onAnalyze}
-              disabled={isProcessing}
-              className={`px-4 py-2 border rounded-lg transition-all flex items-center gap-2 ${
-                 hasPrompts 
-                    ? 'bg-white/5 hover:bg-white/10 text-white border-white/20' 
-                    : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 animate-pulse'
+              onClick={onBack}
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white rounded-lg transition-all"
+            >
+              ← Voltar
+            </button>
+            
+            {onAnalyze && (
+              <button
+                onClick={handleAnalyzeWithOptionalInstruction}
+                disabled={isAiBusy}
+                className={`px-4 py-2 border rounded-lg transition-all flex items-center gap-2 ${
+                   hasPrompts 
+                      ? 'bg-white/5 hover:bg-white/10 text-white border-white/20' 
+                      : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500 animate-pulse'
+                } ${isAiBusy ? 'opacity-70 cursor-not-allowed' : ''}`}
+              >
+                {isAiBusy ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Gerando...
+                    </>
+                ) : hasPrompts
+                  ? hasGlobalInstruction ? '✏️ Editar com IA' : '🔄 Regerar com IA'
+                  : '✨ Gerar Prompts com IA'}
+              </button>
+            )}
+
+            <button
+              onClick={onContinue}
+              disabled={!hasPrompts}
+              className={`px-6 py-2 rounded-lg font-medium transition-all ${
+                  !hasPrompts
+                  ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                  : 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white'
               }`}
             >
-              {isProcessing ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                    </svg>
-                    Gerando...
-                  </>
-              ) : hasPrompts ? '🔄 Regenerar com IA' : '✨ Gerar Prompts com IA'}
+              Próximo →
             </button>
-          )}
+          </div>
 
-          <button
-            onClick={onContinue}
-            disabled={!hasPrompts}
-            className={`px-6 py-2 rounded-lg font-medium transition-all ${
-                !hasPrompts
-                ? 'bg-white/5 text-white/30 cursor-not-allowed'
-                : 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white'
-            }`}
-          >
-            Próximo →
-          </button>
+          {onAnalyze && (
+            <div className="w-full max-w-[560px]">
+              <input
+                type="text"
+                value={globalInstruction}
+                onChange={(e) => setGlobalInstruction(e.target.value)}
+                placeholder="Instrução global para edição dos prompts"
+                className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-pink-500 focus:outline-none"
+                disabled={isAiBusy}
+              />
+            </div>
+          )}
         </div>
       </div>
 
@@ -247,6 +295,39 @@ export function PromptsStep({
                 )}
               </div>
               <p className="text-white/80 text-sm mb-4 italic">"{segment.text}"</p>
+
+              {onAnalyzeScene && (
+                <div className="mb-4 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={sceneInstructions[segment.id] || ''}
+                    onChange={(e) => setSceneInstructions(prev => ({ ...prev, [segment.id]: e.target.value }))}
+                    placeholder="Comando para ajustar apenas esta cena"
+                    className="flex-1 bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-pink-500 focus:outline-none"
+                    disabled={isAiBusy}
+                  />
+                  <button
+                    onClick={() => handleApplySceneInstruction(segment.id)}
+                    disabled={isAiBusy || !(sceneInstructions[segment.id] || '').trim()}
+                    className={`w-10 h-10 rounded-lg border transition-all flex items-center justify-center ${
+                      isAiBusy || !(sceneInstructions[segment.id] || '').trim()
+                        ? 'bg-white/10 border-white/10 text-white/50 cursor-not-allowed'
+                        : 'bg-pink-500/20 border-pink-500/40 text-pink-200 hover:bg-pink-500/30'
+                    }`}
+                    title="Aplicar comando nesta cena com IA"
+                  >
+                    {pendingSceneId === segment.id ? (
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                    ) : (
+                      '↻'
+                    )}
+                  </button>
+                </div>
+              )}
+
               <textarea
                 value={(() => {
                   const prompt = segment.imagePrompt;
@@ -255,10 +336,15 @@ export function PromptsStep({
                   return JSON.stringify(prompt, null, 2);
                 })()}
                 onChange={(e) => onUpdatePrompt(segment.id, e.target.value)}
-                className="w-full bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-none p-4"
-                style={{ minHeight: typeof segment.imagePrompt === 'object' && segment.imagePrompt !== null ? '240px' : '96px' }}
+                rows={6}
+                className="w-full min-h-[9.5rem] bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-y p-4"
                 placeholder="Descreva a cena visual em detalhes..."
               />
+
+              <p className="mt-2 text-xs text-white/70">
+                <span className="text-white/40">Descrição da cena: </span>
+                {segment.sceneDescription || 'Aguardando resumo deste prompt...'}
+              </p>
               
               {/* Mostrar highlight words se existirem */}
               {segment.highlightWords && segment.highlightWords.length > 0 && (

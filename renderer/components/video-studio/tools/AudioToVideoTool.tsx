@@ -47,6 +47,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
   const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'openai' | 'deepseek'>('gemini');
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3-flash-preview');
+  const promptSummaryDebounceRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
+  const lastSummarizedPromptRef = useRef<Record<number, string>>({});
 
   // Carregar lista de projetos
   const loadProjectsList = useCallback(async () => {
@@ -251,8 +253,116 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     }
   }, []);
 
-  // Handler para análise por IA
-  const handleAnalyzeWithAI = useCallback(async () => {
+  const loadNichePrompt = useCallback(async (): Promise<string | undefined> => {
+    if (!selectedNiche?.id) return undefined;
+
+    try {
+      const nichePrompt = await window.electron.niche.generatePrompt(selectedNiche.id);
+      console.log('🎯 Using niche prompt:', selectedNiche.name);
+      return nichePrompt;
+    } catch (error) {
+      console.warn('Failed to generate niche prompt, using default:', error);
+      return undefined;
+    }
+  }, [selectedNiche]);
+
+  const normalizePromptForSummary = useCallback((prompt: unknown): string => {
+    if (prompt == null) return '';
+    if (typeof prompt === 'string') return prompt.trim();
+    try {
+      return JSON.stringify(prompt).trim();
+    } catch {
+      return String(prompt).trim();
+    }
+  }, []);
+
+  // Função específica para gerar a descrição curta da cena em português
+  const summarizeScenePrompts = useCallback(async (
+    segmentsToSummarize: Array<{ id: number; imagePrompt?: unknown }>
+  ) => {
+    if (!window.electron?.videoProject?.summarizeScenePrompts) return;
+
+    const requestedPromptById: Record<number, string> = {};
+    const payload = segmentsToSummarize
+      .map(segment => {
+        const normalizedPrompt = normalizePromptForSummary(segment.imagePrompt);
+        if (!normalizedPrompt) return null;
+        if (lastSummarizedPromptRef.current[segment.id] === normalizedPrompt) return null;
+        requestedPromptById[segment.id] = normalizedPrompt;
+        return { id: segment.id, imagePrompt: normalizedPrompt };
+      })
+      .filter((segment): segment is { id: number; imagePrompt: string } => segment !== null);
+
+    if (payload.length === 0) return;
+
+    try {
+      const result = await window.electron.videoProject.summarizeScenePrompts(payload, {
+        provider: selectedProvider,
+        model: selectedModel,
+      });
+
+      if (!result?.success || !Array.isArray(result.segments)) {
+        console.warn('Scene summary request failed:', result?.error);
+        return;
+      }
+
+      const descriptionById = new Map<number, string>();
+      result.segments.forEach((segment: any) => {
+        if (segment?.id == null || typeof segment.sceneDescription !== 'string') return;
+        const normalizedDescription = segment.sceneDescription.trim();
+        if (!normalizedDescription) return;
+        descriptionById.set(segment.id, normalizedDescription);
+      });
+
+      setProject(prev => ({
+        ...prev,
+        segments: prev.segments.map(seg => {
+          const requestedPrompt = requestedPromptById[seg.id];
+          if (!requestedPrompt) return seg;
+
+          // Ignorar resposta atrasada quando o usuário já alterou novamente o prompt
+          const currentPrompt = normalizePromptForSummary(seg.imagePrompt);
+          if (currentPrompt !== requestedPrompt) return seg;
+
+          const sceneDescription = descriptionById.get(seg.id);
+          if (!sceneDescription) return seg;
+
+          lastSummarizedPromptRef.current[seg.id] = requestedPrompt;
+          return { ...seg, sceneDescription };
+        }),
+      }));
+    } catch (summaryError) {
+      console.error('Error summarizing scene prompts:', summaryError);
+    }
+  }, [normalizePromptForSummary, selectedProvider, selectedModel]);
+
+  const scheduleSingleSceneSummary = useCallback((segmentId: number, prompt: string) => {
+    const pendingTimer = promptSummaryDebounceRef.current[segmentId];
+    if (pendingTimer) {
+      clearTimeout(pendingTimer);
+      delete promptSummaryDebounceRef.current[segmentId];
+    }
+
+    const normalizedPrompt = normalizePromptForSummary(prompt);
+    if (!normalizedPrompt) {
+      delete lastSummarizedPromptRef.current[segmentId];
+      return;
+    }
+
+    promptSummaryDebounceRef.current[segmentId] = setTimeout(() => {
+      delete promptSummaryDebounceRef.current[segmentId];
+      summarizeScenePrompts([{ id: segmentId, imagePrompt: normalizedPrompt }]).catch(() => {});
+    }, 900);
+  }, [normalizePromptForSummary, summarizeScenePrompts]);
+
+  React.useEffect(() => {
+    return () => {
+      Object.values(promptSummaryDebounceRef.current).forEach(timeoutId => clearTimeout(timeoutId));
+    };
+  }, []);
+
+  // Handler para análise global por IA (regerar ou editar todos os prompts)
+  const handleAnalyzeWithAI = useCallback(async (userInstruction?: string) => {
     setCurrentStep('analyzing');
     setIsProcessing(true);
 
@@ -263,31 +373,60 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         return;
       }
 
-      // Gerar prompt do nicho se estiver selecionado
-      let nichePrompt: string | undefined;
-      if (selectedNiche?.id) {
-        try {
-          nichePrompt = await window.electron.niche.generatePrompt(selectedNiche.id);
-          console.log('🎯 Using niche prompt:', selectedNiche.name);
-        } catch (error) {
-          console.warn('Failed to generate niche prompt, using default:', error);
-        }
+      const normalizedInstruction = userInstruction?.trim();
+      const hasExistingPrompts = project.segments.some(seg => !!seg.imagePrompt);
+      const debugAction = normalizedInstruction
+        ? 'edicao-global'
+        : hasExistingPrompts
+          ? 'regeracao'
+          : 'geracao';
+
+      let result: any;
+
+      if (normalizedInstruction) {
+        const editRequest = {
+          segments: project.segments.map(seg => ({ id: seg.id, imagePrompt: seg.imagePrompt })),
+          options: {
+            provider: selectedProvider,
+            model: selectedModel,
+            userInstruction: normalizedInstruction,
+          },
+        };
+
+        result = await window.electron.videoProject.editPrompts(
+          editRequest.segments,
+          editRequest.options
+        );
+      } else {
+        const analyzeRequest = {
+          project,
+          options: {
+            provider: selectedProvider,
+            nichePrompt: await loadNichePrompt(),
+            model: selectedModel,
+          },
+        };
+
+        result = await window.electron.videoProject.analyze(
+          analyzeRequest.project,
+          analyzeRequest.options
+        );
       }
 
-      const result = await window.electron.videoProject.analyze(
-        project,
-        {
-          provider: selectedProvider,
-          nichePrompt,
-          model: selectedModel,
-        }
-      );
-
       if (result.success && result.segments) {
+        const updatedSegments = normalizedInstruction
+          ? project.segments.map(seg => {
+              const editedSegment = result.segments.find((edited: any) => edited.id === seg.id);
+              return editedSegment ? { ...seg, imagePrompt: editedSegment.imagePrompt } : seg;
+            })
+          : result.segments;
+
         setProject(prev => ({
           ...prev,
-          segments: result.segments,
+          segments: updatedSegments,
         }));
+
+        summarizeScenePrompts(updatedSegments).catch(() => {});
       }
       
       setCurrentStep('prompts');
@@ -298,7 +437,54 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     } finally {
       setIsProcessing(false);
     }
-  }, [project, selectedProvider, selectedModel, selectedNiche]);
+  }, [loadNichePrompt, project, project.segments, selectedProvider, selectedModel, summarizeScenePrompts]);
+
+  // Handler para análise por IA de apenas uma cena
+  const handleAnalyzeSingleSceneWithAI = useCallback(async (segmentId: number, userInstruction: string) => {
+    const normalizedInstruction = userInstruction.trim();
+    if (!normalizedInstruction) return;
+
+    const targetSegment = project.segments.find(seg => seg.id === segmentId);
+    if (!targetSegment) return;
+
+    setIsProcessing(true);
+
+    try {
+      if (!window.electron?.videoProject) return;
+
+      const editSceneRequest = {
+        segments: [{ id: targetSegment.id, imagePrompt: targetSegment.imagePrompt }],
+        options: {
+          provider: selectedProvider,
+          model: selectedModel,
+          userInstruction: normalizedInstruction,
+        },
+      };
+
+      const result = await window.electron.videoProject.editPrompts(
+        editSceneRequest.segments,
+        editSceneRequest.options
+      );
+
+      if (result.success && result.segments?.length) {
+        const updatedPrompt = result.segments[0]?.imagePrompt;
+        if (!updatedPrompt) return;
+
+        setProject(prev => ({
+          ...prev,
+          segments: prev.segments.map(seg =>
+            seg.id === segmentId ? { ...seg, imagePrompt: updatedPrompt } : seg
+          ),
+        }));
+
+        summarizeScenePrompts([{ id: segmentId, imagePrompt: updatedPrompt }]).catch(() => {});
+      }
+    } catch (err) {
+      console.error('Single scene analysis error:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [project.segments, selectedProvider, selectedModel, summarizeScenePrompts]);
 
   // Handler para atualizar emoção de um segmento
   const handleUpdateEmotion = useCallback((segmentId: number, emotion: string) => {
@@ -312,13 +498,23 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
 
   // Handler para atualizar prompt de imagem
   const handleUpdatePrompt = useCallback((segmentId: number, prompt: string) => {
+    const hasPrompt = normalizePromptForSummary(prompt).length > 0;
+
     setProject(prev => ({
       ...prev,
       segments: prev.segments.map(seg =>
-        seg.id === segmentId ? { ...seg, imagePrompt: prompt } : seg
+        seg.id === segmentId
+          ? {
+              ...seg,
+              imagePrompt: prompt,
+              ...(hasPrompt ? {} : { sceneDescription: undefined }),
+            }
+          : seg
       ),
     }));
-  }, []);
+
+    scheduleSingleSceneSummary(segmentId, prompt);
+  }, [normalizePromptForSummary, scheduleSingleSceneSummary]);
 
   // Handler para mover palavras entre segmentos
   const handleMoveWords = useCallback((fromSegmentId: number, toSegmentId: number, wordIndices: number[]) => {
@@ -567,6 +763,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             providerModel={selectedModel}
             onProviderModelChange={(m: string) => setSelectedModel(m)}
             onAnalyze={handleAnalyzeWithAI}
+            onAnalyzeScene={handleAnalyzeSingleSceneWithAI}
             isProcessing={isProcessing}
             onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
             niche={selectedNiche}

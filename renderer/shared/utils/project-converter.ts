@@ -94,6 +94,7 @@ export interface VideoSegment {
   // AI Analysis
   emotion?: string;
   imagePrompt?: string;
+  sceneDescription?: string;
   assetType?: string;
   cameraMovement?: string;
   transition?: string;
@@ -147,7 +148,7 @@ export interface VideoProject {
 
 const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'id', 'text', 'start', 'end', 'speaker', 'words',
-  'emotion', 'imagePrompt', 'assetType', 'cameraMovement', 'transition', 'track',
+  'emotion', 'imagePrompt', 'sceneDescription', 'assetType', 'cameraMovement', 'transition', 'track',
   'imageUrl', 'sourceImageUrl', 'asset_url', 'asset_duration',
   'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio',
 ];

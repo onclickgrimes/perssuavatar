@@ -180,6 +180,47 @@ export function registerVideoEditorHandlers(): void {
     }
   });
 
+  // Handler para editar prompts existentes com instrução do usuário
+  registerVideoEditorGuardedHandle('video-project:edit-prompts', async (
+    event,
+    segments: VideoProjectSegment[],
+    options?: {
+      provider?: 'gemini' | 'openai' | 'deepseek';
+      model?: string;
+      userInstruction?: string;
+    }
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      console.log(`🛠️ [VideoProject] Editing prompts for ${segments.length} segments...`);
+      const result = await videoProjectService.editPromptsWithAI(segments, options);
+      return result;
+    } catch (error: any) {
+      console.error('❌ [VideoProject] Prompt edit error:', error);
+      return { success: false, error: error.message, segments };
+    }
+  });
+
+  // Handler para resumir prompts em descrições curtas das cenas (PT-BR)
+  registerVideoEditorGuardedHandle('video-project:summarize-scene-prompts', async (
+    event,
+    segments: VideoProjectSegment[],
+    options?: {
+      provider?: 'gemini' | 'openai' | 'deepseek';
+      model?: string;
+    }
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      console.log(`📝 [VideoProject] Summarizing prompts for ${segments.length} segments...`);
+      const result = await videoProjectService.summarizeScenePromptsWithAI(segments, options);
+      return result;
+    } catch (error: any) {
+      console.error('❌ [VideoProject] Scene summary error:', error);
+      return { success: false, error: error.message, segments };
+    }
+  });
+
   // Handler para converter projeto para formato Remotion
   registerVideoEditorGuardedHandle('video-project:convert-to-remotion', async (event, project: VideoProjectData) => {
     try {

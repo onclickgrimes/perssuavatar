@@ -49,6 +49,7 @@ export interface VideoProjectSegment {
     speaker: number;
     emotion?: string;
     imagePrompt?: string;
+    sceneDescription?: string;
     imageUrl?: string;
     sourceImageUrl?: string;
     assetType?: string;
@@ -826,33 +827,28 @@ export class VideoProjectService extends EventEmitter {
 
 
             const systemMsg = 'You are a video editor AI. Respond ONLY with a valid JSON object containing a "segments" array.';
+            const aiRequestPayload: any[] = [
+                { role: 'system', content: systemMsg },
+                { role: 'user', content: prompt }
+            ];
 
             if (provider === 'gemini') {
                 if (!this.geminiService) throw new Error('Gemini API not configured');
                 console.log('⏳ [VideoProject] Sending request to GeminiService...');
                 if (options?.model) this.geminiService.setModel(options.model);
-                analyzedSegments = await this.geminiService.getChatVideoAnalysis([
-                    { role: 'system', content: systemMsg },
-                    { role: 'user', content: prompt }
-                ]);
+                analyzedSegments = await this.geminiService.getChatVideoAnalysis(aiRequestPayload);
 
             } else if (provider === 'openai') {
                 if (!this.openAIService) throw new Error('OpenAI API not configured');
                 console.log('⏳ [VideoProject] Sending request to OpenAI...');
                 if (options?.model) this.openAIService.setModel(options.model);
-                analyzedSegments = await this.openAIService.getChatVideoAnalysis([
-                    { role: 'system', content: systemMsg },
-                    { role: 'user', content: prompt }
-                ]);
+                analyzedSegments = await this.openAIService.getChatVideoAnalysis(aiRequestPayload);
 
             } else if (provider === 'deepseek') {
                 if (!this.deepSeekService) throw new Error('DeepSeek API not configured');
                 console.log('⏳ [VideoProject] Sending request to DeepSeek...');
                 if (options?.model) this.deepSeekService.setModel(options.model);
-                analyzedSegments = await this.deepSeekService.getChatVideoAnalysis([
-                    { role: 'system', content: systemMsg },
-                    { role: 'user', content: prompt }
-                ]);
+                analyzedSegments = await this.deepSeekService.getChatVideoAnalysis(aiRequestPayload);
             } else {
                 throw new Error(`Unknown provider: ${provider}`);
             }
@@ -1035,6 +1031,191 @@ export class VideoProjectService extends EventEmitter {
         }
     }
 
+    public async editPromptsWithAI(
+        segments: VideoProjectSegment[],
+        options?: {
+            provider?: AIProvider;
+            model?: string;
+            userInstruction?: string;
+        }
+    ): Promise<AnalysisResult> {
+        const instruction = options?.userInstruction?.trim();
+        if (!instruction) {
+            return {
+                success: false,
+                error: 'Instrução do usuário é obrigatória para editar prompts.',
+                segments,
+            };
+        }
+
+        const provider = options?.provider || 'gemini';
+        this.emit('status', { stage: 'analyzing', message: `Editando prompts com ${provider}...` });
+
+        try {
+            const prompt = this.buildPromptEditionPrompt(segments, instruction);
+            const systemMsg = 'You are a prompt editor AI. Respond ONLY with a valid JSON object containing a "segments" array, where each item has "id" and "imagePrompt".';
+            const aiRequestPayload: any[] = [
+                { role: 'system', content: systemMsg },
+                { role: 'user', content: prompt }
+            ];
+
+            let editedResponse: any;
+
+            if (provider === 'gemini') {
+                if (!this.geminiService) throw new Error('Gemini API not configured');
+                if (options?.model) this.geminiService.setModel(options.model);
+                editedResponse = await this.geminiService.getChatVideoAnalysis(aiRequestPayload);
+            } else if (provider === 'openai') {
+                if (!this.openAIService) throw new Error('OpenAI API not configured');
+                if (options?.model) this.openAIService.setModel(options.model);
+                editedResponse = await this.openAIService.getChatVideoAnalysis(aiRequestPayload);
+            } else if (provider === 'deepseek') {
+                if (!this.deepSeekService) throw new Error('DeepSeek API not configured');
+                if (options?.model) this.deepSeekService.setModel(options.model);
+                editedResponse = await this.deepSeekService.getChatVideoAnalysis(aiRequestPayload);
+            } else {
+                throw new Error(`Unknown provider: ${provider}`);
+            }
+
+            let segmentsArray = editedResponse;
+            if (editedResponse && !Array.isArray(editedResponse)) {
+                const values = Object.values(editedResponse);
+                const arrayValue = values.find(v => Array.isArray(v));
+                if (arrayValue) {
+                    segmentsArray = arrayValue;
+                } else {
+                    throw new Error('AI response format invalid (expected array)');
+                }
+            }
+
+            if (!Array.isArray(segmentsArray)) {
+                throw new Error('AI response is not an array');
+            }
+
+            const updatedSegments = segments.map(seg => {
+                const edited = segmentsArray.find((a: any) => a.id === seg.id);
+                if (!edited || edited.imagePrompt == null) return seg;
+
+                const normalizedPrompt = typeof edited.imagePrompt === 'string'
+                    ? edited.imagePrompt
+                    : JSON.stringify(edited.imagePrompt);
+
+                return {
+                    ...seg,
+                    imagePrompt: normalizedPrompt,
+                };
+            });
+
+            this.emit('status', { stage: 'analyzed', message: 'Edição de prompts concluída' });
+
+            return {
+                success: true,
+                segments: updatedSegments,
+            };
+        } catch (error: any) {
+            console.error('❌ Prompt edit error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+            return {
+                success: false,
+                error: error.message || String(error),
+                segments,
+            };
+        }
+    }
+
+    public async summarizeScenePromptsWithAI(
+        segments: VideoProjectSegment[],
+        options?: {
+            provider?: AIProvider;
+            model?: string;
+        }
+    ): Promise<AnalysisResult> {
+        const segmentsWithPrompt = segments.filter(seg =>
+            this.stringifyPromptForEdition(seg.imagePrompt).trim().length > 0
+        );
+
+        if (segmentsWithPrompt.length === 0) {
+            return {
+                success: true,
+                segments,
+            };
+        }
+
+        const provider = options?.provider || 'gemini';
+        this.emit('status', { stage: 'analyzing', message: `Resumindo cenas com ${provider}...` });
+
+        try {
+            const prompt = this.buildSceneDescriptionPrompt(segmentsWithPrompt);
+            const systemMsg = 'Resuma em uma linha o que acontece nesse prompt.';
+            const aiRequestPayload: any[] = [
+                { role: 'system', content: systemMsg },
+                { role: 'user', content: prompt }
+            ];
+
+            let summarizedResponse: any;
+
+            if (provider === 'gemini') {
+                if (!this.geminiService) throw new Error('Gemini API not configured');
+                if (options?.model) this.geminiService.setModel(options.model);
+                summarizedResponse = await this.geminiService.getChatVideoAnalysis(aiRequestPayload);
+            } else if (provider === 'openai') {
+                if (!this.openAIService) throw new Error('OpenAI API not configured');
+                if (options?.model) this.openAIService.setModel(options.model);
+                summarizedResponse = await this.openAIService.getChatVideoAnalysis(aiRequestPayload);
+            } else if (provider === 'deepseek') {
+                if (!this.deepSeekService) throw new Error('DeepSeek API not configured');
+                if (options?.model) this.deepSeekService.setModel(options.model);
+                summarizedResponse = await this.deepSeekService.getChatVideoAnalysis(aiRequestPayload);
+            } else {
+                throw new Error(`Unknown provider: ${provider}`);
+            }
+
+            let segmentsArray = summarizedResponse;
+            if (summarizedResponse && !Array.isArray(summarizedResponse)) {
+                const values = Object.values(summarizedResponse);
+                const arrayValue = values.find(v => Array.isArray(v));
+                if (arrayValue) {
+                    segmentsArray = arrayValue;
+                } else {
+                    throw new Error('AI response format invalid (expected array)');
+                }
+            }
+
+            if (!Array.isArray(segmentsArray)) {
+                throw new Error('AI response is not an array');
+            }
+
+            const updatedSegments = segments.map(seg => {
+                const summarized = segmentsArray.find((a: any) => a.id === seg.id);
+                if (!summarized || summarized.sceneDescription == null) return seg;
+
+                const normalizedDescription = typeof summarized.sceneDescription === 'string'
+                    ? summarized.sceneDescription.trim()
+                    : String(summarized.sceneDescription).trim();
+
+                if (!normalizedDescription) return seg;
+
+                return {
+                    ...seg,
+                    sceneDescription: normalizedDescription,
+                };
+            });
+
+            this.emit('status', { stage: 'analyzed', message: 'Resumo de cenas concluído' });
+
+            return {
+                success: true,
+                segments: updatedSegments,
+            };
+        } catch (error: any) {
+            console.error('❌ Scene summary error details:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+            return {
+                success: false,
+                error: error.message || String(error),
+                segments,
+            };
+        }
+    }
+
     // ========================================
     // HIGHLIGHT WORDS TIMING SYNC
     // ========================================
@@ -1090,6 +1271,81 @@ export class VideoProjectService extends EventEmitter {
                 return hw;
             }
         });
+    }
+
+    private stringifyPromptForEdition(prompt: unknown): string {
+        if (prompt == null) return '';
+        if (typeof prompt === 'string') return prompt;
+        try {
+            return JSON.stringify(prompt);
+        } catch {
+            return String(prompt);
+        }
+    }
+
+    private buildPromptEditionPrompt(
+        segments: VideoProjectSegment[],
+        userInstruction: string
+    ): string {
+        const promptsList = segments
+            .map(s => `ID: ${s.id}\nPrompt atual:\n${this.stringifyPromptForEdition(s.imagePrompt)}`)
+            .join('\n\n');
+
+        return `Você é um editor de prompts visuais.
+
+Sua tarefa é editar APENAS os prompts existentes com base na instrução do usuário.
+
+INSTRUÇÃO DO USUÁRIO:
+"${userInstruction}"
+
+PROMPTS ATUAIS:
+${promptsList}
+
+Regras obrigatórias:
+- Não invente transcrição, contexto narrativo, emoção, assetType, câmera ou transição.
+- Trabalhe somente com os prompts atuais e com a instrução do usuário.
+- Retorne APENAS JSON válido no formato abaixo.
+
+Formato de resposta:
+{
+  "segments": [
+    {
+      "id": 1,
+      "imagePrompt": "prompt editado"
+    }
+  ]
+}`;
+    }
+
+    private buildSceneDescriptionPrompt(
+        segments: VideoProjectSegment[]
+    ): string {
+        const promptsList = segments
+            .map(s => `ID: ${s.id}\nPrompt:\n${this.stringifyPromptForEdition(s.imagePrompt)}`)
+            .join('\n\n');
+
+        return `Você receberá prompts visuais de cenas de vídeo.
+
+Resuma cada prompt em português, em uma única linha objetiva.
+
+PROMPTS:
+${promptsList}
+
+Regras obrigatórias:
+- O resumo deve ser em português.
+- Uma única linha por cena.
+- Seja direto e descreva apenas o que acontece na cena.
+- Não adicione explicações extras fora do JSON.
+
+Formato de resposta:
+{
+  "segments": [
+    {
+      "id": 1,
+      "sceneDescription": "Resumo em português da cena"
+    }
+  ]
+}`;
     }
 
     private buildAnalysisPrompt(
@@ -1438,6 +1694,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 speaker: segment.speaker,
                 emotion: segment.emotion,
                 imagePrompt: segment.imagePrompt,
+                sceneDescription: segment.sceneDescription,
                 imageUrl: segment.imageUrl,
                 sourceImageUrl: segment.sourceImageUrl,
                 asset_url: segment.asset_url,
