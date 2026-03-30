@@ -213,24 +213,24 @@ export class GeminiService extends EventEmitter {
         try {
             this.ensureClient();
             const genAI = this.genAI as GoogleGenerativeAI;
-            console.log('🧠 Gemini VideoAnalysis: Requesting JSON response...');
-
+            
             const systemInstruction = messages.find(m => m.role === 'system')?.content || 'Respond with valid JSON.';
             
             // Build contents only for user/model messages
             const contents: Content[] = messages
-                .filter(m => m.role === 'user' || m.role === 'assistant')
+            .filter(m => m.role === 'user' || m.role === 'assistant')
                 .map(m => ({
                     role: m.role === 'user' ? 'user' : 'model',
                     parts: [{ text: m.content }]
                 }));
-
-            // Use generation config for JSON
-            const model = genAI.getGenerativeModel({
-                model: this.modelName, // use dynamic model name
-                systemInstruction: systemInstruction,
-            });
-
+                
+                // Use generation config for JSON
+                const model = genAI.getGenerativeModel({
+                    model: this.modelName, // use dynamic model name
+                    systemInstruction: systemInstruction,
+                });
+                
+            console.log('🧠 Gemini VideoAnalysis: Requesting JSON response...: ', contents);
             const result = await model.generateContent({
                 contents: contents,
                 generationConfig: {

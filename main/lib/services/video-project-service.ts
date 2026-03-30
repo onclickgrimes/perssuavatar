@@ -1291,14 +1291,12 @@ export class VideoProjectService extends EventEmitter {
             .map(s => `ID: ${s.id}\nPrompt atual:\n${this.stringifyPromptForEdition(s.imagePrompt)}`)
             .join('\n\n');
 
-        return `Você é um editor de prompts visuais.
-
-Sua tarefa é editar APENAS os prompts existentes com base na instrução do usuário.
+        return `Você é um editor de prompts de vídeo.
 
 INSTRUÇÃO DO USUÁRIO:
-"${userInstruction}"
+"${userInstruction} do campo imagePrompt dos segments a seguir: "
 
-PROMPTS ATUAIS:
+Segments:
 ${promptsList}
 
 Regras obrigatórias:
