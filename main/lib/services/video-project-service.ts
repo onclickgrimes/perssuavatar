@@ -1324,7 +1324,7 @@ Formato de resposta:
 
         return `Você receberá prompts visuais de cenas de vídeo.
 
-Resuma cada prompt em português, em uma única linha objetiva.
+Resuma cada prompt, em uma única linha, de forma objetiva, em português.
 
 PROMPTS:
 ${promptsList}
@@ -1332,7 +1332,7 @@ ${promptsList}
 Regras obrigatórias:
 - O resumo deve ser em português.
 - Uma única linha por cena.
-- Seja direto e descreva apenas o que acontece na cena.
+- Seja direto e descreva apenas o que acontece na cena. Quem está nela e o ambiente.
 - Não adicione explicações extras fora do JSON.
 
 Formato de resposta:
