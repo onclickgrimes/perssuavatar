@@ -208,6 +208,7 @@ export class Veo3VideoService {
       // Define a permissão correta baseada na presença de imagem de referência
       // Veo 3.1 exige 'allow_adult' para imagem-para-vídeo e 'allow_all' para texto-para-vídeo
       const hasAnyImage = !!imageInput || !!referenceImages;
+      const hasReferenceImages = !!referenceImages && referenceImages.length > 0;
       const personGen = hasAnyImage ? 'allow_adult' : 'allow_all';
 
       let operation = await ai.models.generateVideos({
@@ -217,7 +218,7 @@ export class Veo3VideoService {
         config: {
           numberOfVideos: 1,
           aspectRatio,
-          negativePrompt: "Watermark, text, logo, bad quality, low quality",
+          ...(!hasReferenceImages ? { negativePrompt: "Watermark, text, logo, bad quality, low quality" } : {}),
           ...(hasAnyImage ? {} : { resolution: '1080p' }),
           personGeneration: personGen,
           durationSeconds: Math.min(durationSeconds, 8),
