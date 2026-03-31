@@ -160,7 +160,7 @@ export function registerVideoEditorHandlers(): void {
     event, 
     projectOrSegments: VideoProjectData | VideoProjectSegment[], 
     options?: { 
-      provider?: 'gemini' | 'openai' | 'deepseek';
+      provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
       nichePrompt?: string;
       model?: string;
     }
@@ -185,7 +185,7 @@ export function registerVideoEditorHandlers(): void {
     event,
     segments: VideoProjectSegment[],
     options?: {
-      provider?: 'gemini' | 'openai' | 'deepseek';
+      provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
       model?: string;
       userInstruction?: string;
     }
@@ -206,7 +206,7 @@ export function registerVideoEditorHandlers(): void {
     event,
     segments: VideoProjectSegment[],
     options?: {
-      provider?: 'gemini' | 'openai' | 'deepseek';
+      provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
       model?: string;
     }
   ) => {

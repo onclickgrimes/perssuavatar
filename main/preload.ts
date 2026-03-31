@@ -403,15 +403,15 @@ const handler = {
       ipcRenderer.invoke('video-project:transcribe', audioPath),
     
     // Analisar segmentos com IA (aceita projeto completo ou array de segments)
-    analyze: (projectOrSegments: any, options?: { provider?: 'gemini' | 'openai' | 'deepseek', nichePrompt?: string, model?: string }) => 
+    analyze: (projectOrSegments: any, options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', nichePrompt?: string, model?: string }) => 
       ipcRenderer.invoke('video-project:analyze', projectOrSegments, options),
 
     // Editar prompts existentes com instrução do usuário (sem reanálise da transcrição)
-    editPrompts: (segments: any[], options?: { provider?: 'gemini' | 'openai' | 'deepseek', model?: string, userInstruction?: string }) =>
+    editPrompts: (segments: any[], options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string, userInstruction?: string }) =>
       ipcRenderer.invoke('video-project:edit-prompts', segments, options),
 
     // Resumir prompts de cena em uma descrição curta (português)
-    summarizeScenePrompts: (segments: any[], options?: { provider?: 'gemini' | 'openai' | 'deepseek', model?: string }) =>
+    summarizeScenePrompts: (segments: any[], options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string }) =>
       ipcRenderer.invoke('video-project:summarize-scene-prompts', segments, options),
     
     // Converter projeto para formato Remotion

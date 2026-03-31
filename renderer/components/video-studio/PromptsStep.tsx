@@ -16,8 +16,8 @@ interface PromptsStepProps {
   onContinue: () => void;
   onBack: () => void;
   onUpdateImage: (id: number, imageUrl: string, duration?: number) => void;
-  provider?: 'gemini' | 'openai' | 'deepseek';
-  onProviderChange?: (p: 'gemini' | 'openai' | 'deepseek') => void;
+  provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+  onProviderChange?: (p: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek') => void;
   providerModel?: string;
   onProviderModelChange?: (m: string) => void;
   onAnalyze?: (instruction?: string) => void | Promise<void>;
@@ -114,6 +114,7 @@ export function PromptsStep({
                  className="bg-black/30 border border-white/10 rounded-lg px-3 py-1 text-white text-sm focus:border-pink-500 focus:outline-none"
                >
                  <option value="gemini">Google Gemini</option>
+                 <option value="gemini_scraping">Gemini (Scraping Navegador)</option>
                  <option value="openai">OpenAI</option>
                  <option value="deepseek">DeepSeek V3</option>
                </select>
@@ -131,6 +132,11 @@ export function PromptsStep({
                          <option value="gemini-3.1-flash-lite-preview">Gemini 3.1 Flash Lite ($0.25 inputs / $1.50 outputs)</option>
                          <option value="gemini-3-flash-preview">Gemini 3 Flash ($0.50 inputs / $3 outputs)</option>
                          <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro ($2 inputs / $12 outputs)</option>
+                       </>
+                     )}
+                     {provider === 'gemini_scraping' && (
+                       <>
+                         <option value="gemini-web-auto">Gemini Web (usa modelo ativo da conta)</option>
                        </>
                      )}
                      {provider === 'openai' && (

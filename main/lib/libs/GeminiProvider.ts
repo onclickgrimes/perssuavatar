@@ -11,7 +11,7 @@ import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import * as fs from 'fs';
 import * as path from 'path';
-import { app } from 'electron';
+import { app, clipboard } from 'electron';
 
 // Adiciona o plugin stealth para evitar detecção
 puppeteerExtra.use(StealthPlugin());
@@ -152,14 +152,7 @@ function parseGeminiPacket(rawData: string): string | null {
             continue;
           }
           
-          // Limpa escapes e formata
-          textContent = textContent
-            .replace(/\\n/g, '\n')
-            .replace(/\\t/g, '\t')
-            .replace(/\\"/g, '"')
-            .replace(/\\\\/g, '\\');
-          
-          // Mantém o texto mais longo encontrado
+          // Mantém o texto bruto para não quebrar respostas JSON (escapes são relevantes)
           if (!foundText || textContent.length > foundText.length) {
             foundText = textContent;
           }
@@ -198,6 +191,7 @@ export class GeminiProvider {
   // URLs do Gemini
   private static readonly GEMINI_URL = 'https://gemini.google.com/';
   private static readonly LOGIN_URL = 'https://accounts.google.com/';
+  private static readonly INPUT_SELECTOR = 'div[contenteditable="true"], textarea[placeholder*="message"], input[type="text"]';
 
   constructor(config: GeminiProviderConfig) {
     this.config = {
@@ -272,6 +266,59 @@ export class GeminiProvider {
   private async randomDelay(min: number = 500, max: number = 1500): Promise<void> {
     const delay = Math.floor(Math.random() * (max - min + 1)) + min;
     await new Promise(resolve => setTimeout(resolve, delay));
+  }
+
+  /**
+   * Preenche o campo de prompt via colagem (rápido), com fallback por injeção no DOM.
+   */
+  private async fillPromptInput(message: string): Promise<void> {
+    if (!this.page) {
+      throw new Error('Página não inicializada');
+    }
+
+    await this.page.waitForSelector(GeminiProvider.INPUT_SELECTOR, { timeout: 10000 });
+    await this.page.click(GeminiProvider.INPUT_SELECTOR);
+    await this.randomDelay(120, 220);
+
+    // Limpa o conteúdo atual rapidamente
+    await this.page.keyboard.down('Control');
+    await this.page.keyboard.press('KeyA');
+    await this.page.keyboard.up('Control');
+    await this.page.keyboard.press('Backspace');
+    await this.randomDelay(80, 160);
+
+    let pasted = false;
+
+    try {
+      clipboard.writeText(message);
+      await this.page.keyboard.down('Control');
+      await this.page.keyboard.press('KeyV');
+      await this.page.keyboard.up('Control');
+      pasted = true;
+    } catch (err) {
+      console.warn('⚠️ [Gemini] Falha ao colar via clipboard, usando fallback por DOM');
+    }
+
+    if (!pasted) {
+      await this.page.evaluate((text) => {
+        const active = document.activeElement as HTMLElement | null;
+        if (!active) return;
+
+        if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) {
+          active.value = text;
+          active.dispatchEvent(new Event('input', { bubbles: true }));
+          active.dispatchEvent(new Event('change', { bubbles: true }));
+          return;
+        }
+
+        if (active.isContentEditable) {
+          active.textContent = text;
+          active.dispatchEvent(new Event('input', { bubbles: true }));
+        }
+      }, message);
+    }
+
+    await this.randomDelay(120, 220);
   }
 
   // ========================================
@@ -765,15 +812,8 @@ export class GeminiProvider {
     try {
       console.log(`💬 [Gemini] Enviando mensagem...`);
 
-      // Encontra o campo de input
-      const inputSelector = 'div[contenteditable="true"], textarea[placeholder*="message"], input[type="text"]';
-      await this.page.waitForSelector(inputSelector, { timeout: 10000 });
-
-      // Clica e digita a mensagem
-      await this.page.click(inputSelector);
-      await this.randomDelay(300, 500);
-      await this.page.keyboard.type(message, { delay: 20 });
-      await this.randomDelay(500, 1000);
+      // Preenche por colagem direta (mais rápido que digitar caractere a caractere)
+      await this.fillPromptInput(message);
 
       // Envia a mensagem (Enter ou botão de enviar)
       await this.page.keyboard.press('Enter');
@@ -837,12 +877,16 @@ export class GeminiProvider {
         let finalResponse = '';
         let streamHandle: string | null = null;
         let isReading = false;
-        let silenceTimer: NodeJS.Timeout | null = null;
+        let inactivityTimer: NodeJS.Timeout | null = null;
         let maxTimer: NodeJS.Timeout | null = null;
-        let accumulatedData = '';
-
-        const silenceTimeoutMs = 3000;
-        const maxTimeoutMs = 120000;
+        let parserBuffer = '';
+        const maxTimeoutMs = Number(process.env.GEMINI_STREAM_MAX_TIMEOUT_MS || 1_200_000); // 20 min
+        const inactivityTimeoutMs = Number(process.env.GEMINI_STREAM_INACTIVITY_TIMEOUT_MS || 600_000); // 10 min sem chunks
+        const parseThrottleMs = Number(process.env.GEMINI_STREAM_PARSE_THROTTLE_MS || 350);
+        const streamUpdatesEnabled = typeof onChunk === 'function';
+        const verboseStreamLogs = process.env.GEMINI_STREAM_VERBOSE === '1';
+        let lastParseAt = 0;
+        let settled = false;
 
         // Função de cleanup
         const cleanup = () => {
@@ -850,42 +894,62 @@ export class GeminiProvider {
             // @ts-ignore
             this.cdpClient.off('Fetch.requestPaused', fetchListener);
           }
-          if (silenceTimer) clearTimeout(silenceTimer);
+          if (inactivityTimer) clearTimeout(inactivityTimer);
           if (maxTimer) clearTimeout(maxTimer);
           isReading = false;
         };
 
-        // Reset do timer de silêncio
-        const resetSilenceTimer = () => {
-          if (silenceTimer) clearTimeout(silenceTimer);
-          silenceTimer = setTimeout(() => {
-            if (finalResponse) {
-              cleanup();
-              console.log(`✅ [Gemini] Resposta completa (silence): ${finalResponse.length} chars`);
-              resolve(finalResponse);
-            }
-          }, silenceTimeoutMs);
+        const settleSuccess = (response: string, reason: string) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          console.log(`✅ [Gemini] Resposta completa (${reason}): ${response.length} chars`);
+          resolve(response);
         };
 
-        // Processa chunk de dados recebido
-        const processChunk = (rawData: string) => {
-          accumulatedData += rawData;
-          
-          // Tenta extrair texto do JSON acumulado
-          const fullText = parseGeminiPacket(accumulatedData);
-          
+        const settleError = (error: Error) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          reject(error);
+        };
+
+        const touchInactivity = () => {
+          if (settled) return;
+          if (inactivityTimer) clearTimeout(inactivityTimer);
+          inactivityTimer = setTimeout(() => {
+            settleError(new Error(`Timeout por inatividade: sem novos chunks por ${Math.round(inactivityTimeoutMs / 1000)}s.`));
+          }, inactivityTimeoutMs);
+        };
+
+        // Processa chunk de dados recebido (apenas para modo streaming em tempo real)
+        const processChunk = (rawData: string, forceParse: boolean = false) => {
+          if (!streamUpdatesEnabled) {
+            touchInactivity();
+            return;
+          }
+
+          parserBuffer += rawData;
+          const now = Date.now();
+          if (!forceParse && now - lastParseAt < parseThrottleMs) {
+            touchInactivity();
+            return;
+          }
+          lastParseAt = now;
+
+          const fullText = parseGeminiPacket(parserBuffer);
           if (fullText && fullText.length > lastText.length) {
             const newChunk = fullText.slice(lastText.length);
-            console.log(`� [Stream] Chunk (+${newChunk.length} chars): "${newChunk.substring(0, 50)}${newChunk.length > 50 ? '...' : ''}"`);
-            
-            if (onChunk) {
-              onChunk(newChunk);
+            if (verboseStreamLogs) {
+              console.log(`📦 [Stream] Chunk (+${newChunk.length} chars)`);
             }
-            
+
+            onChunk?.(newChunk);
             lastText = fullText;
             finalResponse = fullText;
-            resetSilenceTimer();
           }
+
+          touchInactivity();
         };
 
         // Lê o stream usando IO.read e repassa para a página ao final
@@ -893,7 +957,9 @@ export class GeminiProvider {
           if (!this.cdpClient || isReading) return;
           isReading = true;
           
-          let rawBody = '';
+          const rawChunks: string[] = [];
+          let rawBodyLength = 0;
+          let readCount = 0;
           
           try {
             while (true) {
@@ -908,12 +974,25 @@ export class GeminiProvider {
                   ? Buffer.from(result.data, 'base64').toString('utf-8')
                   : result.data;
                 
-                rawBody += chunk;
-                processChunk(chunk);
+                rawChunks.push(chunk);
+                rawBodyLength += chunk.length;
+
+                if (streamUpdatesEnabled) {
+                  processChunk(chunk);
+                } else {
+                  touchInactivity();
+                }
+
+                readCount++;
+                if (readCount % 12 === 0) {
+                  // Cede tempo ao event loop para reduzir impacto no desktop.
+                  await new Promise(r => setTimeout(r, 1));
+                }
               }
 
               if (result.eof) {
-                console.log(`📡 [Stream] EOF alcançado, repassando ${rawBody.length} bytes para a página`);
+                const rawBody = rawChunks.join('');
+                console.log(`📡 [Stream] EOF alcançado, repassando ${rawBodyLength} bytes para a página`);
                 await this.cdpClient.send('IO.close', { handle });
                 
                 // Repassa os dados para a página usando fulfillRequest
@@ -928,11 +1007,20 @@ export class GeminiProvider {
                 } catch (fulfillErr: any) {
                   console.error(`❌ [Stream] Erro ao repassar dados:`, fulfillErr.message);
                 }
-                
+
+                // Parse final sempre no EOF para garantir resposta completa.
+                const parsedFinal = parseGeminiPacket(rawBody);
+                if (parsedFinal) {
+                  if (streamUpdatesEnabled && parsedFinal.length > lastText.length) {
+                    onChunk?.(parsedFinal.slice(lastText.length));
+                  }
+                  finalResponse = parsedFinal;
+                }
+
                 if (finalResponse) {
-                  cleanup();
-                  console.log(`✅ [Gemini] Resposta completa: ${finalResponse.length} chars`);
-                  resolve(finalResponse);
+                  settleSuccess(finalResponse, 'eof');
+                } else {
+                  settleError(new Error('Gemini retornou stream vazio.'));
                 }
                 break;
               }
@@ -950,6 +1038,7 @@ export class GeminiProvider {
           
           if (request?.url?.includes('StreamGenerate')) {
             console.log(`📡 [Fetch] StreamGenerate interceptado`);
+            touchInactivity();
             
             try {
               // Obtém o stream handle para ler os dados progressivamente
@@ -990,24 +1079,12 @@ export class GeminiProvider {
 
         // Timer máximo de segurança
         maxTimer = setTimeout(() => {
-          cleanup();
-          if (finalResponse) {
-            console.log(`⚠️ [Gemini] Timeout máximo, retornando: ${finalResponse.length} chars`);
-            resolve(finalResponse);
-          } else {
-            reject(new Error(`Timeout: Gemini não respondeu em ${maxTimeoutMs / 1000}s.`));
-          }
+          if (settled) return;
+          settleError(new Error(`Timeout máximo: resposta não concluiu (EOF) em ${Math.round(maxTimeoutMs / 1000)}s.`));
         }, maxTimeoutMs);
 
-        // Encontra o campo de input e envia a mensagem
-        const inputSelector = 'div[contenteditable="true"], textarea[placeholder*="message"], input[type="text"]';
-        await this.page!.waitForSelector(inputSelector, { timeout: 10000 });
-
-        await this.page!.click(inputSelector);
-        await this.randomDelay(300, 500);
-        
-        await this.page!.keyboard.type(message, { delay: 20 });
-        await this.randomDelay(500, 1000);
+        // Preenche por colagem direta (mais rápido que digitar caractere a caractere)
+        await this.fillPromptInput(message);
 
         // Envia a mensagem
         await this.page!.keyboard.press('Enter');
@@ -1015,7 +1092,7 @@ export class GeminiProvider {
 
       } catch (error: any) {
         console.error(`❌ [Gemini] Erro ao enviar mensagem:`, error.message);
-        reject(error);
+        reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
   }

@@ -32,7 +32,7 @@ import {
     compactTimelineSegments,
 } from '../../../remotion/utils/silence-compaction';
 
-export type AIProvider = 'gemini' | 'openai' | 'deepseek';
+export type AIProvider = 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
 
 // ========================================
 // TYPES
@@ -838,6 +838,10 @@ export class VideoProjectService extends EventEmitter {
                 if (options?.model) this.geminiService.setModel(options.model);
                 analyzedSegments = await this.geminiService.getChatVideoAnalysis(aiRequestPayload);
 
+            } else if (provider === 'gemini_scraping') {
+                console.log('⏳ [VideoProject] Sending request to Gemini scraping provider...');
+                analyzedSegments = await this.getGeminiScrapingVideoAnalysis(aiRequestPayload);
+
             } else if (provider === 'openai') {
                 if (!this.openAIService) throw new Error('OpenAI API not configured');
                 console.log('⏳ [VideoProject] Sending request to OpenAI...');
@@ -1065,6 +1069,8 @@ export class VideoProjectService extends EventEmitter {
                 if (!this.geminiService) throw new Error('Gemini API not configured');
                 if (options?.model) this.geminiService.setModel(options.model);
                 editedResponse = await this.geminiService.getChatVideoAnalysis(aiRequestPayload);
+            } else if (provider === 'gemini_scraping') {
+                editedResponse = await this.getGeminiScrapingVideoAnalysis(aiRequestPayload);
             } else if (provider === 'openai') {
                 if (!this.openAIService) throw new Error('OpenAI API not configured');
                 if (options?.model) this.openAIService.setModel(options.model);
@@ -1157,6 +1163,8 @@ export class VideoProjectService extends EventEmitter {
                 if (!this.geminiService) throw new Error('Gemini API not configured');
                 if (options?.model) this.geminiService.setModel(options.model);
                 summarizedResponse = await this.geminiService.getChatVideoAnalysis(aiRequestPayload);
+            } else if (provider === 'gemini_scraping') {
+                summarizedResponse = await this.getGeminiScrapingVideoAnalysis(aiRequestPayload);
             } else if (provider === 'openai') {
                 if (!this.openAIService) throw new Error('OpenAI API not configured');
                 if (options?.model) this.openAIService.setModel(options.model);
@@ -1214,6 +1222,192 @@ export class VideoProjectService extends EventEmitter {
                 segments,
             };
         }
+    }
+
+    private async getGeminiScrapingVideoAnalysis(messages: Array<{ role: string; content: string }>): Promise<any> {
+        const { provider, providerId, providerName } = await this.ensureGeminiScrapingProvider();
+        console.log(`🕸️ [VideoProject] Using Gemini scraping provider: ${providerName} (${providerId})`);
+
+        const prompt = this.buildGeminiScrapingPrompt(messages);
+        const rawResponse = await provider.sendMessageWithStream(prompt);
+
+        if (!rawResponse || !rawResponse.trim()) {
+            throw new Error('Gemini scraping retornou resposta vazia.');
+        }
+
+        return this.parseJsonFromScrapingResponse(rawResponse);
+    }
+
+    private async ensureGeminiScrapingProvider(): Promise<{
+        provider: any;
+        providerId: string;
+        providerName: string;
+    }> {
+        const { getProviderManager } = require('../libs/PuppeteerProvider');
+        const manager = getProviderManager();
+
+        const geminiProviders = manager.listProvidersByPlatform('gemini');
+        if (!geminiProviders.length) {
+            throw new Error('Nenhum provider Gemini configurado para scraping. Crie um provider Gemini e faça login.');
+        }
+
+        const targetProvider = geminiProviders.find((p: any) => p.isLoggedIn) || geminiProviders[0];
+        let provider = manager.getGeminiProvider(targetProvider.id);
+
+        if (!provider || !provider.isBrowserConnected?.() || !provider.isLoggedIn) {
+            const openResult = await manager.openForLogin(targetProvider.id);
+            if (!openResult?.success) {
+                throw new Error(`Falha ao abrir o provider Gemini "${targetProvider.name}" para scraping.`);
+            }
+
+            if (!openResult.isLoggedIn) {
+                throw new Error(`Provider Gemini "${targetProvider.name}" não está logado. Faça login no navegador e tente novamente.`);
+            }
+
+            provider = manager.getGeminiProvider(targetProvider.id);
+        }
+
+        if (!provider) {
+            throw new Error('Provider Gemini não está disponível para scraping.');
+        }
+
+        const isLoggedIn = await provider.goToGemini();
+        if (!isLoggedIn) {
+            throw new Error(`Provider Gemini "${targetProvider.name}" não está logado. Faça login no navegador e tente novamente.`);
+        }
+
+        return {
+            provider,
+            providerId: targetProvider.id,
+            providerName: targetProvider.name,
+        };
+    }
+
+    private buildGeminiScrapingPrompt(messages: Array<{ role: string; content: string }>): string {
+        const systemContent = messages
+            .filter(m => m.role === 'system')
+            .map(m => m.content?.trim())
+            .filter(Boolean)
+            .join('\n\n');
+
+        const userContent = messages
+            .filter(m => m.role === 'user')
+            .map(m => m.content?.trim())
+            .filter(Boolean)
+            .join('\n\n');
+
+        const assistantContext = messages
+            .filter(m => m.role === 'assistant')
+            .map(m => m.content?.trim())
+            .filter(Boolean)
+            .join('\n\n');
+
+        return [
+            systemContent ? `\n${systemContent}` : '',
+            userContent ? `\n${userContent}` : '',
+            assistantContext ? `\n${assistantContext}` : ''
+        ].filter(Boolean).join('\n\n');
+    }
+
+    private parseJsonFromScrapingResponse(rawResponse: string): any {
+        const normalized = rawResponse.trim();
+        const candidates: string[] = [];
+
+        const fencedRegex = /```(?:json)?\s*([\s\S]*?)```/gi;
+        let fencedMatch: RegExpExecArray | null = null;
+        while ((fencedMatch = fencedRegex.exec(normalized)) !== null) {
+            if (fencedMatch[1]?.trim()) {
+                candidates.push(fencedMatch[1].trim());
+            }
+        }
+
+        const extractedBlock = this.extractFirstJsonBlock(normalized);
+        if (extractedBlock) {
+            candidates.push(extractedBlock.trim());
+        }
+
+        candidates.push(normalized);
+
+        const uniqueCandidates = [...new Set(candidates.filter(Boolean))];
+        for (const candidate of uniqueCandidates) {
+            try {
+                return JSON.parse(candidate);
+            } catch {
+                // tenta próximo candidato
+            }
+        }
+
+        const preview = normalized.slice(0, 240).replace(/\s+/g, ' ');
+        throw new Error(`Não foi possível converter a resposta do Gemini scraping para JSON. Trecho: ${preview}`);
+    }
+
+    private extractFirstJsonBlock(text: string): string | null {
+        const objectStart = text.indexOf('{');
+        const arrayStart = text.indexOf('[');
+        let start = -1;
+
+        if (objectStart === -1) {
+            start = arrayStart;
+        } else if (arrayStart === -1) {
+            start = objectStart;
+        } else {
+            start = Math.min(objectStart, arrayStart);
+        }
+
+        if (start === -1) {
+            return null;
+        }
+
+        const stack: string[] = [];
+        let inString = false;
+        let escaped = false;
+
+        for (let i = start; i < text.length; i++) {
+            const char = text[i];
+
+            if (inString) {
+                if (escaped) {
+                    escaped = false;
+                    continue;
+                }
+                if (char === '\\') {
+                    escaped = true;
+                    continue;
+                }
+                if (char === '"') {
+                    inString = false;
+                }
+                continue;
+            }
+
+            if (char === '"') {
+                inString = true;
+                continue;
+            }
+
+            if (char === '{' || char === '[') {
+                stack.push(char);
+                continue;
+            }
+
+            if (char === '}' || char === ']') {
+                const last = stack[stack.length - 1];
+                const isMatch =
+                    (last === '{' && char === '}') ||
+                    (last === '[' && char === ']');
+
+                if (!isMatch) {
+                    continue;
+                }
+
+                stack.pop();
+                if (stack.length === 0) {
+                    return text.slice(start, i + 1);
+                }
+            }
+        }
+
+        return null;
     }
 
     // ========================================

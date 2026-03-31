@@ -45,7 +45,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   const [showProjectsModal, setShowProjectsModal] = useState(false);
   const [savedProjects, setSavedProjects] = useState<any[]>([]);
   const [isLoadingProjects, setIsLoadingProjects] = useState(false);
-  const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'openai' | 'deepseek'>('gemini');
+  const [selectedProvider, setSelectedProvider] = useState<'gemini' | 'gemini_scraping' | 'openai' | 'deepseek'>('gemini');
   const [selectedModel, setSelectedModel] = useState<string>('gemini-3-flash-preview');
   const promptSummaryDebounceRef = useRef<Record<number, ReturnType<typeof setTimeout>>>({});
   const lastSummarizedPromptRef = useRef<Record<number, string>>({});
@@ -757,6 +757,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             onProviderChange={(p: any) => {
               setSelectedProvider(p);
               if (p === 'gemini') setSelectedModel('gemini-3-flash-preview');
+              else if (p === 'gemini_scraping') setSelectedModel('gemini-web-auto');
               else if (p === 'openai') setSelectedModel('gpt-5-mini-2025-08-07');
               else if (p === 'deepseek') setSelectedModel('deepseek-chat');
             }}
