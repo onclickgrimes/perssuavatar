@@ -1294,24 +1294,26 @@ export class VideoProjectService extends EventEmitter {
         return `Você é um editor de prompts de vídeo.
 
 INSTRUÇÃO DO USUÁRIO:
-"${userInstruction} do campo imagePrompt dos segments a seguir: "
+"${userInstruction} do campo Prompt atual: dos segments"
 
 Segments:
 ${promptsList}
 
-Regras obrigatórias:
-- Não invente transcrição, contexto narrativo, emoção, assetType, câmera ou transição.
-- Trabalhe somente com os prompts atuais e com a instrução do usuário.
-- Retorne APENAS JSON válido no formato abaixo.
-
 Formato de resposta:
 {
-  "segments": [
-    {
-      "id": 1,
-      "imagePrompt": "prompt editado"
-    }
-  ]
+
+"segments": [
+
+{
+
+"id": 1,
+
+"imagePrompt": "prompt editado/JSON editado/Código editado"
+
+}
+
+]
+
 }`;
     }
 

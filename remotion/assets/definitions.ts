@@ -99,7 +99,7 @@ export const ASSET_DEFINITIONS = {
     description: 'Vídeo gerado pelo Google Veo 2 (API oficial, sem áudio)',
     icon: '🌊',
     badgeColor: 'bg-blue-500/20 text-blue-300',
-    aiDescription: `Crie prompts em JSON detalhados em inglês descrevendo a cena a partir da narração. IMPORTANTE: Para manter consistência visual em múltiplas cenas, você deve repetir **exatamente as mesmas descrições detalhadas** dos personagens e do ambiente em **todos** os prompts, mesmo se a cena for diferente. Isso garante continuidade visual. Descreva o ambiente completo: - Local, horário, iluminação (ex: dia claro, luz natural) - Elementos do cenário, se houver - Descreva a cena — o que os personagens fazem, sua interação. Estilo de filmagem (ex: câmera fixa, câmera na mão, ângulo da câmera). Repita todos os detalhes dos personagens e do ambiente em todas as cenas.
+    aiDescription: `Vídeos de 8 segundos gerados pelo Google Veo 2. Crie prompts em JSON detalhados em inglês descrevendo a cena a partir da narração. IMPORTANTE: Para manter consistência visual em múltiplas cenas, você deve repetir **exatamente as mesmas descrições detalhadas** dos personagens e do ambiente em **todos** os prompts em que aparecerem. Isso garante continuidade visual. Descreva o ambiente completo: - Local, horário, iluminação (ex: dia claro, luz natural) - Elementos do cenário, se houver - Descreva a cena — o que os personagens fazem, sua interação. Estilo de filmagem (ex: câmera fixa, câmera na mão, ângulo da câmera). Repita todos os detalhes dos personagens e do ambiente em todas as cenas.
 
 Exemplo da estrutura do JSON:
 {
