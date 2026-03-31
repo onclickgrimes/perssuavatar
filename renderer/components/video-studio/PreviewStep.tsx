@@ -165,6 +165,7 @@ export function PreviewStep({
   const frameListenerCleanupRef = useRef<(() => void) | null>(null);
   const zoomLevelRef = useRef(DEFAULT_ZOOM);
   const durationProbeCacheRef = useRef<Set<string>>(new Set());
+  const lastPlayheadTimeRef = useRef(0);
   const [isPlaying, setIsPlaying] = useState(false);
 
   useEffect(() => { zoomLevelRef.current = zoomLevel; }, [zoomLevel]);
@@ -202,6 +203,31 @@ export function PreviewStep({
   const durationInSeconds = removeAudioSilences && silenceCompactionRanges.length > 0
     ? getCompactedDuration(silenceCompactionRanges, originalDurationInSeconds)
     : originalDurationInSeconds;
+
+  const applyZoomAnchoredToPlayhead = useCallback((nextZoomOrUpdater: number | ((currentZoom: number) => number)) => {
+    const currentZoom = zoomLevelRef.current;
+    const requestedZoom = typeof nextZoomOrUpdater === 'function'
+      ? nextZoomOrUpdater(currentZoom)
+      : nextZoomOrUpdater;
+    const nextZoom = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, requestedZoom));
+
+    if (Math.abs(nextZoom - currentZoom) < 0.001) {
+      return;
+    }
+
+    setZoomLevel(nextZoom);
+
+    requestAnimationFrame(() => {
+      const scrollWrapper = scrollWrapperRef.current;
+      if (!scrollWrapper) return;
+
+      const playheadLeft = currentTimeRef.current * nextZoom;
+      const nextTimelineWidth = Math.max((durationInSeconds + 10) * nextZoom, scrollWrapper.clientWidth);
+      const maxScrollLeft = Math.max(0, nextTimelineWidth - scrollWrapper.clientWidth);
+      const targetScrollLeft = Math.max(0, Math.min(playheadLeft - scrollWrapper.clientWidth / 2, maxScrollLeft));
+      scrollWrapper.scrollLeft = targetScrollLeft;
+    });
+  }, [durationInSeconds]);
 
   const handleFileUploadToTrack = async (type: 'video' | 'audio', trackId: number, file: File) => {
     if (!onSegmentsUpdate) return;
@@ -507,11 +533,14 @@ export function PreviewStep({
   // Atualiza playhead e timecode via DOM direto (sem re-render)
   // ========================================
   const updatePlayheadDOM = useCallback((time: number) => {
+    const previousTime = lastPlayheadTimeRef.current;
+    lastPlayheadTimeRef.current = time;
     currentTimeRef.current = time;
     const zoom = zoomLevelRef.current;
+    const playheadX = time * zoom;
 
     if (playheadRef.current) {
-      playheadRef.current.style.transform = `translateX(${time * zoom}px)`;
+      playheadRef.current.style.transform = `translateX(${playheadX}px)`;
     }
     if (playheadLabelRef.current) {
       playheadLabelRef.current.textContent = formatTimecode(time);
@@ -523,6 +552,29 @@ export function PreviewStep({
     if (progressRef.current && durationInSeconds > 0) {
       const pct = Math.min(100, (time / durationInSeconds) * 100);
       progressRef.current.style.width = `${pct}%`;
+    }
+
+    const scrollWrapper = scrollWrapperRef.current;
+    if (scrollWrapper) {
+      const viewportStart = scrollWrapper.scrollLeft;
+      const viewportWidth = scrollWrapper.clientWidth;
+      const viewportEnd = viewportStart + viewportWidth;
+      const edgeMargin = Math.min(160, viewportWidth * 0.2);
+      const movingForward = time >= previousTime;
+      const isOutsideLeft = playheadX < viewportStart + edgeMargin;
+      const isOutsideRight = playheadX > viewportEnd - edgeMargin;
+
+      if (isOutsideLeft || isOutsideRight) {
+        const anchorRatio = movingForward ? 0.35 : 0.65;
+        const nextTimelineWidth = Math.max((durationInSeconds + 10) * zoom, viewportWidth);
+        const maxScrollLeft = Math.max(0, nextTimelineWidth - viewportWidth);
+        const targetScrollLeft = Math.max(
+          0,
+          Math.min(playheadX - viewportWidth * anchorRatio, maxScrollLeft)
+        );
+
+        scrollWrapper.scrollLeft = targetScrollLeft;
+      }
     }
   }, [durationInSeconds]);
 
@@ -714,7 +766,7 @@ export function PreviewStep({
     const handleMouseMove = (mvEvent: MouseEvent) => {
       isDragging = true;
       const deltaX = mvEvent.clientX - startX;
-      setZoomLevel(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, startZoom + (deltaX * 0.5))));
+      applyZoomAnchoredToPlayhead(startZoom + (deltaX * 0.5));
     };
 
     const handleMouseUp = (upEvent: MouseEvent) => {
@@ -752,8 +804,8 @@ export function PreviewStep({
     window.addEventListener('mouseup', handleMouseUp);
   };
 
-  const handleZoomIn = () => setZoomLevel(z => Math.min(z * 1.5, MAX_ZOOM));
-  const handleZoomOut = () => setZoomLevel(z => Math.max(z / 1.5, MIN_ZOOM));
+  const handleZoomIn = () => applyZoomAnchoredToPlayhead(z => z * 1.5);
+  const handleZoomOut = () => applyZoomAnchoredToPlayhead(z => z / 1.5);
 
   // Hover tooltip
   const handleSegmentMouseEnter = (e: React.MouseEvent, segId: number) => {
@@ -892,7 +944,7 @@ export function PreviewStep({
               >
                 <TimelineToolbar 
                    zoomLevel={zoomLevel} 
-                   setZoomLevel={setZoomLevel} 
+                   onZoomChange={applyZoomAnchoredToPlayhead} 
                    handleZoomIn={handleZoomIn} 
                    handleZoomOut={handleZoomOut} 
                    onUndo={handleUndo} 
@@ -1059,7 +1111,7 @@ export function PreviewStep({
             >
               <TimelineToolbar 
                  zoomLevel={zoomLevel} 
-                 setZoomLevel={setZoomLevel} 
+                 onZoomChange={applyZoomAnchoredToPlayhead} 
                  handleZoomIn={handleZoomIn} 
                  handleZoomOut={handleZoomOut} 
                  onUndo={handleUndo} 

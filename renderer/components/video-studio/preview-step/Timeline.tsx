@@ -143,9 +143,21 @@ export function Timeline({
       setSelectedSegmentIds([]);
     }
 
-    const handleMouseMove = (mvEvent: MouseEvent) => {
-      const currentX = mvEvent.clientX - rect.left;
-      const currentY = mvEvent.clientY - rect.top;
+    let latestClientX = e.clientX;
+    let latestClientY = e.clientY;
+    let autoScrollFrame: number | null = null;
+
+    const updateSelection = (clientX: number, clientY: number) => {
+      latestClientX = clientX;
+      latestClientY = clientY;
+
+      const wrapper = scrollWrapperRef.current;
+      const container = trackContainerRef.current;
+      if (!wrapper || !container) return;
+
+      const containerRect = container.getBoundingClientRect();
+      const currentX = clientX - containerRect.left;
+      const currentY = clientY - containerRect.top;
 
       setMarqueeSelection({
         startX,
@@ -154,7 +166,6 @@ export function Timeline({
         currentY,
       });
 
-      // Calcular interseção
       const left = Math.min(startX, currentX);
       const right = Math.max(startX, currentX);
       const top = Math.min(startY, currentY);
@@ -203,8 +214,58 @@ export function Timeline({
       }
     };
 
+    const stopAutoScroll = () => {
+      if (autoScrollFrame !== null) {
+        cancelAnimationFrame(autoScrollFrame);
+        autoScrollFrame = null;
+      }
+    };
+
+    const startAutoScroll = () => {
+      if (autoScrollFrame !== null) return;
+
+      const tick = () => {
+        const wrapper = scrollWrapperRef.current;
+        if (!wrapper) {
+          autoScrollFrame = null;
+          return;
+        }
+
+        const wrapperRect = wrapper.getBoundingClientRect();
+        const edgeThreshold = 48;
+        let deltaX = 0;
+
+        if (latestClientX < wrapperRect.left + edgeThreshold) {
+          deltaX = latestClientX - (wrapperRect.left + edgeThreshold);
+        } else if (latestClientX > wrapperRect.right - edgeThreshold) {
+          deltaX = latestClientX - (wrapperRect.right - edgeThreshold);
+        }
+
+        if (deltaX !== 0) {
+          const maxStep = 24;
+          const scrollStep = Math.max(-maxStep, Math.min(maxStep, deltaX * 0.35));
+          const maxScrollLeft = wrapper.scrollWidth - wrapper.clientWidth;
+          const nextScrollLeft = Math.max(0, Math.min(wrapper.scrollLeft + scrollStep, maxScrollLeft));
+
+          if (nextScrollLeft !== wrapper.scrollLeft) {
+            wrapper.scrollLeft = nextScrollLeft;
+            updateSelection(latestClientX, latestClientY);
+          }
+        }
+
+        autoScrollFrame = requestAnimationFrame(tick);
+      };
+
+      autoScrollFrame = requestAnimationFrame(tick);
+    };
+
+    const handleMouseMove = (mvEvent: MouseEvent) => {
+      updateSelection(mvEvent.clientX, mvEvent.clientY);
+    };
+
     const handleMouseUp = (upEvent: MouseEvent) => {
       setMarqueeSelection(null);
+      stopAutoScroll();
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
 
@@ -218,6 +279,7 @@ export function Timeline({
 
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    startAutoScroll();
   };
 
   const getSnappedTime = (time: number, ignoreSegId: number) => {

@@ -4,7 +4,7 @@ import { Icons } from './Icons';
 
 interface TimelineToolbarProps {
   zoomLevel: number;
-  setZoomLevel: React.Dispatch<React.SetStateAction<number>>;
+  onZoomChange: (nextZoom: number) => void;
   handleZoomIn: () => void;
   handleZoomOut: () => void;
   onUndo: () => void;
@@ -18,7 +18,7 @@ interface TimelineToolbarProps {
 }
 
 export function TimelineToolbar({ 
-  zoomLevel, setZoomLevel, handleZoomIn, handleZoomOut,
+  zoomLevel, onZoomChange, handleZoomIn, handleZoomOut,
   onUndo, onRedo, onSplit, onDelete,
   canUndo, canRedo, canSplit, canDelete
 }: TimelineToolbarProps) {
@@ -55,7 +55,7 @@ export function TimelineToolbar({
           onClick={(e) => {
             const rect = e.currentTarget.getBoundingClientRect();
             const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-            setZoomLevel(MIN_ZOOM + pct * (MAX_ZOOM - MIN_ZOOM));
+            onZoomChange(MIN_ZOOM + pct * (MAX_ZOOM - MIN_ZOOM));
           }}
         >
           <div className="absolute left-0 top-0 h-full rounded-full" style={{ background: FILMORA.accent, width: `${((zoomLevel - MIN_ZOOM) / (MAX_ZOOM - MIN_ZOOM)) * 100}%` }} />
