@@ -137,14 +137,13 @@ export class NicheService {
 
         // Adicionar tipos de assets PERMITIDOS com descrições para a IA escolher
         if (niche.asset_types && niche.asset_types.length > 0) {
-            prompt += `\n\nTIPOS DE ASSETS PERMITIDOS (você DEVE escolher UM destes para cada cena):`;
+            prompt += `\n\nTIPOS DE assetType:`;
             for (const assetType of niche.asset_types) {
                 const assetInfo = ASSET_DEFINITIONS[assetType as AssetType];
                 const desc = assetInfo?.aiDescription || assetType;
                 prompt += `\n- **${assetType}**: ${desc}`;
             }
             prompt += `\n\n⚠️ IMPORTANTE: Para cada cena, você DEVE escolher o "assetType" mais apropriado dentre os listados acima.`;
-            prompt += `\nNÃO use tipos que não estejam nesta lista.`;
             
             // // Se video_stock está disponível, dar contexto adicional
             // if (niche.asset_types.includes('video_stock')) {
