@@ -11,13 +11,17 @@
  * Dependência: @google/genai (já instalada no projeto via gemini-voice-service)
  */
 
-import { GoogleGenAI } from '@google/genai';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import https from 'https';
 import http from 'http';
-import { getPrimaryApiKey } from '../credentials';
+import {
+  buildVertexVideoModelResource,
+  buildVideoDownloadUrl,
+  createVideoGenAIClient,
+  getVertexVideoProjectConfig,
+} from './genai-video-client';
 
 // ========================================
 // INTERFACES
@@ -29,7 +33,7 @@ export interface Veo2GenerationOptions {
   aspectRatio?: '16:9' | '9:16';
   /** Duração em segundos (padrão 8, máx 8) */
   durationSeconds?: number;
-  /** Chave de API do Gemini */
+  /** Chave Google GenAI (Gemini API ou Vertex API key) */
   apiKey?: string;
   /** Caminho local ou URL HTTP de uma imagem de referência para image-to-video */
   referenceImagePath?: string;
@@ -73,11 +77,7 @@ export class Veo2VideoService {
       durationSeconds = 8,
       onProgress,
     } = options;
-
-    const apiKey = options.apiKey || getPrimaryApiKey('gemini');
-    if (!apiKey) {
-      return { success: false, error: 'Chave do Gemini não configurada. Cadastre em Configurações > API e Modelos.' };
-    }
+    const overrideApiKey = options.apiKey?.trim() || null;
 
     const startTime = Date.now();
     const emit = (percent: number, message: string) => {
@@ -86,9 +86,17 @@ export class Veo2VideoService {
     };
 
     try {
-      const ai = new GoogleGenAI({ apiKey });
+      const {
+        ai,
+        backend,
+        apiKey: resolvedApiKey,
+      } = createVideoGenAIClient(overrideApiKey, 'primary');
+      const { project: vertexProject, location: vertexLocation } = getVertexVideoProjectConfig();
+      const modelResource = backend === 'vertex'
+        ? buildVertexVideoModelResource('veo-2.0-generate-001', vertexProject, vertexLocation)
+        : 'veo-2.0-generate-001';
 
-      emit(5, 'Iniciando geração Veo 2...');
+      emit(5, `Iniciando geração Veo 2 (${backend === 'vertex' ? 'Vertex AI' : 'Gemini API'})...`);
 
       // Preparar imagem de referência (se fornecida)
       let imageInput: { imageBytes: string; mimeType: string } | undefined;
@@ -154,7 +162,7 @@ export class Veo2VideoService {
       console.log('[Veo2] ==========================================');
 
       let operation = await ai.models.generateVideos({
-        model: 'veo-2.0-generate-001',
+        model: modelResource,
         prompt,
         ...(imageInput ? { image: imageInput } : {}),
         config: {
@@ -210,7 +218,7 @@ export class Veo2VideoService {
       }
 
       // 4. Baixar o vídeo
-      const downloadUrl = `${videoUri}&key=${apiKey}`;
+      const downloadUrl = buildVideoDownloadUrl(videoUri, resolvedApiKey || null);
       const outputFileName = `veo2-${Date.now()}.mp4`;
       const outputPath = path.join(this.outputDir, outputFileName);
 
@@ -227,10 +235,27 @@ export class Veo2VideoService {
 
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
-      console.error('❌ [Veo2] Erro:', error.message);
+      const raw = String(error?.message || error || '');
+      console.error('❌ [Veo2] Erro:', raw);
+      if (raw.toLowerCase().includes('could not load the default credentials')) {
+        return {
+          success: false,
+          error:
+            'Falha de autenticação no Vertex AI: credenciais padrão do Google Cloud não foram encontradas. Configure um JSON de Service Account em Configurações > API e Modelos > Google Vertex AI, ou execute `gcloud auth application-default login`.',
+          durationMs,
+        };
+      }
+      if (raw.includes('RESOURCE_PROJECT_INVALID')) {
+        return {
+          success: false,
+          error:
+            'Vertex rejeitou o projeto (RESOURCE_PROJECT_INVALID). Verifique Projeto e Location em Configurações > API e Modelos, ou use ADC (gcloud auth application-default login) com projeto ativo no Vertex.',
+          durationMs,
+        };
+      }
       return {
         success: false,
-        error: error.message,
+        error: raw,
         durationMs,
       };
     }

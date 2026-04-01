@@ -15,6 +15,9 @@ interface SettingsProps {
 }
 
 type TabId = 'account' | 'api' | 'audio' | 'avatar' | 'features' | 'shortcuts' | 'embeddings' | 'providers' | 'help';
+type GenAIBackend = 'vertex' | 'gemini';
+
+const DEFAULT_GOOGLE_CLOUD_LOCATION = 'global';
 
 // Tipos para Providers
 type ProviderPlatform = 'gemini' | 'openai' | 'qwen';
@@ -34,6 +37,7 @@ type ApiCredentialService =
   | 'openai'
   | 'deepseek'
   | 'gemini'
+  | 'vertex'
   | 'aws_polly'
   | 'pexels';
 
@@ -70,6 +74,7 @@ const API_SERVICE_META: Record<ApiCredentialService, {
   openai: { label: 'OpenAI', icon: '🤖', multi: true },
   deepseek: { label: 'DeepSeek', icon: '🧠', multi: true },
   gemini: { label: 'Google Gemini', icon: '⚡', multi: true },
+  vertex: { label: 'Google Vertex AI', icon: '☁️', multi: true },
   aws_polly: { label: 'AWS Polly', icon: '☁️', multi: false },
   pexels: { label: 'Pexels', icon: '📷', multi: false },
 };
@@ -80,6 +85,7 @@ const API_SERVICE_ORDER: ApiCredentialService[] = [
   'openai',
   'deepseek',
   'gemini',
+  'vertex',
   'aws_polly',
   'pexels',
 ];
@@ -136,6 +142,13 @@ export default function Settings({
   const [assistantMode, setAssistantMode] = useState<'classic' | 'live'>('live');
   const [alwaysOnTop, setAlwaysOnTop] = useState(true);
   const [aiProvider, setAiProvider] = useState<'openai' | 'gemini' | 'deepseek'>('gemini'); // Provedor de IA para modo classic
+  const [genaiBackend, setGenaiBackend] = useState<GenAIBackend>('vertex');
+  const [vertexProject, setVertexProject] = useState('');
+  const [googleCloudLocation, setGoogleCloudLocation] = useState(DEFAULT_GOOGLE_CLOUD_LOCATION);
+  const [vertexCredentialsPath, setVertexCredentialsPath] = useState('');
+  const [isSavingGenAIConfig, setIsSavingGenAIConfig] = useState(false);
+  const [genaiConfigMessage, setGenaiConfigMessage] = useState<string | null>(null);
+  const [genaiConfigError, setGenaiConfigError] = useState<string | null>(null);
   const [voiceModel, setVoiceModel] = useState<'polly' | 'elevenlabs'>('polly'); // Modelo de voz para modo classic
   const [continuousRecordingEnabled, setContinuousRecordingEnabled] = useState(true); // Gravação contínua ativada
   const [dbStats, setDbStats] = useState<any>(null);
@@ -294,6 +307,19 @@ export default function Settings({
             setAuthEmail(settings.authEmail);
           }
 
+          if (settings.genaiBackend === 'vertex' || settings.genaiBackend === 'gemini') {
+            setGenaiBackend(settings.genaiBackend);
+          }
+          if (typeof settings.vertexProject === 'string' && settings.vertexProject.trim()) {
+            setVertexProject(settings.vertexProject.trim());
+          }
+          if (typeof settings.googleCloudLocation === 'string' && settings.googleCloudLocation.trim()) {
+            setGoogleCloudLocation(settings.googleCloudLocation.trim());
+          }
+          if (typeof settings.vertexCredentialsPath === 'string') {
+            setVertexCredentialsPath(settings.vertexCredentialsPath.trim());
+          }
+
           // Carregar configurações de embedding
           if (settings.embeddingProvider) {
             setEmbeddingProvider(settings.embeddingProvider);
@@ -398,6 +424,58 @@ export default function Settings({
       console.log('💾 Provedor salvo:', newProvider);
     } catch (error) {
       console.error('❌ Erro ao mudar provedor de IA:', error);
+    }
+  };
+
+  const handleGenAIBackendChange = (backend: GenAIBackend) => {
+    setGenaiBackend(backend);
+    setGenaiConfigMessage(null);
+    setGenaiConfigError(null);
+  };
+
+  const handleSaveGenAIConfig = async () => {
+    const sanitizedProject = vertexProject.trim();
+    const sanitizedLocation = googleCloudLocation.trim();
+    const sanitizedCredentialsPath = vertexCredentialsPath.trim().replace(/^"|"$/g, '');
+
+    setGenaiConfigMessage(null);
+    setGenaiConfigError(null);
+
+    if (genaiBackend === 'vertex') {
+      if (!sanitizedProject) {
+        setGenaiConfigError('Informe o Vertex Project para usar Vertex AI.');
+        return;
+      }
+      if (!sanitizedLocation) {
+        setGenaiConfigError('Informe o Google Cloud Location para usar Vertex AI.');
+        return;
+      }
+    }
+
+    setIsSavingGenAIConfig(true);
+    try {
+      await window.electron.db.setUserSettings({
+        genaiBackend,
+        vertexProject: sanitizedProject || undefined,
+        googleCloudLocation: sanitizedLocation || DEFAULT_GOOGLE_CLOUD_LOCATION,
+        vertexCredentialsPath: sanitizedCredentialsPath || undefined,
+      });
+      await window.electron.invoke('reload-assistant');
+      setVertexProject(sanitizedProject);
+      setGoogleCloudLocation(sanitizedLocation || DEFAULT_GOOGLE_CLOUD_LOCATION);
+      setVertexCredentialsPath(sanitizedCredentialsPath);
+      setGenaiConfigMessage('Configuração do Google GenAI salva no banco local.');
+      console.log('💾 Google GenAI backend salvo:', {
+        genaiBackend,
+        vertexProject: sanitizedProject || undefined,
+        googleCloudLocation: sanitizedLocation || DEFAULT_GOOGLE_CLOUD_LOCATION,
+        vertexCredentialsPath: sanitizedCredentialsPath || undefined,
+      });
+    } catch (error: any) {
+      setGenaiConfigError(error?.message || 'Falha ao salvar configuração do Google GenAI.');
+      console.error('❌ Erro ao salvar backend Google GenAI:', error);
+    } finally {
+      setIsSavingGenAIConfig(false);
     }
   };
 
@@ -631,9 +709,39 @@ export default function Settings({
     const form = apiCredentialForms[service];
     const editingId = editingApiCredentialByService[service];
     const busyId = `save:${service}`;
+    const sanitizedVertexProject = vertexProject.trim();
+    const sanitizedCloudLocation = googleCloudLocation.trim() || DEFAULT_GOOGLE_CLOUD_LOCATION;
+    const sanitizedCredentialsPath = vertexCredentialsPath.trim().replace(/^"|"$/g, '');
 
     setApiCredentialMessage(null);
     setApiCredentialError(null);
+
+    if (service === 'vertex') {
+      if (!sanitizedVertexProject) {
+        setApiCredentialError('Informe o Vertex Project para salvar a configuração do Vertex AI.');
+        return;
+      }
+
+      setApiCredentialBusyAction(busyId);
+      try {
+        await window.electron.db.setUserSettings({
+          vertexProject: sanitizedVertexProject,
+          googleCloudLocation: sanitizedCloudLocation,
+          vertexCredentialsPath: sanitizedCredentialsPath || undefined,
+        });
+        await window.electron.invoke('reload-assistant');
+        setVertexProject(sanitizedVertexProject);
+        setGoogleCloudLocation(sanitizedCloudLocation);
+        setVertexCredentialsPath(sanitizedCredentialsPath);
+        setApiCredentialMessage('Configuração do Vertex AI salva (ADC automático ou arquivo JSON opcional).');
+      } catch (error: any) {
+        console.error('❌ Erro ao salvar configuração do Vertex:', error);
+        setApiCredentialError(error?.message || 'Falha ao salvar configuração do Vertex AI.');
+      } finally {
+        setApiCredentialBusyAction(null);
+      }
+      return;
+    }
 
     if (service === 'aws_polly') {
       if (!form.accessKeyId.trim() || !form.secretAccessKey.trim()) {
@@ -1243,6 +1351,63 @@ export default function Settings({
                      </div>
 
                      <div>
+                        <h3 className="text-xl font-medium text-white mb-1">Google GenAI (Vertex ou Gemini API)</h3>
+                        <p className="text-sm text-gray-500 mb-6">
+                           Define qual backend será usado pelos serviços com <code>@google/genai</code> (Veo, Gemini Live e Gemini TTS).
+                        </p>
+
+                        <div className="flex gap-4 mb-4">
+                           <button
+                             onClick={() => handleGenAIBackendChange('vertex')}
+                             className={`flex-1 py-3 border-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-all ${
+                               genaiBackend === 'vertex'
+                                 ? 'border-emerald-600 bg-emerald-900/10 text-white'
+                                 : 'border-[#333] bg-[#111] hover:bg-[#1a1a1a] text-gray-400 hover:text-white opacity-60'
+                             }`}
+                           >
+                              <span className="text-xl">☁️</span>
+                              <span className="font-semibold">Vertex AI</span>
+                              {genaiBackend === 'vertex' && <span className="text-xs bg-emerald-600 px-2 py-0.5 rounded-full">Ativo</span>}
+                           </button>
+                           <button
+                             onClick={() => handleGenAIBackendChange('gemini')}
+                             className={`flex-1 py-3 border-2 rounded-xl flex flex-col items-center justify-center gap-1 transition-all ${
+                               genaiBackend === 'gemini'
+                                 ? 'border-purple-600 bg-purple-900/10 text-white'
+                                 : 'border-[#333] bg-[#111] hover:bg-[#1a1a1a] text-gray-400 hover:text-white opacity-60'
+                             }`}
+                           >
+                              <span className="text-xl">⚡</span>
+                              <span className="font-semibold">Gemini API</span>
+                              {genaiBackend === 'gemini' && <span className="text-xs bg-purple-600 px-2 py-0.5 rounded-full">Ativo</span>}
+                           </button>
+                        </div>
+
+                        {genaiConfigError && (
+                          <div className="mb-3 bg-red-900/20 border border-red-500/30 rounded-lg p-3">
+                            <p className="text-xs text-red-300">❌ {genaiConfigError}</p>
+                          </div>
+                        )}
+                        {genaiConfigMessage && (
+                          <div className="mb-3 bg-green-900/20 border border-green-500/30 rounded-lg p-3">
+                            <p className="text-xs text-green-300">✅ {genaiConfigMessage}</p>
+                          </div>
+                        )}
+
+                        <button
+                          onClick={handleSaveGenAIConfig}
+                          disabled={isSavingGenAIConfig}
+                          className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white rounded-lg text-sm font-medium transition-colors"
+                        >
+                          {isSavingGenAIConfig ? 'Salvando...' : 'Salvar backend Google GenAI'}
+                        </button>
+
+                        <p className="text-xs text-gray-500 mt-3">
+                          Projeto, Location e caminho opcional do JSON de Service Account ficam no card <strong>Google Vertex AI</strong> abaixo, logo após <strong>Google Gemini</strong>.
+                        </p>
+                     </div>
+
+                     <div>
                         <h3 className="text-xl font-medium text-white mb-1">Modelo de Voz (TTS)</h3>
                         <p className="text-sm text-gray-500 mb-6">Escolha o serviço de síntese de voz para o modo clássico.</p>
                         
@@ -1322,7 +1487,7 @@ export default function Settings({
                               const serviceCredentials = apiCredentialsByService[service] || [];
                               const form = apiCredentialForms[service];
                               const editingId = editingApiCredentialByService[service];
-                              const showForm = meta.multi || serviceCredentials.length === 0 || Boolean(editingId);
+                              const showForm = service === 'vertex' || meta.multi || serviceCredentials.length === 0 || Boolean(editingId);
 
                               return (
                                  <div key={service} className="bg-[#111] border border-[#222] rounded-xl p-4">
@@ -1331,18 +1496,32 @@ export default function Settings({
                                           <span className="text-lg">{meta.icon}</span>
                                           <h4 className="text-sm font-semibold text-white">{meta.label}</h4>
                                           <span className={`text-[10px] px-2 py-0.5 rounded-full ${
-                                            meta.multi ? 'bg-blue-500/20 text-blue-300' : 'bg-amber-500/20 text-amber-300'
+                                            service === 'vertex'
+                                              ? 'bg-emerald-500/20 text-emerald-300'
+                                              : meta.multi
+                                                ? 'bg-blue-500/20 text-blue-300'
+                                                : 'bg-amber-500/20 text-amber-300'
                                           }`}>
-                                            {meta.multi ? 'Múltiplas chaves' : 'Chave única'}
+                                            {service === 'vertex'
+                                              ? 'Sem API key'
+                                              : meta.multi
+                                                ? 'Múltiplas chaves'
+                                                : 'Chave única'}
                                           </span>
                                        </div>
-                                       <span className="text-xs text-gray-500">
-                                          {serviceCredentials.length} {serviceCredentials.length === 1 ? 'credencial' : 'credenciais'}
-                                       </span>
-                                    </div>
+                                        <span className="text-xs text-gray-500">
+                                          {service === 'vertex'
+                                            ? `Projeto: ${vertexProject || 'não configurado'} • Região: ${googleCloudLocation || DEFAULT_GOOGLE_CLOUD_LOCATION} • Auth: ${vertexCredentialsPath ? 'Arquivo JSON' : 'ADC'}`
+                                            : `${serviceCredentials.length} ${serviceCredentials.length === 1 ? 'credencial' : 'credenciais'}`}
+                                         </span>
+                                      </div>
 
                                     <div className="space-y-2 mb-3">
-                                      {serviceCredentials.length === 0 ? (
+                                      {service === 'vertex' ? (
+                                        <p className="text-xs text-emerald-300/80">
+                                          Vertex AI não usa API key. Configure Project/Location e, opcionalmente, um caminho para JSON de Service Account.
+                                        </p>
+                                      ) : serviceCredentials.length === 0 ? (
                                         <p className="text-xs text-gray-500">Nenhuma credencial cadastrada.</p>
                                       ) : (
                                         serviceCredentials.map((credential) => (
@@ -1401,15 +1580,17 @@ export default function Settings({
                                     {showForm ? (
                                       <div className="border-t border-[#222] pt-3 space-y-3">
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                                          <input
-                                            type="text"
-                                            value={form.label}
-                                            onChange={(e) => handleApiCredentialFieldChange(service, 'label', e.target.value)}
-                                            placeholder={`Rótulo (${meta.label})`}
-                                            className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
-                                          />
+                                          {service !== 'vertex' && (
+                                            <input
+                                              type="text"
+                                              value={form.label}
+                                              onChange={(e) => handleApiCredentialFieldChange(service, 'label', e.target.value)}
+                                              placeholder={`Rótulo (${meta.label})`}
+                                              className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                                            />
+                                          )}
 
-                                          {service !== 'aws_polly' && (
+                                          {service !== 'aws_polly' && service !== 'vertex' && (
                                             <input
                                               type="password"
                                               value={form.apiKey}
@@ -1454,6 +1635,35 @@ export default function Settings({
                                               className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none md:col-span-2"
                                             />
                                           )}
+
+                                          {service === 'vertex' && (
+                                            <>
+                                              <input
+                                                type="text"
+                                                value={vertexProject}
+                                                onChange={(e) => setVertexProject(e.target.value)}
+                                                placeholder="Vertex Project (obrigatório)"
+                                                className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-emerald-500 outline-none md:col-span-2"
+                                              />
+                                              <input
+                                                type="text"
+                                                value={googleCloudLocation}
+                                                onChange={(e) => setGoogleCloudLocation(e.target.value)}
+                                                placeholder={`Google Cloud Location (padrão: ${DEFAULT_GOOGLE_CLOUD_LOCATION})`}
+                                                className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-emerald-500 outline-none md:col-span-2"
+                                              />
+                                              <input
+                                                type="text"
+                                                value={vertexCredentialsPath}
+                                                onChange={(e) => setVertexCredentialsPath(e.target.value)}
+                                                placeholder="Caminho opcional do JSON de Service Account (ex: C:\\chaves\\vertex-sa.json)"
+                                                className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-emerald-500 outline-none md:col-span-2"
+                                              />
+                                              <p className="text-[11px] text-gray-500 md:col-span-2">
+                                                Se vazio, o app usa ADC automaticamente (ex: <code>gcloud auth application-default login</code>).
+                                              </p>
+                                            </>
+                                          )}
                                         </div>
 
                                         <div className="flex items-center gap-2">
@@ -1464,12 +1674,14 @@ export default function Settings({
                                           >
                                             {apiCredentialBusyAction === `save:${service}`
                                               ? 'Salvando...'
-                                              : editingId
+                                              : service === 'vertex'
+                                                ? 'Salvar configuração'
+                                                : editingId
                                                 ? 'Atualizar credencial'
                                                 : `Salvar ${meta.multi ? 'nova chave' : 'chave'}`}
                                           </button>
 
-                                          {editingId && (
+                                          {editingId && service !== 'vertex' && (
                                             <button
                                               onClick={() => resetApiCredentialForm(service)}
                                               className="px-3 py-2 bg-white/10 hover:bg-white/20 text-gray-200 rounded-lg text-xs font-medium transition-colors"

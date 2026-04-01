@@ -14,12 +14,12 @@ import {
     TranscriptionSegment as DeepgramSegment
 } from './audio-transcription-service';
 import { VideoService } from './video-service';
-import { GeminiService } from './gemini-service';
 import { OpenAIService } from './openai-service';
 import { DeepSeekService } from './deepseek-service';
 import { getVideoSearchService } from './video-search-service';
 import { getPexelsService } from '../assets';
 import { hasCredential } from '../credentials';
+import { createVideoGenAIClient } from './genai-video-client';
 import {
     CAMERA_MOVEMENTS,
     TRANSITIONS,
@@ -219,7 +219,6 @@ import * as http from 'http';
 export class VideoProjectService extends EventEmitter {
     private transcriptionService = getAudioTranscriptionService();
     private videoService = new VideoService();
-    private geminiService: GeminiService | null = null;
     private openAIService: OpenAIService | null = null;
     private deepSeekService: DeepSeekService | null = null;
     private projectsDir: string;
@@ -233,12 +232,6 @@ export class VideoProjectService extends EventEmitter {
         this.projectsDir = path.join(app.getPath('userData'), 'video-projects');
         if (!fs.existsSync(this.projectsDir)) {
             fs.mkdirSync(this.projectsDir, { recursive: true });
-        }
-
-        // Inicializar Gemini Service
-        if (hasCredential('gemini')) {
-            this.geminiService = new GeminiService();
-            console.log('🎬 VideoProjectService initialized with GeminiService');
         }
 
         // Inicializar OpenAI
@@ -287,6 +280,86 @@ export class VideoProjectService extends EventEmitter {
         } catch (error) {
             return null;
         }
+    }
+
+    private resolveGenAIModel(modelName: string | undefined): string {
+        const requested = (modelName || '').trim();
+        return requested || 'gemini-3.1-pro-preview';
+    }
+
+    private parseJsonResponseText(rawText: string): any {
+        const trimmed = rawText.trim();
+        if (!trimmed) {
+            throw new Error('Resposta vazia do Google GenAI.');
+        }
+
+        const withoutFences = trimmed.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim();
+
+        try {
+            return JSON.parse(withoutFences);
+        } catch {
+            const arrayMatch = withoutFences.match(/\[[\s\S]*\]/);
+            if (arrayMatch) {
+                return JSON.parse(arrayMatch[0]);
+            }
+            const objectMatch = withoutFences.match(/\{[\s\S]*\}/);
+            if (objectMatch) {
+                return JSON.parse(objectMatch[0]);
+            }
+            throw new Error(`Falha ao parsear JSON da resposta de IA. Trecho recebido: ${withoutFences.substring(0, 220)}...`);
+        }
+    }
+
+    private async getGeminiVideoAnalysis(messages: any[], modelName?: string): Promise<any> {
+        const systemInstruction =
+            messages.find((m: any) => m.role === 'system')?.content || 'Respond with valid JSON only.';
+
+        const contents = messages
+            .filter((m: any) => m.role === 'user' || m.role === 'assistant')
+            .map((m: any) => ({
+                role: m.role === 'user' ? 'user' : 'model',
+                parts: [{ text: String(m.content || '') }],
+            }));
+
+        const {
+            ai,
+            backend,
+            project,
+            location,
+        } = createVideoGenAIClient(null, 'next');
+
+        const resolvedModel = this.resolveGenAIModel(modelName);
+
+        if (
+            backend === 'vertex' &&
+            resolvedModel.toLowerCase().startsWith('gemini-3.1-pro-preview') &&
+            String(location || '').toLowerCase() !== 'global'
+        ) {
+            throw new Error(
+                `O modelo ${resolvedModel} no Vertex AI só está disponível em location=global. Atualize Configurações > API e Modelos > Google Cloud Location para "global".`
+            );
+        }
+
+        console.log(
+            `⏳ [VideoProject] Sending request via Google GenAI (${backend}${backend === 'vertex' ? ` ${project}/${location}` : ''}) model=${resolvedModel}...`
+        );
+
+        const response = await ai.models.generateContent({
+            model: resolvedModel,
+            contents,
+            config: {
+                systemInstruction,
+                responseMimeType: 'application/json',
+            } as any,
+        } as any);
+
+        const rawText = String(response?.text || '').trim();
+        if (!rawText) {
+            throw new Error('Resposta vazia recebida do Google GenAI.');
+        }
+
+        console.log(`🧠 [VideoProject] GenAI JSON Response (${rawText.length} chars)`);
+        return this.parseJsonResponseText(rawText);
     }
 
     /**
@@ -833,10 +906,7 @@ export class VideoProjectService extends EventEmitter {
             ];
 
             if (provider === 'gemini') {
-                if (!this.geminiService) throw new Error('Gemini API not configured');
-                console.log('⏳ [VideoProject] Sending request to GeminiService...');
-                if (options?.model) this.geminiService.setModel(options.model);
-                analyzedSegments = await this.geminiService.getChatVideoAnalysis(aiRequestPayload);
+                analyzedSegments = await this.getGeminiVideoAnalysis(aiRequestPayload, options?.model);
 
             } else if (provider === 'gemini_scraping') {
                 console.log('⏳ [VideoProject] Sending request to Gemini scraping provider...');
@@ -1066,9 +1136,7 @@ export class VideoProjectService extends EventEmitter {
             let editedResponse: any;
 
             if (provider === 'gemini') {
-                if (!this.geminiService) throw new Error('Gemini API not configured');
-                if (options?.model) this.geminiService.setModel(options.model);
-                editedResponse = await this.geminiService.getChatVideoAnalysis(aiRequestPayload);
+                editedResponse = await this.getGeminiVideoAnalysis(aiRequestPayload, options?.model);
             } else if (provider === 'gemini_scraping') {
                 editedResponse = await this.getGeminiScrapingVideoAnalysis(aiRequestPayload);
             } else if (provider === 'openai') {
@@ -1160,9 +1228,7 @@ export class VideoProjectService extends EventEmitter {
             let summarizedResponse: any;
 
             if (provider === 'gemini') {
-                if (!this.geminiService) throw new Error('Gemini API not configured');
-                if (options?.model) this.geminiService.setModel(options.model);
-                summarizedResponse = await this.geminiService.getChatVideoAnalysis(aiRequestPayload);
+                summarizedResponse = await this.getGeminiVideoAnalysis(aiRequestPayload, options?.model);
             } else if (provider === 'gemini_scraping') {
                 summarizedResponse = await this.getGeminiScrapingVideoAnalysis(aiRequestPayload);
             } else if (provider === 'openai') {

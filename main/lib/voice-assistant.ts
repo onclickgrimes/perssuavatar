@@ -14,6 +14,7 @@ import { TTSService } from './services/tts-service';
 import { ScreenshotShareService } from './screenshot-share-service';
 import { getKnowledgeService } from './services/knowledge-service';
 import { Readable } from 'stream';
+import { getStoredGenAIConfig } from './services/genai-video-client';
 
 interface AIResponse {
     text: string;
@@ -197,6 +198,10 @@ export class VoiceAssistant extends EventEmitter {
 
     private checkRequiredCredentialForMode(mode: 'classic' | 'live'): boolean {
         if (mode === 'live') {
+            const genaiConfig = getStoredGenAIConfig();
+            if (genaiConfig.backend === 'vertex') {
+                return Boolean(genaiConfig.vertexProject);
+            }
             return hasCredential('gemini');
         }
         return hasCredential('deepgram');
@@ -227,13 +232,19 @@ export class VoiceAssistant extends EventEmitter {
 
         if (previousAvailability !== hasRequiredCredential) {
             if (!hasRequiredCredential) {
-                const missingService = mode === 'live' ? 'Gemini' : 'Deepgram';
+                let missingService = 'Deepgram';
+                if (mode === 'live') {
+                    const genaiConfig = getStoredGenAIConfig();
+                    missingService = genaiConfig.backend === 'vertex'
+                        ? 'configuração do Vertex (Project/Location)'
+                        : 'chave Gemini';
+                }
                 const modeLabel = mode === 'live' ? 'Live' : 'Classic';
-                console.warn(`[VoiceAssistant] ${modeLabel} mode disabled: missing ${missingService} API key in database. Service will not start.`);
-                this.emit('status', `${modeLabel} disabled (missing ${missingService} API key)`);
+                console.warn(`[VoiceAssistant] ${modeLabel} mode disabled: missing ${missingService} nas configurações locais. Service will not start.`);
+                this.emit('status', `${modeLabel} disabled (missing ${missingService})`);
             } else {
                 const modeLabel = mode === 'live' ? 'Live' : 'Classic';
-                console.log(`[VoiceAssistant] ${modeLabel} mode enabled: required API key found in database.`);
+                console.log(`[VoiceAssistant] ${modeLabel} mode enabled: required configuração encontrada no banco local.`);
             }
         }
 

@@ -1,12 +1,15 @@
 import Store from 'electron-store';
 import { getUserDataPath } from './app-config';
 
+export const DEFAULT_GOOGLE_CLOUD_LOCATION = 'global';
+
 export type ApiCredentialService =
   | 'deepgram'
   | 'elevenlabs'
   | 'openai'
   | 'deepseek'
   | 'gemini'
+  | 'vertex'
   | 'aws_polly'
   | 'pexels';
 
@@ -41,6 +44,7 @@ const MULTI_KEY_SERVICES = new Set<ApiCredentialService>([
   'openai',
   'deepseek',
   'gemini',
+  'vertex',
 ]);
 
 const SINGLE_KEY_SERVICES = new Set<ApiCredentialService>([
@@ -59,6 +63,10 @@ interface DatabaseSchema {
     selectedModel: string; // Modelo Live2D do avatar (Yuki, etc)
     selectedAssistant?: string; // ID do assistente selecionado
     aiProvider?: 'openai' | 'gemini' | 'deepseek';
+    genaiBackend?: 'vertex' | 'gemini';
+    vertexProject?: string;
+    googleCloudLocation?: string;
+    vertexCredentialsPath?: string;
     voiceModel?: 'polly' | 'elevenlabs';
     continuousRecordingEnabled?: boolean;
     // Configurações de Embedding para Base de Conhecimento
@@ -148,6 +156,8 @@ const defaults: DatabaseSchema = {
     volume: 0.8,
     selectedModel: 'Yuki',
     selectedAssistant: 'general', // Assistente padrão
+    genaiBackend: 'vertex',
+    googleCloudLocation: DEFAULT_GOOGLE_CLOUD_LOCATION,
   },
   conversationHistory: [],
   windowState: {
@@ -399,6 +409,10 @@ export function initializeDatabase(): Store<DatabaseSchema> {
             alwaysOnTop: { type: 'boolean' },
             volume: { type: 'number', minimum: 0, maximum: 1 },
             selectedModel: { type: 'string' },
+            genaiBackend: { type: 'string', enum: ['vertex', 'gemini'] },
+            vertexProject: { type: 'string' },
+            googleCloudLocation: { type: 'string' },
+            vertexCredentialsPath: { type: 'string' },
             supabaseUrl: { type: 'string' },
             supabasePublishKey: { type: 'string' },
             billingAuthToken: { type: 'string' },
@@ -452,8 +466,14 @@ export function initializeDatabase(): Store<DatabaseSchema> {
     const persistedUserSettings = (storeInstance.get('userSettings') || {}) as Record<string, any>;
     if (persistedUserSettings && Object.prototype.hasOwnProperty.call(persistedUserSettings, 'billingBaseUrl')) {
       delete persistedUserSettings.billingBaseUrl;
-      storeInstance.set('userSettings', persistedUserSettings as any);
     }
+    if (!persistedUserSettings.genaiBackend) {
+      persistedUserSettings.genaiBackend = 'vertex';
+    }
+    if (!persistedUserSettings.googleCloudLocation) {
+      persistedUserSettings.googleCloudLocation = DEFAULT_GOOGLE_CLOUD_LOCATION;
+    }
+    storeInstance.set('userSettings', persistedUserSettings as any);
 
     console.log('✅ Database initialized at:', storeInstance.path);
   }
@@ -507,6 +527,7 @@ function normalizeLabel(service: ApiCredentialService, label?: string): string {
     openai: 'OpenAI',
     deepseek: 'DeepSeek',
     gemini: 'Google Gemini',
+    vertex: 'Google Vertex AI',
     aws_polly: 'AWS Polly',
     pexels: 'Pexels',
   };

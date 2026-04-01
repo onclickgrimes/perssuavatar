@@ -1,7 +1,10 @@
 import { GoogleGenAI } from '@google/genai';
 import * as fs from 'fs';
 import * as path from 'path';
-import { getNextApiKey } from '../credentials';
+import {
+    createVideoGenAIClient,
+    VideoGenAIBackend
+} from './genai-video-client';
 
 // ===========================
 // Types e Interfaces
@@ -73,18 +76,66 @@ export type GeminiVoiceName = typeof GEMINI_VOICES[number];
 // ===========================
 
 export class GeminiVoiceService {
-    private ai: GoogleGenAI;
+    private ai: GoogleGenAI | null = null;
     //private model: string = 'gemini-2.5-flash-preview-tts';
     private model: string = 'gemini-2.5-flash-preview-tts'; 
     private defaultVoice: GeminiVoiceName = 'Achernar';
     private defaultTemperature: number = 1;
+    private currentBackend: VideoGenAIBackend | null = null;
+    private currentProject: string | null = null;
+    private currentLocation: string | null = null;
+    private currentApiKey: string | null = null;
+    private currentVertexCredentialsPath: string | null = null;
+    private currentVertexAuthMode: string | null = null;
 
     constructor() {
-        const apiKey = getNextApiKey('gemini');
-        if (!apiKey) {
-            throw new Error("Missing Gemini API key");
+        // Inicialização lazy no primeiro uso para respeitar backend/config do banco local.
+    }
+
+    private ensureClient(): void {
+        const {
+            ai,
+            backend,
+            project,
+            location,
+            apiKey,
+            vertexCredentialsPath,
+            vertexAuthMode
+        } = createVideoGenAIClient(null, 'next');
+
+        const changed =
+            this.currentBackend !== backend ||
+            this.currentProject !== (project || null) ||
+            this.currentLocation !== (location || null) ||
+            this.currentApiKey !== (apiKey || null) ||
+            this.currentVertexCredentialsPath !== (vertexCredentialsPath || null) ||
+            this.currentVertexAuthMode !== (vertexAuthMode || null) ||
+            !this.ai;
+
+        if (changed) {
+            this.ai = ai;
+            this.currentBackend = backend;
+            this.currentProject = project || null;
+            this.currentLocation = location || null;
+            this.currentApiKey = apiKey || null;
+            this.currentVertexCredentialsPath = vertexCredentialsPath || null;
+            this.currentVertexAuthMode = vertexAuthMode || null;
+
+            const vertexAuthLabel =
+                backend === 'vertex'
+                    ? ` | auth=${
+                        vertexAuthMode === 'service-account-file'
+                            ? `service-account:${path.basename(vertexCredentialsPath || '')}`
+                            : vertexAuthMode === 'env-service-account-file'
+                            ? `env:${path.basename(vertexCredentialsPath || '')}`
+                            : 'adc'
+                    }`
+                    : '';
+
+            console.log(
+                `[GeminiVoice] Backend selecionado: ${backend}${backend === 'vertex' ? ` (${project}/${location})` : ''}${vertexAuthLabel}`
+            );
         }
-        this.ai = new GoogleGenAI({ apiKey });
     }
 
     /**
@@ -139,6 +190,8 @@ export class GeminiVoiceService {
         console.log(`[GeminiVoice] Voz: ${voiceName}, Temperatura: ${temperature}`);
 
         try {
+            this.ensureClient();
+            const aiClient = this.ai as GoogleGenAI;
             const config = {
                 temperature,
                 responseModalities: ['audio'] as const,
@@ -162,7 +215,7 @@ export class GeminiVoiceService {
                 },
             ];
 
-            const response = await this.ai.models.generateContentStream({
+            const response = await aiClient.models.generateContentStream({
                 model: this.model,
                 config: config as any,
                 contents,
@@ -211,10 +264,11 @@ export class GeminiVoiceService {
             return { success: true, buffer: wavBuffer };
 
         } catch (error) {
-            console.error('[GeminiVoice] Erro ao gerar áudio:', error);
+            const { userMessage, diagnostics } = this.formatGenerationError(error);
+            console.error('[GeminiVoice] Erro ao gerar áudio:', diagnostics);
             return { 
                 success: false, 
-                error: error instanceof Error ? error.message : 'Erro desconhecido' 
+                error: userMessage
             };
         }
     }
@@ -349,6 +403,70 @@ export class GeminiVoiceService {
         buffer.writeUInt32LE(dataLength, 40);         // Subchunk2Size
 
         return buffer;
+    }
+
+    private extractErrorMessage(error: unknown): string {
+        if (error instanceof Error && error.message) {
+            return error.message;
+        }
+
+        if (typeof error === 'string') {
+            return error;
+        }
+
+        if (error && typeof error === 'object') {
+            const candidate = error as any;
+            const nestedCandidates = [
+                candidate.message,
+                candidate.details,
+                candidate.error?.message,
+                candidate.cause?.message,
+                candidate.response?.data?.error?.message,
+                candidate.response?.statusText,
+            ];
+
+            for (const value of nestedCandidates) {
+                if (typeof value === 'string' && value.trim()) {
+                    return value.trim();
+                }
+            }
+
+            try {
+                const serialized = JSON.stringify(error);
+                if (serialized && serialized !== '{}' && serialized !== '[]') {
+                    return serialized;
+                }
+            } catch {
+                // Ignora erros de serialização e cai no fallback.
+            }
+        }
+
+        return 'Erro desconhecido';
+    }
+
+    private formatGenerationError(error: unknown): { userMessage: string; diagnostics: string } {
+        const rawMessage = this.extractErrorMessage(error);
+        const normalized = rawMessage.toLowerCase();
+
+        const isMissingDefaultCredentials =
+            normalized.includes('could not load the default credentials') ||
+            normalized.includes('default credentials');
+
+        if (isMissingDefaultCredentials) {
+            const hint = this.currentVertexCredentialsPath
+                ? `Verifique se o arquivo está acessível: ${this.currentVertexCredentialsPath}.`
+                : 'Configure um JSON de Service Account em Configurações > API e Modelos > Google Vertex AI, ou execute `gcloud auth application-default login`.';
+
+            return {
+                userMessage: `Falha de autenticação do Vertex AI: credenciais Google Cloud não encontradas. ${hint}`,
+                diagnostics: rawMessage,
+            };
+        }
+
+        return {
+            userMessage: rawMessage || 'Erro desconhecido ao gerar áudio no Gemini TTS.',
+            diagnostics: rawMessage || 'Erro desconhecido',
+        };
     }
 }
 

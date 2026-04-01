@@ -1694,8 +1694,11 @@ Lembre-se:
       };
 
     } catch (error: any) {
-      console.error('❌ [TTS] Generation error:', error);
-      return { success: false, error: error.message };
+      const errorMessage =
+        error?.message ||
+        (typeof error === 'string' ? error : JSON.stringify(error) || 'Erro desconhecido na geração de TTS');
+      console.error('❌ [TTS] Generation error:', errorMessage);
+      return { success: false, error: errorMessage };
     }
   });
 
