@@ -296,6 +296,16 @@ export class Veo3VideoService {
       // BLOQUEIA AQUI: Aguarda na fila e consome as cotas RPM/RPD antes de continuar
       await this.waitInQueueAndConsume(model, emit);
 
+      const normalizedModel = String(model || '').toLowerCase();
+      const isLiteModel = normalizedModel.includes('veo-3.1-lite')
+        || normalizedModel.includes('veo 3.1 - lite')
+        || normalizedModel.includes('veo 3.1 lite');
+      const effectiveIngredientImagePaths = isLiteModel ? [] : (options.ingredientImagePaths || []);
+      if (isLiteModel && options.ingredientImagePaths && options.ingredientImagePaths.length > 0) {
+        emit(6, 'Veo 3.1 Lite não suporta Ingredients. Usando Frames...');
+        console.warn('[Veo3 API] Modelo Lite não suporta ingredients. Ignorando ingredientImagePaths.');
+      }
+
       // Helper para carregar uma imagem (local ou URL) e retornar { imageBytes, mimeType }
       const loadImage = async (imgPath: string): Promise<{ imageBytes: string; mimeType: string }> => {
         let imageBuffer: Buffer;
@@ -323,20 +333,20 @@ export class Veo3VideoService {
       };
 
       // Carregar imagens de referência (ingredientes) se fornecidas
-      const hasIngredients = options.ingredientImagePaths && options.ingredientImagePaths.length > 0;
+      const hasIngredients = effectiveIngredientImagePaths.length > 0;
       let referenceImages: Array<{ image: { imageBytes: string; mimeType: string }; referenceType: string }> | undefined;
 
       if (hasIngredients) {
-        emit(7, `Carregando ${options.ingredientImagePaths!.length} imagem(ns) de referência...`);
+        emit(7, `Carregando ${effectiveIngredientImagePaths.length} imagem(ns) de referência...`);
         referenceImages = [];
-        for (let i = 0; i < options.ingredientImagePaths!.length; i++) {
+        for (let i = 0; i < effectiveIngredientImagePaths.length; i++) {
           try {
-            const imgData = await loadImage(options.ingredientImagePaths![i]);
+            const imgData = await loadImage(effectiveIngredientImagePaths[i]);
             referenceImages.push({
               image: imgData,
               referenceType: 'asset',
             });
-            emit(8, `Imagem de referência ${i + 1}/${options.ingredientImagePaths!.length} carregada`);
+            emit(8, `Imagem de referência ${i + 1}/${effectiveIngredientImagePaths.length} carregada`);
           } catch (imgErr: any) {
             console.warn(`[Veo3 API] Falha ao carregar imagem de referência ${i + 1}: ${imgErr.message}`);
           }

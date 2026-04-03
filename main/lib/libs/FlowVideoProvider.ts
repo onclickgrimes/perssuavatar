@@ -646,6 +646,11 @@ export class FlowVideoProvider {
     ingredientImagePaths?: string[]
   ): Promise<FlowGenerationResult> {
     const startTime = Date.now();
+    const normalizedModel = (model || '').trim().toLowerCase();
+    const isLiteModel = normalizedModel.includes('veo 3.1 - lite')
+      || normalizedModel.includes('veo 3.1 lite')
+      || normalizedModel.includes('veo-3.1-lite');
+    const effectiveIngredientImagePaths = isLiteModel ? undefined : ingredientImagePaths;
 
     const emitProgress = (stage: any, message: string, percent?: number) => {
       console.log(`🎬 [Flow] ${message}`);
@@ -729,7 +734,11 @@ export class FlowVideoProvider {
       await this.configureProjectDisplaySettings();
 
       // 4b. Configurar todas as opções de geração em uma única sessão de dropdown
-      const hasIngredients = ingredientImagePaths && ingredientImagePaths.length > 0;
+      if (isLiteModel && ingredientImagePaths && ingredientImagePaths.length > 0) {
+        console.warn('⚠️ [Flow] Modelo Veo 3.1 - Lite não suporta Ingredients. Usando Frames.');
+        emitProgress('submitting', 'Veo 3.1 - Lite não suporta Ingredients. Usando Frames...');
+      }
+      const hasIngredients = !!effectiveIngredientImagePaths && effectiveIngredientImagePaths.length > 0;
       emitProgress('submitting', `Configurando modelo, proporção e quantidade...`);
       await this.configureFlowDropdown({
         mediaType: 'video',
@@ -747,10 +756,10 @@ export class FlowVideoProvider {
 
       if (hasIngredients) {
         // Modo Ingredients: upload de até 3 imagens como ingredientes
-        emitProgress('submitting', `Enviando ${ingredientImagePaths!.length} imagem(ns) de ingredientes...`);
-        for (let i = 0; i < ingredientImagePaths!.length; i++) {
-          const imgPath = ingredientImagePaths![i];
-          emitProgress('submitting', `Enviando ingrediente ${i + 1}/${ingredientImagePaths!.length}...`);
+        emitProgress('submitting', `Enviando ${effectiveIngredientImagePaths!.length} imagem(ns) de ingredientes...`);
+        for (let i = 0; i < effectiveIngredientImagePaths!.length; i++) {
+          const imgPath = effectiveIngredientImagePaths![i];
+          emitProgress('submitting', `Enviando ingrediente ${i + 1}/${effectiveIngredientImagePaths!.length}...`);
           const uploaded = await this.uploadIngredientImage(imgPath);
           if (!uploaded) {
             console.warn(`⚠️ [Flow] Falha ao enviar ingrediente ${i + 1}. Prosseguindo...`);
@@ -779,7 +788,7 @@ export class FlowVideoProvider {
 
       // 5.6 Aguardar todas as imagens serem processadas no Flow
       const expectedCount = hasIngredients
-        ? ingredientImagePaths!.length
+        ? effectiveIngredientImagePaths!.length
         : (referenceImagePath ? 1 : 0) + (finalImagePath ? 1 : 0);
 
       if (expectedCount > 0) {
@@ -859,7 +868,7 @@ export class FlowVideoProvider {
       FlowVideoProvider.releaseSubmitMutex();
 
       // ── Polling roda em paralelo com outras gerações ──
-      emitProgress('generating', 'Gerando vídeo com Veo 3...', 10);
+      emitProgress('generating', `Gerando vídeo com ${model}...`, 10);
 
       const videoUrl = await this.waitForVideoGeneration(
         this.config.generationTimeoutMs!,
