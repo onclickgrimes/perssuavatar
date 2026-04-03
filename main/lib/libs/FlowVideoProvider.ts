@@ -1800,34 +1800,102 @@ export class FlowVideoProvider {
             console.log(`🔎 [Flow] Imagem não encontrada na galeria. Prosseguindo genérico upload...`);
             const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
 
-            // 2. Procura globalmente o botão de "upload" dentro da recém-aberta janela Modal
+            // 2. Procura globalmente o gatilho de "upload" dentro da janela modal.
+            // O Flow já alternou entre <button> e <div role/cursor> com ícone "upload".
             let clickedUploadBtn = (await this.page.evaluate(`(function() {
-                var uploadBtns = document.querySelectorAll('button');
-                // Como estamos iterando em todos, vamos processar de forma invertida para pegar portas modais renderizadas no final do body
-                for (var i = uploadBtns.length - 1; i >= 0; i--) {
-                   var btn = uploadBtns[i];
-                   
-                   // Impede clicar em botões escondidos (display: none ou opacidade 0 massiva)
-                   var rect = btn.getBoundingClientRect();
-                   if (rect.width === 0 || rect.height === 0) continue;
-
-                   var spans = btn.querySelectorAll('span');
-                   var hasUploadText = false;
-                   for (var j = 0; j < spans.length; j++) {
-                      var spanText = (spans[j].textContent || '').toLowerCase().trim();
-                      if (spanText === 'faça upload de uma imagem' || spanText.indexOf('upload') !== -1) {
-                         hasUploadText = true;
-                         break;
-                      }
-                   }
-                   var isIcon = btn.querySelector('i');
-                   var hasUploadIcon = isIcon && isIcon.textContent.trim() === 'upload';
-                   
-                   if (hasUploadText || hasUploadIcon) {
-                      btn.click();
-                      return true;
-                   }
+                function isVisible(el) {
+                  if (!el || !el.getBoundingClientRect) return false;
+                  var rect = el.getBoundingClientRect();
+                  if (rect.width === 0 || rect.height === 0) return false;
+                  var style = window.getComputedStyle(el);
+                  if (!style) return true;
+                  if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return false;
+                  return true;
                 }
+
+                function hasUploadText(el) {
+                  if (!el) return false;
+                  var text = (el.textContent || '').toLowerCase().trim();
+                  return text.indexOf('upload') !== -1 ||
+                         text.indexOf('from your device') !== -1 ||
+                         text.indexOf('faça upload') !== -1 ||
+                         text.indexOf('faca upload') !== -1;
+                }
+
+                function isClickable(el) {
+                  if (!el || el.nodeType !== 1) return false;
+                  var tag = (el.tagName || '').toLowerCase();
+                  if (tag === 'button' || tag === 'label') return true;
+                  var role = (el.getAttribute('role') || '').toLowerCase();
+                  if (role === 'button') return true;
+                  if (el.hasAttribute('onclick')) return true;
+                  var tabIndex = el.getAttribute('tabindex');
+                  if (tabIndex !== null && tabIndex !== '-1') return true;
+                  var style = window.getComputedStyle(el);
+                  return !!style && style.cursor === 'pointer';
+                }
+
+                function findClickable(el) {
+                  var current = el;
+                  for (var depth = 0; depth < 6 && current; depth++) {
+                    if (isClickable(current) && isVisible(current)) return current;
+                    current = current.parentElement;
+                  }
+                  return null;
+                }
+
+                // Passo 1: layout antigo (botão com texto/ícone upload)
+                var uploadBtns = document.querySelectorAll('button');
+                for (var i = uploadBtns.length - 1; i >= 0; i--) {
+                  var btn = uploadBtns[i];
+                  if (!isVisible(btn)) continue;
+
+                  var icon = btn.querySelector('i');
+                  var iconText = icon ? (icon.textContent || '').toLowerCase().trim() : '';
+                  var hasUploadIcon = iconText === 'upload' || iconText === 'file_upload';
+
+                  if (hasUploadIcon || hasUploadText(btn)) {
+                    btn.click();
+                    return true;
+                  }
+                }
+
+                // Passo 2: layout novo (wrapper div/span com ícone upload)
+                var icons = document.querySelectorAll('i');
+                for (var k = icons.length - 1; k >= 0; k--) {
+                  var iEl = icons[k];
+                  if (!isVisible(iEl)) continue;
+
+                  var iText = (iEl.textContent || '').toLowerCase().trim();
+                  if (iText !== 'upload' && iText !== 'file_upload') continue;
+
+                  var clickable = findClickable(iEl) || findClickable(iEl.parentElement) || iEl.parentElement;
+                  if (!clickable || !isVisible(clickable)) continue;
+
+                  if (!hasUploadText(clickable)) {
+                    var parent = clickable.parentElement;
+                    if (!parent || !hasUploadText(parent)) continue;
+                    var parentClickable = findClickable(parent) || parent;
+                    if (!isVisible(parentClickable)) continue;
+                    parentClickable.click();
+                    return true;
+                  }
+
+                  clickable.click();
+                  return true;
+                }
+
+                // Passo 3: fallback final para qualquer elemento clicável com texto de upload
+                var candidates = document.querySelectorAll('[role="button"], div, span');
+                for (var m = candidates.length - 1; m >= 0; m--) {
+                  var node = candidates[m];
+                  if (!isVisible(node) || !hasUploadText(node)) continue;
+                  var nodeClickable = findClickable(node) || node;
+                  if (!isVisible(nodeClickable)) continue;
+                  nodeClickable.click();
+                  return true;
+                }
+
                 return false;
              })()`)) as boolean;
 
@@ -1843,7 +1911,7 @@ export class FlowVideoProvider {
                 console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
               }
             } else {
-              console.warn(`⚠️ [Flow] Falha ao encontrar o Action Button de upload dentro do modal aberto.`);
+              console.warn(`⚠️ [Flow] Falha ao encontrar elemento de upload dentro do modal aberto.`);
               try { await this.page.keyboard.press('Escape'); } catch { } // Força escape para destravar a tela
             }
           }
