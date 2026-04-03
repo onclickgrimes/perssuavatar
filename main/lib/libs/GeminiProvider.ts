@@ -269,6 +269,134 @@ export class GeminiProvider {
   }
 
   /**
+   * Injeta JavaScript de stealth na página para evitar deteção pelo reCAPTCHA Enterprise do Google.
+   * Deve ser chamado logo após criar uma nova página, ANTES de navegar.
+   */
+  private async injectPageStealth(page: Page): Promise<void> {
+    // 1. User-Agent do Chrome 131 real no Windows 10
+    await page.setUserAgent(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+    );
+
+    // 2. Viewport realistéco
+    await page.setViewport({ width: 1366, height: 768, deviceScaleFactor: 1 });
+
+    // 3. HTTP Headers
+    await page.setExtraHTTPHeaders({
+      'Accept-Language': 'en-US,en;q=0.9',
+      'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+      'sec-ch-ua-mobile': '?0',
+      'sec-ch-ua-platform': '"Windows"',
+    });
+
+    // 4. Stealth JavaScript injetado antes de qualquer script da página.
+    // Importante: usar string evita que helpers do Babel vazem para o contexto do browser.
+    const stealthScript = `
+      (() => {
+        const defineGetter = (obj, prop, getter) => {
+          try {
+            Object.defineProperty(obj, prop, { get: getter, configurable: true });
+          } catch (_) {}
+        };
+
+        defineGetter(navigator, 'webdriver', () => undefined);
+
+        if (!window.chrome) window.chrome = {};
+        if (!window.chrome.runtime) {
+          window.chrome.runtime = {
+            connect: () => {},
+            sendMessage: () => {},
+            PlatformOs: { MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd' },
+          };
+        }
+
+        const fakePlugin = (name, filename, mimeTypes) => ({
+          name,
+          filename,
+          description: name,
+          length: mimeTypes.length,
+          item: (i) => ({ type: mimeTypes[i] }),
+          namedItem: (n) => ({ type: n }),
+          [Symbol.iterator]: function* () {
+            for (const m of mimeTypes) yield { type: m };
+          },
+        });
+
+        const fakeMimeTypes = [
+          {
+            type: 'application/pdf',
+            suffixes: 'pdf',
+            description: 'Portable Document Format',
+            enabledPlugin: { name: 'PDF Viewer' },
+          },
+        ];
+
+        try {
+          Object.defineProperty(navigator, 'plugins', {
+            configurable: true,
+            get: () => {
+              const arr = [
+                fakePlugin('PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+                fakePlugin('Chrome PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+                fakePlugin('Chromium PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+                fakePlugin('Microsoft Edge PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+                fakePlugin('WebKit built-in PDF', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
+              ];
+              arr.length = 5;
+              arr.item = (i) => arr[i];
+              arr.namedItem = (name) => arr.find((p) => p.name === name);
+              arr.refresh = () => {};
+              return arr;
+            },
+          });
+        } catch (_) {}
+
+        defineGetter(navigator, 'mimeTypes', () => fakeMimeTypes);
+        defineGetter(navigator, 'languages', () => ['en-US', 'en']);
+        defineGetter(navigator, 'language', () => 'en-US');
+        defineGetter(navigator, 'deviceMemory', () => 8);
+        defineGetter(navigator, 'hardwareConcurrency', () => 8);
+        defineGetter(window, 'outerWidth', () => 1366);
+        defineGetter(window, 'outerHeight', () => 768);
+
+        const permissions = window.navigator && window.navigator.permissions;
+        if (permissions && typeof permissions.query === 'function') {
+          const origQuery = permissions.query.bind(permissions);
+          permissions.query = (params) =>
+            params && params.name === 'notifications'
+              ? Promise.resolve({ state: Notification.permission, onchange: null })
+              : origQuery(params);
+        }
+
+        [
+          '__nightmare',
+          '_phantom',
+          'callPhantom',
+          '__selenium_evaluate',
+          '__webdriver_evaluate',
+          '__driver_evaluate',
+          '__webdriver_script_func',
+          '__webdriver_script_fn',
+          '__fxdriver_evaluate',
+        ].forEach((key) => {
+          try { delete window[key]; } catch (_) {}
+        });
+
+        try { delete document.$cdc_asdjflasutopfhvcZLmcfl_; } catch (_) {}
+
+        defineGetter(screen, 'width', () => 1366);
+        defineGetter(screen, 'height', () => 768);
+        defineGetter(screen, 'availWidth', () => 1366);
+        defineGetter(screen, 'availHeight', () => 728);
+        defineGetter(screen, 'colorDepth', () => 24);
+        defineGetter(screen, 'pixelDepth', () => 24);
+      })();
+    `;
+
+    await page.evaluateOnNewDocument(stealthScript);
+  }
+
+  /**
    * Preenche o campo de prompt via colagem (rápido), com fallback por injeção no DOM.
    */
   private async fillPromptInput(message: string): Promise<void> {
@@ -372,7 +500,7 @@ export class GeminiProvider {
           '--disable-gpu',
           '--window-size=1366,768',
           '--lang=pt-BR',
-          '--disable-blink-features=AutomationControlled',
+          //'--disable-blink-features=AutomationControlled',
           '--disable-features=IsolateOrigins,site-per-process',
           '--disable-site-isolation-trials',
           '--disable-infobars',
@@ -390,18 +518,7 @@ export class GeminiProvider {
       const pages = await this.browser.pages();
       this.page = pages[0] || await this.browser.newPage();
 
-      // Remove webdriver property
-      await this.page.evaluateOnNewDocument(() => {
-        Object.defineProperty(navigator, 'webdriver', {
-          get: () => undefined,
-        });
-        // @ts-ignore
-        window.navigator.chrome = { runtime: {} };
-      });
-
-      await this.page.setExtraHTTPHeaders({
-        'Accept-Language': 'pt-BR,pt;q=0.9,en;q=0.8',
-      });
+      await this.injectPageStealth(this.page);
 
       // Inicializa sessão CDP para interceptação de rede
       this.cdpClient = await this.page.target().createCDPSession();
