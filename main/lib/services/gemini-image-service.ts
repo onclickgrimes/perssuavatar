@@ -393,12 +393,15 @@ export class GeminiImageService {
           });
         });
 
+        const imageConfig: any = { imageSize: '2K' };
+        if (aspectRatio && String(aspectRatio).trim()) {
+          imageConfig.aspectRatio = String(aspectRatio).trim();
+        }
+
         const config: any = {
           responseModalities: ['TEXT', 'IMAGE'],
+          imageConfig,
         };
-        if (aspectRatio && String(aspectRatio).trim()) {
-          config.imageConfig = { aspectRatio: String(aspectRatio).trim() };
-        }
 
         const response = await ai.models.generateContent({
           model: resolvedModel,
