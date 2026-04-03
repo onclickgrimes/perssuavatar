@@ -530,10 +530,11 @@ const handler = {
       return () => ipcRenderer.removeListener('video-project:veo3-api-progress', subscription);
     },
 
-    // Gerar IMAGEM via Google Flow ("Criar imagens")
+    // Gerar IMAGEM (Flow ou Gemini Image API)
     generateFlowImage: (options: {
       prompt: string;
       count?: number;
+      model?: string;
       aspectRatio?: string;
       geminiProviderId?: string;
       headless?: boolean;

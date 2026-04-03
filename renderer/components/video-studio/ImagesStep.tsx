@@ -116,7 +116,7 @@ export function ImagesStep({
   const [selectedService, setSelectedService] = useState<Record<number, string>>({});
   // Dropdown aberto para qual segmento
   const [openDropdown, setOpenDropdown] = useState<number | null>(null);
-  // Quantidade de imagens a gerar por segmento (só relevante para flow-image)
+  // Quantidade de imagens a gerar por segmento (relevante para serviços de imagem)
   const [imageCount, setImageCount] = useState<Record<number, number>>({});
   // Fila de seleções pendentes quando o Flow gera múltiplas imagens
   const [pickerQueue, setPickerQueue] = useState<{ segmentId: number; httpUrls: string[] }[]>([]);
@@ -483,14 +483,24 @@ export function ImagesStep({
     { id: 'veo3-lite-api',  label: 'Veo 3.1 Lite (API)', icon: '💭', description: 'Google Veo 3.1 Lite via API Oficial' },
     { id: 'grok',           label: 'Grok',             icon: '✖️', description: 'Geração de vídeo com Grok' },
     // { id: 'veo2-flow',      label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Google Veo 2 Fast via Google Flow' },
-    { id: 'flow-image',     label: 'Imagem (Flow)',    icon: '🖼️', description: 'Gerar imagem com Google Flow' },
+    { id: 'flow-image',     label: 'Imagem (Flow)',      icon: '🖼️', description: 'Google Flow (modo Criar imagens)' },
+    { id: 'flow-image-api', label: '🍌 Nano Banana 2',   icon: '🖼️', description: 'gemini-3.1-flash-image-preview' },
+    { id: 'flow-image-pro', label: '🍌 Nano Banana Pro', icon: '🖼️', description: 'gemini-3-pro-image-preview' },
     { id: 'veo2',           label: 'Veo 2 (API)',      icon: '🌊', description: 'Google Veo 2 via API oficial' },
   ];
 
+  const IMAGE_SERVICES = new Set(['flow-image', 'flow-image-api', 'flow-image-pro']);
+  const IMAGE_API_SERVICES = new Set(['flow-image-api', 'flow-image-pro']);
   const FLOW_SERVICES = new Set(['veo3', 'veo3-lite-flow', 'veo2-flow', 'flow-image']);
+  const getImageModelByService = (serviceId: string): string =>
+    serviceId === 'flow-image-pro'
+      ? 'gemini-3-pro-image-preview'
+      : 'gemini-3.1-flash-image-preview';
   const supportsIngredientsForService = (serviceId: string): boolean =>
     serviceId === 'veo3'
     || serviceId === 'flow-image'
+    || serviceId === 'flow-image-api'
+    || serviceId === 'flow-image-pro'
     || serviceId === 'veo3-api'
     || serviceId === 'veo3-fast-api';
 
@@ -691,7 +701,7 @@ export function ImagesStep({
           if (!silent) alert(`Falha na geração Grok: ${result?.error}`);
         }
 
-      // ── FLOW IMAGE (Google Flow modo "Criar imagens") ──
+      // ── IMAGE (Flow) ──
       } else if (service === 'flow-image') {
         console.log(`🖼️ [FlowImg] Gerando imagem para segmento ${segmentId}...`);
         const count = imageCount[segmentId] ?? 1;
@@ -734,6 +744,54 @@ export function ImagesStep({
         } else {
           console.error(`❌ [FlowImg] Falha:`, result?.error);
           if (!silent) alert(`Falha na geração de imagem via Flow: ${result?.error}`);
+        }
+
+      // ── IMAGE API (Nano Banana 2 / Pro) ──
+      } else if (IMAGE_API_SERVICES.has(service)) {
+        const imageModel = getImageModelByService(service);
+        const imageModelLabel = service === 'flow-image-pro' ? 'Nano Banana Pro' : 'Nano Banana 2';
+        console.log(`🖼️ [ImageAPI] Gerando imagem para segmento ${segmentId} com ${imageModelLabel}...`);
+        const count = imageCount[segmentId] ?? 1;
+
+        // Verificar modo Ingredients e Personagens
+        const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
+        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
+        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
+        
+        const isIngredients = isIngredientsExplicit || charsReferencePaths.length > 0;
+        const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
+        
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths])).slice(0, 3);
+
+        if (isIngredients && ingredientPaths.length === 0) {
+          if (!silent) alert('Nenhuma imagem de ingrediente ou personagem disponível para gerar.');
+          setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
+          return false;
+        }
+
+        setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando ${count} imagem(ns) com ${imageModelLabel}${ingredientPaths.length > 0 ? ` e ${ingredientPaths.length} ref(s)` : ''}...` }));
+
+        const result = await window.electron?.videoProject?.generateFlowImage({
+          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
+          count,
+          model: imageModel,
+          aspectRatio,
+          ingredientImagePaths: ingredientPaths.length > 0 ? ingredientPaths : undefined,
+        });
+
+        if (result?.success && result.httpUrls?.length > 0) {
+          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
+          // Usar a primeira imagem imediatamente
+          onUpdateImage(segmentId, result.httpUrls[0], duration);
+          // Se há múltiplas opções, empilhar na fila para o usuário escolher depois
+          if (count > 1 && result.httpUrls.length > 1) {
+            setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls }]);
+          }
+          success = true;
+        } else {
+          console.error(`❌ [ImageAPI] Falha:`, result?.error);
+          if (!silent) alert(`Falha na geração de imagem (${imageModelLabel}): ${result?.error}`);
         }
 
       // ── VEO 3.1 / FAST / LITE (API oficial) ──
@@ -973,7 +1031,9 @@ export function ImagesStep({
     // Se tem imagem (não vídeo) → label depende do serviço
     const svc = serviceOverride || getEffectiveService(segment);
     if (segment.imageUrl && !isVideo(segment.imageUrl)) {
-      if (svc === 'flow-image') return '🖼️ Gerar nova Imagem';
+      if (svc === 'flow-image') return '🖼️ Gerar nova Imagem (Flow)';
+      if (svc === 'flow-image-api') return '🍌 Gerar nova Imagem';
+      if (svc === 'flow-image-pro') return '🍌 Gerar nova Imagem (Pro)';
       if (finalImages[segment.id]) return '🎬 Gerar Cena';
       return '🖼️ Animar Imagem';
     }
@@ -986,6 +1046,8 @@ export function ImagesStep({
     if (svc === 'veo3') return '🌊 Gerar com Veo 3';
     // if (svc === 'veo2-flow') return '🌊 Gerar com Veo 2 Flow';
     if (svc === 'flow-image') return '🖼️ Imagem com Flow';
+    if (svc === 'flow-image-api') return '🍌 Imagem com Nano Banana 2';
+    if (svc === 'flow-image-pro') return '🍌 Imagem com Nano Banana Pro';
     return '🌊 Gerar com Veo 2';
   };
 
@@ -1281,8 +1343,8 @@ export function ImagesStep({
                   </div>
                 )}
 
-                {/* Mini-select de quantidade (Flow Image) */}
-                {effectiveService === 'flow-image' && !isGenerating && (
+                {/* Mini-select de quantidade (serviços de imagem) */}
+                {IMAGE_SERVICES.has(effectiveService) && !isGenerating && (
                   <div className="absolute top-2 right-2 z-10">
                     <select
                       value={imageCount[segment.id] ?? 1}

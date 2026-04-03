@@ -1440,10 +1440,11 @@ Lembre-se:
     }
   });
 
-  // Handler para gerar IMAGEM via Google Flow ("Criar imagens")
+  // Handler para gerar IMAGEM (Flow ou Gemini Image API)
   registerVideoEditorGuardedHandle('video-project:generate-flow-image', async (event, options: {
     prompt: string;
     count?: number;
+    model?: string;
     aspectRatio?: string;
     geminiProviderId?: string;
     headless?: boolean;
@@ -1451,25 +1452,45 @@ Lembre-se:
   }) => {
     try {
       const count = Math.min(options.count || 1, 4);
+      const model = options.model?.trim() || '';
+      const useGeminiApi = !!model;
       const hasIngredients = options.ingredientImagePaths && options.ingredientImagePaths.length > 0;
-      console.log(`🖼️ [Flow/Img] Gerando ${count} imagem(ns) (ratio: ${options.aspectRatio || 'default'}) com prompt: "${options.prompt.substring(0, 80)}..."${hasIngredients ? ` (com ${options.ingredientImagePaths!.length} referências)` : ''}`);
+      console.log(`🖼️ [${useGeminiApi ? 'Gemini/Img' : 'Flow/Img'}] Gerando ${count} imagem(ns) (${useGeminiApi ? `model: ${model}` : 'Flow UI'}${options.aspectRatio ? `, ratio: ${options.aspectRatio}` : ''}) com prompt: "${options.prompt.substring(0, 80)}..."${hasIngredients ? ` (com ${options.ingredientImagePaths!.length} referências)` : ''}`);
 
-      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
-      const flowProvider = getFlowVideoProvider({
-        headless: options.headless ?? false,
-        geminiProviderId: options.geminiProviderId,
-      });
+      let result: any;
 
-      const result = await flowProvider.generateImages(
-        options.prompt,
-        count,
-        (progress: any) => {
-          event.sender.send('video-project:flow-image-progress', progress);
-        },
-        '🍌 Nano Banana 2',
-        options.aspectRatio,
-        options.ingredientImagePaths
-      );
+      if (useGeminiApi) {
+        const { getGeminiImageService } = require('../services/gemini-image-service');
+        const geminiImageService = getGeminiImageService();
+
+        result = await geminiImageService.generateImages(
+          options.prompt,
+          count,
+          (progress: any) => {
+            event.sender.send('video-project:flow-image-progress', progress);
+          },
+          model,
+          options.aspectRatio,
+          options.ingredientImagePaths
+        );
+      } else {
+        const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
+        const flowProvider = getFlowVideoProvider({
+          headless: options.headless ?? false,
+          geminiProviderId: options.geminiProviderId,
+        });
+
+        result = await flowProvider.generateImages(
+          options.prompt,
+          count,
+          (progress: any) => {
+            event.sender.send('video-project:flow-image-progress', progress);
+          },
+          '🍌 Nano Banana 2',
+          options.aspectRatio,
+          options.ingredientImagePaths
+        );
+      }
 
       if (!result.success || !result.imagePaths?.length) {
         return { success: false, error: result.error };
@@ -1479,7 +1500,7 @@ Lembre-se:
         videoProjectService ? videoProjectService.convertToHttpUrl(p) : p
       );
 
-      console.log(`✅ [Flow/Img] ${result.imagePaths.length} imagem(ns) gerada(s)`);
+      console.log(`✅ [${useGeminiApi ? 'Gemini/Img' : 'Flow/Img'}] ${result.imagePaths.length} imagem(ns) gerada(s)`);
       return {
         success: true,
         imagePaths: result.imagePaths,
@@ -1488,7 +1509,7 @@ Lembre-se:
       };
 
     } catch (error: any) {
-      console.error('❌ [Flow/Img] Erro:', error);
+      console.error('❌ [Image] Erro:', error);
       return { success: false, error: error.message };
     }
   });
