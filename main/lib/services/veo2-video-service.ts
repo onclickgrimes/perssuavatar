@@ -67,6 +67,146 @@ export class Veo2VideoService {
     }
   }
 
+  private decodeProtoValue(value: any): any {
+    if (Array.isArray(value)) {
+      return value.map((item) => this.decodeProtoValue(item));
+    }
+    if (!value || typeof value !== 'object') {
+      return value;
+    }
+    if ('stringValue' in value) return value.stringValue;
+    if ('numberValue' in value) return value.numberValue;
+    if ('boolValue' in value) return value.boolValue;
+    if ('nullValue' in value) return null;
+    if ('structValue' in value) {
+      const fields = value.structValue?.fields || {};
+      const out: Record<string, any> = {};
+      Object.keys(fields).forEach((key) => {
+        out[key] = this.decodeProtoValue(fields[key]);
+      });
+      return out;
+    }
+    if ('listValue' in value) {
+      return this.decodeProtoValue(value.listValue?.values || []);
+    }
+    return value;
+  }
+
+  private extractGeneratedVideos(operation: any): Array<{ video: { uri?: string; videoBytes?: string; mimeType?: string } }> {
+    const response = operation?.response ?? {};
+    const rawCandidates = [
+      response.generatedVideos,
+      response.videos,
+      response.generatedSamples,
+      response.generateVideoResponse?.generatedVideos,
+      response.generateVideoResponse?.videos,
+      response.generateVideoResponse?.generatedSamples,
+      response.predictions,
+    ];
+
+    const rawList = rawCandidates.find((value) => Array.isArray(value) && value.length > 0);
+    if (!Array.isArray(rawList)) return [];
+
+    return rawList
+      .map((entry: any) => {
+        const normalized = this.decodeProtoValue(entry);
+        const videoNode = normalized?.video ?? normalized;
+        const uri =
+          videoNode?.uri ??
+          videoNode?.gcsUri ??
+          normalized?.uri ??
+          normalized?.gcsUri;
+        const videoBytes =
+          videoNode?.videoBytes ??
+          videoNode?.bytesBase64Encoded ??
+          videoNode?.encodedVideo ??
+          normalized?.videoBytes ??
+          normalized?.bytesBase64Encoded ??
+          normalized?.encodedVideo;
+        const mimeType =
+          videoNode?.mimeType ??
+          videoNode?.encoding ??
+          normalized?.mimeType ??
+          normalized?.encoding ??
+          'video/mp4';
+
+        if (!uri && !videoBytes) return null;
+        return { video: { uri, videoBytes, mimeType } };
+      })
+      .filter(Boolean) as Array<{ video: { uri?: string; videoBytes?: string; mimeType?: string } }>;
+  }
+
+  private async refetchCompletedOperation(ai: any, operation: any): Promise<any> {
+    if (!operation?.name) return operation;
+
+    let current = operation;
+    const retries = 3;
+    for (let i = 0; i < retries; i++) {
+      const hasVideos = this.extractGeneratedVideos(current).length > 0;
+      const filteredCount = Number(current?.response?.raiMediaFilteredCount || 0);
+      const hasReasons = Array.isArray(current?.response?.raiMediaFilteredReasons)
+        && current.response.raiMediaFilteredReasons.length > 0;
+
+      if (hasVideos || current?.error || filteredCount > 0 || hasReasons) {
+        return current;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      current = await ai.operations.getVideosOperation({ operation: current });
+    }
+
+    return current;
+  }
+
+  private formatNoVideoDiagnostics(operation: any): string {
+    const response = operation?.response ?? {};
+    const details: string[] = [];
+
+    if (operation?.error) {
+      details.push(`operation.error=${JSON.stringify(operation.error)}`);
+    }
+
+    const filteredCount = response?.raiMediaFilteredCount;
+    const filteredReasons = response?.raiMediaFilteredReasons;
+    if (typeof filteredCount === 'number') {
+      details.push(`raiMediaFilteredCount=${filteredCount}`);
+    }
+    if (Array.isArray(filteredReasons) && filteredReasons.length > 0) {
+      details.push(`raiMediaFilteredReasons=${JSON.stringify(filteredReasons)}`);
+    }
+
+    const responseKeys = Object.keys(response);
+    if (responseKeys.length > 0) {
+      details.push(`responseKeys=${responseKeys.join(',')}`);
+    }
+
+    const metadataState = operation?.metadata?.state || operation?.metadata?.status;
+    if (metadataState) {
+      details.push(`metadataState=${String(metadataState)}`);
+    }
+
+    return details.length > 0 ? ` Detalhes: ${details.join(' | ')}` : '';
+  }
+
+  private writeVideoBytesToFile(videoBytes: string, outputPath: string): void {
+    const normalized = videoBytes.includes(',')
+      ? videoBytes.split(',').pop() || videoBytes
+      : videoBytes;
+    fs.writeFileSync(outputPath, Buffer.from(normalized, 'base64'));
+  }
+
+  private normalizeVideoUri(videoUri: string): string {
+    if (!videoUri.startsWith('gs://')) return videoUri;
+
+    const withoutScheme = videoUri.slice('gs://'.length);
+    const slashIndex = withoutScheme.indexOf('/');
+    if (slashIndex <= 0) return videoUri;
+
+    const bucket = withoutScheme.slice(0, slashIndex);
+    const objectPath = withoutScheme.slice(slashIndex + 1);
+    return `https://storage.googleapis.com/${bucket}/${encodeURI(objectPath)}`;
+  }
+
   /**
    * Gera um vídeo usando o modelo Veo 2 da Google.
    */
@@ -181,7 +321,6 @@ export class Veo2VideoService {
       const timeoutMs = 600_000;
       const pollInterval = 10_000;
       let elapsed = 0;
-      let pollCount = 0;
 
       while (!operation.done) {
         if (elapsed >= timeoutMs) {
@@ -190,7 +329,6 @@ export class Veo2VideoService {
 
         await new Promise(resolve => setTimeout(resolve, pollInterval));
         elapsed += pollInterval;
-        pollCount++;
 
         const estimatedPercent = Math.min(85, 10 + Math.round((elapsed / timeoutMs) * 75));
         emit(estimatedPercent, `Aguardando geração... (${Math.round(elapsed / 1000)}s)`);
@@ -198,31 +336,41 @@ export class Veo2VideoService {
         operation = await ai.operations.getVideosOperation({ operation });
       }
 
-      emit(90, 'Gerado! Baixando vídeo...');
+      emit(90, 'Gerado! Processando resultado...');
+      operation = await this.refetchCompletedOperation(ai, operation);
 
-      // 3. Extrair URI do vídeo gerado
-      const generatedVideos = operation.response?.generatedVideos;
+      if (operation?.error) {
+        throw new Error(`Operação Veo 2 finalizada com erro: ${JSON.stringify(operation.error)}`);
+      }
+
+      // 3. Extrair vídeo gerado (URI ou bytes)
+      const generatedVideos = this.extractGeneratedVideos(operation);
 
       // Log detalhado para diagnóstico quando a API retorna 0 vídeos
       if (!generatedVideos || generatedVideos.length === 0) {
-        console.error('[Veo2] ❌ API retornou generatedVideos vazio. Resposta completa:');
+        console.error('[Veo2] ❌ API retornou operação sem vídeo. Resposta completa:');
         console.error(JSON.stringify(operation.response, null, 2));
-        const raiReasons = (operation.response as any)?.raiMediaFilteredReasons;
-        const raiMsg = raiReasons ? ` | Motivo (filtro RAI): ${JSON.stringify(raiReasons)}` : '';
-        throw new Error(`Nenhum vídeo foi gerado pela API Veo 2.${raiMsg}`);
+        throw new Error(`Nenhum vídeo foi gerado pela API Veo 2.${this.formatNoVideoDiagnostics(operation)}`);
       }
 
-      const videoUri = generatedVideos[0]?.video?.uri;
-      if (!videoUri) {
-        throw new Error('URI do vídeo retornado pela API está vazia.');
-      }
-
-      // 4. Baixar o vídeo
-      const downloadUrl = buildVideoDownloadUrl(videoUri, resolvedApiKey || null);
+      const firstVideo = generatedVideos[0]?.video;
       const outputFileName = `veo2-${Date.now()}.mp4`;
       const outputPath = path.join(this.outputDir, outputFileName);
 
-      await this.downloadVideo(downloadUrl, outputPath);
+      if (firstVideo?.videoBytes) {
+        emit(92, 'Vídeo retornado em bytes. Salvando arquivo...');
+        this.writeVideoBytesToFile(firstVideo.videoBytes, outputPath);
+      } else {
+        const videoUri = firstVideo?.uri;
+        if (!videoUri) {
+          throw new Error('URI do vídeo retornado pela API está vazia.');
+        }
+
+        // 4. Baixar o vídeo
+        const normalizedUri = this.normalizeVideoUri(videoUri);
+        const downloadUrl = buildVideoDownloadUrl(normalizedUri, resolvedApiKey || null);
+        await this.downloadVideo(downloadUrl, outputPath);
+      }
 
       const durationMs = Date.now() - startTime;
       emit(100, `Vídeo salvo em ${outputPath} (${Math.round(durationMs / 1000)}s)`);
@@ -250,6 +398,14 @@ export class Veo2VideoService {
           success: false,
           error:
             'Vertex rejeitou o projeto (RESOURCE_PROJECT_INVALID). Verifique Projeto e Location em Configurações > API e Modelos, ou use ADC (gcloud auth application-default login) com projeto ativo no Vertex.',
+          durationMs,
+        };
+      }
+      if (raw.includes('Download falhou: HTTP 403')) {
+        return {
+          success: false,
+          error:
+            'Vídeo foi gerado, mas o download retornou 403 no Cloud Storage. Isso normalmente exige ADC (gcloud auth application-default login) com permissão de leitura no bucket de saída do Vertex.',
           durationMs,
         };
       }

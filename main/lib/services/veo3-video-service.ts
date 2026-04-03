@@ -268,7 +268,7 @@ export class Veo3VideoService {
   async generateVideo(options: Veo3GenerationOptions): Promise<Veo3GenerationResult> {
     const {
       prompt,
-      model = 'veo-3.1-generate-preview', // Default model
+      model = 'veo-3.1-generate-001', // Default model
       aspectRatio = '9:16',
       durationSeconds = 8,
       onProgress,

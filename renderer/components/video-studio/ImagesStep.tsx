@@ -476,9 +476,10 @@ export function ImagesStep({
 
   // Serviços disponíveis para geração
   const GENERATION_SERVICES = [
-    { id: 'veo3',           label: 'Veo 3 (Flow)',     icon: '🌊', description: 'Google Veo 3.1 via Google Flow' },
+    { id: 'veo3',           label: 'Veo 3.1 (Flow)',     icon: '🌊', description: 'Google Veo 3.1 via Google Flow' },
     { id: 'veo3-api',       label: 'Veo 3.1 (API)',    icon: '🚀', description: 'Google Veo 3.1 via API Oficial' },
     { id: 'veo3-fast-api',  label: 'Veo 3.1 Fast',     icon: '⚡', description: 'Google Veo 3.1 Fast via API Oficial' },
+    { id: 'veo3-lite-api',  label: 'Veo 3.1 Lite (API)', icon: '💭', description: 'Google Veo 3.1 Lite via API Oficial' },
     { id: 'grok',           label: 'Grok',             icon: '✖️', description: 'Geração de vídeo com Grok' },
     // { id: 'veo2-flow',      label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Google Veo 2 Fast via Google Flow' },
     { id: 'flow-image',     label: 'Imagem (Flow)',    icon: '🖼️', description: 'Gerar imagem com Google Flow' },
@@ -714,12 +715,22 @@ export function ImagesStep({
           if (!silent) alert(`Falha na geração de imagem via Flow: ${result?.error}`);
         }
 
-      // ── VEO 3.1 E VEO 3.1 FAST (API oficial) ──
-      } else if (service === 'veo3-api' || service === 'veo3-fast-api') {
+      // ── VEO 3.1 / FAST / LITE (API oficial) ──
+      } else if (service === 'veo3-api' || service === 'veo3-fast-api' || service === 'veo3-lite-api') {
         console.log(`🚀 [Veo3 API] Gerando vídeo para segmento ${segmentId}...`);
         
-        const isFast = service === 'veo3-fast-api';
-        const modelName = isFast ? 'veo-3.1-fast-generate-preview' : 'veo-3.1-generate-preview';
+        const modelName =
+          service === 'veo3-fast-api'
+            ? 'veo-3.1-fast-generate-001'
+            : service === 'veo3-lite-api'
+              ? 'veo-3.1-lite-generate-001'
+              : 'veo-3.1-generate-001';
+        const serviceLabel =
+          service === 'veo3-fast-api'
+            ? ' Fast'
+            : service === 'veo3-lite-api'
+              ? ' Lite'
+              : '';
 
         // Verificar modo Ingredients e Personagens
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
@@ -732,11 +743,11 @@ export function ImagesStep({
         const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths])).slice(0, 3);
 
         if (isIngredients && ingredientPaths.length > 0) {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com ${ingredientPaths.length} referência(s) via Veo 3.1${isFast ? ' Fast' : ''}...` }));
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com ${ingredientPaths.length} referência(s) via Veo 3.1${serviceLabel}...` }));
         } else if (referenceImagePath) {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: `Animando imagem com Veo 3.1${isFast ? ' Fast' : ''}...` }));
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Animando imagem com Veo 3.1${serviceLabel}...` }));
         } else {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando vídeo com Veo 3.1${isFast ? ' Fast' : ''}...` }));
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando vídeo com Veo 3.1${serviceLabel}...` }));
         }
 
         const result = await window.electron?.videoProject?.generateVeo3Api({
@@ -943,6 +954,7 @@ export function ImagesStep({
     if (svc === 'grok') return '✖️ Gerar com Grok';
     if (svc === 'veo3-api') return '🚀 Gerar com Veo 3.1';
     if (svc === 'veo3-fast-api') return '⚡ Gerar com Veo 3.1 Fast';
+    if (svc === 'veo3-lite-api') return '🪶 Gerar com Veo 3.1 Lite';
     if (svc === 'veo3') return '🌊 Gerar com Veo 3';
     // if (svc === 'veo2-flow') return '🌊 Gerar com Veo 2 Flow';
     if (svc === 'flow-image') return '🖼️ Imagem com Flow';
@@ -1224,7 +1236,7 @@ export function ImagesStep({
               <div className="aspect-video relative group rounded-t-xl overflow-hidden">
 
                 {/* Select Modo: Frames / Ingredients (canto superior esquerdo, só Veo 3 e Flow Image) */}
-                {(effectiveService === 'veo3' || effectiveService === 'flow-image' || effectiveService === 'veo3-api' || effectiveService === 'veo3-fast-api') && !isGenerating && (
+                {(effectiveService === 'veo3' || effectiveService === 'flow-image' || effectiveService === 'veo3-api' || effectiveService === 'veo3-fast-api' || effectiveService === 'veo3-lite-api') && !isGenerating && (
                   <div className="absolute top-2 left-2 z-20">
                     <select
                       value={ingredientMode[segment.id] || 'frames'}
@@ -1291,7 +1303,7 @@ export function ImagesStep({
                   }
 
                   const svc = effectiveService;
-                  const isVideoService = svc === 'veo3' || svc === 'veo3-api' || svc === 'veo3-fast-api' || svc === 'veo2-flow' || svc === 'veo2' || svc === 'grok';
+                  const isVideoService = svc === 'veo3' || svc === 'veo3-api' || svc === 'veo3-fast-api' || svc === 'veo3-lite-api' || svc === 'veo2-flow' || svc === 'veo2' || svc === 'grok';
                   const showCarousel = isVideoService && hasImage && !isVideo(segment.imageUrl) && ingredientMode[segment.id] !== 'ingredients';
                   const currentIndex = carouselIndices[segment.id] || 0;
                   const isIngredientsMode = ingredientMode[segment.id] === 'ingredients';
@@ -1633,8 +1645,8 @@ export function ImagesStep({
                                   if (svc.id === 'veo3' || svc.id === 'veo2-flow' || svc.id === 'grok') {
                                     setImageCount(prev => ({ ...prev, [segment.id]: 1 }));
                                   }
-                                  // Resetar modo ingredients se saiu de veo3, flow-image ou veo3-api/fast
-                                  if (svc.id !== 'veo3' && svc.id !== 'flow-image' && svc.id !== 'veo3-api' && svc.id !== 'veo3-fast-api' && ingredientMode[segment.id] === 'ingredients') {
+                                  // Resetar modo ingredients se saiu de veo3, flow-image ou veo3-api/fast/lite
+                                  if (svc.id !== 'veo3' && svc.id !== 'flow-image' && svc.id !== 'veo3-api' && svc.id !== 'veo3-fast-api' && svc.id !== 'veo3-lite-api' && ingredientMode[segment.id] === 'ingredients') {
                                     setIngredientMode(prev => ({ ...prev, [segment.id]: 'frames' }));
                                   }
                                   setOpenDropdown(null);
