@@ -236,10 +236,10 @@ export function ImagesStep({
   const generatingSegmentsRef = useRef<Set<number>>(new Set());
   const pendingProgressMessageRef = useRef<string | null>(null);
   const progressFlushTimerRef = useRef<any>(null);
-  const hasVo3Segments = useMemo(
-    () => segments.some(s => s.assetType === 'video_vo3' || s.assetType === 'video_veo2' || s.assetType === 'image_static'),
-    [segments]
-  );
+  // const hasVo3Segments = useMemo(
+  //   () => segments.some(s => s.assetType === 'video_vo3' || s.assetType === 'video_veo2' || s.assetType === 'image_static'),
+  //   [segments]
+  // );
   const segmentsWithMediaCount = useMemo(
     () => segments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
     [segments]
@@ -304,24 +304,24 @@ export function ImagesStep({
   }, [segments]);
   
   // Buscar créditos iniciais
-  useEffect(() => {
-    const fetchCredits = async () => {
-      if (hasVo3Segments) {
-        setIsCheckingCredits(true);
-        try {
-          const result = await window.electron?.videoProject?.getVo3Credits?.();
-          if (result?.success && result.credits !== null) {
-            setVo3Credits(result.credits);
-          }
-        } catch (error) {
-          console.error('Erro ao buscar créditos Flow:', error);
-        } finally {
-          setIsCheckingCredits(false);
-        }
-      }
-    };
-    fetchCredits();
-  }, [hasVo3Segments]);
+  // useEffect(() => {
+  //   const fetchCredits = async () => {
+  //     if (hasVo3Segments) {
+  //       setIsCheckingCredits(true);
+  //       try {
+  //         const result = await window.electron?.videoProject?.getVo3Credits?.();
+  //         if (result?.success && result.credits !== null) {
+  //           setVo3Credits(result.credits);
+  //         }
+  //       } catch (error) {
+  //         console.error('Erro ao buscar créditos Flow:', error);
+  //       } finally {
+  //         setIsCheckingCredits(false);
+  //       }
+  //     }
+  //   };
+  //   fetchCredits();
+  // }, [hasVo3Segments]);
 
   // Listener de progresso Veo3
   useEffect(() => {
@@ -1107,14 +1107,14 @@ export function ImagesStep({
         )}
 
         {/* Mostra créditos do Veo 3 se existir algum segmento configurado */}
-        {hasVo3Segments && (
+        {/* {hasVo3Segments && (
           <div className="flex items-center gap-2 px-3 py-1 bg-[#1a73e8]/20 rounded-full border border-[#1a73e8]/30">
             <span className="text-xl">✨</span>
             <span className="text-[#8ab4f8] font-medium text-sm">
               {isCheckingCredits ? 'Verificando créditos...' : vo3Credits !== null ? `${vo3Credits} Créditos Flow` : 'Créditos indisponíveis'}
             </span>
           </div>
-        )}
+        )} */}
 
         {/* ── Processamento em Lote ── */}
         <div className="ml-auto flex items-center gap-3 relative">
