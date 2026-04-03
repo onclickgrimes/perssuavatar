@@ -502,13 +502,13 @@ export class FlowVideoProvider {
           '--disable-dev-shm-usage',
           '--disable-accelerated-2d-canvas',
           '--lang=en-US',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-features=IsolateOrigins,site-per-process',
-          '--disable-site-isolation-trials',
-          '--disable-infobars',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding'
+          // '--disable-blink-features=AutomationControlled',
+          // '--disable-features=IsolateOrigins,site-per-process',
+          // '--disable-site-isolation-trials',
+          // '--disable-infobars',
+          // '--disable-background-timer-throttling',
+          // '--disable-backgrounding-occluded-windows',
+          // '--disable-renderer-backgrounding'
         ],
         ignoreDefaultArgs: ['--enable-automation'],
         defaultViewport: null, // deixar o window-size controlar
