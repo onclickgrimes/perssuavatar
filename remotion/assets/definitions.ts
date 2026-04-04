@@ -15,27 +15,6 @@ import { z } from 'zod';
 
 export const ASSET_DEFINITIONS = {
   // ==================== IMAGENS ====================
-  image_flux: {
-    label: 'Imagem (Flux)',
-    description: 'Imagem estática gerada por IA Flux',
-    icon: '🖼️',
-    badgeColor: 'bg-blue-500/20 text-blue-300',
-    aiDescription: 'Imagem estática gerada por IA (ideal para cenas conceituais, abstratas ou quando precisar de controle visual total). Escreva o imagePrompt em inglês para gerar a imagem.',
-  },
-  image_dalle: {
-    label: 'Imagem (DALL-E)',
-    description: 'Imagem gerada pelo DALL-E da OpenAI',
-    icon: '🎨',
-    badgeColor: 'bg-emerald-500/20 text-emerald-300',
-    aiDescription: 'Imagem gerada pelo DALL-E (estilo OpenAI, bom para ilustrações e conceitos)',
-  },
-  image_midjourney: {
-    label: 'Imagem (Midjourney)',
-    description: 'Imagem gerada pelo Midjourney',
-    icon: '✨',
-    badgeColor: 'bg-violet-500/20 text-violet-300',
-    aiDescription: 'Imagem gerada pelo Midjourney (alta qualidade artística)',
-  },
   image_pexels: {
     label: 'Imagem (Pexels)',
     description: 'Foto gratuita de alta qualidade do Pexels',
@@ -65,27 +44,6 @@ export const ASSET_DEFINITIONS = {
     icon: '🎬',
     badgeColor: 'bg-teal-500/20 text-teal-300',
     aiDescription: 'Vídeo de stock gratuito do Pexels (ideal para cenas com movimento real, natureza, pessoas, cidades, ações cotidianas). Escreva o imagePrompt em inglês para ser buscado no Pexels. Exemplo: "A Man Walking along an Empty Road on a Foggy Night".',
-  },
-  video_kling: {
-    label: 'Vídeo (Kling)',
-    description: 'Vídeo gerado pela IA Kling',
-    icon: '🎬',
-    badgeColor: 'bg-purple-500/20 text-purple-300',
-    aiDescription: 'Vídeo gerado por IA Kling (para ações humanas complexas ou cenas impossíveis de encontrar em stock). Crie um prompt detalhado em inglês para gerar o vídeo.',
-  },
-  video_runway: {
-    label: 'Vídeo (Runway)',
-    description: 'Vídeo gerado pelo Runway Gen-2',
-    icon: '🎥',
-    badgeColor: 'bg-rose-500/20 text-rose-300',
-    aiDescription: 'Vídeo gerado pelo Runway (alta qualidade, movimentos complexos). Crie um prompt detalhado em inglês para gerar o vídeo.',
-  },
-  video_pika: {
-    label: 'Vídeo (Pika)',
-    description: 'Vídeo gerado pelo Pika Labs',
-    icon: '🎞️',
-    badgeColor: 'bg-pink-500/20 text-pink-300',
-    aiDescription: 'Vídeo gerado pelo Pika Labs (estilo estilizado). Crie um prompt detalhado em inglês para gerar o vídeo.',
   },
   video_vo3: {
     label: 'Vídeo (Veo 3)',
@@ -202,16 +160,7 @@ Exemplo da estrutura do JSON:
     icon: '📊',
     badgeColor: 'bg-amber-500/20 text-amber-300',
     aiDescription: 'Linha do tempo 3D histórica (ideal para documentários, história, cronologias)',
-  },
-
-  // ==================== ÁUDIOS ====================
-  audio: {
-    label: 'Áudio',
-    description: 'Arquivo de áudio (narração extra, trilha, efeito)',
-    icon: '🎵',
-    badgeColor: 'bg-orange-500/20 text-orange-300',
-    aiDescription: 'Arquivo de áudio (narração, música ou efeitos)',
-  },
+  }
 } as const;
 
 // ========================================
