@@ -18,17 +18,14 @@
  * 5. Baixa o vídeo gerado
  */
 
-import { Browser, Page } from 'puppeteer';
-import puppeteerExtra from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import puppeteer, { Browser, Page } from 'puppeteer';
+import { ChildProcess, spawn } from 'child_process';
+import { GhostCursor } from 'ghost-cursor';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import https from 'https';
 import http from 'http';
-
-// Addon stealth para evitar detecção
-puppeteerExtra.use(StealthPlugin());
 
 // ========================================
 // INTERFACES
@@ -79,9 +76,12 @@ export class FlowVideoProvider {
   private outputDir: string;
   /** Se true, o browser veio do GeminiProvider e NÃO deve ser fechado por nós */
   private usingSharedBrowser: boolean = false;
+  /** Processo do Chrome iniciado por este provider (quando não compartilhado) */
+  private ownedChromeProcess: ChildProcess | null = null;
 
   // URLs do Flow
   private static readonly FLOW_URL = 'https://labs.google/fx/flow';
+  private static readonly REMOTE_DEBUGGING_PORT = 9222;
 
   // ── Controle de concorrência ──────────────────────────────────────────────
   // O browser tem uma única página (this.page). As operações de navegação e
@@ -173,6 +173,30 @@ export class FlowVideoProvider {
     }
   }
 
+  /**
+   * Atualiza opções mutáveis da instância singleton.
+   * Importante para permitir alternar headless/headful entre chamadas IPC.
+   */
+  updateConfig(options?: Partial<FlowVideoConfig>): void {
+    if (!options) return;
+
+    if (typeof options.headless === 'boolean') {
+      this.config.headless = options.headless;
+    }
+    if (typeof options.geminiProviderId === 'string' || options.geminiProviderId === undefined) {
+      this.config.geminiProviderId = options.geminiProviderId;
+    }
+    if (typeof options.generationTimeoutMs === 'number') {
+      this.config.generationTimeoutMs = options.generationTimeoutMs;
+    }
+    if (typeof options.outputDir === 'string' && options.outputDir.trim()) {
+      this.outputDir = options.outputDir;
+      if (!fs.existsSync(this.outputDir)) {
+        fs.mkdirSync(this.outputDir, { recursive: true });
+      }
+    }
+  }
+
   // ========================================
   // MÉTODOS PRIVADOS - SETUP
   // ========================================
@@ -195,6 +219,110 @@ export class FlowVideoProvider {
       }
     }
     return undefined;
+  }
+
+  private getChromeExecutablePath(chromePath?: string): string {
+    if (chromePath) return chromePath;
+
+    const bundledPath = puppeteer.executablePath?.();
+    if (bundledPath && fs.existsSync(bundledPath)) {
+      return bundledPath;
+    }
+
+    throw new Error(
+      'Chrome/Chromium não encontrado para iniciar em modo remoto. Instale o Google Chrome ou garanta o Chromium do Puppeteer.'
+    );
+  }
+
+  private async isRemoteDebugEndpointReady(port: number): Promise<boolean> {
+    return new Promise(resolve => {
+      const req = http.get(`http://127.0.0.1:${port}/json/version`, res => {
+        let body = '';
+        res.on('data', chunk => {
+          body += chunk.toString();
+        });
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            resolve(false);
+            return;
+          }
+          try {
+            const payload = JSON.parse(body);
+            resolve(Boolean(payload?.webSocketDebuggerUrl));
+          } catch {
+            resolve(false);
+          }
+        });
+      });
+
+      req.setTimeout(800, () => {
+        req.destroy();
+        resolve(false);
+      });
+
+      req.on('error', () => resolve(false));
+    });
+  }
+
+  private async waitForRemoteDebugEndpoint(
+    port: number,
+    timeoutMs: number,
+    spawnedProcess?: ChildProcess
+  ): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (spawnedProcess && spawnedProcess.exitCode !== null) {
+        throw new Error(`Chrome remoto finalizou antes da conexão DevTools (exitCode=${spawnedProcess.exitCode})`);
+      }
+
+      if (await this.isRemoteDebugEndpointReady(port)) {
+        return;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+
+    throw new Error(`Timeout aguardando endpoint de depuração remota na porta ${port}`);
+  }
+
+  private async launchChromeWithRemoteDebugging(userDataDir: string, chromePath?: string): Promise<void> {
+    const executablePath = this.getChromeExecutablePath(chromePath);
+    const args = [
+      `--remote-debugging-port=${FlowVideoProvider.REMOTE_DEBUGGING_PORT}`,
+      `--user-data-dir=${userDataDir}`,
+      '--window-size=1366,768',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--lang=en-US',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-default-apps',
+      '--disable-popup-blocking',
+      '--new-window',
+    ];
+
+    if (this.config.headless) {
+      args.push('--headless=new', '--disable-gpu');
+    } else {
+      args.push('--start-maximized');
+    }
+
+    const child = spawn(executablePath, args, {
+      detached: false,
+      stdio: 'ignore',
+      windowsHide: !!this.config.headless,
+    });
+
+    this.ownedChromeProcess = child;
+    await this.waitForRemoteDebugEndpoint(FlowVideoProvider.REMOTE_DEBUGGING_PORT, 20000, child);
+  }
+
+  private async connectToRemoteChrome(): Promise<Browser> {
+    const browser = await puppeteer.connect({
+      browserURL: `http://127.0.0.1:${FlowVideoProvider.REMOTE_DEBUGGING_PORT}`,
+      defaultViewport: null,
+    });
+    return browser;
   }
 
   private async randomDelay(min: number = 500, max: number = 1500): Promise<void> {
@@ -331,127 +459,32 @@ export class FlowVideoProvider {
   // MÉTODOS PÚBLICOS - CONEXÃO
   // ========================================
 
-  /**
-   * Injeta JavaScript de stealth na página para evitar deteção pelo reCAPTCHA Enterprise do Google.
-   * Deve ser chamado logo após criar uma nova página, ANTES de navegar.
-   */
-  private async injectPageStealth(page: import('puppeteer').Page): Promise<void> {
-    // 1. User-Agent do Chrome 131 real no Windows 10
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-    );
-
-    // 2. Viewport realistéco
-    await page.setViewport({ width: 1366, height: 768, deviceScaleFactor: 1 });
-
-    // 3. HTTP Headers
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-    });
-
-    // 4. Stealth JavaScript injetado antes de qualquer script da página
-    await page.evaluateOnNewDocument(() => {
-      // -- navigator.webdriver --
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-
-      // -- chrome runtime (páginas Google esperam isso) --
-      // @ts-ignore
-      if (!window.chrome) window.chrome = {};
-      // @ts-ignore
-      if (!window.chrome.runtime) window.chrome.runtime = {
-        connect: () => { },
-        sendMessage: () => { },
-        PlatformOs: { MAC: 'mac', WIN: 'win', ANDROID: 'android', CROS: 'cros', LINUX: 'linux', OPENBSD: 'openbsd' },
-      };
-
-      // -- Plugins (Chrome real tem vários plugins) --
-      const fakePlugin = (name: string, filename: string, mimeTypes: string[]) => ({
-        name, filename,
-        description: name,
-        length: mimeTypes.length,
-        item: (i: number) => ({ type: mimeTypes[i] }),
-        namedItem: (n: string) => ({ type: n }),
-        [Symbol.iterator]: function* () { for (const m of mimeTypes) yield { type: m }; },
-      });
-      const fakeMimeTypes: any = [
-        { type: 'application/pdf', suffixes: 'pdf', description: 'Portable Document Format', enabledPlugin: { name: 'PDF Viewer' } },
-      ];
-
-      Object.defineProperty(navigator, 'plugins', {
-        get: () => {
-          const arr = [
-            fakePlugin('PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
-            fakePlugin('Chrome PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
-            fakePlugin('Chromium PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
-            fakePlugin('Microsoft Edge PDF Viewer', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
-            fakePlugin('WebKit built-in PDF', 'internal-pdf-viewer', ['application/pdf', 'text/pdf']),
-          ] as any;
-          arr.length = 5;
-          arr.item = (i: number) => arr[i];
-          arr.namedItem = (name: string) => arr.find((p: any) => p.name === name);
-          arr.refresh = () => { };
-          return arr;
-        },
-      });
-
-      Object.defineProperty(navigator, 'mimeTypes', { get: () => fakeMimeTypes });
-
-      // -- Languages --
-      Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
-      Object.defineProperty(navigator, 'language', { get: () => 'en-US' });
-
-      // -- deviceMemory / hardwareConcurrency --
-      Object.defineProperty(navigator, 'deviceMemory', { get: () => 8 });
-      Object.defineProperty(navigator, 'hardwareConcurrency', { get: () => 8 });
-
-      // -- outerWidth / outerHeight (deve bater com o viewport) --
-      Object.defineProperty(window, 'outerWidth', { get: () => 1366 });
-      Object.defineProperty(window, 'outerHeight', { get: () => 768 });
-
-      // -- Permissions API (reCAPTCHA pergunta sobre 'notifications') --
-      const origQuery = window.navigator.permissions.query.bind(window.navigator.permissions);
-      window.navigator.permissions.query = (params: PermissionDescriptor) =>
-        params.name === 'notifications'
-          ? Promise.resolve({ state: Notification.permission, onchange: null } as PermissionStatus)
-          : origQuery(params);
-
-      // -- Remover traços de CDP / automation --
-      // @ts-ignore
-      delete window.__nightmare;
-      // @ts-ignore
-      delete window._phantom;
-      // @ts-ignore
-      delete window.callPhantom;
-      // @ts-ignore
-      delete window.__selenium_evaluate;
-      // @ts-ignore
-      delete window.__webdriver_evaluate;
-      // @ts-ignore
-      delete window.__driver_evaluate;
-      // @ts-ignore
-      delete window.__webdriver_script_func;
-      // @ts-ignore
-      delete window.__webdriver_script_fn;
-      // @ts-ignore
-      delete window.__fxdriver_evaluate;
-      // @ts-ignore
-      delete document.$cdc_asdjflasutopfhvcZLmcfl_;
-
-      // -- Screen --
-      Object.defineProperty(screen, 'width', { get: () => 1366 });
-      Object.defineProperty(screen, 'height', { get: () => 768 });
-      Object.defineProperty(screen, 'availWidth', { get: () => 1366 });
-      Object.defineProperty(screen, 'availHeight', { get: () => 728 });
-      Object.defineProperty(screen, 'colorDepth', { get: () => 24 });
-      Object.defineProperty(screen, 'pixelDepth', { get: () => 24 });
-    });
-  }
-
   async init(): Promise<void> {
     // Verifica se o browser/page REALMENTE estão vivos
+    if (this.isBrowserAlive()) {
+      // Se a configuração atual pedir interface visível, mas o browser atual estiver headless,
+      // reinicia o browser próprio para permitir acompanhar a automação em tempo real.
+      if (!this.config.headless && !this.usingSharedBrowser && this.browser) {
+        try {
+          const version = await this.browser.version();
+          if (version.toLowerCase().includes('headless')) {
+            console.log('🔄 [Flow] Browser atual está headless, reiniciando em modo visível...');
+            await this.close();
+          } else {
+            console.log(`⚠️ [Flow] Browser já inicializado e conectado`);
+            return;
+          }
+        } catch {
+          console.log(`⚠️ [Flow] Browser já inicializado e conectado`);
+          return;
+        }
+      } else {
+        console.log(`⚠️ [Flow] Browser já inicializado e conectado`);
+        return;
+      }
+    }
+
+    // Se close() não encerrou corretamente, evita prosseguir com estado inválido
     if (this.isBrowserAlive()) {
       console.log(`⚠️ [Flow] Browser já inicializado e conectado`);
       return;
@@ -473,7 +506,6 @@ export class FlowVideoProvider {
         if (reused && this.browser) {
           // Abre nova aba no browser existente
           this.page = await this.browser.newPage();
-          await this.injectPageStealth(this.page);
           console.log(`✅ [Flow] Nova aba aberta no browser do Gemini (cookies compartilhados)`);
           return;
         }
@@ -490,44 +522,31 @@ export class FlowVideoProvider {
 
       const chromePath = this.findChromePath();
       console.log(`🔍 [Flow] Chrome path: ${chromePath || 'using bundled Chromium'}`);
+      console.log(`📁 [Flow] User data dir: ${geminiData.userDataDir}`);
+      console.log(`🧭 [Flow] Modo navegador: ${this.config.headless ? 'headless' : 'visível'}`);
 
-      const launchOptions: any = {
-        headless: this.config.headless,
-        userDataDir: geminiData.userDataDir,
-        args: [
-          // '--no-sandbox',
-          // '--disable-setuid-sandbox',
-          // '--disable-gpu',
-          '--window-size=1366,768',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--lang=en-US',
-          // '--disable-blink-features=AutomationControlled',
-          // '--disable-features=IsolateOrigins,site-per-process',
-          // '--disable-site-isolation-trials',
-          // '--disable-infobars',
-          // '--disable-background-timer-throttling',
-          // '--disable-backgrounding-occluded-windows',
-          // '--disable-renderer-backgrounding'
-        ],
-        ignoreDefaultArgs: ['--enable-automation'],
-        defaultViewport: null, // deixar o window-size controlar
-      };
-
-      if (chromePath) {
-        launchOptions.executablePath = chromePath;
+      // Se existir processo próprio antigo, encerra antes de subir outro na mesma porta
+      if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
+        try { this.ownedChromeProcess.kill(); } catch { }
       }
+      this.ownedChromeProcess = null;
 
-      this.browser = await puppeteerExtra.launch(launchOptions);
+      await this.launchChromeWithRemoteDebugging(geminiData?.userDataDir, chromePath);
+      this.browser = await this.connectToRemoteChrome();
       this.usingSharedBrowser = false;
 
       const pages = await this.browser.pages();
       this.page = pages[0] || await this.browser.newPage();
 
-      await this.injectPageStealth(this.page);
-
       console.log(`✅ [Flow] Navegador inicializado com cookies do Gemini (provider: ${geminiData.providerId})`);
     } catch (error) {
+      if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
+        try { this.ownedChromeProcess.kill(); } catch { }
+      }
+      this.ownedChromeProcess = null;
+      this.browser = null;
+      this.page = null;
+      this.usingSharedBrowser = false;
       console.error(`❌ [Flow] Erro ao inicializar navegador:`, error);
       throw error;
     }
@@ -666,8 +685,16 @@ export class FlowVideoProvider {
     };
 
     // ── Passo 2: aguardar mutex de submissão (acesso exclusivo ao browser DOM) ──
+    let submitMutexHeld = false;
+    const releaseSubmitMutexIfHeld = () => {
+      if (!submitMutexHeld) return;
+      submitMutexHeld = false;
+      FlowVideoProvider.releaseSubmitMutex();
+    };
+
     emitProgress('submitting', 'Aguardando vez de submeter prompt no browser...');
     await FlowVideoProvider.acquireSubmitMutex();
+    submitMutexHeld = true;
 
     try {
       // 1. Inicializar navegador se necessário (verifica se está vivo)
@@ -865,7 +892,7 @@ export class FlowVideoProvider {
 
       // Submissao concluida — liberar o mutex para q o proximo prompt possa iniciar
       await this.clearPromptPanel();
-      FlowVideoProvider.releaseSubmitMutex();
+      releaseSubmitMutexIfHeld();
 
       // ── Polling roda em paralelo com outras gerações ──
       emitProgress('generating', `Gerando vídeo com ${model}...`, 10);
@@ -912,7 +939,7 @@ export class FlowVideoProvider {
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
       // Garantir liberação do mutex e slot mesmo em caso de erro
-      FlowVideoProvider.releaseSubmitMutex();
+      releaseSubmitMutexIfHeld();
       releaseSlot();
       emitProgress('error', `Erro: ${error.message}`);
       console.error(`❌ [Flow] Erro na geração:`, error);
@@ -939,6 +966,58 @@ export class FlowVideoProvider {
   private async isVisible(handle: import('puppeteer').ElementHandle): Promise<boolean> {
     const box = await handle.boundingBox();
     return box !== null && box.width > 0 && box.height > 0;
+  }
+
+  /**
+   * Lê os toasts de erro visíveis e retorna contagem por mensagem.
+   * Útil para diferenciar erro antigo (stale) de erro novo da geração atual.
+   */
+  private async getErrorToastCounts(): Promise<Record<string, number>> {
+    if (!this.page) return {};
+
+    try {
+      const counts = await this.page.evaluate(`(function() {
+        var out = {};
+        var toasts = document.querySelectorAll('li[data-sonner-toast]');
+        for (var i = 0; i < toasts.length; i++) {
+          var toast = toasts[i];
+          var icons = toast.querySelectorAll('i');
+          var hasError = false;
+          for (var j = 0; j < icons.length; j++) {
+            if ((icons[j].textContent || '').trim() === 'error') {
+              hasError = true;
+              break;
+            }
+          }
+          if (!hasError) continue;
+
+          var text = (toast.textContent || '').replace(/\\s+/g, ' ').trim();
+          if (!text) continue;
+
+          out[text] = (out[text] || 0) + 1;
+        }
+        return out;
+      })()`) as Record<string, number> | null;
+
+      return counts || {};
+    } catch {
+      return {};
+    }
+  }
+
+  /**
+   * Retorna uma mensagem quando detecta um toast de erro novo em relação ao baseline.
+   */
+  private findNewErrorToastMessage(
+    baseline: Record<string, number>,
+    current: Record<string, number>
+  ): string | null {
+    const entries = Object.entries(current);
+    for (const [msg, count] of entries) {
+      const baselineCount = baseline[msg] ?? 0;
+      if (count > baselineCount) return msg;
+    }
+    return null;
   }
 
   /**
@@ -1481,16 +1560,26 @@ export class FlowVideoProvider {
       await this.page.keyboard.down('Control');
       await this.page.keyboard.press('V');
       await this.page.keyboard.up('Control');
-      await this.randomDelay(500, 800);
+      await this.randomDelay(1800, 2600);
 
       console.log(`📝 [Flow] Prompt digitado: "${prompt.substring(0, 80)}..."`);
+      console.log(`⏳ [Flow] Aguardando estabilização do prompt antes do submit...`);
 
       // Polling inteligente para o botão de submit (aguardar que seja liberado)
       let submitClicked = false;
       let attempts = 0;
       const maxAttempts = 60; // 30 segundos no total (500ms por tentativa)
+      const submitMarkerAttr = 'data-flow-submit-target';
+      const cursor = new GhostCursor(this.page, {
+        performRandomMoves: false,
+        defaultOptions: {
+          move: { moveDelay: 140, randomizeMoveDelay: true, maxTries: 4 },
+          click: { moveDelay: 280, randomizeMoveDelay: true, hesitate: 120, waitForClick: 90 },
+        },
+      });
 
       while (attempts < maxAttempts) {
+        const markerValue = `submit-${Date.now()}-${attempts}`;
         try {
           const result = await this.page.evaluate(`(function() {
             var foundBtn = null;
@@ -1545,23 +1634,59 @@ export class FlowVideoProvider {
 
             if (!foundBtn) return { found: false, disabled: true };
 
+            try {
+              foundBtn.setAttribute(${JSON.stringify(submitMarkerAttr)}, ${JSON.stringify(markerValue)});
+            } catch (e) {}
+
             var disabled = foundBtn.hasAttribute('disabled') || 
                             foundBtn.disabled || 
                             foundBtn.getAttribute('aria-disabled') === 'true' || 
                             foundBtn.getAttribute('data-state') === 'closed';
 
-            if (!disabled) {
-              foundBtn.click();
-              return { found: true, disabled: false, clicked: true };
+            return { found: true, disabled: disabled };
+          })()`) as { found: boolean; disabled: boolean };
+
+          if (result.found && !result.disabled) {
+            const submitButton = await this.page.$(`button[${submitMarkerAttr}="${markerValue}"]`);
+            if (submitButton) {
+              try {
+                console.log(`⏳ [Flow] Botão liberado. Aguardando 3-6s antes do clique humano...`);
+                await this.randomDelay(3000, 6000);
+                const stillEnabled = await this.page.evaluate(`(function() {
+                  var btn = document.querySelector('button[${submitMarkerAttr}="${markerValue}"]');
+                  if (!btn) return false;
+                  var disabled = btn.hasAttribute('disabled') ||
+                                 btn.disabled ||
+                                 btn.getAttribute('aria-disabled') === 'true' ||
+                                 btn.getAttribute('data-state') === 'closed';
+                  return !disabled;
+                })()`) as boolean;
+                if (!stillEnabled) {
+                  console.log(`⏳ [Flow] Botão voltou a ficar bloqueado após espera. Reavaliando...`);
+                  await submitButton.dispose().catch(() => {});
+                  attempts++;
+                  continue;
+                }
+
+                await cursor.move(submitButton, { moveDelay: 120, randomizeMoveDelay: true, maxTries: 4 });
+                await this.randomDelay(180, 320);
+                await cursor.click(submitButton, {
+                  moveDelay: 300,
+                  randomizeMoveDelay: true,
+                  hesitate: 130,
+                  waitForClick: 100,
+                });
+              } catch (cursorErr: any) {
+                console.warn(`⚠️ [Flow] ghost-cursor falhou, usando click direto:`, cursorErr?.message || cursorErr);
+                await submitButton.click();
+              } finally {
+                await submitButton.dispose().catch(() => {});
+              }
+              submitClicked = true;
+              console.log(`✅ [Flow] Botão de submit liberado e clicado com ghost-cursor!`);
+              break;
             }
-
-            return { found: true, disabled: true, clicked: false };
-          })()`) as { found: boolean; disabled: boolean; clicked?: boolean };
-
-          if (result.clicked) {
-            submitClicked = true;
-            console.log(`✅ [Flow] Botão de submit liberado e clicado com sucesso!`);
-            break;
+            console.log(`⚠️ [Flow] Botão estava liberado mas não foi possível obter handle. Tentando novamente...`);
           } else if (result.found && result.disabled) {
             console.log(`⏳ [Flow] Botão de submit encontrado, mas bloqueado. Aguardando liberação... (${attempts + 1}/${maxAttempts})`);
           } else {
@@ -1569,6 +1694,13 @@ export class FlowVideoProvider {
           }
         } catch (e: any) {
           console.warn(`⚠️ [Flow] Erro temporário ao consultar botão de submit:`, e.message);
+        } finally {
+          try {
+            await this.page.evaluate(`(function() {
+              var btn = document.querySelector('button[${submitMarkerAttr}="${markerValue}"]');
+              if (btn) btn.removeAttribute(${JSON.stringify(submitMarkerAttr)});
+            })()`);
+          } catch { }
         }
 
         await new Promise(r => setTimeout(r, 500));
@@ -2839,20 +2971,28 @@ export class FlowVideoProvider {
         this.usingSharedBrowser = false;
       } else {
         // Browser próprio - fecha tudo
-        if (this.browser) {
-          try {
-            if (this.browser.isConnected()) {
-              await this.browser.close();
-            }
-          } catch { }
-          this.browser = null;
-          this.page = null;
-          console.log(`🔌 [Flow] Navegador fechado`);
+        try {
+          if (this.browser && this.browser.isConnected()) {
+            await this.browser.close();
+          }
+        } catch { }
+
+        if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
+          try { this.ownedChromeProcess.kill(); } catch { }
         }
+
+        this.ownedChromeProcess = null;
+        this.browser = null;
+        this.page = null;
+        console.log(`🔌 [Flow] Navegador fechado`);
       }
     } catch (error) {
       console.error(`❌ [Flow] Erro ao fechar:`, error);
       // Garante que o estado é resetado mesmo em caso de erro
+      if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
+        try { this.ownedChromeProcess.kill(); } catch { }
+      }
+      this.ownedChromeProcess = null;
       this.browser = null;
       this.page = null;
       this.usingSharedBrowser = false;
@@ -2904,8 +3044,16 @@ export class FlowVideoProvider {
     };
 
     // ── Passo 2: aguardar mutex de submissão (acesso exclusivo ao browser DOM) ──
+    let submitMutexHeld = false;
+    const releaseSubmitMutexIfHeld = () => {
+      if (!submitMutexHeld) return;
+      submitMutexHeld = false;
+      FlowVideoProvider.releaseSubmitMutex();
+    };
+
     emit('submitting', 'Aguardando vez de submeter prompt no browser...');
     await FlowVideoProvider.acquireSubmitMutex();
+    submitMutexHeld = true;
 
     // Diretório de imagens
     const imgOutputDir = path.join(this.outputDir, 'flow-images');
@@ -2994,6 +3142,7 @@ export class FlowVideoProvider {
       const searchPrompt = prompt;
       emit('submitting', 'Prompt será rastreado por match de texto...', 15);
       console.log(`🔍 [Flow/Img] Match por prompt: "${searchPrompt.substring(0, 60)}..."`);
+      const baselineErrorToasts = await this.getErrorToastCounts();
 
       // 6. Submeter prompt
       emit('submitting', 'Digitando prompt...', 20);
@@ -3002,7 +3151,7 @@ export class FlowVideoProvider {
 
       // Submissão concluída — liberar o mutex para que o próximo prompt possa iniciar
       await this.clearPromptPanel();
-      FlowVideoProvider.releaseSubmitMutex();
+      releaseSubmitMutexIfHeld();
       emit('generating', 'Prompt enviado! Polling em paralelo...', 25);
 
       // ── Polling roda em paralelo com outras gerações ──
@@ -3151,16 +3300,11 @@ export class FlowVideoProvider {
             throw new Error('Flow retornou falha: todos os tiles com o prompt atual falharam.');
           }
 
-          // Verificar toast de erro
-          const toasts = await this.page!.$$('li[data-sonner-toast]');
-          for (const toast of toasts) {
-            const icons = await toast.$$('i');
-            for (const icon of icons) {
-              if ((await this.getTextContent(icon)).trim() === 'error') {
-                const msg = await this.getTextContent(toast);
-                throw new Error(`Flow reportou erro: ${msg.substring(0, 200)}`);
-              }
-            }
+          // Verificar apenas toasts novos (ignora toast antigo preso na UI)
+          const currentErrorToasts = await this.getErrorToastCounts();
+          const newToastMsg = this.findNewErrorToastMessage(baselineErrorToasts, currentErrorToasts);
+          if (newToastMsg) {
+            throw new Error(`Flow reportou erro: ${newToastMsg.substring(0, 200)}`);
           }
 
         } catch (err: any) {
@@ -3272,7 +3416,7 @@ export class FlowVideoProvider {
                 method: 'GET',
                 headers: {
                   'Cookie': cookieStr,
-                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+                  // 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
                 },
               };
               const req = https.request(reqOptions, (res) => {
@@ -3382,7 +3526,7 @@ export class FlowVideoProvider {
     } catch (error: any) {
       const durationMs = Date.now() - startTime;
       // Garantir liberação do mutex e slot mesmo em caso de erro
-      FlowVideoProvider.releaseSubmitMutex();
+      releaseSubmitMutexIfHeld();
       releaseSlot();
       emit('error', `Erro: ${error.message}`);
       console.error(`❌ [Flow/Img] Erro na geração:`, JSON.stringify(error));
@@ -3404,6 +3548,8 @@ let flowProviderInstance: FlowVideoProvider | null = null;
 export function getFlowVideoProvider(options?: Partial<FlowVideoConfig>): FlowVideoProvider {
   if (!flowProviderInstance) {
     flowProviderInstance = new FlowVideoProvider(options);
+  } else if (options) {
+    flowProviderInstance.updateConfig(options);
   }
   return flowProviderInstance;
 }
