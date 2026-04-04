@@ -35,7 +35,7 @@ export class GrokVideoProvider {
 
   private static readonly GROK_URL = 'https://grok.com/imagine';
   private static readonly MAX_CONCURRENT = 1;
-  private static readonly REMOTE_DEBUGGING_PORT = 9224;
+  private static readonly REMOTE_DEBUGGING_PORT = 9222;
 
   /** Processo do Chrome iniciado por este provider */
   private ownedChromeProcess: ChildProcess | null = null;
@@ -305,7 +305,12 @@ export class GrokVideoProvider {
     }
     this.ownedChromeProcess = null;
 
-    await this.launchChromeWithRemoteDebugging(userDataDir, chromePath);
+    // Se já há um Chrome rodando na porta 9222, apenas conecta
+    if (await this.isRemoteDebugEndpointReady(GrokVideoProvider.REMOTE_DEBUGGING_PORT)) {
+      console.log(`🔗 [Grok] Chrome já rodando na porta ${GrokVideoProvider.REMOTE_DEBUGGING_PORT}, conectando...`);
+    } else {
+      await this.launchChromeWithRemoteDebugging(userDataDir, chromePath);
+    }
     GrokVideoProvider.sharedBrowser = await this.connectToRemoteChrome();
     this.usingSharedBrowser = false;
 

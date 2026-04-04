@@ -189,7 +189,7 @@ export class GeminiProvider {
   private static readonly GEMINI_URL = 'https://gemini.google.com/';
   private static readonly LOGIN_URL = 'https://accounts.google.com/';
   private static readonly INPUT_SELECTOR = 'div[contenteditable="true"], textarea[placeholder*="message"], input[type="text"]';
-  private static readonly REMOTE_DEBUGGING_PORT = 9223;
+  private static readonly REMOTE_DEBUGGING_PORT = 9222;
 
   /** Processo do Chrome iniciado por este provider */
   private ownedChromeProcess: ChildProcess | null = null;
@@ -473,7 +473,12 @@ export class GeminiProvider {
       }
       this.ownedChromeProcess = null;
 
-      await this.launchChromeWithRemoteDebugging(this.userDataDir, chromePath);
+      // Se já há um Chrome rodando na porta 9222, apenas conecta
+      if (await this.isRemoteDebugEndpointReady(GeminiProvider.REMOTE_DEBUGGING_PORT)) {
+        console.log(`🔗 [Gemini] Chrome já rodando na porta ${GeminiProvider.REMOTE_DEBUGGING_PORT}, conectando...`);
+      } else {
+        await this.launchChromeWithRemoteDebugging(this.userDataDir, chromePath);
+      }
       this.browser = await this.connectToRemoteChrome();
 
       const pages = await this.browser.pages();
