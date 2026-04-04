@@ -115,6 +115,7 @@ export interface VideoSegment {
   timeline_config?: TimelineConfig;
   transform?: TransformConfig;
   audio?: AudioConfig;
+  firstFrame?: string;
 }
 
 /**
@@ -151,6 +152,7 @@ const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'emotion', 'imagePrompt', 'sceneDescription', 'assetType', 'cameraMovement', 'transition', 'track',
   'imageUrl', 'sourceImageUrl', 'asset_url', 'asset_duration',
   'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio',
+  'firstFrame',
 ];
 
 const PROJECT_PROPERTIES: (keyof VideoProject)[] = [

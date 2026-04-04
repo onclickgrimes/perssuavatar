@@ -25,6 +25,7 @@ interface PromptsStepProps {
   isProcessing?: boolean;
   onSegmentsUpdate?: (newSegments: TranscriptionSegment[]) => void;
   niche?: ChannelNiche | null;
+  onGenerateFirstFrame?: () => void | Promise<void>;
 }
 
 // Função helper para obter info do asset type
@@ -59,6 +60,7 @@ export function PromptsStep({
   isProcessing,
   onSegmentsUpdate,
   niche,
+  onGenerateFirstFrame,
 }: PromptsStepProps) {
   // Verificar se algum segmento usa video_stock e ainda não tem vídeo
   const hasVideoStockWithoutUrl = segments.some(
@@ -187,6 +189,17 @@ export function PromptsStep({
                 ) : hasPrompts
                   ? hasGlobalInstruction ? '✏️ Editar com IA' : '🔄 Regerar com IA'
                   : '✨ Gerar Prompts com IA'}
+              </button>
+            )}
+
+            {onGenerateFirstFrame && hasPrompts && (
+              <button
+                onClick={onGenerateFirstFrame}
+                disabled={isAiBusy}
+                className={`px-4 py-2 border border-white/20 rounded-lg transition-all flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white ${isAiBusy ? 'opacity-70 cursor-not-allowed' : ''}`}
+                title="Gera apenas os prompts de primeiro frame mantendo os prompts atuais"
+              >
+                🖼️ Gerar First Frames
               </button>
             )}
 

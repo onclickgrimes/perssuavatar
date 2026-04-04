@@ -110,6 +110,7 @@ export interface VideoProjectSegment {
         fadeIn?: number;
         fadeOut?: number;
     };
+    firstFrame?: string;
 }
 
 
@@ -928,7 +929,8 @@ export class VideoProjectService extends EventEmitter {
             }
 
             console.log('✅ [VideoProject] AI Analysis received');
-            console.log('📝 [VideoProject] AI Analysis:', analyzedSegments);
+            // Primeiros 200 caracteres
+            console.log('📝 [VideoProject] AI Analysis:', analyzedSegments.slice(0, 200));
 
             // Robust validation/unwrapping
             let segmentsArray = analyzedSegments;
@@ -1290,6 +1292,103 @@ export class VideoProjectService extends EventEmitter {
         }
     }
 
+    /**
+     * Gera prompts para imagem do primeiro frame de cada cena usando IA
+     */
+    public async generateFirstFramePromptsWithAI(
+        segments: VideoProjectSegment[],
+        options?: {
+            provider?: AIProvider;
+            model?: string;
+        }
+    ): Promise<AnalysisResult> {
+        const segmentsWithPrompt = segments.filter(seg =>
+            this.stringifyPromptForEdition(seg.imagePrompt).trim().length > 0
+        );
+
+        if (segmentsWithPrompt.length === 0) {
+            return {
+                success: true,
+                segments,
+            };
+        }
+
+        const provider = options?.provider || 'gemini';
+        this.emit('status', { stage: 'analyzing', message: `Gerando prompts de primeiro frame com ${provider}...` });
+
+        try {
+            const prompt = this.buildFirstFramePrompt(segmentsWithPrompt);
+            const systemMsg = 'Você é um especialista em direção de arte e geração de imagens. Responda sempre com JSON válido.';
+            const aiRequestPayload: any[] = [
+                { role: 'system', content: systemMsg },
+                { role: 'user', content: prompt }
+            ];
+
+            let aiResponse: any;
+
+            if (provider === 'gemini') {
+                aiResponse = await this.getGeminiVideoAnalysis(aiRequestPayload, options?.model);
+            } else if (provider === 'gemini_scraping') {
+                aiResponse = await this.getGeminiScrapingVideoAnalysis(aiRequestPayload);
+            } else if (provider === 'openai') {
+                if (!this.openAIService) throw new Error('OpenAI API not configured');
+                if (options?.model) this.openAIService.setModel(options.model);
+                aiResponse = await this.openAIService.getChatVideoAnalysis(aiRequestPayload);
+            } else if (provider === 'deepseek') {
+                if (!this.deepSeekService) throw new Error('DeepSeek API not configured');
+                if (options?.model) this.deepSeekService.setModel(options.model);
+                aiResponse = await this.deepSeekService.getChatVideoAnalysis(aiRequestPayload);
+            } else {
+                throw new Error(`Unknown provider: ${provider}`);
+            }
+
+            let segmentsArray = aiResponse;
+            if (aiResponse && !Array.isArray(aiResponse)) {
+                const values = Object.values(aiResponse);
+                const arrayValue = values.find(v => Array.isArray(v));
+                if (arrayValue) {
+                    segmentsArray = arrayValue;
+                } else {
+                    throw new Error('AI response format invalid (expected array)');
+                }
+            }
+
+            if (!Array.isArray(segmentsArray)) {
+                throw new Error('AI response is not an array');
+            }
+
+            const updatedSegments = segments.map(seg => {
+                const generated = segmentsArray.find((a: any) => a.id === seg.id);
+                if (!generated || generated.firstFrame == null) return seg;
+
+                const normalizedFirstFrame = typeof generated.firstFrame === 'string'
+                    ? generated.firstFrame.trim()
+                    : String(generated.firstFrame).trim();
+
+                if (!normalizedFirstFrame) return seg;
+
+                return {
+                    ...seg,
+                    firstFrame: normalizedFirstFrame,
+                };
+            });
+
+            this.emit('status', { stage: 'analyzed', message: 'Prompts de primeiro frame gerados' });
+
+            return {
+                success: true,
+                segments: updatedSegments,
+            };
+        } catch (error: any) {
+            console.error('❌ First frame prompt generation error:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+            return {
+                success: false,
+                error: error.message || String(error),
+                segments,
+            };
+        }
+    }
+
     private async getGeminiScrapingVideoAnalysis(messages: Array<{ role: string; content: string }>): Promise<any> {
         const { provider, providerId, providerName } = await this.ensureGeminiScrapingProvider();
         console.log(`🕸️ [VideoProject] Using Gemini scraping provider: ${providerName} (${providerId})`);
@@ -1603,6 +1702,41 @@ Formato de resposta:
     {
       "id": 1,
       "sceneDescription": "Resumo em português da cena"
+    }
+  ]
+}`;
+    }
+
+    private buildFirstFramePrompt(
+        segments: VideoProjectSegment[]
+    ): string {
+        const promptsList = segments
+            .map(s => `ID: ${s.id}\nPrompt da cena:\n${this.stringifyPromptForEdition(s.imagePrompt)}`)
+            .join('\n\n');
+
+        return `Você receberá prompts visuais de cenas de vídeo.
+
+Para CADA cena, gere um prompt detalhado em inglês para gerar uma IMAGEM ESTÁTICA que represente o PRIMEIRO FRAME dessa cena.
+
+O prompt deve descrever exatamente como a cena começa: composição, enquadramento, iluminação, personagens/objetos visíveis, cores e atmosfera no instante inicial.
+
+PROMPTS DAS CENAS:
+${promptsList}
+
+Regras obrigatórias:
+- O prompt do primeiro frame deve ser em INGLÊS.
+- Deve ser um prompt otimizado para geração de imagem (ex: Stable Diffusion, DALL-E, Midjourney).
+- Descreva a composição visual do momento inicial da cena.
+- Inclua detalhes de iluminação, ângulo de câmera, cores e atmosfera.
+- O prompt deve ser objetivo, descritivo e focado apenas no visual do primeiro frame.
+- Não adicione explicações extras fora do JSON.
+
+Formato de resposta:
+{
+  "segments": [
+    {
+      "id": 1,
+      "firstFrame": "Detailed English prompt for the first frame image of this scene"
     }
   ]
 }`;
@@ -1969,6 +2103,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 asset_duration: segment.asset_duration,
                 transform: segment.transform,
                 audio: segment.audio,
+                firstFrame: segment.firstFrame,
                 words: segment.words, // Words fica por último
             })),
         };

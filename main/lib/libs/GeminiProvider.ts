@@ -533,9 +533,9 @@ export class GeminiProvider {
 
       this._isLoggedIn = await this.checkLoginStatus();
       
-      if (this._isLoggedIn) {
-        await this.extractUserInfo();
-      }
+      // if (this._isLoggedIn) {
+      //   await this.extractUserInfo();
+      // }
       
       return this._isLoggedIn;
     } catch (error) {

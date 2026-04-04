@@ -3190,7 +3190,7 @@ export class FlowVideoProvider {
                 var divText = (promptDivs[pd].textContent || '').trim().toLowerCase();
                 var cleanDiv = divText.replace(/\\s+/g, '');
                 var cleanPrefix = promptPrefixStr.replace(/\\s+/g, '');
-                var matchLen = Math.min(cleanPrefix.length, 120);
+                var matchLen = Math.min(cleanPrefix.length, 850);
                 if (cleanDiv.length > 0 && cleanDiv.indexOf(cleanPrefix.substring(0, matchLen)) !== -1) {
                   foundPrompt = true;
                   break;

@@ -541,6 +541,10 @@ export function ImagesStep({
         : preservedSourceImage;
       const finalImagePath = finalImages[segmentId];
 
+      const targetGenerationPrompt = (IMAGE_SERVICES.has(service) && segment.firstFrame)
+        ? String(segment.firstFrame).trim()
+        : extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`;
+
       // ── VEO 2 FLOW (Google Flow via Puppeteer, modelo Veo 2 - Fast) ──
       if (service === 'veo2-flow') {
         const count = imageCount[segmentId] ?? 1;
@@ -554,7 +558,7 @@ export function ImagesStep({
 
         const veo2FlowTimeoutMs = 10 * 60 * 1000;
         const veo2FlowPromise = window.electron?.videoProject?.generateVo2Flow?.({
-          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
+          prompt: targetGenerationPrompt,
           aspectRatio: aspectRatio,
           count,
           referenceImagePath,
@@ -624,7 +628,7 @@ export function ImagesStep({
         // Timeout de 12 min para Veo3
         const veo3TimeoutMs = 12 * 60 * 1000;
         const veo3Promise = window.electron?.videoProject?.generateVo3({
-          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
+          prompt: targetGenerationPrompt,
           aspectRatio: aspectRatio,
           count,
           referenceImagePath: isIngredients ? undefined : referenceImagePath,
@@ -683,7 +687,7 @@ export function ImagesStep({
 
         const grokTimeoutMs = 12 * 60 * 1000;
         const grokPromise = window.electron?.videoProject?.generateGrokVideo?.({
-          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
+          prompt: targetGenerationPrompt,
           referenceImagePaths: grokImagePaths.length > 0 ? grokImagePaths : undefined,
         });
 
@@ -726,7 +730,7 @@ export function ImagesStep({
         setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando ${count} imagem(ns) com Flow${ingredientPaths.length > 0 ? ` e ${ingredientPaths.length} ref(s)` : ''}...` }));
 
         const result = await window.electron?.videoProject?.generateFlowImage({
-          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
+          prompt: targetGenerationPrompt,
           count,
           aspectRatio,
           ingredientImagePaths: ingredientPaths.length > 0 ? ingredientPaths : undefined,
@@ -773,7 +777,7 @@ export function ImagesStep({
         setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando ${count} imagem(ns) com ${imageModelLabel}${ingredientPaths.length > 0 ? ` e ${ingredientPaths.length} ref(s)` : ''}...` }));
 
         const result = await window.electron?.videoProject?.generateFlowImage({
-          prompt: extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`,
+          prompt: targetGenerationPrompt,
           count,
           model: imageModel,
           aspectRatio,
@@ -836,7 +840,7 @@ export function ImagesStep({
         }
 
         const result = await window.electron?.videoProject?.generateVeo3Api({
-          prompt: extractPromptString(segment.imagePrompt) || `Cinematic animation of the scene: ${segment.text}`,
+          prompt: targetGenerationPrompt,
           aspectRatio: aspectRatio,
           referenceImagePath: isIngredients ? undefined : referenceImagePath,
           ingredientImagePaths: isIngredients && ingredientPaths.length > 0 ? ingredientPaths : undefined,
@@ -872,7 +876,7 @@ export function ImagesStep({
         }
 
         const result = await window.electron?.videoProject?.generateVeo2({
-          prompt: extractPromptString(segment.imagePrompt) || `Cinematic animation of the scene: ${segment.text}`,
+          prompt: targetGenerationPrompt,
           aspectRatio: aspectRatio,
           referenceImagePath,
           finalImagePath,

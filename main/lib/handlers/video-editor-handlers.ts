@@ -201,6 +201,26 @@ export function registerVideoEditorHandlers(): void {
     }
   });
 
+  // Handler para gerar prompts de imagem do primeiro frame de cada cena
+  registerVideoEditorGuardedHandle('video-project:generate-first-frame-prompts', async (
+    event,
+    segments: VideoProjectSegment[],
+    options?: {
+      provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+      model?: string;
+    }
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      console.log(`🖼️ [VideoProject] Generating first frame prompts for ${segments.length} segments...`);
+      const result = await videoProjectService.generateFirstFramePromptsWithAI(segments, options);
+      return result;
+    } catch (error: any) {
+      console.error('❌ [VideoProject] First frame prompt error:', error);
+      return { success: false, error: error.message, segments };
+    }
+  });
+
   // Handler para resumir prompts em descrições curtas das cenas (PT-BR)
   registerVideoEditorGuardedHandle('video-project:summarize-scene-prompts', async (
     event,

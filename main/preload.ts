@@ -410,6 +410,10 @@ const handler = {
     editPrompts: (segments: any[], options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string, userInstruction?: string }) =>
       ipcRenderer.invoke('video-project:edit-prompts', segments, options),
 
+    // Gerar prompts de imagem do primeiro frame de cada cena
+    generateFirstFramePrompts: (segments: any[], options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string }) =>
+      ipcRenderer.invoke('video-project:generate-first-frame-prompts', segments, options),
+
     // Resumir prompts de cena em uma descrição curta (português)
     summarizeScenePrompts: (segments: any[], options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string }) =>
       ipcRenderer.invoke('video-project:summarize-scene-prompts', segments, options),

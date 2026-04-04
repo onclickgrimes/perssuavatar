@@ -295,6 +295,39 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
 
     if (payload.length === 0) return;
 
+    // Gerar prompt do firstFrame ANTES de resumir a cena
+    if (window.electron?.videoProject?.generateFirstFramePrompts) {
+      try {
+        const firstFrameResult = await window.electron.videoProject.generateFirstFramePrompts(payload, {
+          provider: selectedProvider,
+          model: selectedModel,
+        });
+        
+        if (firstFrameResult?.success && Array.isArray(firstFrameResult.segments)) {
+          const firstFrameById = new Map<number, string>();
+          firstFrameResult.segments.forEach((segment: any) => {
+            if (segment?.id == null || typeof segment.firstFrame !== 'string') return;
+            const normalizedFirstFrame = segment.firstFrame.trim();
+            if (!normalizedFirstFrame) return;
+            firstFrameById.set(segment.id, normalizedFirstFrame);
+          });
+
+          if (firstFrameById.size > 0) {
+            setProject(prev => ({
+              ...prev,
+              segments: prev.segments.map(seg => {
+                const firstFrame = firstFrameById.get(seg.id);
+                if (!firstFrame) return seg;
+                return { ...seg, firstFrame };
+              }),
+            }));
+          }
+        }
+      } catch (err) {
+        console.error('Error generating first frame prompts:', err);
+      }
+    }
+
     try {
       const result = await window.electron.videoProject.summarizeScenePrompts(payload, {
         provider: selectedProvider,
@@ -485,6 +518,54 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       setIsProcessing(false);
     }
   }, [project.segments, selectedProvider, selectedModel, summarizeScenePrompts]);
+
+  // Handler explícito para gerar Apenas First Frame na UI
+  const handleGenerateFirstFrameOnly = useCallback(async () => {
+    setIsProcessing(true);
+    try {
+      if (!window.electron?.videoProject?.generateFirstFramePrompts) return;
+
+      const payload = project.segments
+        .map(segment => {
+          const normalizedPrompt = normalizePromptForSummary(segment.imagePrompt);
+          if (!normalizedPrompt) return null;
+          return { id: segment.id, imagePrompt: normalizedPrompt };
+        })
+        .filter((segment): segment is { id: number; imagePrompt: string } => segment !== null);
+
+      if (payload.length === 0) return;
+
+      const firstFrameResult = await window.electron.videoProject.generateFirstFramePrompts(payload, {
+        provider: selectedProvider,
+        model: selectedModel,
+      });
+
+      if (firstFrameResult?.success && Array.isArray(firstFrameResult.segments)) {
+        const firstFrameById = new Map<number, string>();
+        firstFrameResult.segments.forEach((segment: any) => {
+          if (segment?.id == null || typeof segment.firstFrame !== 'string') return;
+          const normalizedFirstFrame = segment.firstFrame.trim();
+          if (!normalizedFirstFrame) return;
+          firstFrameById.set(segment.id, normalizedFirstFrame);
+        });
+
+        if (firstFrameById.size > 0) {
+          setProject(prev => ({
+            ...prev,
+            segments: prev.segments.map(seg => {
+              const firstFrame = firstFrameById.get(seg.id);
+              if (!firstFrame) return seg;
+              return { ...seg, firstFrame };
+            }),
+          }));
+        }
+      }
+    } catch (err) {
+      console.error('Explicit first frame generation error:', err);
+    } finally {
+      setIsProcessing(false);
+    }
+  }, [project.segments, normalizePromptForSummary, selectedProvider, selectedModel]);
 
   // Handler para atualizar emoção de um segmento
   const handleUpdateEmotion = useCallback((segmentId: number, emotion: string) => {
@@ -768,6 +849,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             isProcessing={isProcessing}
             onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
             niche={selectedNiche}
+            onGenerateFirstFrame={handleGenerateFirstFrameOnly}
           />
         );
       
