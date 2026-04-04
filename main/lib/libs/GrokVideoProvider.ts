@@ -1,13 +1,10 @@
-import { Browser, Page } from 'puppeteer';
-import puppeteerExtra from 'puppeteer-extra';
-import StealthPlugin from 'puppeteer-extra-plugin-stealth';
+import puppeteer, { Browser, Page } from 'puppeteer';
+import { ChildProcess, spawn } from 'child_process';
 import * as fs from 'fs';
 import * as path from 'path';
 import { app } from 'electron';
 import https from 'https';
 import http from 'http';
-
-puppeteerExtra.use(StealthPlugin());
 
 export interface GrokVideoConfig {
   headless?: boolean;
@@ -38,6 +35,10 @@ export class GrokVideoProvider {
 
   private static readonly GROK_URL = 'https://grok.com/imagine';
   private static readonly MAX_CONCURRENT = 1;
+  private static readonly REMOTE_DEBUGGING_PORT = 9224;
+
+  /** Processo do Chrome iniciado por este provider */
+  private ownedChromeProcess: ChildProcess | null = null;
 
   private static activeCount = 0;
   private static activeQueue: Array<{ resolve: () => void; reject: (e: Error) => void }> = [];
@@ -97,6 +98,110 @@ export class GrokVideoProvider {
       }
     }
     return undefined;
+  }
+
+  private getChromeExecutablePath(chromePath?: string): string {
+    if (chromePath) return chromePath;
+
+    const bundledPath = puppeteer.executablePath?.();
+    if (bundledPath && fs.existsSync(bundledPath)) {
+      return bundledPath;
+    }
+
+    throw new Error(
+      'Chrome/Chromium não encontrado para iniciar em modo remoto. Instale o Google Chrome ou garanta o Chromium do Puppeteer.'
+    );
+  }
+
+  private async isRemoteDebugEndpointReady(port: number): Promise<boolean> {
+    return new Promise(resolve => {
+      const req = http.get(`http://127.0.0.1:${port}/json/version`, res => {
+        let body = '';
+        res.on('data', chunk => {
+          body += chunk.toString();
+        });
+        res.on('end', () => {
+          if (res.statusCode !== 200) {
+            resolve(false);
+            return;
+          }
+          try {
+            const payload = JSON.parse(body);
+            resolve(Boolean(payload?.webSocketDebuggerUrl));
+          } catch {
+            resolve(false);
+          }
+        });
+      });
+
+      req.setTimeout(800, () => {
+        req.destroy();
+        resolve(false);
+      });
+
+      req.on('error', () => resolve(false));
+    });
+  }
+
+  private async waitForRemoteDebugEndpoint(
+    port: number,
+    timeoutMs: number,
+    spawnedProcess?: ChildProcess
+  ): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeoutMs) {
+      if (spawnedProcess && spawnedProcess.exitCode !== null) {
+        throw new Error(`Chrome remoto finalizou antes da conexão DevTools (exitCode=${spawnedProcess.exitCode})`);
+      }
+
+      if (await this.isRemoteDebugEndpointReady(port)) {
+        return;
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 250));
+    }
+
+    throw new Error(`Timeout aguardando endpoint de depuração remota na porta ${port}`);
+  }
+
+  private async launchChromeWithRemoteDebugging(userDataDir: string, chromePath?: string): Promise<void> {
+    const executablePath = this.getChromeExecutablePath(chromePath);
+    const args = [
+      `--remote-debugging-port=${GrokVideoProvider.REMOTE_DEBUGGING_PORT}`,
+      `--user-data-dir=${userDataDir}`,
+      '--window-size=1366,768',
+      '--disable-dev-shm-usage',
+      '--disable-accelerated-2d-canvas',
+      '--lang=en-US',
+      '--no-first-run',
+      '--no-default-browser-check',
+      '--disable-default-apps',
+      '--disable-popup-blocking',
+      '--new-window',
+    ];
+
+    if (this.config.headless) {
+      args.push('--headless=new', '--disable-gpu');
+    } else {
+      args.push('--start-maximized');
+    }
+
+    const child = spawn(executablePath, args, {
+      detached: false,
+      stdio: 'ignore',
+      windowsHide: !!this.config.headless,
+    });
+
+    this.ownedChromeProcess = child;
+    await this.waitForRemoteDebugEndpoint(GrokVideoProvider.REMOTE_DEBUGGING_PORT, 20000, child);
+  }
+
+  private async connectToRemoteChrome(): Promise<Browser> {
+    const browser = await puppeteer.connect({
+      browserURL: `http://127.0.0.1:${GrokVideoProvider.REMOTE_DEBUGGING_PORT}`,
+      defaultViewport: null,
+    });
+    return browser;
   }
 
   private async randomDelay(min: number = 500, max: number = 1500): Promise<void> {
@@ -171,22 +276,6 @@ export class GrokVideoProvider {
     }
   }
 
-  private async injectPageStealth(page: Page): Promise<void> {
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
-    );
-    await page.setViewport({ width: 1366, height: 768, deviceScaleFactor: 1 });
-    await page.setExtraHTTPHeaders({
-      'Accept-Language': 'en-US,en;q=0.9',
-      'sec-ch-ua': '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-      'sec-ch-ua-mobile': '?0',
-      'sec-ch-ua-platform': '"Windows"',
-    });
-    await page.evaluateOnNewDocument(() => {
-      Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-    });
-  }
-
   async initBrowser(): Promise<Browser> {
     if (this.isBrowserAlive()) {
       return GrokVideoProvider.sharedBrowser!;
@@ -204,77 +293,23 @@ export class GrokVideoProvider {
 
     const geminiData = this.findGeminiUserDataDir();
     const chromePath = this.findChromePath();
+    const userDataDir = geminiData?.userDataDir || path.join(app.getPath('userData'), 'provider-cookies', 'profiles', 'gemini-default');
 
-    // Tentar localizar um browser do puppeteer já aberto no sistema rodando na mesma porta de debug, se disponível
-    try {
-       // Vamos ver se o FlowVideoProvider já engatilho o chromium!
-       const { getFlowVideoProvider } = require('./FlowVideoProvider');
-       const flowProvider = getFlowVideoProvider();
-       if (flowProvider && flowProvider.isBrowserAlive()) {
-          const fb = flowProvider.getBrowser();
-          if (fb && fb.isConnected()) {
-             console.log(`✅ [Grok] Ancorando no browser já isolado do FlowVideoProvider via WebSocket...`);
-             GrokVideoProvider.sharedBrowser = await puppeteerExtra.connect({ 
-                  browserWSEndpoint: fb.wsEndpoint(),
-                  defaultViewport: null
-             });
-             this.usingSharedBrowser = true;
-             return GrokVideoProvider.sharedBrowser;
-          }
-       }
-       
-       // Senão tenta no gerenciador do Gemini nativo
-       const { getProviderManager } = require('./PuppeteerProvider');
-       const manager = getProviderManager();
-       
-       const gemProviders = manager.listProvidersByPlatform('gemini');
-       for (const p of gemProviders) {
-          const act = manager.getGeminiProvider(p.id);
-          if (act && act.getBrowser) {
-            const b = act.getBrowser();
-            if (b && b.isConnected()) {
-               console.log(`✅ [Grok] Conectando à instância existente do Chromium via WebSocket...`);
-               // O puppeteer conecta automaticamente ao websocket atual para compartilhar contexto sem forçar um init novo.
-               GrokVideoProvider.sharedBrowser = await puppeteerExtra.connect({ 
-                  browserWSEndpoint: b.wsEndpoint(),
-                  defaultViewport: null
-               });
-               this.usingSharedBrowser = true;
-               return GrokVideoProvider.sharedBrowser;
-            }
-          }
-       }
+    console.log(`🔍 [Grok] Chrome path: ${chromePath || 'using bundled Chromium'}`);
+    console.log(`📁 [Grok] User data dir: ${userDataDir}`);
+    console.log(`🧭 [Grok] Modo navegador: ${this.config.headless ? 'headless' : 'visível'}`);
 
-    } catch(err) {
-       console.warn('⚠️ [Grok] Não foi possível conectar a um browser existente:', err);
+    // Se existir processo próprio antigo, encerra antes de subir outro na mesma porta
+    if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
+      try { this.ownedChromeProcess.kill(); } catch { }
     }
+    this.ownedChromeProcess = null;
 
-    const launchOptions: any = {
-      headless: this.config.headless,
-      userDataDir: geminiData?.userDataDir || path.join(app.getPath('userData'), 'provider-cookies', 'profiles', 'grok-default'),
-      args: [
-        '--window-size=1366,768',
-        '--disable-dev-shm-usage',
-        '--disable-accelerated-2d-canvas',
-        '--lang=en-US',
-        '--disable-blink-features=AutomationControlled',
-        '--disable-background-timer-throttling',
-        '--disable-backgrounding-occluded-windows',
-        '--disable-renderer-backgrounding'
-      ],
-      ignoreDefaultArgs: ['--enable-automation'],
-      defaultViewport: null,
-    };
-
-    if (chromePath) {
-      launchOptions.executablePath = chromePath;
-    }
-
-    // Se falhar tudo, abre um usando o userData nativo (do Gemini ou padrao) - Se der erro de Profile em Uso, o usuario fecha as outras abas.
-    GrokVideoProvider.sharedBrowser = await puppeteerExtra.launch(launchOptions);
+    await this.launchChromeWithRemoteDebugging(userDataDir, chromePath);
+    GrokVideoProvider.sharedBrowser = await this.connectToRemoteChrome();
     this.usingSharedBrowser = false;
 
-    console.log(`✅ [Grok] Novo navegador isolado inicializado`);
+    console.log(`✅ [Grok] Novo navegador inicializado via remote debugging`);
     return GrokVideoProvider.sharedBrowser;
   }
 
@@ -304,7 +339,6 @@ export class GrokVideoProvider {
 
       emitProgress('opening', 'Abrindo nova aba para geração...');
       page = await browser.newPage();
-      await this.injectPageStealth(page);
 
       emitProgress('navigating', 'Navegando para o Grok...');
       await page.goto(GrokVideoProvider.GROK_URL, {
