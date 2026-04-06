@@ -37,6 +37,10 @@ const IMAGE_MODEL_PRO = 'gemini-3-pro-image-preview';
 
 export class GeminiImageService {
   private outputDir: string;
+  private static readonly MAX_CONCURRENT_GENERATIONS = 2;
+  private static readonly MAX_GENERATION_RETRIES = 3;
+  private static activeGenerationCount = 0;
+  private static generationQueue: Array<() => void> = [];
 
   constructor() {
     this.outputDir = path.join(
@@ -58,6 +62,75 @@ export class GeminiImageService {
   ): void {
     console.log(`🖼️ [Gemini/Img] ${message}`);
     onProgress?.({ stage, message, percent });
+  }
+
+  private static async acquireGenerationSlot(): Promise<void> {
+    if (
+      GeminiImageService.activeGenerationCount < GeminiImageService.MAX_CONCURRENT_GENERATIONS
+      && GeminiImageService.generationQueue.length === 0
+    ) {
+      GeminiImageService.activeGenerationCount++;
+      console.log(
+        `🔒 [Gemini/Img] Slot adquirido. Ativos: ${GeminiImageService.activeGenerationCount}/${GeminiImageService.MAX_CONCURRENT_GENERATIONS}`
+      );
+      return;
+    }
+
+    console.log(
+      `⏸️ [Gemini/Img] Aguardando slot livre... Ativos: ${GeminiImageService.activeGenerationCount}/${GeminiImageService.MAX_CONCURRENT_GENERATIONS}`
+    );
+    await new Promise<void>((resolve) => {
+      GeminiImageService.generationQueue.push(resolve);
+    });
+    console.log(
+      `🔒 [Gemini/Img] Slot adquirido (fila). Ativos: ${GeminiImageService.activeGenerationCount}/${GeminiImageService.MAX_CONCURRENT_GENERATIONS}`
+    );
+  }
+
+  private static releaseGenerationSlot(): void {
+    const next = GeminiImageService.generationQueue.shift();
+    if (next) {
+      next();
+      return;
+    }
+
+    GeminiImageService.activeGenerationCount = Math.max(
+      0,
+      GeminiImageService.activeGenerationCount - 1
+    );
+    console.log(
+      `🔓 [Gemini/Img] Slot liberado. Ativos: ${GeminiImageService.activeGenerationCount}/${GeminiImageService.MAX_CONCURRENT_GENERATIONS}`
+    );
+  }
+
+  private async runQueuedGeneration<T>(
+    onProgress: GeminiImageProgressCallback | undefined,
+    imageIndex: number,
+    total: number,
+    task: () => Promise<T>
+  ): Promise<T> {
+    if (
+      GeminiImageService.activeGenerationCount >= GeminiImageService.MAX_CONCURRENT_GENERATIONS
+      || GeminiImageService.generationQueue.length > 0
+    ) {
+      this.emit(
+        onProgress,
+        'submitting',
+        `Imagem ${imageIndex + 1}/${total} aguardando slot da fila...`,
+        23
+      );
+    }
+
+    await GeminiImageService.acquireGenerationSlot();
+    try {
+      return await task();
+    } finally {
+      GeminiImageService.releaseGenerationSlot();
+    }
+  }
+
+  private async wait(ms: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   private resolveModel(model?: string): string {
@@ -290,6 +363,142 @@ export class GeminiImageService {
     return `${base}${variationHint}${ingredientHint}`.trim();
   }
 
+  private getGenerationProgress(doneCount: number, total: number): number {
+    return Math.min(82, 25 + Math.round((doneCount / Math.max(total, 1)) * 52));
+  }
+
+  private getDownloadProgress(doneCount: number, total: number): number {
+    return Math.min(94, 84 + Math.round((doneCount / Math.max(total, 1)) * 10));
+  }
+
+  private async generateSingleImageWithRetry(options: {
+    ai: any;
+    model: string;
+    prompt: string;
+    index: number;
+    total: number;
+    references: InlineImageData[];
+    requestId: string;
+    onProgress?: GeminiImageProgressCallback;
+    aspectRatio?: string;
+    getCompletedCount: () => number;
+  }): Promise<string> {
+    const {
+      ai,
+      model,
+      prompt,
+      index,
+      total,
+      references,
+      requestId,
+      onProgress,
+      aspectRatio,
+      getCompletedCount,
+    } = options;
+
+    let lastError = 'Erro desconhecido na geração de imagem.';
+
+    for (let attempt = 1; attempt <= GeminiImageService.MAX_GENERATION_RETRIES; attempt++) {
+      const generationPercent = this.getGenerationProgress(getCompletedCount(), total);
+      this.emit(
+        onProgress,
+        'generating',
+        `Gerando imagem ${index + 1}/${total} (tentativa ${attempt}/${GeminiImageService.MAX_GENERATION_RETRIES})...`,
+        generationPercent
+      );
+
+      try {
+        const promptForRequest = this.buildPromptForVariation(
+          prompt,
+          index,
+          total,
+          references.length > 0
+        );
+
+        const parts: any[] = [{ text: promptForRequest }];
+        references.forEach((reference) => {
+          parts.push({
+            inlineData: {
+              data: reference.data,
+              mimeType: reference.mimeType,
+            },
+          });
+        });
+
+        const imageConfig: any = { imageSize: '2K' };
+        if (aspectRatio && String(aspectRatio).trim()) {
+          imageConfig.aspectRatio = String(aspectRatio).trim();
+        }
+
+        const config: any = {
+          responseModalities: ['TEXT', 'IMAGE'],
+          imageConfig,
+        };
+
+        const response = await ai.models.generateContent({
+          model,
+          contents: [{ role: 'user', parts }],
+          config,
+        } as any);
+
+        const generatedImages = this.extractGeneratedImages(response);
+        if (!generatedImages.length) {
+          const responseText = this.extractTextSummary(response);
+          const suffix = responseText ? ` Texto retornado: ${responseText.substring(0, 240)}` : '';
+          throw new Error(`A API não retornou dados de imagem.${suffix}`);
+        }
+
+        const finalImage = generatedImages[generatedImages.length - 1];
+        const extension = this.mapMimeToExtension(finalImage.mimeType);
+        const fileName = `gemini-image-${requestId}-${String(index + 1).padStart(2, '0')}.${extension}`;
+        const outputPath = path.join(this.outputDir, fileName);
+
+        this.emit(
+          onProgress,
+          'downloading',
+          `Salvando imagem ${index + 1}/${total}...`,
+          this.getDownloadProgress(getCompletedCount() + 1, total)
+        );
+
+        fs.writeFileSync(outputPath, Buffer.from(finalImage.data, 'base64'));
+        const fileSize = fs.statSync(outputPath).size;
+
+        if (fileSize <= 500) {
+          fs.unlinkSync(outputPath);
+          throw new Error('A imagem retornada pela API está vazia ou inválida.');
+        }
+
+        return outputPath;
+      } catch (error: any) {
+        const raw = String(error?.message || error || '');
+        const normalized = this.normalizeError(raw);
+        lastError = normalized;
+
+        if (attempt < GeminiImageService.MAX_GENERATION_RETRIES) {
+          console.warn(
+            `⚠️ [Gemini/Img] Imagem ${index + 1}/${total} falhou na tentativa ${attempt}/${GeminiImageService.MAX_GENERATION_RETRIES}: ${raw}`
+          );
+          this.emit(
+            onProgress,
+            'generating',
+            `Imagem ${index + 1}/${total} falhou: ${normalized}. Tentando novamente...`,
+            generationPercent
+          );
+          await this.wait(1000 * attempt);
+          continue;
+        }
+
+        throw new Error(
+          `Imagem ${index + 1}/${total} falhou após ${GeminiImageService.MAX_GENERATION_RETRIES} tentativas: ${normalized}`
+        );
+      }
+    }
+
+    throw new Error(
+      `Imagem ${index + 1}/${total} falhou após ${GeminiImageService.MAX_GENERATION_RETRIES} tentativas: ${lastError}`
+    );
+  }
+
   async generateImages(
     prompt: string,
     count: number = 1,
@@ -362,82 +571,47 @@ export class GeminiImageService {
         22
       );
 
-      const generatedPaths: string[] = [];
+      const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const completedCounter = { value: 0 };
 
-      for (let i = 0; i < requestedCount; i++) {
-        const generationPercent = Math.min(
-          82,
-          25 + Math.round((i / requestedCount) * 52)
-        );
-        this.emit(
-          onProgress,
-          'generating',
-          `Gerando imagem ${i + 1} de ${requestedCount}...`,
-          generationPercent
-        );
-
-        const promptForRequest = this.buildPromptForVariation(
-          cleanPrompt,
-          i,
-          requestedCount,
-          references.length > 0
-        );
-
-        const parts: any[] = [{ text: promptForRequest }];
-        references.forEach((reference) => {
-          parts.push({
-            inlineData: {
-              data: reference.data,
-              mimeType: reference.mimeType,
-            },
+      const generationTasks = Array.from({ length: requestedCount }, (_, i) =>
+        this.runQueuedGeneration(onProgress, i, requestedCount, async () => {
+          const imagePath = await this.generateSingleImageWithRetry({
+            ai,
+            model: resolvedModel,
+            prompt: cleanPrompt,
+            index: i,
+            total: requestedCount,
+            references,
+            requestId,
+            onProgress,
+            aspectRatio,
+            getCompletedCount: () => completedCounter.value,
           });
-        });
 
-        const imageConfig: any = { imageSize: '2K' };
-        if (aspectRatio && String(aspectRatio).trim()) {
-          imageConfig.aspectRatio = String(aspectRatio).trim();
-        }
+          completedCounter.value += 1;
+          this.emit(
+            onProgress,
+            'generating',
+            `Imagem ${i + 1}/${requestedCount} concluída (${completedCounter.value}/${requestedCount})`,
+            this.getGenerationProgress(completedCounter.value, requestedCount)
+          );
 
-        const config: any = {
-          responseModalities: ['TEXT', 'IMAGE'],
-          imageConfig,
-        };
+          return imagePath;
+        })
+      );
 
-        const response = await ai.models.generateContent({
-          model: resolvedModel,
-          contents: [{ role: 'user', parts }],
-          config,
-        } as any);
-
-        const generatedImages = this.extractGeneratedImages(response);
-        if (!generatedImages.length) {
-          const responseText = this.extractTextSummary(response);
-          const suffix = responseText ? ` Texto retornado: ${responseText.substring(0, 240)}` : '';
-          throw new Error(`A API não retornou dados de imagem.${suffix}`);
-        }
-
-        const finalImage = generatedImages[generatedImages.length - 1];
-        const extension = this.mapMimeToExtension(finalImage.mimeType);
-        const fileName = `gemini-image-${Date.now()}-${String(i + 1).padStart(2, '0')}.${extension}`;
-        const outputPath = path.join(this.outputDir, fileName);
-
-        this.emit(
-          onProgress,
-          'downloading',
-          `Salvando imagem ${i + 1} de ${requestedCount}...`,
-          Math.min(94, 84 + Math.round(((i + 1) / requestedCount) * 10))
-        );
-
-        fs.writeFileSync(outputPath, Buffer.from(finalImage.data, 'base64'));
-        const fileSize = fs.statSync(outputPath).size;
-
-        if (fileSize <= 500) {
-          fs.unlinkSync(outputPath);
-          throw new Error('A imagem retornada pela API está vazia ou inválida.');
-        }
-
-        generatedPaths.push(outputPath);
+      const settledResults = await Promise.allSettled(generationTasks);
+      const failedResult = settledResults.find(
+        (item): item is PromiseRejectedResult => item.status === 'rejected'
+      );
+      if (failedResult) {
+        throw failedResult.reason;
       }
+
+      const generatedPaths = settledResults
+        .filter((item): item is PromiseFulfilledResult<string> => item.status === 'fulfilled')
+        .map((item) => item.value);
 
       const durationMs = Date.now() - startTime;
       this.emit(
