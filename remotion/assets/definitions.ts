@@ -86,8 +86,6 @@ Exemplo da estrutura do JSON:
       "focus": "Example: Deep focus on the forest environment, sharpening on the jaguar as it enters the light"
     },
 
-    "IdOfTheCharactersInTheScene": "[1, 3]",
-
     "main_text_prompt": "Who the subjects are and what happens during the 8 seconds of the scene.",
 
     "timeline_breakdown": [

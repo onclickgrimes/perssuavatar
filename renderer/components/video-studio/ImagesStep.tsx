@@ -159,34 +159,7 @@ export function ImagesStep({
     });
   };
 
-  const getCharactersInScene = (imagePrompt: unknown): string | null => {
-    if (!imagePrompt) return null;
-    let charsRaw: any = null;
-    
-    if (typeof imagePrompt === 'object' && imagePrompt !== null) {
-      if ('IdOfTheCharactersInTheScene' in imagePrompt) {
-        charsRaw = (imagePrompt as any).IdOfTheCharactersInTheScene;
-      } else if (
-        'video_generation_prompt' in imagePrompt && 
-        typeof (imagePrompt as any).video_generation_prompt === 'object' && 
-        'IdOfTheCharactersInTheScene' in (imagePrompt as any).video_generation_prompt
-      ) {
-        charsRaw = (imagePrompt as any).video_generation_prompt.IdOfTheCharactersInTheScene;
-      }
-    } else if (typeof imagePrompt === 'string') {
-      try {
-        const parsed = JSON.parse(imagePrompt);
-        if (parsed.IdOfTheCharactersInTheScene) {
-          charsRaw = parsed.IdOfTheCharactersInTheScene;
-        } else if (parsed.video_generation_prompt?.IdOfTheCharactersInTheScene) {
-          charsRaw = parsed.video_generation_prompt.IdOfTheCharactersInTheScene;
-        }
-      } catch (e) {
-        // Fallback: extract using regex from raw string if not valid JSON
-        charsRaw = imagePrompt;
-      }
-    }
-
+  const parseCharactersInScene = (charsRaw: unknown): string | null => {
     if (charsRaw) {
       if (typeof charsRaw === 'string') {
         // Handle formats like "[1] The Victim (Buffalo)" or "[1, 3] The Suspects"
@@ -216,8 +189,46 @@ export function ImagesStep({
       }
       return String(charsRaw).replace(/[\[\]"]/g, '');
     }
-    
+
     return null;
+  };
+
+  const getCharactersInScene = (segment: TranscriptionSegment): string | null => {
+    const directValue = parseCharactersInScene(segment.IdOfTheCharactersInTheScene);
+    if (directValue) return directValue;
+
+    // Compatibilidade com projetos antigos onde esse campo vinha dentro do imagePrompt.
+    const imagePrompt = segment.imagePrompt;
+    if (!imagePrompt) return null;
+
+    let charsRaw: unknown = null;
+
+    if (typeof imagePrompt === 'object' && imagePrompt !== null) {
+      const imagePromptObj = imagePrompt as Record<string, any>;
+      if ('IdOfTheCharactersInTheScene' in imagePromptObj) {
+        charsRaw = imagePromptObj.IdOfTheCharactersInTheScene;
+      } else if (
+        typeof imagePromptObj.video_generation_prompt === 'object' &&
+        imagePromptObj.video_generation_prompt !== null &&
+        'IdOfTheCharactersInTheScene' in imagePromptObj.video_generation_prompt
+      ) {
+        charsRaw = imagePromptObj.video_generation_prompt.IdOfTheCharactersInTheScene;
+      }
+    } else if (typeof imagePrompt === 'string') {
+      try {
+        const parsed = JSON.parse(imagePrompt);
+        if (parsed.IdOfTheCharactersInTheScene) {
+          charsRaw = parsed.IdOfTheCharactersInTheScene;
+        } else if (parsed.video_generation_prompt?.IdOfTheCharactersInTheScene) {
+          charsRaw = parsed.video_generation_prompt.IdOfTheCharactersInTheScene;
+        }
+      } catch {
+        // Fallback: extrair usando regex em string crua
+        charsRaw = imagePrompt;
+      }
+    }
+
+    return parseCharactersInScene(charsRaw);
   };
 
   // ── Batch Processing (Processamento em lote) ──
@@ -602,7 +613,7 @@ export function ImagesStep({
         // Verificar modo Ingredients e Personagens
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
         
-        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charsMatch = getCharactersInScene(segment);
         const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
         const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
         
@@ -676,7 +687,7 @@ export function ImagesStep({
         console.log(`✖️ [Grok] Gerando vídeo para segmento ${segmentId}...`);
         
         // Coleta possíveis inputs de imagem permitidos pelo provedor Grok (que aceita arrays de imagens)
-        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charsMatch = getCharactersInScene(segment);
         const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
         const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
         
@@ -720,7 +731,7 @@ export function ImagesStep({
 
         // Verificar modo Ingredients e Personagens
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charsMatch = getCharactersInScene(segment);
         const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
         const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
         
@@ -767,7 +778,7 @@ export function ImagesStep({
 
         // Verificar modo Ingredients e Personagens
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charsMatch = getCharactersInScene(segment);
         const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
         const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
         
@@ -826,7 +837,7 @@ export function ImagesStep({
 
         // Verificar modo Ingredients e Personagens
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const charsMatch = getCharactersInScene(segment.imagePrompt);
+        const charsMatch = getCharactersInScene(segment);
         const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
         const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
         
@@ -1649,7 +1660,7 @@ export function ImagesStep({
                     </span>
                   )}
                   {(() => {
-                    const chars = getCharactersInScene(segment.imagePrompt);
+                    const chars = getCharactersInScene(segment);
                     if (!chars) return null;
                     return (
                       <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 rounded text-xs">

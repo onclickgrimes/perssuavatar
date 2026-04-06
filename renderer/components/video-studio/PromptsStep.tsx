@@ -45,6 +45,116 @@ const getAssetTypeInfo = (assetType: string) => {
   };
 };
 
+const normalizeCharactersField = (raw: unknown): string | undefined => {
+  if (raw == null) return undefined;
+
+  if (typeof raw === 'number') {
+    return Number.isFinite(raw) ? String(raw) : undefined;
+  }
+
+  if (Array.isArray(raw)) {
+    const ids = raw
+      .map(v => typeof v === 'number' ? v : parseInt(String(v).replace(/\D/g, ''), 10))
+      .filter(v => !isNaN(v));
+    if (ids.length > 0) return ids.join(', ');
+    return undefined;
+  }
+
+  const value = typeof raw === 'string' ? raw : String(raw);
+
+  const bracketMatches = [...value.matchAll(/\[([\d\s,]+)\]/g)];
+  if (bracketMatches.length > 0) {
+    const ids = bracketMatches
+      .map(m => m[1])
+      .join(',')
+      .split(',')
+      .map(s => parseInt(s.trim(), 10))
+      .filter(n => !isNaN(n));
+    if (ids.length > 0) return ids.join(', ');
+  }
+
+  const digits = value
+    .split(',')
+    .map(s => parseInt(s.replace(/\D/g, ''), 10))
+    .filter(n => !isNaN(n));
+  if (digits.length > 0) return digits.join(', ');
+
+  const cleaned = value.replace(/[\[\]"]/g, '').trim();
+  return cleaned || undefined;
+};
+
+const stripCharactersFromPrompt = (prompt: unknown): {
+  cleanedPrompt: unknown;
+  extractedCharacters?: string;
+  didStrip: boolean;
+} => {
+  if (prompt == null) {
+    return { cleanedPrompt: prompt, didStrip: false };
+  }
+
+  if (typeof prompt === 'string') {
+    try {
+      const parsed = JSON.parse(prompt);
+      const parsedResult = stripCharactersFromPrompt(parsed);
+
+      if (!parsedResult.didStrip) {
+        return {
+          cleanedPrompt: prompt,
+          extractedCharacters: parsedResult.extractedCharacters,
+          didStrip: false,
+        };
+      }
+
+      if (parsedResult.cleanedPrompt != null && typeof parsedResult.cleanedPrompt === 'object') {
+        return {
+          cleanedPrompt: JSON.stringify(parsedResult.cleanedPrompt, null, 2),
+          extractedCharacters: parsedResult.extractedCharacters,
+          didStrip: true,
+        };
+      }
+    } catch {
+      // prompt não é JSON: manter como está
+    }
+
+    return { cleanedPrompt: prompt, didStrip: false };
+  }
+
+  if (typeof prompt !== 'object' || Array.isArray(prompt)) {
+    return { cleanedPrompt: prompt, didStrip: false };
+  }
+
+  const rootPrompt = { ...(prompt as Record<string, any>) };
+  let extractedCharacters = normalizeCharactersField(rootPrompt.IdOfTheCharactersInTheScene);
+  let didStrip = false;
+
+  if ('IdOfTheCharactersInTheScene' in rootPrompt) {
+    delete rootPrompt.IdOfTheCharactersInTheScene;
+    didStrip = true;
+  }
+
+  if (
+    rootPrompt.video_generation_prompt &&
+    typeof rootPrompt.video_generation_prompt === 'object' &&
+    !Array.isArray(rootPrompt.video_generation_prompt)
+  ) {
+    const generationPrompt = { ...(rootPrompt.video_generation_prompt as Record<string, any>) };
+    if (extractedCharacters == null) {
+      extractedCharacters = normalizeCharactersField(generationPrompt.IdOfTheCharactersInTheScene);
+    }
+    if ('IdOfTheCharactersInTheScene' in generationPrompt) {
+      delete generationPrompt.IdOfTheCharactersInTheScene;
+      didStrip = true;
+    }
+    rootPrompt.video_generation_prompt = generationPrompt;
+  }
+
+  return {
+    cleanedPrompt: didStrip ? rootPrompt : prompt,
+    extractedCharacters,
+    didStrip,
+  };
+};
+
 export function PromptsStep({
   segments,
   onUpdatePrompt,
@@ -76,6 +186,31 @@ export function PromptsStep({
   const [sceneInstructions, setSceneInstructions] = React.useState<Record<number, string>>({});
   const [pendingSceneId, setPendingSceneId] = React.useState<number | null>(null);
   const hasGlobalInstruction = globalInstruction.trim().length > 0;
+  
+  React.useEffect(() => {
+    if (!onSegmentsUpdate) return;
+
+    let hasChanges = false;
+    const nextSegments = segments.map(segment => {
+      const parsedCurrentCharacters = normalizeCharactersField(segment.IdOfTheCharactersInTheScene);
+      const { cleanedPrompt, extractedCharacters, didStrip } = stripCharactersFromPrompt(segment.imagePrompt);
+      const nextCharacters = parsedCurrentCharacters ?? extractedCharacters;
+      const charsChanged = nextCharacters !== parsedCurrentCharacters;
+
+      if (!didStrip && !charsChanged) return segment;
+
+      hasChanges = true;
+      return {
+        ...segment,
+        imagePrompt: cleanedPrompt as any,
+        IdOfTheCharactersInTheScene: nextCharacters,
+      };
+    });
+
+    if (hasChanges) {
+      onSegmentsUpdate(nextSegments);
+    }
+  }, [segments, onSegmentsUpdate]);
 
   const isAiBusy = Boolean(isProcessing) || pendingSceneId !== null;
 
@@ -392,7 +527,7 @@ export function PromptsStep({
               ) : (
                 <textarea
                   value={(() => {
-                    const prompt = segment.imagePrompt;
+                    const prompt = stripCharactersFromPrompt(segment.imagePrompt).cleanedPrompt;
                     if (!prompt) return `${segment.emotion} scene depicting: ${segment.text}`;
                     if (typeof prompt === 'string') return prompt;
                     return JSON.stringify(prompt, null, 2);
