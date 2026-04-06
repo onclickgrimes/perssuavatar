@@ -1013,24 +1013,18 @@ export class VideoProjectService extends EventEmitter {
                             ? analysis.animateFrame.trim()
                             : String(analysis.animateFrame).trim()) || seg.animateFrame;
 
-                    const {
-                        cleanedPrompt: cleanedAnalysisPrompt,
-                        extractedCharacters: extractedCharactersFromPrompt,
-                        extractedLocation: extractedLocationFromPrompt,
-                    } = this.stripCharactersFromPrompt(analysis.imagePrompt);
-
                     const nextCharactersInScene = this.normalizeCharactersField(
-                        analysis.IdOfTheCharactersInTheScene ?? extractedCharactersFromPrompt
+                        analysis.IdOfTheCharactersInTheScene
                     ) ?? seg.IdOfTheCharactersInTheScene;
 
                     const nextLocationInScene = this.normalizeSceneReferenceIds(
-                        analysis.IdOfTheLocationInTheScene ?? extractedLocationFromPrompt
+                        analysis.IdOfTheLocationInTheScene
                     ) ?? seg.IdOfTheLocationInTheScene;
 
                     let merged = {
                         ...seg,
                         emotion: analysis.emotion || seg.emotion,
-                        imagePrompt: analysis.imagePrompt == null ? seg.imagePrompt : cleanedAnalysisPrompt as any,
+                        imagePrompt: analysis.imagePrompt == null ? seg.imagePrompt : analysis.imagePrompt,
                         IdOfTheCharactersInTheScene: nextCharactersInScene,
                         IdOfTheLocationInTheScene: nextLocationInScene,
                         assetType: analysis.assetType || 'image_flux',
@@ -1272,17 +1266,12 @@ export class VideoProjectService extends EventEmitter {
 
                 // Demais tipos: editar imagePrompt
                 const hasPrompt = edited.imagePrompt != null;
-                const {
-                    cleanedPrompt: cleanedEditedPrompt,
-                    extractedCharacters: extractedCharactersFromPrompt,
-                    extractedLocation: extractedLocationFromPrompt,
-                } = this.stripCharactersFromPrompt(edited.imagePrompt);
 
                 const nextCharactersInScene = this.normalizeCharactersField(
-                    edited.IdOfTheCharactersInTheScene ?? extractedCharactersFromPrompt
+                    edited.IdOfTheCharactersInTheScene
                 ) ?? seg.IdOfTheCharactersInTheScene;
                 const nextLocationInScene = this.normalizeSceneReferenceIds(
-                    edited.IdOfTheLocationInTheScene ?? extractedLocationFromPrompt
+                    edited.IdOfTheLocationInTheScene
                 ) ?? seg.IdOfTheLocationInTheScene;
 
                 const charactersUnchanged = nextCharactersInScene === seg.IdOfTheCharactersInTheScene;
@@ -1290,9 +1279,9 @@ export class VideoProjectService extends EventEmitter {
                 if (!hasPrompt && charactersUnchanged && locationUnchanged) return seg;
 
                 const normalizedPrompt = hasPrompt
-                    ? (typeof cleanedEditedPrompt === 'string'
-                        ? cleanedEditedPrompt
-                        : JSON.stringify(cleanedEditedPrompt))
+                    ? (typeof edited.imagePrompt === 'string'
+                        ? edited.imagePrompt
+                        : JSON.stringify(edited.imagePrompt))
                     : seg.imagePrompt;
 
                 return {
@@ -2025,95 +2014,16 @@ export class VideoProjectService extends EventEmitter {
         return this.normalizeCharactersField(raw);
     }
 
-    private stripCharactersFromPrompt(prompt: unknown): {
-        cleanedPrompt: unknown;
-        extractedCharacters?: string;
-        extractedLocation?: string;
-    } {
-        if (prompt == null) {
-            return { cleanedPrompt: prompt };
-        }
-
-        if (typeof prompt === 'string') {
-            try {
-                const parsed = JSON.parse(prompt);
-                const parsedResult = this.stripCharactersFromPrompt(parsed);
-                if (parsedResult.cleanedPrompt != null && typeof parsedResult.cleanedPrompt === 'object') {
-                    return {
-                        cleanedPrompt: JSON.stringify(parsedResult.cleanedPrompt),
-                        extractedCharacters: parsedResult.extractedCharacters,
-                        extractedLocation: parsedResult.extractedLocation,
-                    };
-                }
-                return {
-                    cleanedPrompt: prompt,
-                    extractedCharacters: parsedResult.extractedCharacters,
-                    extractedLocation: parsedResult.extractedLocation,
-                };
-            } catch {
-                return { cleanedPrompt: prompt };
-            }
-        }
-
-        if (typeof prompt !== 'object' || Array.isArray(prompt)) {
-            return { cleanedPrompt: prompt };
-        }
-
-        const rootPrompt = { ...(prompt as Record<string, any>) };
-        let extractedCharacters = this.normalizeCharactersField(rootPrompt.IdOfTheCharactersInTheScene);
-        let extractedLocation = this.normalizeSceneReferenceIds(rootPrompt.IdOfTheLocationInTheScene);
-
-        if ('IdOfTheCharactersInTheScene' in rootPrompt) {
-            delete rootPrompt.IdOfTheCharactersInTheScene;
-        }
-        if ('IdOfTheLocationInTheScene' in rootPrompt) {
-            delete rootPrompt.IdOfTheLocationInTheScene;
-        }
-
-        if (
-            rootPrompt.video_generation_prompt &&
-            typeof rootPrompt.video_generation_prompt === 'object' &&
-            !Array.isArray(rootPrompt.video_generation_prompt)
-        ) {
-            const generationPrompt = { ...(rootPrompt.video_generation_prompt as Record<string, any>) };
-            if (extractedCharacters == null) {
-                extractedCharacters = this.normalizeCharactersField(generationPrompt.IdOfTheCharactersInTheScene);
-            }
-            if (extractedLocation == null) {
-                extractedLocation = this.normalizeSceneReferenceIds(generationPrompt.IdOfTheLocationInTheScene);
-            }
-            if ('IdOfTheCharactersInTheScene' in generationPrompt) {
-                delete generationPrompt.IdOfTheCharactersInTheScene;
-            }
-            if ('IdOfTheLocationInTheScene' in generationPrompt) {
-                delete generationPrompt.IdOfTheLocationInTheScene;
-            }
-            rootPrompt.video_generation_prompt = generationPrompt;
-        }
-
-        return {
-            cleanedPrompt: rootPrompt,
-            extractedCharacters,
-            extractedLocation,
-        };
-    }
-
     private normalizeSegmentCharacters(segment: VideoProjectSegment): VideoProjectSegment {
-        const {
-            cleanedPrompt,
-            extractedCharacters,
-            extractedLocation,
-        } = this.stripCharactersFromPrompt(segment.imagePrompt);
         const normalizedCharacters = this.normalizeCharactersField(
-            segment.IdOfTheCharactersInTheScene ?? extractedCharacters
+            segment.IdOfTheCharactersInTheScene
         );
         const normalizedLocation = this.normalizeSceneReferenceIds(
-            segment.IdOfTheLocationInTheScene ?? extractedLocation
+            segment.IdOfTheLocationInTheScene
         );
 
         const nextSegment: VideoProjectSegment = {
             ...segment,
-            imagePrompt: cleanedPrompt as any,
         };
 
         if (normalizedCharacters !== undefined) {

@@ -10,9 +10,6 @@ import {
 } from '../../../remotion/types/project';
 import {
   getAssetTypeInfo,
-  normalizeCharactersField,
-  normalizeSceneReferenceIds,
-  stripCharactersFromPrompt,
 } from './prompt-utils';
 
 interface PromptsStepProps {
@@ -65,40 +62,6 @@ export function PromptsStep({
   const [pendingSceneId, setPendingSceneId] = React.useState<number | null>(null);
   const hasGlobalInstruction = globalInstruction.trim().length > 0;
   
-  React.useEffect(() => {
-    if (!onSegmentsUpdate) return;
-
-    let hasChanges = false;
-    const nextSegments = segments.map(segment => {
-      const parsedCurrentCharacters = normalizeCharactersField(segment.IdOfTheCharactersInTheScene);
-      const parsedCurrentLocation = normalizeSceneReferenceIds(segment.IdOfTheLocationInTheScene);
-      const {
-        cleanedPrompt,
-        extractedCharacters,
-        extractedLocation,
-        didStrip,
-      } = stripCharactersFromPrompt(segment.imagePrompt);
-      const nextCharacters = parsedCurrentCharacters ?? extractedCharacters;
-      const nextLocation = parsedCurrentLocation ?? extractedLocation;
-      const charsChanged = nextCharacters !== parsedCurrentCharacters;
-      const locationChanged = nextLocation !== parsedCurrentLocation;
-
-      if (!didStrip && !charsChanged && !locationChanged) return segment;
-
-      hasChanges = true;
-      return {
-        ...segment,
-        imagePrompt: cleanedPrompt as any,
-        IdOfTheCharactersInTheScene: nextCharacters,
-        IdOfTheLocationInTheScene: nextLocation,
-      };
-    });
-
-    if (hasChanges) {
-      onSegmentsUpdate(nextSegments);
-    }
-  }, [segments, onSegmentsUpdate]);
-
   const isAiBusy = Boolean(isProcessing) || pendingSceneId !== null;
 
   const handleAnalyzeWithOptionalInstruction = async () => {
@@ -414,7 +377,7 @@ export function PromptsStep({
               ) : (
                 <textarea
                   value={(() => {
-                    const prompt = stripCharactersFromPrompt(segment.imagePrompt).cleanedPrompt;
+                    const prompt = segment.imagePrompt;
                     if (!prompt) return `${segment.emotion} scene depicting: ${segment.text}`;
                     if (typeof prompt === 'string') return prompt;
                     return JSON.stringify(prompt, null, 2);

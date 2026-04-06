@@ -11,8 +11,6 @@ import {
 import {
   getAssetTypeInfo,
   normalizeCharactersField,
-  normalizeSceneReferenceIds,
-  stripCharactersFromPrompt,
 } from './prompt-utils';
 
 interface ImagesStepProps {
@@ -460,40 +458,6 @@ export function ImagesStep({
     }
   };
 
-  useEffect(() => {
-    if (!onSegmentsUpdate) return;
-
-    let hasChanges = false;
-    const nextSegments = segments.map(segment => {
-      const parsedCurrentCharacters = normalizeCharactersField(segment.IdOfTheCharactersInTheScene);
-      const parsedCurrentLocation = normalizeSceneReferenceIds(segment.IdOfTheLocationInTheScene);
-      const {
-        cleanedPrompt,
-        extractedCharacters,
-        extractedLocation,
-        didStrip,
-      } = stripCharactersFromPrompt(segment.imagePrompt);
-      const nextCharacters = parsedCurrentCharacters ?? extractedCharacters;
-      const nextLocation = parsedCurrentLocation ?? extractedLocation;
-      const charsChanged = nextCharacters !== parsedCurrentCharacters;
-      const locationChanged = nextLocation !== parsedCurrentLocation;
-
-      if (!didStrip && !charsChanged && !locationChanged) return segment;
-
-      hasChanges = true;
-      return {
-        ...segment,
-        imagePrompt: cleanedPrompt as any,
-        IdOfTheCharactersInTheScene: nextCharacters,
-        IdOfTheLocationInTheScene: nextLocation,
-      };
-    });
-
-    if (hasChanges) {
-      onSegmentsUpdate(nextSegments);
-    }
-  }, [segments, onSegmentsUpdate]);
-
   const isAiBusy = Boolean(isProcessing)
     || pendingSceneId !== null
     || generatingSegments.size > 0
@@ -557,41 +521,7 @@ export function ImagesStep({
   };
 
   const getCharactersInScene = (segment: TranscriptionSegment): string | null => {
-    const directValue = parseCharactersInScene(segment.IdOfTheCharactersInTheScene);
-    if (directValue) return directValue;
-
-    // Compatibilidade com projetos antigos onde esse campo vinha dentro do imagePrompt.
-    const imagePrompt = segment.imagePrompt;
-    if (!imagePrompt) return null;
-
-    let charsRaw: unknown = null;
-
-    if (typeof imagePrompt === 'object' && imagePrompt !== null) {
-      const imagePromptObj = imagePrompt as Record<string, any>;
-      if ('IdOfTheCharactersInTheScene' in imagePromptObj) {
-        charsRaw = imagePromptObj.IdOfTheCharactersInTheScene;
-      } else if (
-        typeof imagePromptObj.video_generation_prompt === 'object' &&
-        imagePromptObj.video_generation_prompt !== null &&
-        'IdOfTheCharactersInTheScene' in imagePromptObj.video_generation_prompt
-      ) {
-        charsRaw = imagePromptObj.video_generation_prompt.IdOfTheCharactersInTheScene;
-      }
-    } else if (typeof imagePrompt === 'string') {
-      try {
-        const parsed = JSON.parse(imagePrompt);
-        if (parsed.IdOfTheCharactersInTheScene) {
-          charsRaw = parsed.IdOfTheCharactersInTheScene;
-        } else if (parsed.video_generation_prompt?.IdOfTheCharactersInTheScene) {
-          charsRaw = parsed.video_generation_prompt.IdOfTheCharactersInTheScene;
-        }
-      } catch {
-        // Fallback: extrair usando regex em string crua
-        charsRaw = imagePrompt;
-      }
-    }
-
-    return parseCharactersInScene(charsRaw);
+    return parseCharactersInScene(segment.IdOfTheCharactersInTheScene);
   };
 
   // ── Batch Processing (Processamento em lote) ──
@@ -2271,7 +2201,7 @@ export function ImagesStep({
                 ) : (
                   <textarea
                     value={(() => {
-                      const prompt = stripCharactersFromPrompt(segment.imagePrompt).cleanedPrompt;
+                      const prompt = segment.imagePrompt;
                       if (!prompt) return `${segment.emotion} scene depicting: ${segment.text}`;
                       if (typeof prompt === 'string') return prompt;
                       return JSON.stringify(prompt, null, 2);
