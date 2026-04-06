@@ -410,6 +410,18 @@ const handler = {
     editPrompts: (segments: any[], options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string, userInstruction?: string }) =>
       ipcRenderer.invoke('video-project:edit-prompts', segments, options),
 
+    // Extração independente de personagens e lugares a partir da transcrição
+    extractStoryAssets: (
+      input: { transcription?: string; segments?: any[] },
+      options?: {
+        provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+        model?: string;
+        characterStyle?: string;
+        locationStyle?: string;
+      }
+    ) =>
+      ipcRenderer.invoke('video-project:extract-story-assets', input, options),
+
     // Gerar prompts de imagem do primeiro frame de cada cena
     generateFirstFramePrompts: (segments: any[], options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string }) =>
       ipcRenderer.invoke('video-project:generate-first-frame-prompts', segments, options),

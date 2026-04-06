@@ -38,6 +38,36 @@ interface SmartVideoPreviewProps {
   src: string;
 }
 
+interface StoryCharacterReference {
+  id: number;
+  character: string;
+  prompt_en: string;
+  reference_id: number | null;
+}
+
+interface StoryLocationReference {
+  id: number;
+  location: string;
+  prompt_en: string;
+  reference_id: number | null;
+}
+
+interface CharacterReferenceItem {
+  id: number;
+  character: string;
+  prompt_en: string;
+  reference_id: number | null;
+  imageUrl?: string;
+}
+
+interface LocationReferenceItem {
+  id: number;
+  location: string;
+  prompt_en: string;
+  reference_id: number | null;
+  imageUrl?: string;
+}
+
 const SmartVideoPreview = React.memo(function SmartVideoPreview({ src }: SmartVideoPreviewProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -165,12 +195,26 @@ export function ImagesStep({
   const [ingredientMode, setIngredientMode] = useState<Record<number, 'frames' | 'ingredients'>>({});
   const [ingredientImages, setIngredientImages] = useState<Record<number, string[]>>({});
 
-  // ── Character Images ──
+  // ── Character / Location References ──
   const [showCharactersModal, setShowCharactersModal] = useState(false);
-  const [characterImages, setCharacterImages] = useState<Record<number, string>>({});
+  const [characterReferences, setCharacterReferences] = useState<CharacterReferenceItem[]>([]);
+  const [locationReferences, setLocationReferences] = useState<LocationReferenceItem[]>([]);
+  const [isExtractingReferences, setIsExtractingReferences] = useState(false);
+  const [referencesError, setReferencesError] = useState<string | null>(null);
+  const [characterStyle, setCharacterStyle] = useState('fotorrealista');
+  const [locationStyle, setLocationStyle] = useState('fotorrealista');
   const [globalInstruction, setGlobalInstruction] = useState('');
   const [sceneInstructions, setSceneInstructions] = useState<Record<number, string>>({});
   const [pendingSceneId, setPendingSceneId] = useState<number | null>(null);
+
+  const characterImages = useMemo<Record<number, string>>(() => {
+    return characterReferences.reduce((acc, character) => {
+      if (character.imageUrl) {
+        acc[character.id] = character.imageUrl;
+      }
+      return acc;
+    }, {} as Record<number, string>);
+  }, [characterReferences]);
 
   const hasGlobalInstruction = globalInstruction.trim().length > 0;
   const hasVideoStockWithoutUrl = segments.some(
@@ -184,14 +228,33 @@ export function ImagesStep({
 
   const handleCharacterImageUpload = async (charId: number, file: File) => {
     try {
+      const fallbackCharacter = {
+        id: charId,
+        character: `Personagem ${charId}`,
+        prompt_en: '',
+        reference_id: null as number | null,
+      };
+
+      const applyImage = (imageUrl: string) => {
+        setCharacterReferences(prev => {
+          const hasReference = prev.some(character => character.id === charId);
+          if (!hasReference) {
+            return [...prev, { ...fallbackCharacter, imageUrl }].sort((a, b) => a.id - b.id);
+          }
+
+          return prev.map(character =>
+            character.id === charId ? { ...character, imageUrl } : character
+          );
+        });
+      };
+
       if (!window.electron?.videoProject?.saveImage) {
-        const mediaUrl = URL.createObjectURL(file);
-        setCharacterImages(prev => ({ ...prev, [charId]: mediaUrl }));
+        applyImage(URL.createObjectURL(file));
       } else {
         const arrayBuffer = await file.arrayBuffer();
         const result = await window.electron.videoProject.saveImage(arrayBuffer, `character_${charId}_${file.name}`, 0);
         if (result.success && result.httpUrl) {
-          setCharacterImages(prev => ({ ...prev, [charId]: result.httpUrl }));
+          applyImage(result.httpUrl);
         }
       }
     } catch (error) {
@@ -200,11 +263,188 @@ export function ImagesStep({
   };
 
   const handleRemoveCharacterImage = (charId: number) => {
-    setCharacterImages(prev => {
-      const next = { ...prev };
-      delete next[charId];
-      return next;
-    });
+    setCharacterReferences(prev => prev.map(character =>
+      character.id === charId ? { ...character, imageUrl: undefined } : character
+    ));
+  };
+
+  const handleLocationImageUpload = async (locationId: number, file: File) => {
+    try {
+      const fallbackLocation = {
+        id: locationId,
+        location: `Lugar ${locationId}`,
+        prompt_en: '',
+        reference_id: null as number | null,
+      };
+
+      const applyImage = (imageUrl: string) => {
+        setLocationReferences(prev => {
+          const hasReference = prev.some(location => location.id === locationId);
+          if (!hasReference) {
+            return [...prev, { ...fallbackLocation, imageUrl }].sort((a, b) => a.id - b.id);
+          }
+
+          return prev.map(location =>
+            location.id === locationId ? { ...location, imageUrl } : location
+          );
+        });
+      };
+
+      if (!window.electron?.videoProject?.saveImage) {
+        applyImage(URL.createObjectURL(file));
+      } else {
+        const arrayBuffer = await file.arrayBuffer();
+        const result = await window.electron.videoProject.saveImage(arrayBuffer, `location_${locationId}_${file.name}`, 0);
+        if (result.success && result.httpUrl) {
+          applyImage(result.httpUrl);
+        }
+      }
+    } catch (error) {
+      console.error('Error uploading location image:', error);
+    }
+  };
+
+  const handleRemoveLocationImage = (locationId: number) => {
+    setLocationReferences(prev => prev.map(location =>
+      location.id === locationId ? { ...location, imageUrl: undefined } : location
+    ));
+  };
+
+  const addManualCharacterReference = () => {
+    const maxId = characterReferences.reduce((max, item) => Math.max(max, item.id), 0);
+    const nextId = maxId + 1;
+    setCharacterReferences(prev => ([
+      ...prev,
+      {
+        id: nextId,
+        character: `Personagem ${nextId}`,
+        prompt_en: '',
+        reference_id: null,
+      },
+    ]));
+  };
+
+  const addManualLocationReference = () => {
+    const maxId = locationReferences.reduce((max, item) => Math.max(max, item.id), 0);
+    const nextId = maxId + 1;
+    setLocationReferences(prev => ([
+      ...prev,
+      {
+        id: nextId,
+        location: `Lugar ${nextId}`,
+        prompt_en: '',
+        reference_id: null,
+      },
+    ]));
+  };
+
+  const toPositiveInt = (value: unknown): number | null => {
+    if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+      return Math.floor(value);
+    }
+
+    if (typeof value === 'string') {
+      const parsed = parseInt(value.trim(), 10);
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed;
+      }
+    }
+
+    return null;
+  };
+
+  const handleExtractStoryReferences = async () => {
+    if (isAiBusy || isExtractingReferences) return;
+    if (!window.electron?.videoProject?.extractStoryAssets) return;
+
+    const segmentsPayload = segments
+      .filter(seg => (seg.text || '').trim().length > 0)
+      .map(seg => ({
+        id: seg.id,
+        text: seg.text,
+        start: seg.start,
+        end: seg.end,
+        speaker: seg.speaker,
+      }));
+
+    if (segmentsPayload.length === 0) {
+      setReferencesError('Não há transcrição suficiente para extrair personagens e lugares.');
+      return;
+    }
+
+    setIsExtractingReferences(true);
+    setReferencesError(null);
+
+    try {
+      const requestPayload = { segments: segmentsPayload };
+      const requestOptions = {
+        provider,
+        model: providerModel,
+        characterStyle: characterStyle.trim() || 'fotorrealista',
+        locationStyle: locationStyle.trim() || 'fotorrealista',
+      };
+      console.log('🧪 [StoryAssets][Renderer] Request:', {
+        payload: requestPayload,
+        options: requestOptions,
+      });
+
+      const result = await window.electron.videoProject.extractStoryAssets(
+        requestPayload,
+        requestOptions
+      );
+      console.log('🧪 [StoryAssets][Renderer] Response:', result);
+
+      if (!result?.success) {
+        setReferencesError(result?.error || 'Falha ao extrair referências.');
+        return;
+      }
+
+      const previousCharacterImages = new Map<number, string>();
+      characterReferences.forEach(character => {
+        if (character.imageUrl) previousCharacterImages.set(character.id, character.imageUrl);
+      });
+
+      const previousLocationImages = new Map<number, string>();
+      locationReferences.forEach(location => {
+        if (location.imageUrl) previousLocationImages.set(location.id, location.imageUrl);
+      });
+
+      const nextCharacters = (Array.isArray(result.characters) ? result.characters : []) as StoryCharacterReference[];
+      const nextLocations = (Array.isArray(result.locations) ? result.locations : []) as StoryLocationReference[];
+
+      const normalizedCharacters = nextCharacters.map((character, index) => {
+        const id = toPositiveInt(character?.id) ?? index + 1;
+        return {
+          id,
+          character: String(character?.character ?? `Personagem ${id}`),
+          prompt_en: String(character?.prompt_en ?? '').trim(),
+          reference_id: toPositiveInt(character?.reference_id),
+          imageUrl: previousCharacterImages.get(id),
+        } as CharacterReferenceItem;
+      });
+
+      const normalizedLocations = nextLocations.map((location, index) => {
+        const id = toPositiveInt(location?.id) ?? index + 1;
+        return {
+          id,
+          location: String(location?.location ?? `Lugar ${id}`),
+          prompt_en: String(location?.prompt_en ?? '').trim(),
+          reference_id: toPositiveInt(location?.reference_id),
+          imageUrl: previousLocationImages.get(id),
+        } as LocationReferenceItem;
+      });
+
+      setCharacterReferences(normalizedCharacters);
+      setLocationReferences(normalizedLocations);
+
+      if (normalizedCharacters.length === 0 && normalizedLocations.length === 0) {
+        setReferencesError('A IA não retornou personagens ou lugares para esta transcrição.');
+      }
+    } catch (error: any) {
+      setReferencesError(error?.message || 'Falha ao extrair referências.');
+    } finally {
+      setIsExtractingReferences(false);
+    }
   };
 
   useEffect(() => {
@@ -235,7 +475,8 @@ export function ImagesStep({
   const isAiBusy = Boolean(isProcessing)
     || pendingSceneId !== null
     || generatingSegments.size > 0
-    || uploadingSegments.size > 0;
+    || uploadingSegments.size > 0
+    || isExtractingReferences;
 
   const handleAnalyzeWithOptionalInstruction = async () => {
     if (!onAnalyze || isAiBusy) return;
@@ -1255,7 +1496,7 @@ export function ImagesStep({
               onClick={() => setShowCharactersModal(true)}
               className="px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 border border-yellow-500/20 rounded-lg transition-all"
             >
-              📸 Personagens
+              📸 Personagens e Lugares
             </button>
 
             <button
@@ -2200,14 +2441,14 @@ export function ImagesStep({
         );
       })()}
 
-      {/* Modal de Personagens */}
+      {/* Modal de Personagens e Lugares */}
       {showCharactersModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col shadow-2xl">
+          <div className="bg-[#1a1a2e] border border-white/10 rounded-2xl w-full max-w-5xl max-h-[90vh] flex flex-col shadow-2xl">
             <div className="p-6 border-b border-white/10 flex justify-between items-center">
               <div>
-                <h3 className="text-xl font-bold text-white mb-1">📸 Referências de Personagens</h3>
-                <p className="text-white/50 text-sm">Faça upload de personagens que poderão ser usados como referência ou ingredientes.</p>
+                <h3 className="text-xl font-bold text-white mb-1">📸 Referências de Personagens e Lugares</h3>
+                <p className="text-white/50 text-sm">Extraia itens da transcrição com IA e faça upload de uma imagem por personagem/lugar.</p>
               </div>
               <button
                 onClick={() => setShowCharactersModal(false)}
@@ -2216,73 +2457,273 @@ export function ImagesStep({
                 ✕
               </button>
             </div>
-            
-            <div className="p-6 overflow-y-auto flex-1 custom-scrollbar">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-6">
-                {/* Mostra personagens existentes ou placeholders (sempre garantimos pelo menos um extra) */}
-                {Array.from({ length: Math.max(...Object.keys(characterImages).map(Number), 0) + 1 }).map((_, i) => {
-                  const charId = i + 1;
-                  const imgUrl = characterImages[charId];
-                  return (
-                    <div key={charId} className="flex flex-col gap-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-white/80 text-sm font-medium">Personagem {charId}</span>
-                        {imgUrl && (
-                          <button
-                            onClick={() => handleRemoveCharacterImage(charId)}
-                            className="text-red-400 hover:text-red-300 text-xs transition-colors"
-                          >
-                            Remover
-                          </button>
-                        )}
-                      </div>
-                      <div className="aspect-square relative group rounded-xl border-2 border-dashed border-white/20 hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all overflow-hidden flex items-center justify-center bg-white/5 cursor-pointer">
-                        {imgUrl ? (
-                          <>
-                            <img
-                              src={getMediaSrc(imgUrl)}
-                              alt={`Personagem ${charId}`}
-                              className="w-full h-full object-cover"
-                              loading="lazy"
-                              decoding="async"
-                            />
-                            <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
-                              <label className="text-white text-sm font-medium px-3 py-1.5 bg-black/50 rounded-lg cursor-pointer hover:bg-black/70 transition-all">
-                                📁 Trocar
+
+            <div className="px-6 pt-6 pb-4 border-b border-white/10">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  onClick={handleExtractStoryReferences}
+                  disabled={isExtractingReferences || isAiBusy || !window.electron?.videoProject?.extractStoryAssets}
+                  className={`px-4 py-2 rounded-lg border transition-all text-sm ${
+                    isExtractingReferences || isAiBusy
+                      ? 'bg-white/5 border-white/10 text-white/40 cursor-not-allowed'
+                      : 'bg-yellow-500/10 hover:bg-yellow-500/20 border-yellow-500/30 text-yellow-300'
+                  }`}
+                >
+                  {isExtractingReferences ? 'Extraindo referências...' : '✨ Extrair da transcrição'}
+                </button>
+                <span className="text-white/50 text-sm">
+                  {characterReferences.length} personagem(ns) • {locationReferences.length} lugar(es)
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Estilo dos personagens</label>
+                  <input
+                    type="text"
+                    value={characterStyle}
+                    onChange={(e) => setCharacterStyle(e.target.value)}
+                    placeholder="Ex: fotorrealista, anime, aquarela"
+                    disabled={isExtractingReferences}
+                    className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-yellow-500 focus:outline-none disabled:opacity-60"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Estilo dos lugares</label>
+                  <input
+                    type="text"
+                    value={locationStyle}
+                    onChange={(e) => setLocationStyle(e.target.value)}
+                    placeholder="Ex: fotorrealista, pintura a óleo, low poly"
+                    disabled={isExtractingReferences}
+                    className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-cyan-500 focus:outline-none disabled:opacity-60"
+                  />
+                </div>
+              </div>
+              {referencesError && (
+                <p className="mt-3 text-sm text-red-300">{referencesError}</p>
+              )}
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1 custom-scrollbar space-y-8">
+              <section className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-white font-semibold">Personagens</h4>
+                  <button
+                    onClick={addManualCharacterReference}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-all"
+                  >
+                    + Adicionar manualmente
+                  </button>
+                </div>
+
+                {characterReferences.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-white/50">
+                    Nenhum personagem listado ainda.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {characterReferences.map(character => {
+                      const imgUrl = character.imageUrl;
+                      return (
+                        <div key={`character-${character.id}`} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-white text-sm font-medium">
+                              #{character.id} {character.character || `Personagem ${character.id}`}
+                            </div>
+                            <div className="text-xs text-white/40">
+                              {character.reference_id ? `ref #${character.reference_id}` : 'base'}
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            value={character.character}
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setCharacterReferences(prev => prev.map(item =>
+                                item.id === character.id ? { ...item, character: nextValue } : item
+                              ));
+                            }}
+                            placeholder="Nome do personagem"
+                            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-yellow-500 focus:outline-none"
+                          />
+
+                          <textarea
+                            value={character.prompt_en}
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setCharacterReferences(prev => prev.map(item =>
+                                item.id === character.id ? { ...item, prompt_en: nextValue } : item
+                              ));
+                            }}
+                            placeholder="Prompt em inglês para gerar a referência visual do personagem"
+                            className="w-full min-h-[90px] bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-yellow-500 focus:outline-none resize-y"
+                          />
+
+                          <div className="aspect-video relative group rounded-xl border-2 border-dashed border-white/20 hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all overflow-hidden flex items-center justify-center bg-white/5 cursor-pointer">
+                            {imgUrl ? (
+                              <>
+                                <img
+                                  src={getMediaSrc(imgUrl)}
+                                  alt={`Personagem ${character.id}`}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                                <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                  <label className="text-white text-xs font-medium px-3 py-1.5 bg-black/50 rounded-lg cursor-pointer hover:bg-black/70 transition-all">
+                                    📁 Trocar
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={e => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleCharacterImageUpload(character.id, file);
+                                      }}
+                                    />
+                                  </label>
+                                  <button
+                                    onClick={() => handleRemoveCharacterImage(character.id)}
+                                    className="text-red-200 text-xs font-medium px-3 py-1.5 bg-red-500/40 rounded-lg hover:bg-red-500/60 transition-all"
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer p-4 text-center">
+                                <span className="text-white/30 text-3xl mb-2">+</span>
+                                <span className="text-white/50 text-xs">Adicionar imagem</span>
                                 <input
                                   type="file"
                                   accept="image/*"
                                   className="hidden"
                                   onChange={e => {
                                     const file = e.target.files?.[0];
-                                    if (file) handleCharacterImageUpload(charId, file);
+                                    if (file) handleCharacterImageUpload(character.id, file);
                                   }}
                                 />
                               </label>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
+
+              <section className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-white font-semibold">Lugares</h4>
+                  <button
+                    onClick={addManualLocationReference}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs transition-all"
+                  >
+                    + Adicionar manualmente
+                  </button>
+                </div>
+
+                {locationReferences.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-white/15 p-4 text-sm text-white/50">
+                    Nenhum lugar listado ainda.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    {locationReferences.map(location => {
+                      const imgUrl = location.imageUrl;
+                      return (
+                        <div key={`location-${location.id}`} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <div className="text-white text-sm font-medium">
+                              #{location.id} {location.location || `Lugar ${location.id}`}
                             </div>
-                          </>
-                        ) : (
-                          <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer p-4 text-center">
-                            <span className="text-white/30 text-3xl mb-2">+</span>
-                            <span className="text-white/50 text-xs">Adicionar<br/>Referência</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={e => {
-                                const file = e.target.files?.[0];
-                                if (file) handleCharacterImageUpload(charId, file);
-                              }}
-                            />
-                          </label>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                            <div className="text-xs text-white/40">
+                              {location.reference_id ? `ref #${location.reference_id}` : 'base'}
+                            </div>
+                          </div>
+
+                          <input
+                            type="text"
+                            value={location.location}
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setLocationReferences(prev => prev.map(item =>
+                                item.id === location.id ? { ...item, location: nextValue } : item
+                              ));
+                            }}
+                            placeholder="Nome do lugar"
+                            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-cyan-500 focus:outline-none"
+                          />
+
+                          <textarea
+                            value={location.prompt_en}
+                            onChange={(e) => {
+                              const nextValue = e.target.value;
+                              setLocationReferences(prev => prev.map(item =>
+                                item.id === location.id ? { ...item, prompt_en: nextValue } : item
+                              ));
+                            }}
+                            placeholder="Prompt em inglês para gerar a referência visual do lugar"
+                            className="w-full min-h-[90px] bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-cyan-500 focus:outline-none resize-y"
+                          />
+
+                          <div className="aspect-video relative group rounded-xl border-2 border-dashed border-white/20 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all overflow-hidden flex items-center justify-center bg-white/5 cursor-pointer">
+                            {imgUrl ? (
+                              <>
+                                <img
+                                  src={getMediaSrc(imgUrl)}
+                                  alt={`Lugar ${location.id}`}
+                                  className="w-full h-full object-cover"
+                                  loading="lazy"
+                                  decoding="async"
+                                />
+                                <div className="absolute inset-0 bg-black/55 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                                  <label className="text-white text-xs font-medium px-3 py-1.5 bg-black/50 rounded-lg cursor-pointer hover:bg-black/70 transition-all">
+                                    📁 Trocar
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      onChange={e => {
+                                        const file = e.target.files?.[0];
+                                        if (file) handleLocationImageUpload(location.id, file);
+                                      }}
+                                    />
+                                  </label>
+                                  <button
+                                    onClick={() => handleRemoveLocationImage(location.id)}
+                                    className="text-red-200 text-xs font-medium px-3 py-1.5 bg-red-500/40 rounded-lg hover:bg-red-500/60 transition-all"
+                                  >
+                                    Remover
+                                  </button>
+                                </div>
+                              </>
+                            ) : (
+                              <label className="w-full h-full flex flex-col items-center justify-center cursor-pointer p-4 text-center">
+                                <span className="text-white/30 text-3xl mb-2">+</span>
+                                <span className="text-white/50 text-xs">Adicionar imagem</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={e => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleLocationImageUpload(location.id, file);
+                                  }}
+                                />
+                              </label>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </section>
             </div>
-            
+
             <div className="p-6 border-t border-white/10 flex justify-end">
               <button
                 onClick={() => setShowCharactersModal(false)}

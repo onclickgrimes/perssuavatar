@@ -201,6 +201,38 @@ export function registerVideoEditorHandlers(): void {
     }
   });
 
+  // Handler independente para extrair personagens e lugares da transcrição
+  registerVideoEditorGuardedHandle('video-project:extract-story-assets', async (
+    event,
+    input: {
+      transcription?: string;
+      segments?: VideoProjectSegment[];
+    },
+    options?: {
+      provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+      model?: string;
+      characterStyle?: string;
+      locationStyle?: string;
+    }
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      console.log('🧩 [VideoProject] Extracting story assets (characters + locations)...');
+      console.log('🧪 [StoryAssets][IPC] Request:', JSON.stringify({ input, options }, null, 2));
+      const result = await videoProjectService.extractStoryAssetsFromTranscription(input || {}, options);
+      console.log('🧪 [StoryAssets][IPC] Response:', JSON.stringify(result, null, 2));
+      return result;
+    } catch (error: any) {
+      console.error('❌ [VideoProject] Story assets extraction error:', error);
+      return {
+        success: false,
+        error: error.message,
+        characters: [],
+        locations: [],
+      };
+    }
+  });
+
   // Handler para gerar prompts de imagem do primeiro frame de cada cena
   registerVideoEditorGuardedHandle('video-project:generate-first-frame-prompts', async (
     event,

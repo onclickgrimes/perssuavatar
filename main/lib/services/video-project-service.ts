@@ -145,6 +145,27 @@ export interface AnalysisResult {
     segments: VideoProjectSegment[];
 }
 
+export interface StoryCharacterReference {
+    id: number;
+    character: string;
+    prompt_en: string;
+    reference_id: number | null;
+}
+
+export interface StoryLocationReference {
+    id: number;
+    location: string;
+    prompt_en: string;
+    reference_id: number | null;
+}
+
+export interface StoryAssetsExtractionResult {
+    success: boolean;
+    characters: StoryCharacterReference[];
+    locations: StoryLocationReference[];
+    error?: string;
+}
+
 export interface RemotionProject {
     project_title: string;
     description?: string;
@@ -363,6 +384,34 @@ export class VideoProjectService extends EventEmitter {
 
         console.log(`🧠 [VideoProject] GenAI JSON Response (${rawText.length} chars)`);
         return this.parseJsonResponseText(rawText);
+    }
+
+    private async requestJsonWithProvider(
+        provider: AIProvider,
+        payload: any[],
+        model?: string
+    ): Promise<any> {
+        if (provider === 'gemini') {
+            return this.getGeminiVideoAnalysis(payload, model);
+        }
+
+        if (provider === 'gemini_scraping') {
+            return this.getGeminiScrapingVideoAnalysis(payload);
+        }
+
+        if (provider === 'openai') {
+            if (!this.openAIService) throw new Error('OpenAI API not configured');
+            if (model) this.openAIService.setModel(model);
+            return this.openAIService.getChatVideoAnalysis(payload);
+        }
+
+        if (provider === 'deepseek') {
+            if (!this.deepSeekService) throw new Error('DeepSeek API not configured');
+            if (model) this.deepSeekService.setModel(model);
+            return this.deepSeekService.getChatVideoAnalysis(payload);
+        }
+
+        throw new Error(`Unknown provider: ${provider}`);
     }
 
     /**
@@ -1447,6 +1496,101 @@ export class VideoProjectService extends EventEmitter {
         }
     }
 
+    public async extractStoryAssetsFromTranscription(
+        input: {
+            transcription?: string;
+            segments?: VideoProjectSegment[];
+        },
+        options?: {
+            provider?: AIProvider;
+            model?: string;
+            characterStyle?: string;
+            locationStyle?: string;
+        }
+    ): Promise<StoryAssetsExtractionResult> {
+        const provider = options?.provider || 'gemini';
+        const characterStyle = (options?.characterStyle || 'fotorrealista').trim() || 'fotorrealista';
+        const locationStyle = (options?.locationStyle || 'fotorrealista').trim() || 'fotorrealista';
+        const segments = Array.isArray(input?.segments) ? input.segments : [];
+        const toDebugJson = (value: unknown): string => {
+            try {
+                return JSON.stringify(value, null, 2);
+            } catch {
+                return String(value);
+            }
+        };
+
+        const segmentsTranscript = segments
+            .slice()
+            .sort((a, b) => a.start - b.start)
+            .map(seg => `${seg.text}`)
+            .join('\n');
+
+        const transcription = (input?.transcription || segmentsTranscript || '').trim();
+        if (!transcription) {
+            return {
+                success: false,
+                error: 'Transcrição vazia. Não foi possível extrair personagens e lugares.',
+                characters: [],
+                locations: [],
+            };
+        }
+
+        this.emit('status', {
+            stage: 'analyzing',
+            message: `Extraindo personagens e lugares com ${provider}...`,
+        });
+
+        try {
+            const prompt = this.buildStoryAssetsExtractionPrompt(transcription, {
+                characterStyle,
+                locationStyle,
+            });
+            const aiRequestPayload: any[] = [
+                {
+                    role: 'system',
+                    content: 'You are a visual pre-production assistant. Return ONLY valid JSON.',
+                },
+                {
+                    role: 'user',
+                    content: prompt,
+                },
+            ];
+            console.log('🧪 [StoryAssets][Service] AI Request:', toDebugJson({
+                provider,
+                model: options?.model || null,
+                characterStyle,
+                locationStyle,
+                transcriptionLength: transcription.length,
+                aiRequestPayload,
+            }));
+
+            const aiResponse = await this.requestJsonWithProvider(provider, aiRequestPayload, options?.model);
+            console.log('🧪 [StoryAssets][Service] AI Raw Response:', toDebugJson(aiResponse));
+            const normalizedResponse = this.normalizeStoryAssetsResponse(aiResponse);
+            console.log('🧪 [StoryAssets][Service] AI Normalized Response:', toDebugJson(normalizedResponse));
+
+            this.emit('status', {
+                stage: 'analyzed',
+                message: 'Personagens e lugares extraídos.',
+            });
+
+            return {
+                success: true,
+                characters: normalizedResponse.characters,
+                locations: normalizedResponse.locations,
+            };
+        } catch (error: any) {
+            console.error('❌ Story assets extraction error:', error);
+            return {
+                success: false,
+                error: error?.message || String(error),
+                characters: [],
+                locations: [],
+            };
+        }
+    }
+
     private async getGeminiScrapingVideoAnalysis(messages: Array<{ role: string; content: string }>): Promise<any> {
         const { provider, providerId, providerName } = await this.ensureGeminiScrapingProvider();
         console.log(`🕸️ [VideoProject] Using Gemini scraping provider: ${providerName} (${providerId})`);
@@ -1631,6 +1775,130 @@ export class VideoProjectService extends EventEmitter {
         }
 
         return null;
+    }
+
+    private toPositiveInt(value: unknown): number | null {
+        if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+            return Math.floor(value);
+        }
+
+        if (typeof value === 'string') {
+            const parsed = parseInt(value.trim(), 10);
+            if (!isNaN(parsed) && parsed > 0) {
+                return parsed;
+            }
+        }
+
+        return null;
+    }
+
+    private normalizeStoryCharacterItem(item: any, fallbackId: number): StoryCharacterReference | null {
+        if (!item || typeof item !== 'object') return null;
+
+        const id = this.toPositiveInt(item.id) ?? fallbackId;
+        const referenceId = this.toPositiveInt(item.reference_id);
+
+        const characterRaw = item.character ?? item.name ?? item.personagem;
+        const promptRaw = item.prompt_en ?? item.prompt ?? item.promptEnglish;
+
+        const character = characterRaw == null ? '' : String(characterRaw).trim();
+        const prompt_en = promptRaw == null ? '' : String(promptRaw).trim();
+
+        if (!character || !prompt_en) return null;
+
+        return {
+            id,
+            character,
+            prompt_en,
+            reference_id: referenceId,
+        };
+    }
+
+    private normalizeStoryLocationItem(item: any, fallbackId: number): StoryLocationReference | null {
+        if (!item || typeof item !== 'object') return null;
+
+        const id = this.toPositiveInt(item.id) ?? fallbackId;
+        const referenceId = this.toPositiveInt(item.reference_id);
+
+        const locationRaw = item.location ?? item.place ?? item.lugar ?? item.cenario;
+        const promptRaw = item.prompt_en ?? item.prompt ?? item.promptEnglish;
+
+        const location = locationRaw == null ? '' : String(locationRaw).trim();
+        const prompt_en = promptRaw == null ? '' : String(promptRaw).trim();
+
+        if (!location || !prompt_en) return null;
+
+        return {
+            id,
+            location,
+            prompt_en,
+            reference_id: referenceId,
+        };
+    }
+
+    private normalizeStoryItemsIds<T extends { id: number; reference_id: number | null }>(items: T[]): T[] {
+        if (!items.length) return [];
+
+        const originalToFinalId = new Map<number, number>();
+        items.forEach((item, idx) => {
+            originalToFinalId.set(item.id, idx + 1);
+        });
+
+        return items.map((item, idx) => {
+            const mappedReference = item.reference_id == null
+                ? null
+                : originalToFinalId.get(item.reference_id) ?? null;
+
+            return {
+                ...item,
+                id: idx + 1,
+                reference_id: mappedReference === idx + 1 ? null : mappedReference,
+            };
+        });
+    }
+
+    private normalizeStoryAssetsResponse(rawResponse: any): {
+        characters: StoryCharacterReference[];
+        locations: StoryLocationReference[];
+    } {
+        const payload = (() => {
+            if (Array.isArray(rawResponse)) {
+                return { characters: [], locations: rawResponse };
+            }
+
+            if (rawResponse && typeof rawResponse === 'object') {
+                return rawResponse as Record<string, any>;
+            }
+
+            throw new Error('Formato de resposta inválido para extração de personagens/lugares.');
+        })();
+
+        const rawCharacters = Array.isArray(payload.characters)
+            ? payload.characters
+            : Array.isArray(payload.personagens)
+                ? payload.personagens
+                : [];
+
+        const rawLocations = Array.isArray(payload.locations)
+            ? payload.locations
+            : Array.isArray(payload.lugares)
+                ? payload.lugares
+                : Array.isArray(payload.scenes)
+                    ? payload.scenes
+                    : [];
+
+        const characters = rawCharacters
+            .map((item: any, idx: number) => this.normalizeStoryCharacterItem(item, idx + 1))
+            .filter((item: StoryCharacterReference | null): item is StoryCharacterReference => Boolean(item));
+
+        const locations = rawLocations
+            .map((item: any, idx: number) => this.normalizeStoryLocationItem(item, idx + 1))
+            .filter((item: StoryLocationReference | null): item is StoryLocationReference => Boolean(item));
+
+        return {
+            characters: this.normalizeStoryItemsIds(characters),
+            locations: this.normalizeStoryItemsIds(locations),
+        };
     }
 
     // ========================================
@@ -1998,6 +2266,57 @@ Formato de resposta:
     {
       "id": 1,
       "firstFrame": "Detailed English prompt for the first frame image of this scene"
+    }
+  ]
+}`;
+    }
+
+    private buildStoryAssetsExtractionPrompt(
+        transcription: string,
+        styles?: {
+            characterStyle?: string;
+            locationStyle?: string;
+        }
+    ): string {
+        const characterStyleLabel = ((styles?.characterStyle || '').replace(/\s+/g, ' ').trim() || 'fotorrealista');
+        const locationStyleLabel = ((styles?.locationStyle || '').replace(/\s+/g, ' ').trim() || 'fotorrealista');
+        return `Analise o roteiro/transcrição abaixo e extraia duas listas independentes: personagens e lugares.
+
+TRANSCRIÇÃO:
+${transcription}
+
+TAREFA 1 — PERSONAGENS:
+- Liste individualmente os personagens relevantes para geração visual. Apenas um personagem por item.
+- Para cada personagem, gere um prompt em inglês para imagem no estilo "${characterStyleLabel}" do personagem.
+- Se o mesmo personagem mudar de roupa, aparência, idade, penteado, estado físico ou característica visual importante, crie um NOVO item com "reference_id" apontando para o ID base do personagem.
+- Para personagens totalmente novos, use "reference_id": null.
+
+TAREFA 2 — LUGARES:
+- Liste os lugares/cenários onde a história acontece.
+- Para cada lugar, gere um prompt em inglês para imagem no estilo "${locationStyleLabel}" do cenário (sem personagens visíveis).
+- O prompt do lugar deve manter coerência com os personagens da história (ex: objetos, vestígios, contexto, escala e atmosfera ligadas a eles), mas sem mostrar pessoas.
+- Se algo mudar no lugar, gere outro item para o mesmo lugar com "reference_id" apontando para o ID base do lugar.
+- Para lugares inéditos, use "reference_id": null.
+
+Regras obrigatórias:
+- Responda EXCLUSIVAMENTE em JSON válido.
+- Não use markdown, comentários ou texto fora do JSON.
+- Retorne exatamente neste formato:
+{
+  "characters": [
+    {
+      "id": 1,
+      "character": "Character name (Context/Moment)",
+      "prompt_en": "Detailed English prompt...",
+      "reference_id": null
+    }
+  ],
+  "locations": [
+    {
+      "id": 1,
+      "location": "Name + (Context/Moment)",
+      "prompt_en": "Detailed English prompt...",
+      "reference_id": null
     }
   ]
 }`;
