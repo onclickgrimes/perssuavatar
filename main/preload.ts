@@ -711,8 +711,14 @@ const handler = {
     // Deletar nicho
     delete: (id: number) => ipcRenderer.invoke('niche:delete', id),
     
-    // Gerar prompt completo para um nicho
-    generatePrompt: (nicheId: number) => ipcRenderer.invoke('niche:generate-prompt', nicheId),
+    // Gerar prompt completo para um nicho (com contexto opcional de personagens/lugares)
+    generatePrompt: (
+      nicheId: number,
+      context?: {
+        characters?: Array<{ id: number; label?: string; prompt_en?: string; reference_id?: number | null }>;
+        locations?: Array<{ id: number; label?: string; prompt_en?: string; reference_id?: number | null }>;
+      }
+    ) => ipcRenderer.invoke('niche:generate-prompt', nicheId, context),
   },
   
   // ========================================

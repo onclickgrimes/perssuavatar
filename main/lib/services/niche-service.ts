@@ -46,6 +46,18 @@ export interface ChannelNiche {
     updated_at?: string;
 }
 
+export interface NicheReferenceContextItem {
+    id: number;
+    label?: string;
+    prompt_en?: string;
+    reference_id?: number | null;
+}
+
+export interface NicheAnalysisContext {
+    characters?: NicheReferenceContextItem[];
+    locations?: NicheReferenceContextItem[];
+}
+
 export class NicheService {
     private db: Knex;
     private tableName = 'channel_niches';
@@ -126,8 +138,37 @@ export class NicheService {
     /**
      * Gera o prompt completo para a IA baseado no nicho
      */
-    generateAIPromptForNiche(niche: ChannelNiche): string {
+    generateAIPromptForNiche(niche: ChannelNiche, context?: NicheAnalysisContext): string {
         let prompt = niche.ai_prompt || '';
+
+        const hasCharacterContext = Array.isArray(context?.characters) && context!.characters!.length > 0;
+        const hasLocationContext = Array.isArray(context?.locations) && context!.locations!.length > 0;
+        const contextHasReferences = hasCharacterContext || hasLocationContext;
+
+        if (contextHasReferences) {
+            prompt += '\n\nREFERÊNCIAS VISUAIS JÁ DEFINIDAS (USE ESTAS IDs NA ANÁLISE):';
+
+            if (hasCharacterContext) {
+                prompt += '\n\nPERSONAGENS DISPONÍVEIS:';
+                for (const character of context!.characters!) {
+                    const label = (character.label || '').trim();
+                    prompt += `\n- ID ${character.id}: ${label}`;
+                }
+            }
+
+            if (hasLocationContext) {
+                prompt += '\n\nLUGARES DISPONÍVEIS:';
+                for (const location of context!.locations!) {
+                    const label = (location.label || '').trim();
+                    prompt += `\n- ID ${location.id}: ${label}`;
+                }
+            }
+            
+            prompt += `\n\nREGRAS DE REFERÊNCIAS POR CENA:`;
+            prompt += `\n- Em CADA segmento, retorne "IdOfTheCharactersInTheScene" e "IdOfTheLocationInTheScene".`;
+            prompt += `\n- Se houver personagens/lugares de referência acima, use essas IDs.`;
+            prompt += `\n- Quando não houver personagem ou lugar aplicável na cena, retorne null para o campo correspondente.`;
+        }
 
         // Adicionar restrições de componentes
         if (niche.components_allowed && niche.components_allowed.length > 0) {
@@ -242,7 +283,7 @@ export class NicheService {
         }
 
         // Gerar JSON de exemplo dinâmico baseado nas configurações
-        prompt += `\n\n${this.generateExampleJsonForNiche(niche)}`;
+        prompt += `\n\n${this.generateExampleJsonForNiche(niche, context)}`;
 
         return prompt;
     }
@@ -250,12 +291,17 @@ export class NicheService {
     /**
      * Gera o JSON de exemplo para a IA baseado nas configurações do nicho
      */
-    private generateExampleJsonForNiche(niche: ChannelNiche): string {
+    private generateExampleJsonForNiche(niche: ChannelNiche, context?: NicheAnalysisContext): string {
         const configuredAssetTypes = niche.asset_types && niche.asset_types.length > 0
             ? niche.asset_types
             : ['image_flux'];
         const hasVideoFrameAnimate = configuredAssetTypes.includes('video_frame_animate');
         const regularAssetTypes = configuredAssetTypes.filter(type => type !== 'video_frame_animate');
+
+        const firstCharacterId = context?.characters?.find(item => Number.isFinite(item.id) && item.id > 0)?.id;
+        const firstLocationId = context?.locations?.find(item => Number.isFinite(item.id) && item.id > 0)?.id;
+        const hasCharacterReferences = Number.isFinite(firstCharacterId) && (firstCharacterId as number) > 0;
+        const hasLocationReferences = Number.isFinite(firstLocationId) && (firstLocationId as number) > 0;
 
         // Construir objeto de exemplo dinamicamente
         const exampleSegment: Record<string, any> = {
@@ -268,6 +314,14 @@ export class NicheService {
                 ? regularAssetTypes.join(' | ')
                 : configuredAssetTypes.join(' | '),
         };
+
+        if (hasCharacterReferences) {
+            exampleSegment.IdOfTheCharactersInTheScene = String(firstCharacterId);
+        }
+
+        if (hasLocationReferences) {
+            exampleSegment.IdOfTheLocationInTheScene = String(firstLocationId);
+        }
 
         // Adicionar cameraMovement se configurado
         if (niche.camera_movements && niche.camera_movements.length > 0) {
@@ -327,6 +381,14 @@ export class NicheService {
                 firstFrame: 'Detailed English prompt describing the FIRST static frame of this scene.',
                 animateFrame: 'Detailed English prompt to animate the video from the firstFrame while preserving visual consistency.',
             };
+
+            if (hasCharacterReferences) {
+                frameAnimateExample.IdOfTheCharactersInTheScene = String(firstCharacterId);
+            }
+
+            if (hasLocationReferences) {
+                frameAnimateExample.IdOfTheLocationInTheScene = String(firstLocationId);
+            }
 
             if (niche.camera_movements && niche.camera_movements.length > 0) {
                 frameAnimateExample.cameraMovement = niche.camera_movements.join(' | ');

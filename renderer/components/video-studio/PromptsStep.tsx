@@ -11,6 +11,7 @@ import {
 import {
   getAssetTypeInfo,
   normalizeCharactersField,
+  normalizeSceneReferenceIds,
   stripCharactersFromPrompt,
 } from './prompt-utils';
 
@@ -70,17 +71,26 @@ export function PromptsStep({
     let hasChanges = false;
     const nextSegments = segments.map(segment => {
       const parsedCurrentCharacters = normalizeCharactersField(segment.IdOfTheCharactersInTheScene);
-      const { cleanedPrompt, extractedCharacters, didStrip } = stripCharactersFromPrompt(segment.imagePrompt);
+      const parsedCurrentLocation = normalizeSceneReferenceIds(segment.IdOfTheLocationInTheScene);
+      const {
+        cleanedPrompt,
+        extractedCharacters,
+        extractedLocation,
+        didStrip,
+      } = stripCharactersFromPrompt(segment.imagePrompt);
       const nextCharacters = parsedCurrentCharacters ?? extractedCharacters;
+      const nextLocation = parsedCurrentLocation ?? extractedLocation;
       const charsChanged = nextCharacters !== parsedCurrentCharacters;
+      const locationChanged = nextLocation !== parsedCurrentLocation;
 
-      if (!didStrip && !charsChanged) return segment;
+      if (!didStrip && !charsChanged && !locationChanged) return segment;
 
       hasChanges = true;
       return {
         ...segment,
         imagePrompt: cleanedPrompt as any,
         IdOfTheCharactersInTheScene: nextCharacters,
+        IdOfTheLocationInTheScene: nextLocation,
       };
     });
 

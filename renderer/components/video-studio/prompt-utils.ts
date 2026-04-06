@@ -54,9 +54,13 @@ export const normalizeCharactersField = (raw: unknown): string | undefined => {
   return cleaned || undefined;
 };
 
+export const normalizeSceneReferenceIds = (raw: unknown): string | undefined =>
+  normalizeCharactersField(raw);
+
 export const stripCharactersFromPrompt = (prompt: unknown): {
   cleanedPrompt: unknown;
   extractedCharacters?: string;
+  extractedLocation?: string;
   didStrip: boolean;
 } => {
   if (prompt == null) {
@@ -72,6 +76,7 @@ export const stripCharactersFromPrompt = (prompt: unknown): {
         return {
           cleanedPrompt: prompt,
           extractedCharacters: parsedResult.extractedCharacters,
+          extractedLocation: parsedResult.extractedLocation,
           didStrip: false,
         };
       }
@@ -80,6 +85,7 @@ export const stripCharactersFromPrompt = (prompt: unknown): {
         return {
           cleanedPrompt: JSON.stringify(parsedResult.cleanedPrompt, null, 2),
           extractedCharacters: parsedResult.extractedCharacters,
+          extractedLocation: parsedResult.extractedLocation,
           didStrip: true,
         };
       }
@@ -96,10 +102,15 @@ export const stripCharactersFromPrompt = (prompt: unknown): {
 
   const rootPrompt = { ...(prompt as Record<string, any>) };
   let extractedCharacters = normalizeCharactersField(rootPrompt.IdOfTheCharactersInTheScene);
+  let extractedLocation = normalizeSceneReferenceIds(rootPrompt.IdOfTheLocationInTheScene);
   let didStrip = false;
 
   if ('IdOfTheCharactersInTheScene' in rootPrompt) {
     delete rootPrompt.IdOfTheCharactersInTheScene;
+    didStrip = true;
+  }
+  if ('IdOfTheLocationInTheScene' in rootPrompt) {
+    delete rootPrompt.IdOfTheLocationInTheScene;
     didStrip = true;
   }
 
@@ -112,8 +123,15 @@ export const stripCharactersFromPrompt = (prompt: unknown): {
     if (extractedCharacters == null) {
       extractedCharacters = normalizeCharactersField(generationPrompt.IdOfTheCharactersInTheScene);
     }
+    if (extractedLocation == null) {
+      extractedLocation = normalizeSceneReferenceIds(generationPrompt.IdOfTheLocationInTheScene);
+    }
     if ('IdOfTheCharactersInTheScene' in generationPrompt) {
       delete generationPrompt.IdOfTheCharactersInTheScene;
+      didStrip = true;
+    }
+    if ('IdOfTheLocationInTheScene' in generationPrompt) {
+      delete generationPrompt.IdOfTheLocationInTheScene;
       didStrip = true;
     }
     rootPrompt.video_generation_prompt = generationPrompt;
@@ -122,6 +140,7 @@ export const stripCharactersFromPrompt = (prompt: unknown): {
   return {
     cleanedPrompt: didStrip ? rootPrompt : prompt,
     extractedCharacters,
+    extractedLocation,
     didStrip,
   };
 };

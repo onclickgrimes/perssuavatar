@@ -50,6 +50,7 @@ export interface VideoProjectSegment {
     emotion?: string;
     imagePrompt?: string;
     IdOfTheCharactersInTheScene?: string;
+    IdOfTheLocationInTheScene?: string;
     sceneDescription?: string;
     imageUrl?: string;
     sourceImageUrl?: string;
@@ -1015,17 +1016,23 @@ export class VideoProjectService extends EventEmitter {
                     const {
                         cleanedPrompt: cleanedAnalysisPrompt,
                         extractedCharacters: extractedCharactersFromPrompt,
+                        extractedLocation: extractedLocationFromPrompt,
                     } = this.stripCharactersFromPrompt(analysis.imagePrompt);
 
                     const nextCharactersInScene = this.normalizeCharactersField(
                         analysis.IdOfTheCharactersInTheScene ?? extractedCharactersFromPrompt
                     ) ?? seg.IdOfTheCharactersInTheScene;
 
+                    const nextLocationInScene = this.normalizeSceneReferenceIds(
+                        analysis.IdOfTheLocationInTheScene ?? extractedLocationFromPrompt
+                    ) ?? seg.IdOfTheLocationInTheScene;
+
                     let merged = {
                         ...seg,
                         emotion: analysis.emotion || seg.emotion,
                         imagePrompt: analysis.imagePrompt == null ? seg.imagePrompt : cleanedAnalysisPrompt as any,
                         IdOfTheCharactersInTheScene: nextCharactersInScene,
+                        IdOfTheLocationInTheScene: nextLocationInScene,
                         assetType: analysis.assetType || 'image_flux',
                         cameraMovement: analysis.cameraMovement || 'static',
                         transition: analysis.transition || 'fade',
@@ -1268,13 +1275,19 @@ export class VideoProjectService extends EventEmitter {
                 const {
                     cleanedPrompt: cleanedEditedPrompt,
                     extractedCharacters: extractedCharactersFromPrompt,
+                    extractedLocation: extractedLocationFromPrompt,
                 } = this.stripCharactersFromPrompt(edited.imagePrompt);
 
                 const nextCharactersInScene = this.normalizeCharactersField(
                     edited.IdOfTheCharactersInTheScene ?? extractedCharactersFromPrompt
                 ) ?? seg.IdOfTheCharactersInTheScene;
+                const nextLocationInScene = this.normalizeSceneReferenceIds(
+                    edited.IdOfTheLocationInTheScene ?? extractedLocationFromPrompt
+                ) ?? seg.IdOfTheLocationInTheScene;
 
-                if (!hasPrompt && nextCharactersInScene === seg.IdOfTheCharactersInTheScene) return seg;
+                const charactersUnchanged = nextCharactersInScene === seg.IdOfTheCharactersInTheScene;
+                const locationUnchanged = nextLocationInScene === seg.IdOfTheLocationInTheScene;
+                if (!hasPrompt && charactersUnchanged && locationUnchanged) return seg;
 
                 const normalizedPrompt = hasPrompt
                     ? (typeof cleanedEditedPrompt === 'string'
@@ -1286,6 +1299,7 @@ export class VideoProjectService extends EventEmitter {
                     ...seg,
                     imagePrompt: normalizedPrompt,
                     IdOfTheCharactersInTheScene: nextCharactersInScene,
+                    IdOfTheLocationInTheScene: nextLocationInScene,
                 };
             });
 
@@ -2007,9 +2021,14 @@ export class VideoProjectService extends EventEmitter {
         }
     }
 
+    private normalizeSceneReferenceIds(raw: unknown): string | undefined {
+        return this.normalizeCharactersField(raw);
+    }
+
     private stripCharactersFromPrompt(prompt: unknown): {
         cleanedPrompt: unknown;
         extractedCharacters?: string;
+        extractedLocation?: string;
     } {
         if (prompt == null) {
             return { cleanedPrompt: prompt };
@@ -2023,11 +2042,13 @@ export class VideoProjectService extends EventEmitter {
                     return {
                         cleanedPrompt: JSON.stringify(parsedResult.cleanedPrompt),
                         extractedCharacters: parsedResult.extractedCharacters,
+                        extractedLocation: parsedResult.extractedLocation,
                     };
                 }
                 return {
                     cleanedPrompt: prompt,
                     extractedCharacters: parsedResult.extractedCharacters,
+                    extractedLocation: parsedResult.extractedLocation,
                 };
             } catch {
                 return { cleanedPrompt: prompt };
@@ -2040,9 +2061,13 @@ export class VideoProjectService extends EventEmitter {
 
         const rootPrompt = { ...(prompt as Record<string, any>) };
         let extractedCharacters = this.normalizeCharactersField(rootPrompt.IdOfTheCharactersInTheScene);
+        let extractedLocation = this.normalizeSceneReferenceIds(rootPrompt.IdOfTheLocationInTheScene);
 
         if ('IdOfTheCharactersInTheScene' in rootPrompt) {
             delete rootPrompt.IdOfTheCharactersInTheScene;
+        }
+        if ('IdOfTheLocationInTheScene' in rootPrompt) {
+            delete rootPrompt.IdOfTheLocationInTheScene;
         }
 
         if (
@@ -2054,8 +2079,14 @@ export class VideoProjectService extends EventEmitter {
             if (extractedCharacters == null) {
                 extractedCharacters = this.normalizeCharactersField(generationPrompt.IdOfTheCharactersInTheScene);
             }
+            if (extractedLocation == null) {
+                extractedLocation = this.normalizeSceneReferenceIds(generationPrompt.IdOfTheLocationInTheScene);
+            }
             if ('IdOfTheCharactersInTheScene' in generationPrompt) {
                 delete generationPrompt.IdOfTheCharactersInTheScene;
+            }
+            if ('IdOfTheLocationInTheScene' in generationPrompt) {
+                delete generationPrompt.IdOfTheLocationInTheScene;
             }
             rootPrompt.video_generation_prompt = generationPrompt;
         }
@@ -2063,13 +2094,21 @@ export class VideoProjectService extends EventEmitter {
         return {
             cleanedPrompt: rootPrompt,
             extractedCharacters,
+            extractedLocation,
         };
     }
 
     private normalizeSegmentCharacters(segment: VideoProjectSegment): VideoProjectSegment {
-        const { cleanedPrompt, extractedCharacters } = this.stripCharactersFromPrompt(segment.imagePrompt);
+        const {
+            cleanedPrompt,
+            extractedCharacters,
+            extractedLocation,
+        } = this.stripCharactersFromPrompt(segment.imagePrompt);
         const normalizedCharacters = this.normalizeCharactersField(
             segment.IdOfTheCharactersInTheScene ?? extractedCharacters
+        );
+        const normalizedLocation = this.normalizeSceneReferenceIds(
+            segment.IdOfTheLocationInTheScene ?? extractedLocation
         );
 
         const nextSegment: VideoProjectSegment = {
@@ -2081,6 +2120,12 @@ export class VideoProjectService extends EventEmitter {
             nextSegment.IdOfTheCharactersInTheScene = normalizedCharacters;
         } else {
             delete (nextSegment as any).IdOfTheCharactersInTheScene;
+        }
+
+        if (normalizedLocation !== undefined) {
+            nextSegment.IdOfTheLocationInTheScene = normalizedLocation;
+        } else {
+            delete (nextSegment as any).IdOfTheLocationInTheScene;
         }
 
         return nextSegment;
@@ -2107,6 +2152,9 @@ export class VideoProjectService extends EventEmitter {
         const includeCharactersField = regularSegments.some(s =>
             this.normalizeCharactersField(s.IdOfTheCharactersInTheScene) != null
         );
+        const includeLocationField = regularSegments.some(s =>
+            this.normalizeSceneReferenceIds(s.IdOfTheLocationInTheScene) != null
+        );
 
         const exampleSegments: Array<Record<string, any>> = [];
         let fallbackId = 1;
@@ -2131,6 +2179,9 @@ export class VideoProjectService extends EventEmitter {
 
             if (includeCharactersField) {
                 regularExample.IdOfTheCharactersInTheScene = '1, 3';
+            }
+            if (includeLocationField) {
+                regularExample.IdOfTheLocationInTheScene = '2';
             }
 
             exampleSegments.push(regularExample);
@@ -2162,16 +2213,21 @@ export class VideoProjectService extends EventEmitter {
                 if (s.assetType === 'video_frame_animate') {
                     return `ID: ${s.id}\nassetType: video_frame_animate\nfirstFrame atual:\n${this.stringifyPromptForEdition(s.firstFrame)}\nanimateFrame atual:\n${this.stringifyPromptForEdition(s.animateFrame)}`;
                 }
-                const charsLine = s.IdOfTheCharactersInTheScene
-                    ? `\nIdOfTheCharactersInTheScene atual:\n${s.IdOfTheCharactersInTheScene}`
+                const normalizedCharacters = this.normalizeCharactersField(s.IdOfTheCharactersInTheScene);
+                const normalizedLocation = this.normalizeSceneReferenceIds(s.IdOfTheLocationInTheScene);
+                const charsLine = normalizedCharacters
+                    ? `\nIdOfTheCharactersInTheScene atual:\n${normalizedCharacters}`
                     : '';
-                return `ID: ${s.id}\nassetType: ${s.assetType || 'image_flux'}\nimagePrompt atual:\n${this.stringifyPromptForEdition(s.imagePrompt)}${charsLine}`;
+                const locationLine = normalizedLocation
+                    ? `\nIdOfTheLocationInTheScene atual:\n${normalizedLocation}`
+                    : '';
+                return `ID: ${s.id}\nassetType: ${s.assetType || 'image_flux'}\nimagePrompt atual:\n${this.stringifyPromptForEdition(s.imagePrompt)}${charsLine}${locationLine}`;
             })
             .join('\n\n');
 
         const hasFrameAnimate = segments.some(s => s.assetType === 'video_frame_animate');
         const hasRegularSegments = segments.some(s => s.assetType !== 'video_frame_animate');
-        const shouldMentionCharacters = hasRegularSegments;
+        const shouldMentionSceneReferences = hasRegularSegments;
         const responseExample = this.generatePromptEditionExampleJson(segments);
 
         const promptRules: string[] = [];
@@ -2185,8 +2241,9 @@ export class VideoProjectService extends EventEmitter {
             promptRules.push('- Para TODOS os segmentos, retorne "imagePrompt".');
         }
 
-        if (shouldMentionCharacters) {
+        if (shouldMentionSceneReferences) {
             promptRules.push('- Se precisar indicar personagens, retorne "IdOfTheCharactersInTheScene" no mesmo nível do segmento (nunca dentro de imagePrompt).');
+            promptRules.push('- Se precisar indicar lugares, retorne "IdOfTheLocationInTheScene" no mesmo nível do segmento (nunca dentro de imagePrompt).');
         }
 
         promptRules.push('- Não retorne explicações fora do JSON.');
@@ -2367,19 +2424,22 @@ Regras obrigatórias:
 2. **imagePrompt**: Um texto detalhado em inglês que represente visualmente o segmento. Seja específico sobre estilo, composição, iluminação e cores.
    - Se for JSON estruturado, NÃO inclua "IdOfTheCharactersInTheScene" dentro do imagePrompt.
 
-3. **IdOfTheCharactersInTheScene** (opcional): IDs dos personagens presentes na cena (ex: "1, 3").
+3. **IdOfTheCharactersInTheScene** (obrigatório): IDs dos personagens presentes na cena (ex: "1, 3") ou null quando não houver personagem relevante.
    - Este campo deve ficar no MESMO NÍVEL de "imagePrompt" dentro do segmento.
 
-4. **assetType**: O tipo de asset recomendado:
+4. **IdOfTheLocationInTheScene** (obrigatório): IDs dos lugares presentes na cena (ex: "2") ou null quando não houver lugar aplicável.
+   - Este campo deve ficar no MESMO NÍVEL de "imagePrompt" dentro do segmento.
+
+5. **assetType**: O tipo de asset recomendado:
 ${assetInstructions}
 
-5. **cameraMovement**: Movimento de câmera sugerido:
+6. **cameraMovement**: Movimento de câmera sugerido:
 ${cameraInstructions}
 
-6. **transition**: Transição para a próxima cena:
+7. **transition**: Transição para a próxima cena:
 ${transitionInstructions}
 
-7. **highlightWords**: Array de palavras ou frases-chave que devem ser destacadas visualmente durante a cena.
+8. **highlightWords**: Array de palavras ou frases-chave que devem ser destacadas visualmente durante a cena.
    Para cada palavra destacada, especifique:
    - **text**: A palavra EXATA como aparece na transcrição (será sincronizada automaticamente com o áudio)
    - **time**: Tempo de aparição em segundos (relativo ao início da cena, ex: 0.5)
@@ -2417,6 +2477,7 @@ Responda APENAS com um objeto JSON válido no formato:
       "emotion": "surpresa",
       "imagePrompt": "detailed prompt in English...",
       "IdOfTheCharactersInTheScene": "1, 3",
+      "IdOfTheLocationInTheScene": "2",
       "assetType": "image_flux",
       "cameraMovement": "zoom_in_slow",
       "transition": "fade",
@@ -2674,6 +2735,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 emotion: segment.emotion,
                 imagePrompt: segment.imagePrompt,
                 IdOfTheCharactersInTheScene: segment.IdOfTheCharactersInTheScene,
+                IdOfTheLocationInTheScene: segment.IdOfTheLocationInTheScene,
                 sceneDescription: segment.sceneDescription,
                 imageUrl: segment.imageUrl,
                 sourceImageUrl: segment.sourceImageUrl,

@@ -95,6 +95,7 @@ export interface VideoSegment {
   emotion?: string;
   imagePrompt?: string;
   IdOfTheCharactersInTheScene?: string;
+  IdOfTheLocationInTheScene?: string;
   sceneDescription?: string;
   assetType?: string;
   cameraMovement?: string;
@@ -151,7 +152,7 @@ export interface VideoProject {
 
 const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'id', 'text', 'start', 'end', 'speaker', 'words',
-  'emotion', 'imagePrompt', 'IdOfTheCharactersInTheScene', 'sceneDescription', 'assetType', 'cameraMovement', 'transition', 'track',
+  'emotion', 'imagePrompt', 'IdOfTheCharactersInTheScene', 'IdOfTheLocationInTheScene', 'sceneDescription', 'assetType', 'cameraMovement', 'transition', 'track',
   'imageUrl', 'sourceImageUrl', 'asset_url', 'asset_duration',
   'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio',
   'firstFrame',

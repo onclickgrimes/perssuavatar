@@ -4,7 +4,7 @@
  * IPC Handlers para gerenciamento de nichos de canais.
  */
 import { ipcMain } from 'electron';
-import { getNicheService, ChannelNiche } from '../services/niche-service';
+import { getNicheService, ChannelNiche, NicheAnalysisContext } from '../services/niche-service';
 
 export function registerNicheHandlers(): void {
     const nicheService = getNicheService();
@@ -74,13 +74,13 @@ export function registerNicheHandlers(): void {
     });
 
     // Gerar prompt completo para um nicho
-    ipcMain.handle('niche:generate-prompt', async (_, nicheId: number) => {
+    ipcMain.handle('niche:generate-prompt', async (_, nicheId: number, context?: NicheAnalysisContext) => {
         try {
             const niche = await nicheService.getNicheById(nicheId);
             if (!niche) {
                 throw new Error('Niche not found');
             }
-            return nicheService.generateAIPromptForNiche(niche);
+            return nicheService.generateAIPromptForNiche(niche, context);
         } catch (error: any) {
             console.error('❌ Error generating niche prompt:', error);
             throw error;

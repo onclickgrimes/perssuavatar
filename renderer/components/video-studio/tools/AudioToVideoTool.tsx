@@ -24,6 +24,18 @@ interface AudioToVideoToolProps {
   onBack: () => void;
 }
 
+interface NicheContextItem {
+  id: number;
+  label?: string;
+  prompt_en?: string;
+  reference_id?: number | null;
+}
+
+interface NichePromptContextPayload {
+  characters?: NicheContextItem[];
+  locations?: NicheContextItem[];
+}
+
 export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
   // Estado do modo de legenda
@@ -252,18 +264,93 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     }
   }, []);
 
-  const loadNichePrompt = useCallback(async (): Promise<string | undefined> => {
+  const loadNichePrompt = useCallback(async (
+    referencesContext?: NichePromptContextPayload
+  ): Promise<string | undefined> => {
     if (!selectedNiche?.id) return undefined;
 
     try {
-      const nichePrompt = await window.electron.niche.generatePrompt(selectedNiche.id);
+      const parseIds = (raw: unknown): number[] => {
+        if (raw == null) return [];
+        if (Array.isArray(raw)) {
+          return raw
+            .map(v => parseInt(String(v).replace(/\D/g, ''), 10))
+            .filter(v => !isNaN(v) && v > 0);
+        }
+        return String(raw)
+          .split(',')
+          .map(part => parseInt(part.replace(/\D/g, ''), 10))
+          .filter(v => !isNaN(v) && v > 0);
+      };
+
+      const toNicheItem = (
+        item: NicheContextItem,
+        fallbackPrefix: 'Personagem' | 'Lugar'
+      ): NicheContextItem | null => {
+        const id = Number(item?.id);
+        if (!Number.isFinite(id) || id <= 0) return null;
+        const normalizedId = Math.floor(id);
+        return {
+          id: normalizedId,
+          label: item.label?.trim() || `${fallbackPrefix} ${normalizedId}`,
+          prompt_en: item.prompt_en?.trim() || undefined,
+          reference_id: item.reference_id ?? null,
+        };
+      };
+
+      const characterById = new Map<number, NicheContextItem>();
+      const locationById = new Map<number, NicheContextItem>();
+
+      (referencesContext?.characters || []).forEach(item => {
+        const normalized = toNicheItem(item, 'Personagem');
+        if (normalized) {
+          characterById.set(normalized.id, normalized);
+        }
+      });
+
+      (referencesContext?.locations || []).forEach(item => {
+        const normalized = toNicheItem(item, 'Lugar');
+        if (normalized) {
+          locationById.set(normalized.id, normalized);
+        }
+      });
+
+      if (characterById.size === 0 || locationById.size === 0) {
+        project.segments.forEach(segment => {
+          if (characterById.size === 0) {
+            parseIds((segment as any).IdOfTheCharactersInTheScene).forEach(id => {
+              if (!characterById.has(id)) {
+                characterById.set(id, { id, label: `Personagem ${id}` });
+              }
+            });
+          }
+
+          if (locationById.size === 0) {
+            parseIds((segment as any).IdOfTheLocationInTheScene).forEach(id => {
+              if (!locationById.has(id)) {
+                locationById.set(id, { id, label: `Lugar ${id}` });
+              }
+            });
+          }
+        });
+      }
+
+      const characters = Array.from(characterById.values()).sort((a, b) => a.id - b.id);
+      const locations = Array.from(locationById.values()).sort((a, b) => a.id - b.id);
+
+      const contextPayload = {
+        ...(characters.length > 0 ? { characters } : {}),
+        ...(locations.length > 0 ? { locations } : {}),
+      };
+
+      const nichePrompt = await window.electron.niche.generatePrompt(selectedNiche.id, contextPayload);
       console.log('🎯 Using niche prompt:', selectedNiche.name);
       return nichePrompt;
     } catch (error) {
       console.warn('Failed to generate niche prompt, using default:', error);
       return undefined;
     }
-  }, [selectedNiche]);
+  }, [selectedNiche, project.segments]);
 
   const normalizePromptForSummary = useCallback((prompt: unknown): string => {
     if (prompt == null) return '';
@@ -394,7 +481,10 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   }, []);
 
   // Handler para análise global por IA (regerar ou editar todos os prompts)
-  const handleAnalyzeWithAI = useCallback(async (userInstruction?: string) => {
+  const handleAnalyzeWithAI = useCallback(async (
+    userInstruction?: string,
+    referencesContext?: NichePromptContextPayload
+  ) => {
     setCurrentStep('analyzing');
     setIsProcessing(true);
 
@@ -448,7 +538,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           project,
           options: {
             provider: selectedProvider,
-            nichePrompt: await loadNichePrompt(),
+            nichePrompt: await loadNichePrompt(referencesContext),
             model: selectedModel,
           },
         };
@@ -489,8 +579,17 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
                 };
               }
 
-              if (editedSegment.imagePrompt == null) return seg;
-              return { ...seg, imagePrompt: editedSegment.imagePrompt };
+              const hasPrompt = editedSegment.imagePrompt != null;
+              const hasCharacters = editedSegment.IdOfTheCharactersInTheScene !== undefined;
+              const hasLocation = editedSegment.IdOfTheLocationInTheScene !== undefined;
+              if (!hasPrompt && !hasCharacters && !hasLocation) return seg;
+
+              return {
+                ...seg,
+                ...(hasPrompt ? { imagePrompt: editedSegment.imagePrompt } : {}),
+                ...(hasCharacters ? { IdOfTheCharactersInTheScene: editedSegment.IdOfTheCharactersInTheScene } : {}),
+                ...(hasLocation ? { IdOfTheLocationInTheScene: editedSegment.IdOfTheLocationInTheScene } : {}),
+              };
             })
           : result.segments;
 
@@ -588,16 +687,27 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         }
 
         const updatedPrompt = editedSegment?.imagePrompt;
-        if (updatedPrompt == null) return;
+        const hasCharacters = editedSegment?.IdOfTheCharactersInTheScene !== undefined;
+        const hasLocation = editedSegment?.IdOfTheLocationInTheScene !== undefined;
+        if (updatedPrompt == null && !hasCharacters && !hasLocation) return;
 
         setProject(prev => ({
           ...prev,
           segments: prev.segments.map(seg =>
-            seg.id === segmentId ? { ...seg, imagePrompt: updatedPrompt } : seg
+            seg.id === segmentId
+              ? {
+                  ...seg,
+                  ...(updatedPrompt != null ? { imagePrompt: updatedPrompt } : {}),
+                  ...(hasCharacters ? { IdOfTheCharactersInTheScene: editedSegment.IdOfTheCharactersInTheScene } : {}),
+                  ...(hasLocation ? { IdOfTheLocationInTheScene: editedSegment.IdOfTheLocationInTheScene } : {}),
+                }
+              : seg
           ),
         }));
 
-        summarizeScenePrompts([{ id: segmentId, imagePrompt: updatedPrompt }]).catch(() => {});
+        if (updatedPrompt != null) {
+          summarizeScenePrompts([{ id: segmentId, imagePrompt: updatedPrompt }]).catch(() => {});
+        }
       }
     } catch (err) {
       console.error('Single scene analysis error:', err);

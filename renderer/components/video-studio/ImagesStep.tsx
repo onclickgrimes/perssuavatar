@@ -11,6 +11,7 @@ import {
 import {
   getAssetTypeInfo,
   normalizeCharactersField,
+  normalizeSceneReferenceIds,
   stripCharactersFromPrompt,
 } from './prompt-utils';
 
@@ -24,7 +25,7 @@ interface ImagesStepProps {
   onProviderChange?: (p: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek') => void;
   providerModel?: string;
   onProviderModelChange?: (m: string) => void;
-  onAnalyze?: (instruction?: string) => void | Promise<void>;
+  onAnalyze?: (instruction?: string, context?: AnalysisReferenceContext) => void | Promise<void>;
   onAnalyzeScene?: (segmentId: number, instruction: string) => void | Promise<void>;
   isProcessing?: boolean;
   onSegmentsUpdate?: (newSegments: TranscriptionSegment[]) => void;
@@ -66,6 +67,18 @@ interface LocationReferenceItem {
   prompt_en: string;
   reference_id: number | null;
   imageUrl?: string;
+}
+
+interface AnalysisReferenceContextItem {
+  id: number;
+  label?: string;
+  prompt_en?: string;
+  reference_id?: number | null;
+}
+
+interface AnalysisReferenceContext {
+  characters?: AnalysisReferenceContextItem[];
+  locations?: AnalysisReferenceContextItem[];
 }
 
 const SmartVideoPreview = React.memo(function SmartVideoPreview({ src }: SmartVideoPreviewProps) {
@@ -453,17 +466,26 @@ export function ImagesStep({
     let hasChanges = false;
     const nextSegments = segments.map(segment => {
       const parsedCurrentCharacters = normalizeCharactersField(segment.IdOfTheCharactersInTheScene);
-      const { cleanedPrompt, extractedCharacters, didStrip } = stripCharactersFromPrompt(segment.imagePrompt);
+      const parsedCurrentLocation = normalizeSceneReferenceIds(segment.IdOfTheLocationInTheScene);
+      const {
+        cleanedPrompt,
+        extractedCharacters,
+        extractedLocation,
+        didStrip,
+      } = stripCharactersFromPrompt(segment.imagePrompt);
       const nextCharacters = parsedCurrentCharacters ?? extractedCharacters;
+      const nextLocation = parsedCurrentLocation ?? extractedLocation;
       const charsChanged = nextCharacters !== parsedCurrentCharacters;
+      const locationChanged = nextLocation !== parsedCurrentLocation;
 
-      if (!didStrip && !charsChanged) return segment;
+      if (!didStrip && !charsChanged && !locationChanged) return segment;
 
       hasChanges = true;
       return {
         ...segment,
         imagePrompt: cleanedPrompt as any,
         IdOfTheCharactersInTheScene: nextCharacters,
+        IdOfTheLocationInTheScene: nextLocation,
       };
     });
 
@@ -478,12 +500,41 @@ export function ImagesStep({
     || uploadingSegments.size > 0
     || isExtractingReferences;
 
+  const buildAnalysisReferencesContext = useCallback((): AnalysisReferenceContext | undefined => {
+    const characters = characterReferences
+      .filter(item => Number.isFinite(item.id) && item.id > 0)
+      .map(item => ({
+        id: item.id,
+        label: item.character?.trim() || `Personagem ${item.id}`,
+        prompt_en: item.prompt_en?.trim() || undefined,
+        reference_id: item.reference_id,
+      }));
+
+    const locations = locationReferences
+      .filter(item => Number.isFinite(item.id) && item.id > 0)
+      .map(item => ({
+        id: item.id,
+        label: item.location?.trim() || `Lugar ${item.id}`,
+        prompt_en: item.prompt_en?.trim() || undefined,
+        reference_id: item.reference_id,
+      }));
+
+    if (characters.length === 0 && locations.length === 0) {
+      return undefined;
+    }
+
+    return {
+      ...(characters.length > 0 ? { characters } : {}),
+      ...(locations.length > 0 ? { locations } : {}),
+    };
+  }, [characterReferences, locationReferences]);
+
   const handleAnalyzeWithOptionalInstruction = async () => {
     if (!onAnalyze || isAiBusy) return;
     const instruction = hasPrompts && hasGlobalInstruction
       ? globalInstruction.trim()
       : undefined;
-    await onAnalyze(instruction);
+    await onAnalyze(instruction, buildAnalysisReferencesContext());
   };
 
   const handleApplySceneInstruction = async (segmentId: number) => {

@@ -171,7 +171,15 @@ export function registerVideoEditorHandlers(): void {
         ? projectOrSegments.length 
         : projectOrSegments.segments.length;
       console.log(`🤖 [VideoProject] Analyzing ${segmentCount} segments with AI...`);
+      const debugSegments = Array.isArray(projectOrSegments)
+        ? projectOrSegments
+        : projectOrSegments.segments;
+      console.log('🧪 [AIAnalysis][IPC] Request:', JSON.stringify({
+        options,
+        segments: debugSegments,
+      }, null, 2));
       const result = await videoProjectService.analyzeWithAI(projectOrSegments, options);
+      console.log('🧪 [AIAnalysis][IPC] Response:', JSON.stringify(result, null, 2));
       return result;
     } catch (error: any) {
       console.error('❌ [VideoProject] Analysis error:', error);
