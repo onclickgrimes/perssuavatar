@@ -12,9 +12,12 @@ import {
   getAssetTypeInfo,
   normalizeCharactersField,
 } from './prompt-utils';
+import type { StoryReferencesState as PersistedStoryReferencesState } from '../../shared/utils/project-converter';
 
 interface ImagesStepProps {
   segments: TranscriptionSegment[];
+  storyReferences?: PersistedStoryReferencesState;
+  onStoryReferencesChange: React.Dispatch<React.SetStateAction<PersistedStoryReferencesState>>;
   onUpdatePrompt: (id: number, prompt: string) => void;
   onUpdateImage: (id: number, imageUrl: string, durationVideoSec?: number) => void;
   onContinue: () => void;
@@ -146,6 +149,8 @@ const SmartVideoPreview = React.memo(function SmartVideoPreview({ src }: SmartVi
 
 export function ImagesStep({
   segments,
+  storyReferences,
+  onStoryReferencesChange,
   onUpdatePrompt,
   onUpdateImage,
   onContinue,
@@ -208,15 +213,55 @@ export function ImagesStep({
 
   // ── Character / Location References ──
   const [showCharactersModal, setShowCharactersModal] = useState(false);
-  const [characterReferences, setCharacterReferences] = useState<CharacterReferenceItem[]>([]);
-  const [locationReferences, setLocationReferences] = useState<LocationReferenceItem[]>([]);
   const [isExtractingReferences, setIsExtractingReferences] = useState(false);
   const [referencesError, setReferencesError] = useState<string | null>(null);
-  const [characterStyle, setCharacterStyle] = useState('fotorrealista');
-  const [locationStyle, setLocationStyle] = useState('fotorrealista');
+  const characterReferences = Array.isArray(storyReferences?.characters) ? storyReferences.characters : [];
+  const locationReferences = Array.isArray(storyReferences?.locations) ? storyReferences.locations : [];
+  const characterStyle = String(storyReferences?.characterStyle || 'fotorrealista').trim() || 'fotorrealista';
+  const locationStyle = String(storyReferences?.locationStyle || 'fotorrealista').trim() || 'fotorrealista';
   const [globalInstruction, setGlobalInstruction] = useState('');
   const [sceneInstructions, setSceneInstructions] = useState<Record<number, string>>({});
   const [pendingSceneId, setPendingSceneId] = useState<number | null>(null);
+
+  const setCharacterReferences = useCallback((next: React.SetStateAction<CharacterReferenceItem[]>) => {
+    onStoryReferencesChange(prev => {
+      const currentCharacters = Array.isArray(prev?.characters) ? prev.characters : [];
+      const updatedCharacters = typeof next === 'function'
+        ? (next as (value: CharacterReferenceItem[]) => CharacterReferenceItem[])(currentCharacters)
+        : next;
+      return {
+        ...prev,
+        characters: updatedCharacters,
+      };
+    });
+  }, [onStoryReferencesChange]);
+
+  const setLocationReferences = useCallback((next: React.SetStateAction<LocationReferenceItem[]>) => {
+    onStoryReferencesChange(prev => {
+      const currentLocations = Array.isArray(prev?.locations) ? prev.locations : [];
+      const updatedLocations = typeof next === 'function'
+        ? (next as (value: LocationReferenceItem[]) => LocationReferenceItem[])(currentLocations)
+        : next;
+      return {
+        ...prev,
+        locations: updatedLocations,
+      };
+    });
+  }, [onStoryReferencesChange]);
+
+  const setCharacterStyle = useCallback((next: string) => {
+    onStoryReferencesChange(prev => ({
+      ...prev,
+      characterStyle: (next || 'fotorrealista').trim() || 'fotorrealista',
+    }));
+  }, [onStoryReferencesChange]);
+
+  const setLocationStyle = useCallback((next: string) => {
+    onStoryReferencesChange(prev => ({
+      ...prev,
+      locationStyle: (next || 'fotorrealista').trim() || 'fotorrealista',
+    }));
+  }, [onStoryReferencesChange]);
 
   const characterImages = useMemo<Record<number, string>>(() => {
     return characterReferences.reduce((acc, character) => {

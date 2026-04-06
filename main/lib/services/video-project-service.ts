@@ -129,6 +129,24 @@ export interface VideoProjectData {
     defaultFont?: string; // Fonte padrão do nicho (Google Fonts)
     nicheId?: number; // ID do nicho selecionado
     nicheName?: string; // Nome do nicho selecionado
+    storyReferences?: {
+        characters?: Array<{
+            id: number;
+            character: string;
+            prompt_en: string;
+            reference_id: number | null;
+            imageUrl?: string;
+        }>;
+        locations?: Array<{
+            id: number;
+            location: string;
+            prompt_en: string;
+            reference_id: number | null;
+            imageUrl?: string;
+        }>;
+        characterStyle?: string;
+        locationStyle?: string;
+    };
     config?: {
         width?: number;
         height?: number;
@@ -2605,6 +2623,35 @@ Responda APENAS com um objeto JSON válido no formato:
             }
         }
 
+        const storyReferences = {
+            characters: (project.storyReferences?.characters || [])
+                .filter(item => Number.isFinite(item?.id) && item.id > 0)
+                .map(item => ({
+                    id: Math.floor(item.id),
+                    character: String(item.character ?? '').trim(),
+                    prompt_en: String(item.prompt_en ?? '').trim(),
+                    reference_id:
+                        item.reference_id == null || !Number.isFinite(Number(item.reference_id))
+                            ? null
+                            : Math.floor(Number(item.reference_id)),
+                    imageUrl: item.imageUrl,
+                })),
+            locations: (project.storyReferences?.locations || [])
+                .filter(item => Number.isFinite(item?.id) && item.id > 0)
+                .map(item => ({
+                    id: Math.floor(item.id),
+                    location: String(item.location ?? '').trim(),
+                    prompt_en: String(item.prompt_en ?? '').trim(),
+                    reference_id:
+                        item.reference_id == null || !Number.isFinite(Number(item.reference_id))
+                            ? null
+                            : Math.floor(Number(item.reference_id)),
+                    imageUrl: item.imageUrl,
+                })),
+            characterStyle: String(project.storyReferences?.characterStyle || 'fotorrealista').trim() || 'fotorrealista',
+            locationStyle: String(project.storyReferences?.locationStyle || 'fotorrealista').trim() || 'fotorrealista',
+        };
+
         // Reorganizar propriedades na ordem desejada
         const orderedProject = {
             title: project.title,
@@ -2616,6 +2663,7 @@ Responda APENAS com um objeto JSON válido no formato:
             componentsAllowed: project.componentsAllowed, // ✅ Salvar componentes permitidos
             nicheId: project.nicheId, // ✅ Salvar ID do nicho
             nicheName: project.nicheName, // ✅ Salvar nome do nicho
+            storyReferences, // ✅ Salvar personagens/lugares da modal
             renderConfigs: project.selectedAspectRatios?.reduce((acc, ratio) => {
                 let w = 1080, h = 1920;
                 switch (ratio) {
@@ -2694,6 +2742,17 @@ Responda APENAS com um objeto JSON válido no formato:
                     backgroundColor: '#0a0a0a',
                 };
             }
+
+            project.storyReferences = {
+                characters: Array.isArray(project.storyReferences?.characters)
+                    ? project.storyReferences!.characters
+                    : [],
+                locations: Array.isArray(project.storyReferences?.locations)
+                    ? project.storyReferences!.locations
+                    : [],
+                characterStyle: String(project.storyReferences?.characterStyle || 'fotorrealista').trim() || 'fotorrealista',
+                locationStyle: String(project.storyReferences?.locationStyle || 'fotorrealista').trim() || 'fotorrealista',
+            };
 
             return project;
         } catch (error) {

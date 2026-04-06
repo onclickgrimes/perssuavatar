@@ -78,6 +78,32 @@ export interface AudioConfig {
   fadeOut?: number;
 }
 
+/** Referência de personagem extraída/definida na modal de Personagens e Lugares */
+export interface StoryCharacterReferenceItem {
+  id: number;
+  character: string;
+  prompt_en: string;
+  reference_id: number | null;
+  imageUrl?: string;
+}
+
+/** Referência de lugar extraída/definida na modal de Personagens e Lugares */
+export interface StoryLocationReferenceItem {
+  id: number;
+  location: string;
+  prompt_en: string;
+  reference_id: number | null;
+  imageUrl?: string;
+}
+
+/** Estado persistente da modal de Personagens e Lugares */
+export interface StoryReferencesState {
+  characters?: StoryCharacterReferenceItem[];
+  locations?: StoryLocationReferenceItem[];
+  characterStyle?: string;
+  locationStyle?: string;
+}
+
 /**
  * ⭐ SEGMENTO - Adicione novas propriedades aqui!
  */
@@ -135,6 +161,7 @@ export interface VideoProject {
   componentsAllowed?: string[];
   nicheId?: number;
   nicheName?: string;
+  storyReferences?: StoryReferencesState;
   config?: {
     width?: number;
     height?: number;
@@ -162,7 +189,7 @@ const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
 const PROJECT_PROPERTIES: (keyof VideoProject)[] = [
   'title', 'description', 'duration', 'audioPath', 'segments',
   'selectedAspectRatios', 'subtitleMode', 'componentsAllowed',
-  'nicheId', 'nicheName', 'config',
+  'nicheId', 'nicheName', 'storyReferences', 'config',
 ];
 
 // ========================================
@@ -210,6 +237,15 @@ export function toSaveFormat(project: VideoProject, niche?: { id?: number; name?
 export function fromSaveFormat(loaded: any): VideoProject {
   const project = mapProject(loaded);
   project.selectedAspectRatios = project.selectedAspectRatios || ['9:16'];
+
+  const rawStoryReferences = project.storyReferences;
+  project.storyReferences = {
+    characters: Array.isArray(rawStoryReferences?.characters) ? rawStoryReferences?.characters : [],
+    locations: Array.isArray(rawStoryReferences?.locations) ? rawStoryReferences?.locations : [],
+    characterStyle: String(rawStoryReferences?.characterStyle || 'fotorrealista').trim() || 'fotorrealista',
+    locationStyle: String(rawStoryReferences?.locationStyle || 'fotorrealista').trim() || 'fotorrealista',
+  };
+
   return project;
 }
 

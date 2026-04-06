@@ -9,6 +9,9 @@
 export type { 
   VideoSegment,
   VideoProject,
+  StoryCharacterReferenceItem,
+  StoryLocationReferenceItem,
+  StoryReferencesState,
   WordTiming,
   HighlightWordConfig,
   ChromaKeyConfig,

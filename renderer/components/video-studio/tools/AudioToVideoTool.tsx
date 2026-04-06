@@ -18,7 +18,7 @@ import { ImagesStep } from '../ImagesStep';
 import { PreviewStep } from '../PreviewStep';
 import { RenderingStep } from '../RenderingStep';
 import { CompleteStep } from '../CompleteStep';
-import { toSaveFormat, fromSaveFormat } from '../../../shared/utils/project-converter';
+import { toSaveFormat, fromSaveFormat, type StoryReferencesState } from '../../../shared/utils/project-converter';
 
 interface AudioToVideoToolProps {
   onBack: () => void;
@@ -36,6 +36,13 @@ interface NichePromptContextPayload {
   locations?: NicheContextItem[];
 }
 
+const createDefaultStoryReferences = (): StoryReferencesState => ({
+  characters: [],
+  locations: [],
+  characterStyle: 'fotorrealista',
+  locationStyle: 'fotorrealista',
+});
+
 export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   const [currentStep, setCurrentStep] = useState<WorkflowStep>('upload');
   // Estado do modo de legenda
@@ -45,6 +52,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     duration: 0,
     segments: [],
     selectedAspectRatios: ['9:16'], // Default
+    storyReferences: createDefaultStoryReferences(),
   });
   const [selectedNiche, setSelectedNiche] = useState<ChannelNiche | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -246,6 +254,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         ...prev,
         audioPath: tempAudioPath, // Salvar caminho do áudio
         duration: tempDuration,
+        storyReferences: createDefaultStoryReferences(),
         segments: tempSegments.map((seg: any) => ({
           id: seg.id,
           text: seg.text,
@@ -478,6 +487,31 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     return () => {
       Object.values(promptSummaryDebounceRef.current).forEach(timeoutId => clearTimeout(timeoutId));
     };
+  }, []);
+
+  const handleStoryReferencesChange = useCallback((next: React.SetStateAction<StoryReferencesState>) => {
+    setProject(prev => {
+      const previousReferences: StoryReferencesState = {
+        characters: Array.isArray(prev.storyReferences?.characters) ? prev.storyReferences.characters : [],
+        locations: Array.isArray(prev.storyReferences?.locations) ? prev.storyReferences.locations : [],
+        characterStyle: String(prev.storyReferences?.characterStyle || 'fotorrealista').trim() || 'fotorrealista',
+        locationStyle: String(prev.storyReferences?.locationStyle || 'fotorrealista').trim() || 'fotorrealista',
+      };
+
+      const resolved = typeof next === 'function'
+        ? (next as (current: StoryReferencesState) => StoryReferencesState)(previousReferences)
+        : next;
+
+      return {
+        ...prev,
+        storyReferences: {
+          characters: Array.isArray(resolved?.characters) ? resolved.characters : [],
+          locations: Array.isArray(resolved?.locations) ? resolved.locations : [],
+          characterStyle: String(resolved?.characterStyle || 'fotorrealista').trim() || 'fotorrealista',
+          locationStyle: String(resolved?.locationStyle || 'fotorrealista').trim() || 'fotorrealista',
+        },
+      };
+    });
   }, []);
 
   // Handler para análise global por IA (regerar ou editar todos os prompts)
@@ -1018,6 +1052,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         return (
           <ImagesStep
             segments={project.segments}
+            storyReferences={project.storyReferences}
+            onStoryReferencesChange={handleStoryReferencesChange}
             onUpdatePrompt={handleUpdatePrompt}
             onUpdateImage={handleUpdateImage}
             onContinue={() => setCurrentStep('preview')}
@@ -1090,6 +1126,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
                 title: '',
                 duration: 0,
                 segments: [],
+                selectedAspectRatios: ['9:16'],
+                storyReferences: createDefaultStoryReferences(),
               });
             }} 
           />
