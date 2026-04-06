@@ -8,6 +8,7 @@ import {
   buildVideoDownloadUrl,
   createVideoGenAIClient,
   getVertexVideoProjectConfig,
+  type VideoGenAIBackend,
 } from './genai-video-client';
 
 export interface Veo3GenerationOptions {
@@ -65,9 +66,14 @@ export class Veo3VideoService {
     } catch (e) { console.error("[Veo3 API] Erro ao salvar arquivo de uso:", e); }
   }
 
-  // Fila sequencial que respeita o RPM (2) e RPD (10)
-  private async waitInQueueAndConsume(model: string, emit: (p: number, m: string) => void): Promise<void> {
+  // Fila sequencial que respeita o RPM (2) e RPD (10 somente no Gemini)
+  private async waitInQueueAndConsume(
+    model: string,
+    backend: VideoGenAIBackend,
+    emit: (p: number, m: string) => void
+  ): Promise<void> {
     const execute = async () => {
+      const isGeminiBackend = backend === 'gemini';
       let usage = this.readUsage();
       const today = new Date().toISOString().split('T')[0];
 
@@ -76,8 +82,8 @@ export class Veo3VideoService {
         usage[model] = { date: today, dailyCount: 0, history: [] };
       }
 
-      // Valida o limite MÁXIMO POR DIA (RPD: 10)
-      if (usage[model].dailyCount >= 10) {
+      // Limite diário só se aplica ao backend Gemini API
+      if (isGeminiBackend && usage[model].dailyCount >= 10) {
         throw new Error(`Limite diário de 10 vídeos atingido para o modelo ${model}. Tente novamente amanhã.`);
       }
 
@@ -106,10 +112,16 @@ export class Veo3VideoService {
       
       usage[model].history = usage[model].history.filter((t: number) => now - t < 60000);
       usage[model].history.push(now);
-      usage[model].dailyCount++;
+      if (isGeminiBackend) {
+        usage[model].dailyCount++;
+      }
       
       this.writeUsage(usage);
-      emit(4, `Iniciando geração... (Uso hoje: ${usage[model].dailyCount}/10)`);
+      if (isGeminiBackend) {
+        emit(4, `Iniciando geração... (Uso hoje: ${usage[model].dailyCount}/10)`);
+      } else {
+        emit(4, 'Iniciando geração... (Vertex: sem limite diário)');
+      }
     };
 
     // Lógica do Mutex: Encandeia a requisição atual na Promise da anterior.
@@ -294,7 +306,7 @@ export class Veo3VideoService {
         : model;
       
       // BLOQUEIA AQUI: Aguarda na fila e consome as cotas RPM/RPD antes de continuar
-      await this.waitInQueueAndConsume(model, emit);
+      await this.waitInQueueAndConsume(model, backend, emit);
 
       const normalizedModel = String(model || '').toLowerCase();
       const isLiteModel = normalizedModel.includes('veo-3.1-lite')

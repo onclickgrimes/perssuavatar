@@ -67,7 +67,11 @@ export function PromptsStep({
     seg => seg.assetType === 'video_stock' && !seg.imageUrl
   );
   
-  const hasPrompts = segments.some(s => s.imagePrompt);
+  const hasImagePrompts = segments.some(s => !!s.imagePrompt);
+  const hasFrameAnimatePrompts = segments.some(
+    s => s.assetType === 'video_frame_animate' && (!!s.firstFrame || !!s.animateFrame)
+  );
+  const hasPrompts = hasImagePrompts || hasFrameAnimatePrompts;
   const [globalInstruction, setGlobalInstruction] = React.useState('');
   const [sceneInstructions, setSceneInstructions] = React.useState<Record<number, string>>({});
   const [pendingSceneId, setPendingSceneId] = React.useState<number | null>(null);
@@ -192,7 +196,7 @@ export function PromptsStep({
               </button>
             )}
 
-            {onGenerateFirstFrame && hasPrompts && (
+            {onGenerateFirstFrame && hasImagePrompts && (
               <button
                 onClick={onGenerateFirstFrame}
                 disabled={isAiBusy}
@@ -347,18 +351,58 @@ export function PromptsStep({
                 </div>
               )}
 
-              <textarea
-                value={(() => {
-                  const prompt = segment.imagePrompt;
-                  if (!prompt) return `${segment.emotion} scene depicting: ${segment.text}`;
-                  if (typeof prompt === 'string') return prompt;
-                  return JSON.stringify(prompt, null, 2);
-                })()}
-                onChange={(e) => onUpdatePrompt(segment.id, e.target.value)}
-                rows={6}
-                className="w-full min-h-[9.5rem] bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-y p-4"
-                placeholder="Descreva a cena visual em detalhes..."
-              />
+              {segment.assetType === 'video_frame_animate' ? (
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs text-white/60 mb-1">firstFrame</p>
+                    <textarea
+                      value={segment.firstFrame || ''}
+                      onChange={(e) => {
+                        if (!onSegmentsUpdate) return;
+                        const newSegments = segments.map(s =>
+                          s.id === segment.id ? { ...s, firstFrame: e.target.value } : s
+                        );
+                        onSegmentsUpdate(newSegments);
+                      }}
+                      rows={4}
+                      className="w-full min-h-[7rem] bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-y p-4"
+                      placeholder="Prompt detalhado em inglês para o primeiro frame..."
+                      disabled={!onSegmentsUpdate}
+                    />
+                  </div>
+
+                  <div>
+                    <p className="text-xs text-white/60 mb-1">animateFrame</p>
+                    <textarea
+                      value={segment.animateFrame || ''}
+                      onChange={(e) => {
+                        if (!onSegmentsUpdate) return;
+                        const newSegments = segments.map(s =>
+                          s.id === segment.id ? { ...s, animateFrame: e.target.value } : s
+                        );
+                        onSegmentsUpdate(newSegments);
+                      }}
+                      rows={4}
+                      className="w-full min-h-[7rem] bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-y p-4"
+                      placeholder="Prompt em inglês para animar o vídeo a partir do firstFrame..."
+                      disabled={!onSegmentsUpdate}
+                    />
+                  </div>
+                </div>
+              ) : (
+                <textarea
+                  value={(() => {
+                    const prompt = segment.imagePrompt;
+                    if (!prompt) return `${segment.emotion} scene depicting: ${segment.text}`;
+                    if (typeof prompt === 'string') return prompt;
+                    return JSON.stringify(prompt, null, 2);
+                  })()}
+                  onChange={(e) => onUpdatePrompt(segment.id, e.target.value)}
+                  rows={6}
+                  className="w-full min-h-[9.5rem] bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-y p-4"
+                  placeholder="Descreva a cena visual em detalhes..."
+                />
+              )}
 
               <p className="mt-2 text-xs text-white/70">
                 <span className="text-white/40">Descrição da cena: </span>

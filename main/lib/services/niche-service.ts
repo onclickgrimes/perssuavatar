@@ -251,6 +251,12 @@ export class NicheService {
      * Gera o JSON de exemplo para a IA baseado nas configurações do nicho
      */
     private generateExampleJsonForNiche(niche: ChannelNiche): string {
+        const configuredAssetTypes = niche.asset_types && niche.asset_types.length > 0
+            ? niche.asset_types
+            : ['image_flux'];
+        const hasVideoFrameAnimate = configuredAssetTypes.includes('video_frame_animate');
+        const regularAssetTypes = configuredAssetTypes.filter(type => type !== 'video_frame_animate');
+
         // Construir objeto de exemplo dinamicamente
         const exampleSegment: Record<string, any> = {
             id: 1,
@@ -258,9 +264,9 @@ export class NicheService {
                 ? niche.emotions[0] 
                 : 'emoção adequada',
             imagePrompt: 'Prompt in English regarding the chosen asset type.',
-            assetType: niche.asset_types && niche.asset_types.length > 0 
-                ? niche.asset_types.join(' | ') 
-                : 'image_flux',
+            assetType: regularAssetTypes.length > 0
+                ? regularAssetTypes.join(' | ')
+                : configuredAssetTypes.join(' | '),
         };
 
         // Adicionar cameraMovement se configurado
@@ -297,12 +303,45 @@ export class NicheService {
             exampleSegment.highlightWords = [highlightExample];
         }
 
-        // Formatar JSON com indentação
-        const jsonExample = JSON.stringify([exampleSegment, '...'], null, 2)
-            .replace('"..."', '...');
+        const exampleSegments: Array<Record<string, any>> = [];
 
-        return `FORMATO DE RESPOSTA - Responda APENAS com um array JSON válido:
-${jsonExample}`;
+        // Se só existir video_frame_animate, o exemplo base já precisa dos campos específicos
+        if (hasVideoFrameAnimate && regularAssetTypes.length === 0) {
+            delete exampleSegment.imagePrompt;
+            exampleSegment.assetType = 'video_frame_animate';
+            exampleSegment.firstFrame = 'Detailed English prompt describing the FIRST static frame of this scene.';
+            exampleSegment.animateFrame = 'Detailed English prompt to animate the video from the firstFrame while preserving visual consistency.';
+            exampleSegments.push(exampleSegment);
+        } else {
+            exampleSegments.push(exampleSegment);
+        }
+
+        // Se houver asset types comuns + video_frame_animate, incluir segundo item específico
+        if (hasVideoFrameAnimate && regularAssetTypes.length > 0) {
+            const frameAnimateExample: Record<string, any> = {
+                id: 2,
+                emotion: niche.emotions && niche.emotions.length > 0
+                    ? niche.emotions[0]
+                    : 'emoção adequada',
+                assetType: 'video_frame_animate',
+                firstFrame: 'Detailed English prompt describing the FIRST static frame of this scene.',
+                animateFrame: 'Detailed English prompt to animate the video from the firstFrame while preserving visual consistency.',
+            };
+
+            if (niche.camera_movements && niche.camera_movements.length > 0) {
+                frameAnimateExample.cameraMovement = niche.camera_movements.join(' | ');
+            }
+
+            if (niche.transitions && niche.transitions.length > 0) {
+                frameAnimateExample.transition = niche.transitions.join(' | ');
+            }
+
+            exampleSegments.push(frameAnimateExample);
+        }
+
+        // Formatar JSON com indentação em um único formato de resposta
+        const jsonExample = JSON.stringify([...exampleSegments, '...'], null, 2).replace('"..."', '...');
+        return `FORMATO DE RESPOSTA - Responda APENAS com um array JSON válido: ${jsonExample}`;
     }
 
     /**

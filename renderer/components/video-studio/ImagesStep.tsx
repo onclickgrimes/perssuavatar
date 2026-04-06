@@ -541,9 +541,17 @@ export function ImagesStep({
         : preservedSourceImage;
       const finalImagePath = finalImages[segmentId];
 
-      const targetGenerationPrompt = (IMAGE_SERVICES.has(service) && segment.firstFrame)
-        ? String(segment.firstFrame).trim()
-        : extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`;
+      const normalizedFirstFrame = typeof segment.firstFrame === 'string'
+        ? segment.firstFrame.trim()
+        : '';
+      const normalizedAnimateFrame = typeof segment.animateFrame === 'string'
+        ? segment.animateFrame.trim()
+        : '';
+      const basePrompt = extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`;
+
+      const targetGenerationPrompt = IMAGE_SERVICES.has(service)
+        ? (normalizedFirstFrame || normalizedAnimateFrame || basePrompt)
+        : (normalizedAnimateFrame || basePrompt);
 
       // ── VEO 2 FLOW (Google Flow via Puppeteer, modelo Veo 2 - Fast) ──
       if (service === 'veo2-flow') {

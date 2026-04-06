@@ -60,17 +60,26 @@ const getRangeIndexForOutputTime = (timeSec: number, ranges: TimelineKeepRange[]
   return -1;
 };
 const isVideoSegment = (segment: TimelineSegment, url: string) => {
+  // Prioriza o tipo REAL da mídia pela URL para evitar mismatch
+  // (ex.: assetType "video_*" com imagem estática enviada manualmente).
+  if (AUDIO_EXT_RE.test(url)) return false;
+  if (VIDEO_EXT_RE.test(url) || url.startsWith('blob:')) return true;
+
   const assetType = (segment.assetType || segment.asset_type || '').toLowerCase();
   if (assetType.startsWith('audio')) return false;
   if (assetType.startsWith('video')) return true;
-  return VIDEO_EXT_RE.test(url) || url.startsWith('blob:');
+  return false;
 };
 
 const isAudioSegment = (segment: TimelineSegment, url: string) => {
+  // Prioriza o tipo REAL da mídia pela URL.
+  if (AUDIO_EXT_RE.test(url)) return true;
+  if (VIDEO_EXT_RE.test(url) || url.startsWith('blob:')) return false;
+
   const assetType = (segment.assetType || segment.asset_type || '').toLowerCase();
   if (assetType.startsWith('audio')) return true;
   if (assetType.startsWith('video')) return false;
-  return AUDIO_EXT_RE.test(url);
+  return false;
 };
 
 const getActiveSegmentsAtTime = (segments: TimelineSegment[], timeSec: number) => {

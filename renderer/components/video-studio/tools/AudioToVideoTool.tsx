@@ -418,7 +418,21 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
 
       if (normalizedInstruction) {
         const editRequest = {
-          segments: project.segments.map(seg => ({ id: seg.id, imagePrompt: seg.imagePrompt })),
+          segments: project.segments.map(seg => {
+            if (seg.assetType === 'video_frame_animate') {
+              return {
+                id: seg.id,
+                assetType: seg.assetType,
+                firstFrame: seg.firstFrame,
+                animateFrame: seg.animateFrame,
+              };
+            }
+            return {
+              id: seg.id,
+              assetType: seg.assetType,
+              imagePrompt: seg.imagePrompt,
+            };
+          }),
           options: {
             provider: selectedProvider,
             model: selectedModel,
@@ -450,7 +464,34 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         const updatedSegments = normalizedInstruction
           ? project.segments.map(seg => {
               const editedSegment = result.segments.find((edited: any) => edited.id === seg.id);
-              return editedSegment ? { ...seg, imagePrompt: editedSegment.imagePrompt } : seg;
+              if (!editedSegment) return seg;
+
+              if (seg.assetType === 'video_frame_animate') {
+                const hasFirstFrame = editedSegment.firstFrame != null;
+                const hasAnimateFrame = editedSegment.animateFrame != null;
+                if (!hasFirstFrame && !hasAnimateFrame) return seg;
+
+                return {
+                  ...seg,
+                  ...(hasFirstFrame
+                    ? {
+                        firstFrame: typeof editedSegment.firstFrame === 'string'
+                          ? editedSegment.firstFrame
+                          : String(editedSegment.firstFrame),
+                      }
+                    : {}),
+                  ...(hasAnimateFrame
+                    ? {
+                        animateFrame: typeof editedSegment.animateFrame === 'string'
+                          ? editedSegment.animateFrame
+                          : String(editedSegment.animateFrame),
+                      }
+                    : {}),
+                };
+              }
+
+              if (editedSegment.imagePrompt == null) return seg;
+              return { ...seg, imagePrompt: editedSegment.imagePrompt };
             })
           : result.segments;
 
@@ -486,7 +527,20 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       if (!window.electron?.videoProject) return;
 
       const editSceneRequest = {
-        segments: [{ id: targetSegment.id, imagePrompt: targetSegment.imagePrompt }],
+        segments: [
+          targetSegment.assetType === 'video_frame_animate'
+            ? {
+                id: targetSegment.id,
+                assetType: targetSegment.assetType,
+                firstFrame: targetSegment.firstFrame,
+                animateFrame: targetSegment.animateFrame,
+              }
+            : {
+                id: targetSegment.id,
+                assetType: targetSegment.assetType,
+                imagePrompt: targetSegment.imagePrompt,
+              },
+        ],
         options: {
           provider: selectedProvider,
           model: selectedModel,
@@ -500,8 +554,42 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       );
 
       if (result.success && result.segments?.length) {
-        const updatedPrompt = result.segments[0]?.imagePrompt;
-        if (!updatedPrompt) return;
+        const editedSegment = result.segments[0];
+
+        if (targetSegment.assetType === 'video_frame_animate') {
+          const hasFirstFrame = editedSegment?.firstFrame != null;
+          const hasAnimateFrame = editedSegment?.animateFrame != null;
+          if (!hasFirstFrame && !hasAnimateFrame) return;
+
+          setProject(prev => ({
+            ...prev,
+            segments: prev.segments.map(seg =>
+              seg.id === segmentId
+                ? {
+                    ...seg,
+                    ...(hasFirstFrame
+                      ? {
+                          firstFrame: typeof editedSegment.firstFrame === 'string'
+                            ? editedSegment.firstFrame
+                            : String(editedSegment.firstFrame),
+                        }
+                      : {}),
+                    ...(hasAnimateFrame
+                      ? {
+                          animateFrame: typeof editedSegment.animateFrame === 'string'
+                            ? editedSegment.animateFrame
+                            : String(editedSegment.animateFrame),
+                        }
+                      : {}),
+                  }
+                : seg
+            ),
+          }));
+          return;
+        }
+
+        const updatedPrompt = editedSegment?.imagePrompt;
+        if (updatedPrompt == null) return;
 
         setProject(prev => ({
           ...prev,
@@ -654,20 +742,11 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       segments: prev.segments.map(seg => {
         if (seg.id !== segmentId) return seg;
         
-        // Determinar assetType baseado no conteúdo
-        let assetType = seg.assetType;
+        // O assetType NÃO deve mudar aqui (somente no PromptsStep).
         const isVideoFile = !!imageUrl && ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']
           .some(ext => imageUrl.toLowerCase().endsWith(ext));
-
-        if (imageUrl) {
-          // Se o arquivo é imagem (não vídeo), sempre marcar como image_static
-          // Isso evita que imagens do flow-image fiquem com assetType de vídeo
-          if (!isVideoFile) {
-            assetType = 'image_static';
-          }
-        }
         
-        const newSeg: any = { ...seg, imageUrl, assetType };
+        const newSeg: any = { ...seg, imageUrl };
 
         // Preserva a imagem-base quando o segmento vira vídeo para permitir reutilização
         if (!imageUrl) {

@@ -112,6 +112,13 @@ Exemplo da estrutura do JSON:
   }
 }`,
   },
+  video_frame_animate:{
+    label: 'Vídeo Frame Animate',
+    description: 'Vídeo animado pelo primeiro frame',
+    icon: '🎬',
+    badgeColor: 'bg-green-500/20 text-green-300',
+    aiDescription: 'Para CADA cena, gere um prompt detalhado em inglês para gerar uma IMAGEM ESTÁTICA que represente o PRIMEIRO FRAME dessa cena. Gere também um prompt para gerar o vídeo a partir do primeiro frame. Os campos são firstFrame e animateFrame.',
+  },
   video_static: {
     label: 'Vídeo Estático',
     description: 'Vídeo já existente (upload ou URL)',

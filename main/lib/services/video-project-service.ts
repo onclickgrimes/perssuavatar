@@ -111,6 +111,7 @@ export interface VideoProjectSegment {
         fadeOut?: number;
     };
     firstFrame?: string;
+    animateFrame?: string;
 }
 
 
@@ -877,27 +878,8 @@ export class VideoProjectService extends EventEmitter {
             console.log(prompt);
             console.log("###################################################################");
 
-            let analyzedSegments: Array<{
-                id: number;
-                emotion: string;
-                imagePrompt: string;
-                assetType: string;
-                cameraMovement: string;
-                transition: string;
-                highlightWords?: Array<{
-                    text: string;
-                    time: number;
-                    duration?: number;
-                    entryAnimation?: string;
-                    exitAnimation?: string;
-                    size?: string | number;
-                    position?: string;
-                    effect?: string;
-                    color?: string;
-                    highlightColor?: string;
-                    fontWeight?: string;
-                }>;
-            }>;
+            // Pode vir como array, objeto { segments: [...] } ou string JSON.
+            let analyzedSegments: any;
 
 
             const systemMsg = 'You are a video editor AI. Respond ONLY with a valid JSON object containing a "segments" array.';
@@ -929,8 +911,20 @@ export class VideoProjectService extends EventEmitter {
             }
 
             console.log('✅ [VideoProject] AI Analysis received');
-            // Primeiros 200 caracteres
-            console.log('📝 [VideoProject] AI Analysis:', analyzedSegments.slice(0, 200));
+            // Preview seguro da resposta (sem assumir tipo string/array)
+            let analysisPreview: any = analyzedSegments;
+            if (typeof analyzedSegments === 'string') {
+                analysisPreview = analyzedSegments.slice(0, 200);
+            } else if (Array.isArray(analyzedSegments)) {
+                analysisPreview = analyzedSegments.slice(0, 3);
+            } else {
+                try {
+                    analysisPreview = JSON.stringify(analyzedSegments).slice(0, 200);
+                } catch {
+                    analysisPreview = analyzedSegments;
+                }
+            }
+            console.log('📝 [VideoProject] AI Analysis preview:', analysisPreview);
 
             // Robust validation/unwrapping
             let segmentsArray = analyzedSegments;
@@ -956,6 +950,18 @@ export class VideoProjectService extends EventEmitter {
             const updatedSegments = await Promise.all(segments.map(async seg => {
                 const analysis = segmentsArray.find((a: any) => a.id === seg.id);
                 if (analysis) {
+                    const normalizedFirstFrame = analysis.firstFrame == null
+                        ? seg.firstFrame
+                        : (typeof analysis.firstFrame === 'string'
+                            ? analysis.firstFrame.trim()
+                            : String(analysis.firstFrame).trim()) || seg.firstFrame;
+
+                    const normalizedAnimateFrame = analysis.animateFrame == null
+                        ? seg.animateFrame
+                        : (typeof analysis.animateFrame === 'string'
+                            ? analysis.animateFrame.trim()
+                            : String(analysis.animateFrame).trim()) || seg.animateFrame;
+
                     let merged = {
                         ...seg,
                         emotion: analysis.emotion || seg.emotion,
@@ -963,6 +969,8 @@ export class VideoProjectService extends EventEmitter {
                         assetType: analysis.assetType || 'image_flux',
                         cameraMovement: analysis.cameraMovement || 'static',
                         transition: analysis.transition || 'fade',
+                        firstFrame: normalizedFirstFrame,
+                        animateFrame: normalizedAnimateFrame,
                         highlightWords: analysis.highlightWords || seg.highlightWords,
                     };
 
@@ -1129,7 +1137,7 @@ export class VideoProjectService extends EventEmitter {
 
         try {
             const prompt = this.buildPromptEditionPrompt(segments, instruction);
-            const systemMsg = 'You are a prompt editor AI. Respond ONLY with a valid JSON object containing a "segments" array, where each item has "id" and "imagePrompt".';
+            const systemMsg = 'You are a prompt editor AI. Respond ONLY with a valid JSON object containing a "segments" array. For each segment, return "id" and only the expected prompt fields according to its assetType.';
             const aiRequestPayload: any[] = [
                 { role: 'system', content: systemMsg },
                 { role: 'user', content: prompt }
@@ -1170,7 +1178,33 @@ export class VideoProjectService extends EventEmitter {
 
             const updatedSegments = segments.map(seg => {
                 const edited = segmentsArray.find((a: any) => a.id === seg.id);
-                if (!edited || edited.imagePrompt == null) return seg;
+                if (!edited) return seg;
+
+                // video_frame_animate: editar firstFrame + animateFrame (sem imagePrompt)
+                if (seg.assetType === 'video_frame_animate') {
+                    const hasFirstFrame = edited.firstFrame != null;
+                    const hasAnimateFrame = edited.animateFrame != null;
+                    if (!hasFirstFrame && !hasAnimateFrame) return seg;
+
+                    const next: VideoProjectSegment = { ...seg };
+
+                    if (hasFirstFrame) {
+                        next.firstFrame = typeof edited.firstFrame === 'string'
+                            ? edited.firstFrame
+                            : String(edited.firstFrame);
+                    }
+
+                    if (hasAnimateFrame) {
+                        next.animateFrame = typeof edited.animateFrame === 'string'
+                            ? edited.animateFrame
+                            : String(edited.animateFrame);
+                    }
+
+                    return next;
+                }
+
+                // Demais tipos: editar imagePrompt
+                if (edited.imagePrompt == null) return seg;
 
                 const normalizedPrompt = typeof edited.imagePrompt === 'string'
                     ? edited.imagePrompt
@@ -1647,16 +1681,26 @@ export class VideoProjectService extends EventEmitter {
         userInstruction: string
     ): string {
         const promptsList = segments
-            .map(s => `ID: ${s.id}\nPrompt atual:\n${this.stringifyPromptForEdition(s.imagePrompt)}`)
+            .map(s => {
+                if (s.assetType === 'video_frame_animate') {
+                    return `ID: ${s.id}\nassetType: video_frame_animate\nfirstFrame atual:\n${this.stringifyPromptForEdition(s.firstFrame)}\nanimateFrame atual:\n${this.stringifyPromptForEdition(s.animateFrame)}`;
+                }
+                return `ID: ${s.id}\nassetType: ${s.assetType || 'image_flux'}\nimagePrompt atual:\n${this.stringifyPromptForEdition(s.imagePrompt)}`;
+            })
             .join('\n\n');
 
         return `Você é um editor de prompts de vídeo.
 
 INSTRUÇÃO DO USUÁRIO:
-"${userInstruction} do campo Prompt atual: dos segments"
+"${userInstruction}"
 
 Segments:
 ${promptsList}
+
+Regras obrigatórias:
+- Para segmentos com assetType = "video_frame_animate", retorne "firstFrame" e "animateFrame" (NÃO retorne imagePrompt).
+- Para os demais segmentos, retorne "imagePrompt".
+- Não retorne explicações fora do JSON.
 
 Formato de resposta:
 {
@@ -1666,6 +1710,20 @@ Formato de resposta:
 {
 
 "id": 1,
+
+"assetType": "video_frame_animate",
+
+"firstFrame": "prompt editado do primeiro frame",
+
+"animateFrame": "prompt editado de animação"
+
+},
+
+{
+
+"id": 2,
+
+"assetType": "video_veo2",
 
 "imagePrompt": "prompt editado/JSON editado/Código editado"
 
@@ -2104,6 +2162,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 transform: segment.transform,
                 audio: segment.audio,
                 firstFrame: segment.firstFrame,
+                animateFrame: segment.animateFrame,
                 words: segment.words, // Words fica por último
             })),
         };
