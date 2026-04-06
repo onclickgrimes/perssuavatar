@@ -25,7 +25,6 @@ export type WorkflowStep =
   | 'transcribing'
   | 'analyzing'
   | 'keyframes'
-  | 'prompts'
   | 'images'
   | 'preview'
   | 'rendering'

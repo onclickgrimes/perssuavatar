@@ -14,7 +14,6 @@ import { UploadStep } from '../UploadStep';
 import { ChannelNiche } from '../NicheModal';
 import { ProcessingStep } from '../ProcessingStep';
 import { KeyframesStep } from '../KeyframesStep';
-import { PromptsStep } from '../PromptsStep';
 import { ImagesStep } from '../ImagesStep';
 import { PreviewStep } from '../PreviewStep';
 import { RenderingStep } from '../RenderingStep';
@@ -114,7 +113,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         if (loadedProject.segments.some((s: any) => s.imageUrl)) {
           setCurrentStep('images');
         } else if (loadedProject.segments.some((s: any) => s.imagePrompt)) {
-          setCurrentStep('prompts');
+          setCurrentStep('images');
         } else if (loadedProject.segments.length > 0) {
           setCurrentStep('keyframes');
         } else {
@@ -402,7 +401,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     try {
       if (!window.electron?.videoProject) {
         // Fallback: apenas continuar sem análise
-        setCurrentStep('prompts');
+        setCurrentStep('images');
         return;
       }
 
@@ -503,11 +502,11 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         summarizeScenePrompts(updatedSegments).catch(() => {});
       }
       
-      setCurrentStep('prompts');
+      setCurrentStep('images');
     } catch (err) {
       console.error('Analysis error:', err);
       // Continuar mesmo em caso de erro
-      setCurrentStep('prompts');
+      setCurrentStep('images');
     } finally {
       setIsProcessing(false);
     }
@@ -742,7 +741,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       segments: prev.segments.map(seg => {
         if (seg.id !== segmentId) return seg;
         
-        // O assetType NÃO deve mudar aqui (somente no PromptsStep).
+        // O assetType NÃO deve mudar aqui (somente no editor de prompts do ImagesStep).
         const isVideoFile = !!imageUrl && ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']
           .some(ext => imageUrl.toLowerCase().endsWith(ext));
         
@@ -897,7 +896,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           <KeyframesStep
             segments={project.segments}
             onUpdateEmotion={handleUpdateEmotion}
-            onContinue={() => setCurrentStep('prompts')}
+            onContinue={() => setCurrentStep('images')}
             onBack={() => setCurrentStep('upload')}
             onMoveWords={handleMoveWords}
             onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
@@ -905,13 +904,13 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           />
         );
       
-      case 'prompts':
+      case 'images':
         return (
-          <PromptsStep
+          <ImagesStep
             segments={project.segments}
             onUpdatePrompt={handleUpdatePrompt}
             onUpdateImage={handleUpdateImage}
-            onContinue={() => setCurrentStep('images')}
+            onContinue={() => setCurrentStep('preview')}
             onBack={() => setCurrentStep('keyframes')}
             provider={selectedProvider}
             onProviderChange={(p: any) => {
@@ -929,16 +928,6 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             onSegmentsUpdate={(newSegments) => setProject(prev => ({ ...prev, segments: newSegments }))}
             niche={selectedNiche}
             onGenerateFirstFrame={handleGenerateFirstFrameOnly}
-          />
-        );
-      
-      case 'images':
-        return (
-          <ImagesStep
-            segments={project.segments}
-            onUpdateImage={handleUpdateImage}
-            onContinue={() => setCurrentStep('preview')}
-            onBack={() => setCurrentStep('prompts')}
             aspectRatio={project.selectedAspectRatios?.[0] || '9:16'}
             onAspectRatioChange={(value) => setProject(prev => ({ ...prev, selectedAspectRatios: [value] }))}
           />
@@ -1087,13 +1076,13 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             
             {/* Progress Steps */}
             <div className="flex items-center gap-2">
-              {['upload', 'keyframes', 'prompts', 'images', 'preview', 'rendering'].map((step, index) => (
+              {['upload', 'keyframes', 'images', 'preview', 'rendering'].map((step, index) => (
                 <div
                   key={step}
                   className={`w-3 h-3 rounded-full transition-all ${
                     currentStep === step
                       ? 'bg-pink-500 scale-125'
-                      : ['upload', 'keyframes', 'prompts', 'images', 'preview', 'rendering'].indexOf(currentStep) > index
+                      : ['upload', 'keyframes', 'images', 'preview', 'rendering'].indexOf(currentStep) > index
                       ? 'bg-green-500'
                       : 'bg-white/20'
                   }`}
