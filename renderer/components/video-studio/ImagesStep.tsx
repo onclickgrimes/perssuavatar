@@ -85,7 +85,47 @@ interface AnalysisReferenceContext {
 type StoryReferenceKind = 'character' | 'location';
 type StoryReferenceImageProvider = 'flow-image' | 'flow-image-api' | 'flow-image-pro';
 
-const CHARACTER_REFERENCE_MODEL_PROMPT = `A high-definition, clean, minimalist character design board / character turnaround reference sheet, set against a pure white background. The overall presentation should resemble a professional game art character modeling sheet, fashion design reference page, character design sheet, or character turnaround board. The layout should be neat and well-organized, with clearly divided information sections, a realistic and premium visual quality, consistent lighting, and strict character consistency throughout. On the left side of the composition, show the character's full-body three-view turnaround, occupying the main visual area, including: 1. Front full-body standing pose 2. Left-side full-body standing pose 3. Back full-body standing pose All three figures must be the exact same character, with identical facial features, hairstyle, clothing, body shape, and height proportions. The standing pose should feel natural, with both arms hanging naturally at the sides. This should be suitable as a character modeling reference. The camera angle should be eye level, with neutral studio lighting, no obstruction, no exaggerated perspective, and no complex background. The right side of the composition should be divided into two sections: In the upper-right section, place six headshot / head-angle reference images of the same character, arranged neatly to show different head perspectives, including: - Front-facing portrait - Slight downward angle showing the top of the head - Back of the head / rear head view - Left-side facial profile - A near-side-angle comparison view - 3/4 profile portrait The head references should have clear facial features, visible hair parting, and consistent facial structure, making them suitable as head design references. In the lower-right section, place six close-up detail images of the character, arranged into a clean grid, showing key design details, including: - Close-up of the upper garment fabric texture - Front close-up of the lower-body clothing - Close-up of the hip / tailoring detail - Close-up of the leg or skin texture detail - Close-up of the eyes or facial feature details - Full close-up of the shoes as a standalone item All detail images must match the main character's outfit and appearance exactly. Materials should look realistic, and the details should be clean and precise, suitable as clothing and accessory modeling references. Overall style requirements: Minimalist, professional, realistic, unified, clean, and premium, similar to a character design board, fashion design reference sheet, 3D character modeling reference page, or character turnaround presentation board. The character edges should be sharp, garment shapes should be clearly defined, hair strands should appear natural, skin should look refined, and material rendering should be accurate. The overall layout should have generous white space, as if it were made by a professional concept art team. Character setup: AQUI VAI O PROMPT DO PERSONAGEM. Output requirements: Landscape composition, white background, full character visible, no cropping, no extra props, no explanatory text, no logo, no watermark, no UI interface elements, no like/save buttons, and no social-media-screenshot appearance.`;
+const CHARACTER_REFERENCE_MODEL_PROMPT = `A high-definition, clean, minimalist character design board / character turnaround reference sheet, set against a pure white background. The overall presentation should resemble a professional character design sheet, modeling reference board, or turnaround presentation page. The layout should be neat, well-organized, and clearly divided into sections, with consistent lighting and strict character consistency throughout.
+
+On the left side of the composition, show the character's full-body three-view turnaround, occupying the main visual area, including:
+1. Front full-body standing pose
+2. Left-side full-body standing pose
+3. Back full-body standing pose
+
+All three figures must be the exact same character, with identical facial features, hairstyle, clothing, body shape, and height proportions. The pose should be natural, with both arms resting at the sides. The camera angle should be eye level, with neutral studio lighting, no distortion, no exaggerated perspective, and no complex background. The full character must be visible with no cropping.
+
+On the right side of the composition, divide the layout into two sections:
+
+Upper-right section:
+Place six headshot / head-angle reference images of the same character, arranged neatly to show different head perspectives, including:
+- Front-facing portrait
+- Slight downward angle (top of the head visible)
+- Back of the head
+- Left-side profile
+- Near side-angle comparison
+- 3/4 portrait view
+
+All head references must maintain identical facial structure, proportions, and hairstyle.
+
+Lower-right section:
+Place six close-up detail images of the same character, arranged in a clean grid, showing key design details, such as:
+- Upper garment detail
+- Lower-body clothing detail (front)
+- Hip / seam / structural detail
+- Leg or surface detail
+- Eye or facial feature detail
+- Shoes or footwear detail
+
+All detail images must match the main character exactly in design and appearance.
+
+Overall layout requirements:
+Minimalist, clean, professional, consistent, and easy to read. Clear separation between sections. Generous white space. High visual clarity. No clutter.
+
+Output requirements:
+Landscape composition, pure white background, full character visible, no cropping, no extra props, no text, no labels, no logo, no watermark, no UI elements, no social media interface.
+
+Character setup:
+AQUI VAI O PROMPT DO PERSONAGEM.`;
 
 const SmartVideoPreview = React.memo(function SmartVideoPreview({ src }: SmartVideoPreviewProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
@@ -289,6 +329,10 @@ export function ImagesStep({
   const [storyReferenceImageProvider, setStoryReferenceImageProvider] = useState<StoryReferenceImageProvider>('flow-image-api');
   const [referenceUploading, setReferenceUploading] = useState<Set<string>>(new Set());
   const [referenceGenerating, setReferenceGenerating] = useState<Set<string>>(new Set());
+  const [editingCharacterNameId, setEditingCharacterNameId] = useState<number | null>(null);
+  const [characterNameDraft, setCharacterNameDraft] = useState('');
+  const [editingLocationNameId, setEditingLocationNameId] = useState<number | null>(null);
+  const [locationNameDraft, setLocationNameDraft] = useState('');
 
   const getStoryReferenceKey = useCallback((kind: StoryReferenceKind, id: number) => {
     return `${kind}:${id}`;
@@ -460,6 +504,94 @@ export function ImagesStep({
       },
     ]));
   };
+
+  const removeCharacterReference = (charId: number) => {
+    const shouldRemove = window.confirm(`Excluir personagem #${charId}?`);
+    if (!shouldRemove) return;
+
+    const busyKey = getStoryReferenceKey('character', charId);
+    updateReferenceBusyState(setReferenceUploading, busyKey, false);
+    updateReferenceBusyState(setReferenceGenerating, busyKey, false);
+
+    setCharacterReferences(prev =>
+      prev
+        .filter(item => item.id !== charId)
+        .map(item => (item.reference_id === charId ? { ...item, reference_id: null } : item))
+    );
+  };
+
+  const removeLocationReference = (locationId: number) => {
+    const shouldRemove = window.confirm(`Excluir lugar #${locationId}?`);
+    if (!shouldRemove) return;
+
+    const busyKey = getStoryReferenceKey('location', locationId);
+    updateReferenceBusyState(setReferenceUploading, busyKey, false);
+    updateReferenceBusyState(setReferenceGenerating, busyKey, false);
+
+    setLocationReferences(prev =>
+      prev
+        .filter(item => item.id !== locationId)
+        .map(item => (item.reference_id === locationId ? { ...item, reference_id: null } : item))
+    );
+  };
+
+  const startEditingCharacterName = (character: CharacterReferenceItem) => {
+    const fallbackName = `Personagem ${character.id}`;
+    setEditingCharacterNameId(character.id);
+    setCharacterNameDraft(String(character.character || fallbackName));
+  };
+
+  const commitCharacterNameEdition = (characterId: number) => {
+    const nextName = String(characterNameDraft || '').trim() || `Personagem ${characterId}`;
+    setCharacterReferences(prev => prev.map(item =>
+      item.id === characterId ? { ...item, character: nextName } : item
+    ));
+    setEditingCharacterNameId(current => (current === characterId ? null : current));
+    setCharacterNameDraft('');
+  };
+
+  const cancelCharacterNameEdition = (characterId: number) => {
+    setEditingCharacterNameId(current => (current === characterId ? null : current));
+    setCharacterNameDraft('');
+  };
+
+  const startEditingLocationName = (location: LocationReferenceItem) => {
+    const fallbackName = `Lugar ${location.id}`;
+    setEditingLocationNameId(location.id);
+    setLocationNameDraft(String(location.location || fallbackName));
+  };
+
+  const commitLocationNameEdition = (locationId: number) => {
+    const nextName = String(locationNameDraft || '').trim() || `Lugar ${locationId}`;
+    setLocationReferences(prev => prev.map(item =>
+      item.id === locationId ? { ...item, location: nextName } : item
+    ));
+    setEditingLocationNameId(current => (current === locationId ? null : current));
+    setLocationNameDraft('');
+  };
+
+  const cancelLocationNameEdition = (locationId: number) => {
+    setEditingLocationNameId(current => (current === locationId ? null : current));
+    setLocationNameDraft('');
+  };
+
+  useEffect(() => {
+    if (editingCharacterNameId == null) return;
+    const stillExists = characterReferences.some(item => item.id === editingCharacterNameId);
+    if (!stillExists) {
+      setEditingCharacterNameId(null);
+      setCharacterNameDraft('');
+    }
+  }, [editingCharacterNameId, characterReferences]);
+
+  useEffect(() => {
+    if (editingLocationNameId == null) return;
+    const stillExists = locationReferences.some(item => item.id === editingLocationNameId);
+    if (!stillExists) {
+      setEditingLocationNameId(null);
+      setLocationNameDraft('');
+    }
+  }, [editingLocationNameId, locationReferences]);
 
   const toPositiveInt = (value: unknown): number | null => {
     if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
@@ -715,8 +847,34 @@ export function ImagesStep({
     return normalizeCharactersField(charsRaw) || null;
   };
 
+  const parseSceneReferenceIds = (raw: unknown): number[] => {
+    const normalized = normalizeCharactersField(raw);
+    if (!normalized) return [];
+
+    return normalized
+      .split(',')
+      .map(part => parseInt(part.trim(), 10))
+      .filter(id => !isNaN(id) && id > 0);
+  };
+
   const getCharactersInScene = (segment: TranscriptionSegment): string | null => {
     return parseCharactersInScene(segment.IdOfTheCharactersInTheScene);
+  };
+
+  const getLocationsInScene = (segment: TranscriptionSegment): string | null => {
+    return normalizeCharactersField(segment.IdOfTheLocationInTheScene) || null;
+  };
+
+  const getSceneReferencePaths = (segment: TranscriptionSegment): string[] => {
+    const characterIds = parseSceneReferenceIds(segment.IdOfTheCharactersInTheScene);
+    const locationIds = parseSceneReferenceIds(segment.IdOfTheLocationInTheScene);
+
+    const toNonEmptyPath = (value: string | undefined): value is string =>
+      typeof value === 'string' && value.trim().length > 0;
+    const characterReferencePaths = characterIds.map(id => characterImages[id]).filter(toNonEmptyPath);
+    const locationReferencePaths = locationIds.map(id => locationImages[id]).filter(toNonEmptyPath);
+
+    return Array.from(new Set([...characterReferencePaths, ...locationReferencePaths]));
   };
 
   // ── Batch Processing (Processamento em lote) ──
@@ -1099,26 +1257,22 @@ export function ImagesStep({
         const flowModelName = isLiteFlow ? 'Veo 3.1 - Lite' : undefined;
         const flowServiceLabel = isLiteFlow ? 'Veo 3.1 - Lite' : 'Veo 3';
 
-        // Verificar modo Ingredients e Personagens
+        // Verificar modo Ingredients e referências de personagem/lugar
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        
-        const charsMatch = getCharactersInScene(segment);
-        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
-        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
-        
-        const ingredientsRequested = isIngredientsExplicit || charsReferencePaths.length > 0;
+        const sceneReferencePaths = getSceneReferencePaths(segment);
+        const ingredientsRequested = isIngredientsExplicit || sceneReferencePaths.length > 0;
         const isIngredients = !isLiteFlow && ingredientsRequested;
         const baseIngredientPaths = (isIngredientsExplicit && !isLiteFlow) ? (ingredientImages[segmentId] || []) : [];
         
-        // Combina ingredientes explícitos com imagens de personagens (máximo 3)
-        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths])).slice(0, 3);
+        // Combina ingredientes explícitos com referências de personagem/lugar (máximo 3)
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
 
         if (isLiteFlow && ingredientsRequested) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Veo 3.1 - Lite não suporta Ingredients. Usando Frames...' }));
         }
 
         if (isIngredients && ingredientPaths.length === 0) {
-          if (!silent) alert('Nenhuma imagem de ingrediente ou personagem disponível para gerar.');
+          if (!silent) alert('Nenhuma imagem de ingrediente, personagem ou lugar disponível para gerar.');
           setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
           return false;
         }
@@ -1176,12 +1330,9 @@ export function ImagesStep({
         console.log(`✖️ [Grok] Gerando vídeo para segmento ${segmentId}...`);
         
         // Coleta possíveis inputs de imagem permitidos pelo provedor Grok (que aceita arrays de imagens)
-        const charsMatch = getCharactersInScene(segment);
-        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
-        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
-        
+        const sceneReferencePaths = getSceneReferencePaths(segment);
         const baseIngredientPaths = ingredientImages[segmentId] || [];
-        const grokImagePaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths]));
+        const grokImagePaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths]));
 
         if (referenceImagePath && !grokImagePaths.includes(referenceImagePath)) {
           grokImagePaths.push(referenceImagePath);
@@ -1218,19 +1369,17 @@ export function ImagesStep({
         console.log(`🖼️ [FlowImg] Gerando imagem para segmento ${segmentId}...`);
         const count = imageCount[segmentId] ?? 1;
 
-        // Verificar modo Ingredients e Personagens
+        // Verificar modo Ingredients e referências de personagem/lugar
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const charsMatch = getCharactersInScene(segment);
-        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
-        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
+        const sceneReferencePaths = getSceneReferencePaths(segment);
         
-        const isIngredients = isIngredientsExplicit || charsReferencePaths.length > 0;
+        const isIngredients = isIngredientsExplicit || sceneReferencePaths.length > 0;
         const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
         
-        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths])).slice(0, 3);
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
 
         if (isIngredients && ingredientPaths.length === 0) {
-          if (!silent) alert('Nenhuma imagem de ingrediente ou personagem disponível para gerar.');
+          if (!silent) alert('Nenhuma imagem de ingrediente, personagem ou lugar disponível para gerar.');
           setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
           return false;
         }
@@ -1265,19 +1414,17 @@ export function ImagesStep({
         console.log(`🖼️ [ImageAPI] Gerando imagem para segmento ${segmentId} com ${imageModelLabel}...`);
         const count = imageCount[segmentId] ?? 1;
 
-        // Verificar modo Ingredients e Personagens
+        // Verificar modo Ingredients e referências de personagem/lugar
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const charsMatch = getCharactersInScene(segment);
-        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
-        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
+        const sceneReferencePaths = getSceneReferencePaths(segment);
         
-        const isIngredients = isIngredientsExplicit || charsReferencePaths.length > 0;
+        const isIngredients = isIngredientsExplicit || sceneReferencePaths.length > 0;
         const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
         
-        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths])).slice(0, 3);
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
 
         if (isIngredients && ingredientPaths.length === 0) {
-          if (!silent) alert('Nenhuma imagem de ingrediente ou personagem disponível para gerar.');
+          if (!silent) alert('Nenhuma imagem de ingrediente, personagem ou lugar disponível para gerar.');
           setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
           return false;
         }
@@ -1324,16 +1471,14 @@ export function ImagesStep({
               ? ' Lite'
               : '';
 
-        // Verificar modo Ingredients e Personagens
+        // Verificar modo Ingredients e referências de personagem/lugar
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const charsMatch = getCharactersInScene(segment);
-        const charIds = charsMatch ? charsMatch.split(',').map(s => parseInt(s.trim())).filter(n => !isNaN(n)) : [];
-        const charsReferencePaths = charIds.map(id => characterImages[id]).filter(Boolean);
+        const sceneReferencePaths = getSceneReferencePaths(segment);
         
-        const ingredientsRequested = isIngredientsExplicit || charsReferencePaths.length > 0;
+        const ingredientsRequested = isIngredientsExplicit || sceneReferencePaths.length > 0;
         const isIngredients = !isLiteApi && ingredientsRequested;
         const baseIngredientPaths = (isIngredientsExplicit && !isLiteApi) ? (ingredientImages[segmentId] || []) : [];
-        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...charsReferencePaths])).slice(0, 3);
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
 
         if (isLiteApi && ingredientsRequested) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Veo 3.1 Lite (API) não suporta Ingredients. Usando Frames...' }));
@@ -2319,6 +2464,15 @@ export function ImagesStep({
                       </span>
                     );
                   })()}
+                  {(() => {
+                    const locations = getLocationsInScene(segment);
+                    if (!locations) return null;
+                    return (
+                      <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-300 rounded text-xs">
+                        📍 {locations}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 <p className="text-white/80 text-sm italic">"{segment.text}"</p>
@@ -2718,33 +2872,103 @@ export function ImagesStep({
                       const isGeneratingRef = referenceGenerating.has(characterKey);
                       const isBusyRef = isUploadingRef || isGeneratingRef;
                       const normalizedReferenceId = toPositiveInt(character.reference_id);
+                      const characterReferenceOptions = characterReferences
+                        .map(item => item.id)
+                        .filter(id => id !== character.id)
+                        .sort((a, b) => a - b);
                       const hasPrompt = String(character.prompt_en || '').trim().length > 0;
                       const hasValidReferenceImage = normalizedReferenceId
                         ? Boolean(characterImages[normalizedReferenceId])
                         : true;
                       return (
-                        <div key={`character-${character.id}`} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
+                        <div key={`character-${character.id}`} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3 relative group/story-ref">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeCharacterReference(character.id);
+                            }}
+                            disabled={isBusyRef}
+                            className={`absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg flex items-center justify-center transition-opacity z-20 transform hover:scale-110 ${
+                              isBusyRef
+                                ? 'opacity-40 cursor-not-allowed'
+                                : 'opacity-0 group-hover/story-ref:opacity-100'
+                            }`}
+                            title="Excluir personagem"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M18 6 6 18M6 6l12 12"/>
+                            </svg>
+                          </button>
                           <div className="flex items-center justify-between gap-3">
-                            <div className="text-white text-sm font-medium">
-                              #{character.id} {character.character || `Personagem ${character.id}`}
+                            <div className="flex items-center gap-2 min-w-0">
+                              {editingCharacterNameId === character.id ? (
+                                <input
+                                  autoFocus
+                                  value={characterNameDraft}
+                                  onChange={(e) => setCharacterNameDraft(e.target.value)}
+                                  onBlur={() => commitCharacterNameEdition(character.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      commitCharacterNameEdition(character.id);
+                                    }
+                                    if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      cancelCharacterNameEdition(character.id);
+                                    }
+                                  }}
+                                  className="w-full max-w-[260px] bg-black/40 border border-white/15 rounded-md px-2 py-1 text-white text-sm focus:border-yellow-500 focus:outline-none"
+                                />
+                              ) : (
+                                <>
+                                  <div className="text-white text-sm font-medium truncate">
+                                    #{character.id} {character.character || `Personagem ${character.id}`}
+                                  </div>
+                                  <button
+                                    onClick={() => startEditingCharacterName(character)}
+                                    disabled={isBusyRef}
+                                    className={`p-1 rounded-md transition-all ${
+                                      isBusyRef
+                                        ? 'text-white/20 cursor-not-allowed'
+                                        : 'text-white/40 hover:text-white hover:bg-white/10'
+                                    }`}
+                                    title="Editar nome"
+                                  >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M12 20h9"/>
+                                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>
+                                    </svg>
+                                  </button>
+                                </>
+                              )}
                             </div>
-                            <div className="text-xs text-white/40">
-                              {character.reference_id ? `ref #${character.reference_id}` : 'base'}
+                            <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-1 text-xs text-white/60">
+                                <span>Ref #</span>
+                                <select
+                                  value={normalizedReferenceId ?? ''}
+                                  onChange={(e) => {
+                                    const rawValue = e.target.value;
+                                    const nextReferenceId = rawValue === '' ? null : toPositiveInt(rawValue);
+                                    setCharacterReferences(prev => prev.map(item =>
+                                      item.id === character.id
+                                        ? { ...item, reference_id: nextReferenceId }
+                                        : item
+                                    ));
+                                  }}
+                                  disabled={isBusyRef}
+                                  className="bg-black/40 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white focus:border-yellow-500 focus:outline-none disabled:opacity-60"
+                                >
+                                  <option value="">base</option>
+                                  {characterReferenceOptions.map(id => (
+                                    <option key={`char-ref-${character.id}-${id}`} value={id}>
+                                      {id}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                             </div>
                           </div>
-
-                          <input
-                            type="text"
-                            value={character.character}
-                            onChange={(e) => {
-                              const nextValue = e.target.value;
-                              setCharacterReferences(prev => prev.map(item =>
-                                item.id === character.id ? { ...item, character: nextValue } : item
-                              ));
-                            }}
-                            placeholder="Nome do personagem"
-                            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-yellow-500 focus:outline-none"
-                          />
 
                           <textarea
                             value={character.prompt_en}
@@ -2899,33 +3123,103 @@ export function ImagesStep({
                       const isGeneratingRef = referenceGenerating.has(locationKey);
                       const isBusyRef = isUploadingRef || isGeneratingRef;
                       const normalizedReferenceId = toPositiveInt(location.reference_id);
+                      const locationReferenceOptions = locationReferences
+                        .map(item => item.id)
+                        .filter(id => id !== location.id)
+                        .sort((a, b) => a - b);
                       const hasPrompt = String(location.prompt_en || '').trim().length > 0;
                       const hasValidReferenceImage = normalizedReferenceId
                         ? Boolean(locationImages[normalizedReferenceId])
                         : true;
                       return (
-                        <div key={`location-${location.id}`} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
+                        <div key={`location-${location.id}`} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3 relative group/story-ref">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              removeLocationReference(location.id);
+                            }}
+                            disabled={isBusyRef}
+                            className={`absolute -top-2 -right-2 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full shadow-lg flex items-center justify-center transition-opacity z-20 transform hover:scale-110 ${
+                              isBusyRef
+                                ? 'opacity-40 cursor-not-allowed'
+                                : 'opacity-0 group-hover/story-ref:opacity-100'
+                            }`}
+                            title="Excluir lugar"
+                          >
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M18 6 6 18M6 6l12 12"/>
+                            </svg>
+                          </button>
                           <div className="flex items-center justify-between gap-3">
-                            <div className="text-white text-sm font-medium">
-                              #{location.id} {location.location || `Lugar ${location.id}`}
+                            <div className="flex items-center gap-2 min-w-0">
+                              {editingLocationNameId === location.id ? (
+                                <input
+                                  autoFocus
+                                  value={locationNameDraft}
+                                  onChange={(e) => setLocationNameDraft(e.target.value)}
+                                  onBlur={() => commitLocationNameEdition(location.id)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      commitLocationNameEdition(location.id);
+                                    }
+                                    if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      cancelLocationNameEdition(location.id);
+                                    }
+                                  }}
+                                  className="w-full max-w-[260px] bg-black/40 border border-white/15 rounded-md px-2 py-1 text-white text-sm focus:border-cyan-500 focus:outline-none"
+                                />
+                              ) : (
+                                <>
+                                  <div className="text-white text-sm font-medium truncate">
+                                    #{location.id} {location.location || `Lugar ${location.id}`}
+                                  </div>
+                                  <button
+                                    onClick={() => startEditingLocationName(location)}
+                                    disabled={isBusyRef}
+                                    className={`p-1 rounded-md transition-all ${
+                                      isBusyRef
+                                        ? 'text-white/20 cursor-not-allowed'
+                                        : 'text-white/40 hover:text-white hover:bg-white/10'
+                                    }`}
+                                    title="Editar nome"
+                                  >
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                      <path d="M12 20h9"/>
+                                      <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>
+                                    </svg>
+                                  </button>
+                                </>
+                              )}
                             </div>
-                            <div className="text-xs text-white/40">
-                              {location.reference_id ? `ref #${location.reference_id}` : 'base'}
+                            <div className="flex items-center gap-2">
+                              <label className="flex items-center gap-1 text-xs text-white/60">
+                                <span>Ref #</span>
+                                <select
+                                  value={normalizedReferenceId ?? ''}
+                                  onChange={(e) => {
+                                    const rawValue = e.target.value;
+                                    const nextReferenceId = rawValue === '' ? null : toPositiveInt(rawValue);
+                                    setLocationReferences(prev => prev.map(item =>
+                                      item.id === location.id
+                                        ? { ...item, reference_id: nextReferenceId }
+                                        : item
+                                    ));
+                                  }}
+                                  disabled={isBusyRef}
+                                  className="bg-black/40 border border-white/10 rounded-md px-2 py-1 text-[11px] text-white focus:border-cyan-500 focus:outline-none disabled:opacity-60"
+                                >
+                                  <option value="">base</option>
+                                  {locationReferenceOptions.map(id => (
+                                    <option key={`location-ref-${location.id}-${id}`} value={id}>
+                                      {id}
+                                    </option>
+                                  ))}
+                                </select>
+                              </label>
                             </div>
                           </div>
-
-                          <input
-                            type="text"
-                            value={location.location}
-                            onChange={(e) => {
-                              const nextValue = e.target.value;
-                              setLocationReferences(prev => prev.map(item =>
-                                item.id === location.id ? { ...item, location: nextValue } : item
-                              ));
-                            }}
-                            placeholder="Nome do lugar"
-                            className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-cyan-500 focus:outline-none"
-                          />
 
                           <textarea
                             value={location.prompt_en}
