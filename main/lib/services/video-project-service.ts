@@ -2272,12 +2272,12 @@ ${transcription}
 
 TAREFA 1 — PERSONAGENS:
 - Liste individualmente os personagens relevantes para geração visual. Apenas um personagem por item.
-- Para cada personagem, gere um prompt em inglês para um Character Sheet do personagem no estilo "${characterStyleLabel}". Horizontal, fundo branco, personagem totalmente visível, sem cortes, sem adereços extras, sem texto explicativo, sem logotipo, sem marca d'água.
+- Para cada personagem, gere um prompt em inglês no estilo "${characterStyleLabel}".
 - Se o mesmo personagem mudar de roupa, aparência, idade, penteado, estado físico ou característica visual importante, crie um NOVO item com "reference_id" apontando para o ID base do personagem.
 - Para personagens totalmente novos, use "reference_id": null.
 
 TAREFA 2 — LUGARES:
-- Liste os lugares/cenários onde a história acontece.
+- Liste TODOS os lugares/cenários onde a história acontece. Se a narração não mencionar o lugar, mas for possível inferir o lugar, liste-o.
 - Para cada lugar, gere um prompt em inglês para imagem no estilo "${locationStyleLabel}" do cenário (sem personagens visíveis).
 - O prompt do lugar deve manter coerência com os personagens da história (ex: objetos, vestígios, contexto, escala e atmosfera ligadas a eles), mas sem mostrar pessoas.
 - Se algo mudar no lugar, gere outro item para o mesmo lugar com "reference_id" apontando para o ID base do lugar.
