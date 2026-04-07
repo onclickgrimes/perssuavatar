@@ -82,6 +82,11 @@ interface AnalysisReferenceContext {
   locations?: AnalysisReferenceContextItem[];
 }
 
+type StoryReferenceKind = 'character' | 'location';
+type StoryReferenceImageProvider = 'flow-image' | 'flow-image-api' | 'flow-image-pro';
+
+const CHARACTER_REFERENCE_MODEL_PROMPT = `A high-definition, clean, minimalist character design board / character turnaround reference sheet, set against a pure white background. The overall presentation should resemble a professional game art character modeling sheet, fashion design reference page, character design sheet, or character turnaround board. The layout should be neat and well-organized, with clearly divided information sections, a realistic and premium visual quality, consistent lighting, and strict character consistency throughout. On the left side of the composition, show the character's full-body three-view turnaround, occupying the main visual area, including: 1. Front full-body standing pose 2. Left-side full-body standing pose 3. Back full-body standing pose All three figures must be the exact same character, with identical facial features, hairstyle, clothing, body shape, and height proportions. The standing pose should feel natural, with both arms hanging naturally at the sides. This should be suitable as a character modeling reference. The camera angle should be eye level, with neutral studio lighting, no obstruction, no exaggerated perspective, and no complex background. The right side of the composition should be divided into two sections: In the upper-right section, place six headshot / head-angle reference images of the same character, arranged neatly to show different head perspectives, including: - Front-facing portrait - Slight downward angle showing the top of the head - Back of the head / rear head view - Left-side facial profile - A near-side-angle comparison view - 3/4 profile portrait The head references should have clear facial features, visible hair parting, and consistent facial structure, making them suitable as head design references. In the lower-right section, place six close-up detail images of the character, arranged into a clean grid, showing key design details, including: - Close-up of the upper garment fabric texture - Front close-up of the lower-body clothing - Close-up of the hip / tailoring detail - Close-up of the leg or skin texture detail - Close-up of the eyes or facial feature details - Full close-up of the shoes as a standalone item All detail images must match the main character's outfit and appearance exactly. Materials should look realistic, and the details should be clean and precise, suitable as clothing and accessory modeling references. Overall style requirements: Minimalist, professional, realistic, unified, clean, and premium, similar to a character design board, fashion design reference sheet, 3D character modeling reference page, or character turnaround presentation board. The character edges should be sharp, garment shapes should be clearly defined, hair strands should appear natural, skin should look refined, and material rendering should be accurate. The overall layout should have generous white space, as if it were made by a professional concept art team. Character setup: AQUI VAI O PROMPT DO PERSONAGEM. Output requirements: Landscape composition, white background, full character visible, no cropping, no extra props, no explanatory text, no logo, no watermark, no UI interface elements, no like/save buttons, and no social-media-screenshot appearance.`;
+
 const SmartVideoPreview = React.memo(function SmartVideoPreview({ src }: SmartVideoPreviewProps) {
   const wrapperRef = useRef<HTMLDivElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -272,6 +277,48 @@ export function ImagesStep({
     }, {} as Record<number, string>);
   }, [characterReferences]);
 
+  const locationImages = useMemo<Record<number, string>>(() => {
+    return locationReferences.reduce((acc, location) => {
+      if (location.imageUrl) {
+        acc[location.id] = location.imageUrl;
+      }
+      return acc;
+    }, {} as Record<number, string>);
+  }, [locationReferences]);
+
+  const [storyReferenceImageProvider, setStoryReferenceImageProvider] = useState<StoryReferenceImageProvider>('flow-image-api');
+  const [referenceUploading, setReferenceUploading] = useState<Set<string>>(new Set());
+  const [referenceGenerating, setReferenceGenerating] = useState<Set<string>>(new Set());
+
+  const getStoryReferenceKey = useCallback((kind: StoryReferenceKind, id: number) => {
+    return `${kind}:${id}`;
+  }, []);
+
+  const updateReferenceBusyState = useCallback((
+    setter: React.Dispatch<React.SetStateAction<Set<string>>>,
+    key: string,
+    isBusy: boolean
+  ) => {
+    setter(prev => {
+      const next = new Set(prev);
+      if (isBusy) {
+        next.add(key);
+      } else {
+        next.delete(key);
+      }
+      return next;
+    });
+  }, []);
+
+  const isImageFile = useCallback((file: File | null | undefined): file is File => {
+    if (!file) return false;
+    return file.type.startsWith('image/');
+  }, []);
+
+  const alertInvalidImageFile = useCallback(() => {
+    alert('Apenas arquivos de imagem são permitidos neste campo.');
+  }, []);
+
   const hasGlobalInstruction = globalInstruction.trim().length > 0;
   const hasVideoStockWithoutUrl = segments.some(
     seg => seg.assetType === 'video_stock' && !seg.imageUrl
@@ -283,6 +330,14 @@ export function ImagesStep({
   const hasPrompts = hasImagePrompts || hasFrameAnimatePrompts;
 
   const handleCharacterImageUpload = async (charId: number, file: File) => {
+    if (!isImageFile(file)) {
+      alertInvalidImageFile();
+      return;
+    }
+
+    const busyKey = getStoryReferenceKey('character', charId);
+    updateReferenceBusyState(setReferenceUploading, busyKey, true);
+
     try {
       const fallbackCharacter = {
         id: charId,
@@ -315,6 +370,8 @@ export function ImagesStep({
       }
     } catch (error) {
       console.error('Error uploading character image:', error);
+    } finally {
+      updateReferenceBusyState(setReferenceUploading, busyKey, false);
     }
   };
 
@@ -325,6 +382,14 @@ export function ImagesStep({
   };
 
   const handleLocationImageUpload = async (locationId: number, file: File) => {
+    if (!isImageFile(file)) {
+      alertInvalidImageFile();
+      return;
+    }
+
+    const busyKey = getStoryReferenceKey('location', locationId);
+    updateReferenceBusyState(setReferenceUploading, busyKey, true);
+
     try {
       const fallbackLocation = {
         id: locationId,
@@ -357,6 +422,8 @@ export function ImagesStep({
       }
     } catch (error) {
       console.error('Error uploading location image:', error);
+    } finally {
+      updateReferenceBusyState(setReferenceUploading, busyKey, false);
     }
   };
 
@@ -407,6 +474,87 @@ export function ImagesStep({
     }
 
     return null;
+  };
+
+  const handleGenerateStoryReferenceImage = async (
+    kind: StoryReferenceKind,
+    itemId: number,
+    prompt: string,
+    referenceId: number | null
+  ) => {
+    const normalizedPrompt = String(prompt || '').trim();
+    if (!normalizedPrompt) {
+      alert('Preencha o prompt em inglês antes de gerar.');
+      return;
+    }
+    if (!window.electron?.videoProject?.generateFlowImage) {
+      alert('A API de geração de imagem não está disponível.');
+      return;
+    }
+
+    const busyKey = getStoryReferenceKey(kind, itemId);
+    updateReferenceBusyState(setReferenceGenerating, busyKey, true);
+    setReferencesError(null);
+
+    try {
+      const normalizedReferenceId = toPositiveInt(referenceId);
+      const referenceImagePath = normalizedReferenceId
+        ? (kind === 'character' ? characterImages[normalizedReferenceId] : locationImages[normalizedReferenceId])
+        : undefined;
+
+      if (normalizedReferenceId && !referenceImagePath) {
+        throw new Error(`A referência #${normalizedReferenceId} ainda não possui imagem para ser usada no provider.`);
+      }
+      if (referenceImagePath?.startsWith('blob:')) {
+        throw new Error('A imagem de referência precisa estar salva no projeto. Faça upload novamente da referência.');
+      }
+
+      const selectedImageModel = storyReferenceImageProvider === 'flow-image-pro'
+        ? 'gemini-3-pro-image-preview'
+        : storyReferenceImageProvider === 'flow-image-api'
+          ? 'gemini-3.1-flash-image-preview'
+          : undefined;
+      const finalPrompt = kind === 'character'
+        ? CHARACTER_REFERENCE_MODEL_PROMPT.replace('AQUI VAI O PROMPT DO PERSONAGEM.', normalizedPrompt)
+        : normalizedPrompt;
+
+      const result = await window.electron.videoProject.generateFlowImage({
+        prompt: finalPrompt,
+        count: 1,
+        model: selectedImageModel,
+        ingredientImagePaths: referenceImagePath ? [referenceImagePath] : undefined,
+      });
+
+      if (!result?.success || !Array.isArray(result.httpUrls) || result.httpUrls.length === 0) {
+        throw new Error(result?.error || 'Falha ao gerar imagem de referência.');
+      }
+
+      const generatedUrl = result.httpUrls[0];
+      if (kind === 'character') {
+        setCharacterReferences(prev => prev.map(item =>
+          item.id === itemId ? { ...item, imageUrl: generatedUrl } : item
+        ));
+      } else {
+        setLocationReferences(prev => prev.map(item =>
+          item.id === itemId ? { ...item, imageUrl: generatedUrl } : item
+        ));
+      }
+    } catch (error: any) {
+      const message = error?.message || 'Falha ao gerar imagem.';
+      console.error(`Error generating ${kind} image:`, error);
+      setReferencesError(message);
+      alert(message);
+    } finally {
+      updateReferenceBusyState(setReferenceGenerating, busyKey, false);
+    }
+  };
+
+  const handleGenerateCharacterImage = async (character: CharacterReferenceItem) => {
+    await handleGenerateStoryReferenceImage('character', character.id, character.prompt_en, character.reference_id);
+  };
+
+  const handleGenerateLocationImage = async (location: LocationReferenceItem) => {
+    await handleGenerateStoryReferenceImage('location', location.id, location.prompt_en, location.reference_id);
   };
 
   const handleExtractStoryReferences = async () => {
@@ -507,7 +655,9 @@ export function ImagesStep({
     || pendingSceneId !== null
     || generatingSegments.size > 0
     || uploadingSegments.size > 0
-    || isExtractingReferences;
+    || isExtractingReferences
+    || referenceUploading.size > 0
+    || referenceGenerating.size > 0;
 
   const buildAnalysisReferencesContext = useCallback((): AnalysisReferenceContext | undefined => {
     const characters = characterReferences
@@ -2474,7 +2624,7 @@ export function ImagesStep({
             <div className="p-6 border-b border-white/10 flex justify-between items-center">
               <div>
                 <h3 className="text-xl font-bold text-white mb-1">📸 Referências de Personagens e Lugares</h3>
-                <p className="text-white/50 text-sm">Extraia itens da transcrição com IA e faça upload de uma imagem por personagem/lugar.</p>
+                <p className="text-white/50 text-sm">Extraia itens da transcrição com IA, gere imagens e use drag and drop para enviar/trocar referências visuais.</p>
               </div>
               <button
                 onClick={() => setShowCharactersModal(false)}
@@ -2501,7 +2651,7 @@ export function ImagesStep({
                   {characterReferences.length} personagem(ns) • {locationReferences.length} lugar(es)
                 </span>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mt-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mt-4">
                 <div>
                   <label className="block text-xs text-white/60 mb-1">Estilo dos personagens</label>
                   <input
@@ -2523,6 +2673,19 @@ export function ImagesStep({
                     disabled={isExtractingReferences}
                     className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-cyan-500 focus:outline-none disabled:opacity-60"
                   />
+                </div>
+                <div>
+                  <label className="block text-xs text-white/60 mb-1">Provider de geração de imagem</label>
+                  <select
+                    value={storyReferenceImageProvider}
+                    onChange={(e) => setStoryReferenceImageProvider(e.target.value as StoryReferenceImageProvider)}
+                    disabled={referenceGenerating.size > 0 || referenceUploading.size > 0}
+                    className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm focus:border-pink-500 focus:outline-none disabled:opacity-60"
+                  >
+                    <option value="flow-image">Flow (UI)</option>
+                    <option value="flow-image-api">Nano Banana 2</option>
+                    <option value="flow-image-pro">Nano Banana Pro</option>
+                  </select>
                 </div>
               </div>
               {referencesError && (
@@ -2550,6 +2713,15 @@ export function ImagesStep({
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {characterReferences.map(character => {
                       const imgUrl = character.imageUrl;
+                      const characterKey = getStoryReferenceKey('character', character.id);
+                      const isUploadingRef = referenceUploading.has(characterKey);
+                      const isGeneratingRef = referenceGenerating.has(characterKey);
+                      const isBusyRef = isUploadingRef || isGeneratingRef;
+                      const normalizedReferenceId = toPositiveInt(character.reference_id);
+                      const hasPrompt = String(character.prompt_en || '').trim().length > 0;
+                      const hasValidReferenceImage = normalizedReferenceId
+                        ? Boolean(characterImages[normalizedReferenceId])
+                        : true;
                       return (
                         <div key={`character-${character.id}`} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
                           <div className="flex items-center justify-between gap-3">
@@ -2586,7 +2758,43 @@ export function ImagesStep({
                             className="w-full min-h-[90px] bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-yellow-500 focus:outline-none resize-y"
                           />
 
-                          <div className="aspect-video relative group rounded-xl border-2 border-dashed border-white/20 hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all overflow-hidden flex items-center justify-center bg-white/5 cursor-pointer">
+                          <div
+                            className="aspect-video relative group rounded-xl border-2 border-dashed border-white/20 hover:border-yellow-500/50 hover:bg-yellow-500/5 transition-all overflow-hidden flex items-center justify-center bg-white/5 cursor-pointer"
+                            onDragOver={(e) => {
+                              if (isBusyRef) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.currentTarget.classList.add('border-yellow-400/70', 'bg-yellow-500/10');
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.currentTarget.classList.remove('border-yellow-400/70', 'bg-yellow-500/10');
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.currentTarget.classList.remove('border-yellow-400/70', 'bg-yellow-500/10');
+                              if (isBusyRef) return;
+                              const file = e.dataTransfer.files?.[0];
+                              if (!file) return;
+                              if (!isImageFile(file)) {
+                                alertInvalidImageFile();
+                                return;
+                              }
+                              handleCharacterImageUpload(character.id, file);
+                            }}
+                          >
+                            {isBusyRef && (
+                              <div className="absolute inset-0 bg-black/70 z-30 flex items-center justify-center">
+                                <div className="text-center">
+                                  <div className="w-8 h-8 mx-auto mb-2 border-2 border-yellow-500/30 border-t-yellow-400 rounded-full animate-spin" />
+                                  <p className="text-white/70 text-xs">
+                                    {isUploadingRef ? 'Enviando imagem...' : 'Gerando imagem...'}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                             {imgUrl ? (
                               <>
                                 <img
@@ -2603,6 +2811,7 @@ export function ImagesStep({
                                       type="file"
                                       accept="image/*"
                                       className="hidden"
+                                      disabled={isBusyRef}
                                       onChange={e => {
                                         const file = e.target.files?.[0];
                                         if (file) handleCharacterImageUpload(character.id, file);
@@ -2611,6 +2820,7 @@ export function ImagesStep({
                                   </label>
                                   <button
                                     onClick={() => handleRemoveCharacterImage(character.id)}
+                                    disabled={isBusyRef}
                                     className="text-red-200 text-xs font-medium px-3 py-1.5 bg-red-500/40 rounded-lg hover:bg-red-500/60 transition-all"
                                   >
                                     Remover
@@ -2625,12 +2835,37 @@ export function ImagesStep({
                                   type="file"
                                   accept="image/*"
                                   className="hidden"
+                                  disabled={isBusyRef}
                                   onChange={e => {
                                     const file = e.target.files?.[0];
                                     if (file) handleCharacterImageUpload(character.id, file);
                                   }}
                                 />
                               </label>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              onClick={() => handleGenerateCharacterImage(character)}
+                              disabled={isBusyRef || !hasPrompt || !hasValidReferenceImage}
+                              className={`px-3 py-1.5 rounded-lg text-xs border transition-all ${
+                                isBusyRef || !hasPrompt || !hasValidReferenceImage
+                                  ? 'bg-white/5 border-white/10 text-white/40 cursor-not-allowed'
+                                  : 'bg-yellow-500/15 hover:bg-yellow-500/25 border-yellow-500/40 text-yellow-200'
+                              }`}
+                              title={normalizedReferenceId && !hasValidReferenceImage
+                                ? `Adicione uma imagem para ref #${normalizedReferenceId} antes de gerar.`
+                                : 'Gerar imagem com IA'}
+                            >
+                              {imgUrl ? '↻ Regerar' : '✨ Gerar'}
+                            </button>
+                            {normalizedReferenceId && (
+                              <span className={`text-[11px] ${hasValidReferenceImage ? 'text-white/50' : 'text-red-300'}`}>
+                                {hasValidReferenceImage
+                                  ? `Usará ref #${normalizedReferenceId}`
+                                  : `Ref #${normalizedReferenceId} sem imagem`}
+                              </span>
                             )}
                           </div>
                         </div>
@@ -2659,6 +2894,15 @@ export function ImagesStep({
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                     {locationReferences.map(location => {
                       const imgUrl = location.imageUrl;
+                      const locationKey = getStoryReferenceKey('location', location.id);
+                      const isUploadingRef = referenceUploading.has(locationKey);
+                      const isGeneratingRef = referenceGenerating.has(locationKey);
+                      const isBusyRef = isUploadingRef || isGeneratingRef;
+                      const normalizedReferenceId = toPositiveInt(location.reference_id);
+                      const hasPrompt = String(location.prompt_en || '').trim().length > 0;
+                      const hasValidReferenceImage = normalizedReferenceId
+                        ? Boolean(locationImages[normalizedReferenceId])
+                        : true;
                       return (
                         <div key={`location-${location.id}`} className="rounded-xl border border-white/10 bg-black/20 p-4 space-y-3">
                           <div className="flex items-center justify-between gap-3">
@@ -2695,7 +2939,43 @@ export function ImagesStep({
                             className="w-full min-h-[90px] bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-cyan-500 focus:outline-none resize-y"
                           />
 
-                          <div className="aspect-video relative group rounded-xl border-2 border-dashed border-white/20 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all overflow-hidden flex items-center justify-center bg-white/5 cursor-pointer">
+                          <div
+                            className="aspect-video relative group rounded-xl border-2 border-dashed border-white/20 hover:border-cyan-500/50 hover:bg-cyan-500/5 transition-all overflow-hidden flex items-center justify-center bg-white/5 cursor-pointer"
+                            onDragOver={(e) => {
+                              if (isBusyRef) return;
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.currentTarget.classList.add('border-cyan-400/70', 'bg-cyan-500/10');
+                            }}
+                            onDragLeave={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.currentTarget.classList.remove('border-cyan-400/70', 'bg-cyan-500/10');
+                            }}
+                            onDrop={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              e.currentTarget.classList.remove('border-cyan-400/70', 'bg-cyan-500/10');
+                              if (isBusyRef) return;
+                              const file = e.dataTransfer.files?.[0];
+                              if (!file) return;
+                              if (!isImageFile(file)) {
+                                alertInvalidImageFile();
+                                return;
+                              }
+                              handleLocationImageUpload(location.id, file);
+                            }}
+                          >
+                            {isBusyRef && (
+                              <div className="absolute inset-0 bg-black/70 z-30 flex items-center justify-center">
+                                <div className="text-center">
+                                  <div className="w-8 h-8 mx-auto mb-2 border-2 border-cyan-500/30 border-t-cyan-400 rounded-full animate-spin" />
+                                  <p className="text-white/70 text-xs">
+                                    {isUploadingRef ? 'Enviando imagem...' : 'Gerando imagem...'}
+                                  </p>
+                                </div>
+                              </div>
+                            )}
                             {imgUrl ? (
                               <>
                                 <img
@@ -2712,6 +2992,7 @@ export function ImagesStep({
                                       type="file"
                                       accept="image/*"
                                       className="hidden"
+                                      disabled={isBusyRef}
                                       onChange={e => {
                                         const file = e.target.files?.[0];
                                         if (file) handleLocationImageUpload(location.id, file);
@@ -2720,6 +3001,7 @@ export function ImagesStep({
                                   </label>
                                   <button
                                     onClick={() => handleRemoveLocationImage(location.id)}
+                                    disabled={isBusyRef}
                                     className="text-red-200 text-xs font-medium px-3 py-1.5 bg-red-500/40 rounded-lg hover:bg-red-500/60 transition-all"
                                   >
                                     Remover
@@ -2734,12 +3016,37 @@ export function ImagesStep({
                                   type="file"
                                   accept="image/*"
                                   className="hidden"
+                                  disabled={isBusyRef}
                                   onChange={e => {
                                     const file = e.target.files?.[0];
                                     if (file) handleLocationImageUpload(location.id, file);
                                   }}
                                 />
                               </label>
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              onClick={() => handleGenerateLocationImage(location)}
+                              disabled={isBusyRef || !hasPrompt || !hasValidReferenceImage}
+                              className={`px-3 py-1.5 rounded-lg text-xs border transition-all ${
+                                isBusyRef || !hasPrompt || !hasValidReferenceImage
+                                  ? 'bg-white/5 border-white/10 text-white/40 cursor-not-allowed'
+                                  : 'bg-cyan-500/15 hover:bg-cyan-500/25 border-cyan-500/40 text-cyan-100'
+                              }`}
+                              title={normalizedReferenceId && !hasValidReferenceImage
+                                ? `Adicione uma imagem para ref #${normalizedReferenceId} antes de gerar.`
+                                : 'Gerar imagem com IA'}
+                            >
+                              {imgUrl ? '↻ Regerar' : '✨ Gerar'}
+                            </button>
+                            {normalizedReferenceId && (
+                              <span className={`text-[11px] ${hasValidReferenceImage ? 'text-white/50' : 'text-red-300'}`}>
+                                {hasValidReferenceImage
+                                  ? `Usará ref #${normalizedReferenceId}`
+                                  : `Ref #${normalizedReferenceId} sem imagem`}
+                              </span>
                             )}
                           </div>
                         </div>

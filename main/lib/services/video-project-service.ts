@@ -2272,7 +2272,7 @@ ${transcription}
 
 TAREFA 1 — PERSONAGENS:
 - Liste individualmente os personagens relevantes para geração visual. Apenas um personagem por item.
-- Para cada personagem, gere um prompt em inglês para imagem no estilo "${characterStyleLabel}" do personagem.
+- Para cada personagem, gere um prompt em inglês para um Character Sheet do personagem no estilo "${characterStyleLabel}". Horizontal, fundo branco, personagem totalmente visível, sem cortes, sem adereços extras, sem texto explicativo, sem logotipo, sem marca d'água.
 - Se o mesmo personagem mudar de roupa, aparência, idade, penteado, estado físico ou característica visual importante, crie um NOVO item com "reference_id" apontando para o ID base do personagem.
 - Para personagens totalmente novos, use "reference_id": null.
 
