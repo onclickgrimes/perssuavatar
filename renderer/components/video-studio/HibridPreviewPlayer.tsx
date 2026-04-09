@@ -32,6 +32,7 @@ interface TimelineSegment {
 
 const VIDEO_EXT_RE = /\.(mp4|webm|mov|mkv|avi|m4v)(\?.*)?$/i;
 const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i;
+const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif|heic|heif|tiff?)(\?.*)?$/i;
 const PRELOAD_BEFORE_SEC = 1.5;
 const PRELOAD_AFTER_SEC = 3;
 
@@ -63,6 +64,7 @@ const isVideoSegment = (segment: TimelineSegment, url: string) => {
   // Prioriza o tipo REAL da mídia pela URL para evitar mismatch
   // (ex.: assetType "video_*" com imagem estática enviada manualmente).
   if (AUDIO_EXT_RE.test(url)) return false;
+  if (IMAGE_EXT_RE.test(url) || url.startsWith('data:image/')) return false;
   if (VIDEO_EXT_RE.test(url) || url.startsWith('blob:')) return true;
 
   const assetType = (segment.assetType || segment.asset_type || '').toLowerCase();
@@ -74,6 +76,7 @@ const isVideoSegment = (segment: TimelineSegment, url: string) => {
 const isAudioSegment = (segment: TimelineSegment, url: string) => {
   // Prioriza o tipo REAL da mídia pela URL.
   if (AUDIO_EXT_RE.test(url)) return true;
+  if (IMAGE_EXT_RE.test(url) || url.startsWith('data:image/')) return false;
   if (VIDEO_EXT_RE.test(url) || url.startsWith('blob:')) return false;
 
   const assetType = (segment.assetType || segment.asset_type || '').toLowerCase();
