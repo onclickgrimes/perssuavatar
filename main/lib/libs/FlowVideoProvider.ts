@@ -1,7 +1,7 @@
 /**
  * Flow Video Provider - Automação do Google Flow (Veo 3) via Puppeteer
  * 
- * Gerencia a geração de vídeos usando o Google Flow (labs.google/fx/flow).
+ * Gerencia a geração de vídeos usando o Google Flow (labs.google/fx/pt/tools/flow).
  * 
  * ESTRATÉGIA DE COOKIES:
  * 1. Tenta reaproveitar o browser já aberto de um GeminiProvider logado
@@ -80,7 +80,7 @@ export class FlowVideoProvider {
   private ownedChromeProcess: ChildProcess | null = null;
 
   // URLs do Flow
-  private static readonly FLOW_URL = 'https://labs.google/fx/flow';
+  private static readonly FLOW_URL = 'https://labs.google/fx/pt/tools/flow';
   private static readonly REMOTE_DEBUGGING_PORT = 9222;
 
   // ── Controle de concorrência ──────────────────────────────────────────────
@@ -1507,6 +1507,7 @@ export class FlowVideoProvider {
 
     try {
       const promptSelectors = [
+        'div[contenteditable="true"][role="textbox"]',
         'textarea[placeholder*="Describe"]',
         'textarea[placeholder*="describe"]',
         'textarea[placeholder*="prompt"]',
@@ -1516,7 +1517,6 @@ export class FlowVideoProvider {
         'textarea[aria-label*="video"]',
         'div[contenteditable="true"][aria-label*="prompt"]',
         'div[contenteditable="true"][aria-label*="Prompt"]',
-        'div[contenteditable="true"][role="textbox"]',
         'textarea',
         'input[type="text"][placeholder*="Describe"]',
         'input[type="text"][placeholder*="prompt"]',
@@ -1551,6 +1551,14 @@ export class FlowVideoProvider {
       clipboard.writeText(prompt);
 
       await inputElement.click();
+      await inputElement.evaluate((el: Element) => {
+        const node = el as HTMLElement;
+        try {
+          node.scrollIntoView({ block: 'center', inline: 'nearest' });
+        } catch { }
+        try { node.click(); } catch { }
+        try { node.focus(); } catch { }
+      });
       await this.randomDelay(300, 500);
       // Selecionar tudo e substituir pelo conteúdo do clipboard
       await this.page.keyboard.down('Control');
@@ -1560,26 +1568,16 @@ export class FlowVideoProvider {
       await this.page.keyboard.down('Control');
       await this.page.keyboard.press('V');
       await this.page.keyboard.up('Control');
-      await this.randomDelay(1800, 2600);
+      await this.randomDelay(500, 800);
 
       console.log(`📝 [Flow] Prompt digitado: "${prompt.substring(0, 80)}..."`);
-      console.log(`⏳ [Flow] Aguardando estabilização do prompt antes do submit...`);
 
       // Polling inteligente para o botão de submit (aguardar que seja liberado)
       let submitClicked = false;
       let attempts = 0;
       const maxAttempts = 60; // 30 segundos no total (500ms por tentativa)
-      const submitMarkerAttr = 'data-flow-submit-target';
-      const cursor = new GhostCursor(this.page, {
-        performRandomMoves: false,
-        defaultOptions: {
-          move: { moveDelay: 140, randomizeMoveDelay: true, maxTries: 4 },
-          click: { moveDelay: 280, randomizeMoveDelay: true, hesitate: 120, waitForClick: 90 },
-        },
-      });
 
       while (attempts < maxAttempts) {
-        const markerValue = `submit-${Date.now()}-${attempts}`;
         try {
           const result = await this.page.evaluate(`(function() {
             var foundBtn = null;
@@ -1634,59 +1632,23 @@ export class FlowVideoProvider {
 
             if (!foundBtn) return { found: false, disabled: true };
 
-            try {
-              foundBtn.setAttribute(${JSON.stringify(submitMarkerAttr)}, ${JSON.stringify(markerValue)});
-            } catch (e) {}
-
             var disabled = foundBtn.hasAttribute('disabled') || 
                             foundBtn.disabled || 
                             foundBtn.getAttribute('aria-disabled') === 'true' || 
                             foundBtn.getAttribute('data-state') === 'closed';
 
-            return { found: true, disabled: disabled };
-          })()`) as { found: boolean; disabled: boolean };
-
-          if (result.found && !result.disabled) {
-            const submitButton = await this.page.$(`button[${submitMarkerAttr}="${markerValue}"]`);
-            if (submitButton) {
-              try {
-                console.log(`⏳ [Flow] Botão liberado. Aguardando 3-6s antes do clique humano...`);
-                await this.randomDelay(3000, 6000);
-                const stillEnabled = await this.page.evaluate(`(function() {
-                  var btn = document.querySelector('button[${submitMarkerAttr}="${markerValue}"]');
-                  if (!btn) return false;
-                  var disabled = btn.hasAttribute('disabled') ||
-                                 btn.disabled ||
-                                 btn.getAttribute('aria-disabled') === 'true' ||
-                                 btn.getAttribute('data-state') === 'closed';
-                  return !disabled;
-                })()`) as boolean;
-                if (!stillEnabled) {
-                  console.log(`⏳ [Flow] Botão voltou a ficar bloqueado após espera. Reavaliando...`);
-                  await submitButton.dispose().catch(() => {});
-                  attempts++;
-                  continue;
-                }
-
-                await cursor.move(submitButton, { moveDelay: 120, randomizeMoveDelay: true, maxTries: 4 });
-                await this.randomDelay(180, 320);
-                await cursor.click(submitButton, {
-                  moveDelay: 300,
-                  randomizeMoveDelay: true,
-                  hesitate: 130,
-                  waitForClick: 100,
-                });
-              } catch (cursorErr: any) {
-                console.warn(`⚠️ [Flow] ghost-cursor falhou, usando click direto:`, cursorErr?.message || cursorErr);
-                await submitButton.click();
-              } finally {
-                await submitButton.dispose().catch(() => {});
-              }
-              submitClicked = true;
-              console.log(`✅ [Flow] Botão de submit liberado e clicado com ghost-cursor!`);
-              break;
+            if (!disabled) {
+              foundBtn.click();
+              return { found: true, disabled: false, clicked: true };
             }
-            console.log(`⚠️ [Flow] Botão estava liberado mas não foi possível obter handle. Tentando novamente...`);
+
+            return { found: true, disabled: true, clicked: false };
+          })()`) as { found: boolean; disabled: boolean; clicked?: boolean };
+
+          if (result.clicked) {
+            submitClicked = true;
+            console.log(`✅ [Flow] Botão de submit liberado e clicado com sucesso!`);
+            break;
           } else if (result.found && result.disabled) {
             console.log(`⏳ [Flow] Botão de submit encontrado, mas bloqueado. Aguardando liberação... (${attempts + 1}/${maxAttempts})`);
           } else {
@@ -1694,13 +1656,6 @@ export class FlowVideoProvider {
           }
         } catch (e: any) {
           console.warn(`⚠️ [Flow] Erro temporário ao consultar botão de submit:`, e.message);
-        } finally {
-          try {
-            await this.page.evaluate(`(function() {
-              var btn = document.querySelector('button[${submitMarkerAttr}="${markerValue}"]');
-              if (btn) btn.removeAttribute(${JSON.stringify(submitMarkerAttr)});
-            })()`);
-          } catch { }
         }
 
         await new Promise(r => setTimeout(r, 500));

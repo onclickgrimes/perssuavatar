@@ -1052,6 +1052,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         return (
           <ImagesStep
             segments={project.segments}
+            projectTitle={project.title}
             storyReferences={project.storyReferences}
             onStoryReferencesChange={handleStoryReferencesChange}
             onUpdatePrompt={handleUpdatePrompt}

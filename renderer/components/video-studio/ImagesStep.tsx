@@ -16,6 +16,7 @@ import type { StoryReferencesState as PersistedStoryReferencesState } from '../.
 
 interface ImagesStepProps {
   segments: TranscriptionSegment[];
+  projectTitle?: string;
   storyReferences?: PersistedStoryReferencesState;
   onStoryReferencesChange: React.Dispatch<React.SetStateAction<PersistedStoryReferencesState>>;
   onUpdatePrompt: (id: number, prompt: string) => void;
@@ -84,6 +85,61 @@ interface AnalysisReferenceContext {
 
 type StoryReferenceKind = 'character' | 'location';
 type StoryReferenceImageProvider = 'flow-image' | 'flow-image-api' | 'flow-image-pro';
+
+const FLOW_EXTENSION_JOB_SCHEMA = 'flow-extension-job.v1';
+const FLOW_EXTENSION_RESULT_SCHEMA = 'flow-extension-result.v1';
+
+type FlowExportService = 'veo3' | 'veo3-lite-flow' | 'veo2-flow' | 'flow-image';
+type FlowExportMediaType = 'image' | 'video';
+
+interface FlowExtensionExportTask {
+  taskId: string;
+  segmentId: number;
+  sceneIndex: number;
+  mediaType: FlowExportMediaType;
+  service: FlowExportService;
+  model?: string;
+  prompt: string;
+  count: number;
+  aspectRatio?: string;
+  referenceImageUrl?: string;
+  finalImageUrl?: string;
+  ingredientImageUrls?: string[];
+  sceneText?: string;
+  sceneDescription?: string;
+}
+
+interface FlowExtensionExportPayload {
+  schemaVersion: typeof FLOW_EXTENSION_JOB_SCHEMA;
+  exportedAt: string;
+  source: {
+    app: string;
+    module: string;
+    projectTitle?: string;
+  };
+  defaults: {
+    aspectRatio?: string;
+    timeoutMsImage: number;
+    timeoutMsVideo: number;
+  };
+  tasks: FlowExtensionExportTask[];
+}
+
+interface FlowExtensionImportMedia {
+  url: string;
+  kind?: 'image' | 'video';
+  durationSec?: number;
+}
+
+interface FlowExtensionImportItem {
+  taskId?: string;
+  segmentId?: number;
+  mediaType?: 'image' | 'video';
+  status?: string;
+  selectedMediaUrl?: string;
+  media: FlowExtensionImportMedia[];
+  error?: string;
+}
 
 const CHARACTER_REFERENCE_MODEL_PROMPT = `A high-definition, clean, minimalist character design board / character turnaround reference sheet, set against a pure white background. The overall presentation should resemble a professional character design sheet, modeling reference board, or turnaround presentation page. The layout should be neat, well-organized, and clearly divided into sections, with consistent lighting and strict character consistency throughout.
 
@@ -194,6 +250,7 @@ const SmartVideoPreview = React.memo(function SmartVideoPreview({ src }: SmartVi
 
 export function ImagesStep({
   segments,
+  projectTitle,
   storyReferences,
   onStoryReferencesChange,
   onUpdatePrompt,
@@ -267,6 +324,8 @@ export function ImagesStep({
   const [globalInstruction, setGlobalInstruction] = useState('');
   const [sceneInstructions, setSceneInstructions] = useState<Record<number, string>>({});
   const [pendingSceneId, setPendingSceneId] = useState<number | null>(null);
+  const [isImportingFlowResult, setIsImportingFlowResult] = useState(false);
+  const flowResultInputRef = useRef<HTMLInputElement | null>(null);
 
   const setCharacterReferences = useCallback((next: React.SetStateAction<CharacterReferenceItem[]>) => {
     onStoryReferencesChange(prev => {
@@ -877,6 +936,370 @@ export function ImagesStep({
     return Array.from(new Set([...characterReferencePaths, ...locationReferencePaths]));
   };
 
+  const toSafeFileStem = (value: string): string => {
+    return value
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .substring(0, 80) || 'flow-job';
+  };
+
+  const downloadJsonFile = (payload: unknown, fileName: string): void => {
+    const jsonContent = JSON.stringify(payload, null, 2);
+    const blob = new Blob([jsonContent], { type: 'application/json' });
+    const objectUrl = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = objectUrl;
+    anchor.download = fileName;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(objectUrl), 1500);
+  };
+
+  const pickFlowModelByService = (
+    service: FlowExportService,
+    hasIngredients: boolean
+  ): string => {
+    if (service === 'flow-image') return 'Nano Banana 2';
+    if (service === 'veo3-lite-flow') return 'Veo 3.1 - Lite';
+    if (service === 'veo2-flow') return 'Veo 2 - Fast';
+    if (service === 'veo3') return hasIngredients ? 'Veo 3.1 - Fast' : 'Veo 3.1 - Fast';
+    return '';
+  };
+
+  const buildFlowPrompt = (segment: TranscriptionSegment, service: FlowExportService): string => {
+    const normalizedFirstFrame = typeof segment.firstFrame === 'string'
+      ? segment.firstFrame.trim()
+      : '';
+    const normalizedAnimateFrame = typeof segment.animateFrame === 'string'
+      ? segment.animateFrame.trim()
+      : '';
+    const basePrompt = extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`;
+
+    if (service === 'flow-image') {
+      return normalizedFirstFrame || normalizedAnimateFrame || basePrompt;
+    }
+
+    return normalizedAnimateFrame || basePrompt;
+  };
+
+  const handleExportFlowExtensionJson = () => {
+    const selectedSegments = segments.filter(segment => selectedScenes.has(segment.id));
+
+    if (selectedSegments.length === 0) {
+      alert('Selecione ao menos uma cena para exportar.');
+      return;
+    }
+
+    const tasks: FlowExtensionExportTask[] = [];
+
+    selectedSegments.forEach((segment, index) => {
+      const effectiveService = getEffectiveService(segment);
+      if (!FLOW_SERVICES.has(effectiveService)) return;
+
+      const service = effectiveService as FlowExportService;
+      const prompt = buildFlowPrompt(segment, service).trim();
+      if (!prompt) return;
+
+      const count = Math.max(1, Math.min(4, imageCount[segment.id] ?? 1));
+      const mediaType: FlowExportMediaType = service === 'flow-image' ? 'image' : 'video';
+      const hasCurrentVideo = isVideo(segment.imageUrl);
+      const referenceImageUrl = segment.imageUrl && !hasCurrentVideo
+        ? segment.imageUrl
+        : segment.sourceImageUrl;
+      const finalImageUrl = finalImages[segment.id];
+      const explicitIngredientPaths = ingredientMode[segment.id] === 'ingredients'
+        ? (ingredientImages[segment.id] || [])
+        : [];
+      const sceneReferencePaths = getSceneReferencePaths(segment);
+      const ingredientImageUrls = Array.from(
+        new Set([...explicitIngredientPaths, ...sceneReferencePaths])
+      ).slice(0, 3);
+
+      tasks.push({
+        taskId: `seg-${segment.id}`,
+        segmentId: segment.id,
+        sceneIndex: index + 1,
+        mediaType,
+        service,
+        model: pickFlowModelByService(service, ingredientImageUrls.length > 0),
+        prompt,
+        count,
+        aspectRatio: aspectRatio || '9:16',
+        referenceImageUrl: referenceImageUrl || undefined,
+        finalImageUrl: finalImageUrl || undefined,
+        ingredientImageUrls: ingredientImageUrls.length > 0 ? ingredientImageUrls : undefined,
+        sceneText: segment.text,
+        sceneDescription: segment.sceneDescription,
+      });
+    });
+
+    if (tasks.length === 0) {
+      alert('Nenhuma cena selecionada usa serviços Flow exportáveis (Veo/Flow Image).');
+      return;
+    }
+
+    const payload: FlowExtensionExportPayload = {
+      schemaVersion: FLOW_EXTENSION_JOB_SCHEMA,
+      exportedAt: new Date().toISOString(),
+      source: {
+        app: 'my-nextron-app',
+        module: 'video-studio.images-step',
+        projectTitle: projectTitle?.trim() || undefined,
+      },
+      defaults: {
+        aspectRatio: aspectRatio || '9:16',
+        timeoutMsImage: 8 * 60 * 1000,
+        timeoutMsVideo: 12 * 60 * 1000,
+      },
+      tasks,
+    };
+
+    const dateSuffix = new Date().toISOString().replace(/[:.]/g, '-');
+    const safeProjectTitle = toSafeFileStem(projectTitle || 'video-project');
+    const fileName = `${safeProjectTitle}-flow-job-${dateSuffix}.json`;
+    downloadJsonFile(payload, fileName);
+  };
+
+  const normalizeMediaKind = (rawKind: unknown): 'image' | 'video' | undefined => {
+    if (typeof rawKind !== 'string') return undefined;
+    const normalized = rawKind.toLowerCase().trim();
+    if (normalized === 'image') return 'image';
+    if (normalized === 'video') return 'video';
+    return undefined;
+  };
+
+  const extractSegmentIdFromTaskId = (taskId: unknown): number | undefined => {
+    if (typeof taskId !== 'string') return undefined;
+    const match = taskId.match(/(\d+)/);
+    if (!match) return undefined;
+    const parsed = Number(match[1]);
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  };
+
+  const parseFlowImportItems = (payload: any): FlowExtensionImportItem[] => {
+    const rawItems = Array.isArray(payload?.items)
+      ? payload.items
+      : Array.isArray(payload?.results)
+        ? payload.results
+        : [];
+
+    return rawItems.map((item: any) => {
+      const parsedSegmentId = Number(item?.segmentId);
+      const segmentId = Number.isFinite(parsedSegmentId) && parsedSegmentId > 0
+        ? parsedSegmentId
+        : extractSegmentIdFromTaskId(item?.taskId);
+
+      const mediaArray = Array.isArray(item?.media) ? item.media : [];
+      const media: FlowExtensionImportMedia[] = mediaArray
+        .map((mediaItem: any) => {
+          const url = String(mediaItem?.url || mediaItem?.mediaUrl || '').trim();
+          if (!url) return null;
+          const durationRaw = Number(mediaItem?.durationSec);
+          return {
+            url,
+            kind: normalizeMediaKind(mediaItem?.kind),
+            durationSec: Number.isFinite(durationRaw) ? durationRaw : undefined,
+          } as FlowExtensionImportMedia;
+        })
+        .filter((entry: FlowExtensionImportMedia | null): entry is FlowExtensionImportMedia => entry !== null);
+
+      if (media.length === 0 && typeof item?.url === 'string' && item.url.trim()) {
+        media.push({
+          url: item.url.trim(),
+          kind: normalizeMediaKind(item?.kind),
+          durationSec: Number.isFinite(Number(item?.durationSec)) ? Number(item.durationSec) : undefined,
+        });
+      }
+
+      return {
+        taskId: typeof item?.taskId === 'string' ? item.taskId : undefined,
+        segmentId,
+        mediaType: normalizeMediaKind(item?.mediaType),
+        status: typeof item?.status === 'string' ? item.status.toLowerCase() : undefined,
+        selectedMediaUrl: typeof item?.selectedMediaUrl === 'string' ? item.selectedMediaUrl : undefined,
+        media,
+        error: typeof item?.error === 'string' ? item.error : undefined,
+      } as FlowExtensionImportItem;
+    });
+  };
+
+  const pickBestMediaCandidate = (item: FlowExtensionImportItem): FlowExtensionImportMedia | null => {
+    if (!Array.isArray(item.media) || item.media.length === 0) return null;
+
+    if (item.selectedMediaUrl) {
+      const directMatch = item.media.find(media => media.url === item.selectedMediaUrl);
+      if (directMatch) return directMatch;
+    }
+
+    if (item.mediaType === 'video') {
+      const videoCandidate = item.media.find(media => media.kind === 'video');
+      if (videoCandidate) return videoCandidate;
+    }
+
+    if (item.mediaType === 'image') {
+      const imageCandidate = item.media.find(media => media.kind === 'image');
+      if (imageCandidate) return imageCandidate;
+    }
+
+    return item.media[0] || null;
+  };
+
+  const guessExtensionFromMedia = (
+    mediaUrl: string,
+    contentType: string,
+    mediaKind?: 'image' | 'video'
+  ): string => {
+    const normalizedType = contentType.toLowerCase();
+    if (normalizedType.includes('video/mp4')) return '.mp4';
+    if (normalizedType.includes('video/webm')) return '.webm';
+    if (normalizedType.includes('video/quicktime')) return '.mov';
+    if (normalizedType.includes('image/png')) return '.png';
+    if (normalizedType.includes('image/webp')) return '.webp';
+    if (normalizedType.includes('image/gif')) return '.gif';
+    if (normalizedType.includes('image/jpeg')) return '.jpg';
+
+    try {
+      const parsed = new URL(mediaUrl);
+      const pathname = parsed.pathname || '';
+      const match = pathname.match(/\.(mp4|webm|mov|mkv|m4v|png|jpg|jpeg|webp|gif)$/i);
+      if (match) {
+        const ext = match[1].toLowerCase();
+        return ext === 'jpeg' ? '.jpg' : `.${ext}`;
+      }
+    } catch {
+      // ignore
+    }
+
+    if (mediaKind === 'video') return '.mp4';
+    return '.jpg';
+  };
+
+  const tryPersistImportedMedia = async (
+    segmentId: number,
+    media: FlowExtensionImportMedia
+  ): Promise<{ url: string; durationSec?: number } | null> => {
+    if (!window.electron?.videoProject?.saveImage) return null;
+    if (!/^https?:\/\//i.test(media.url)) return null;
+
+    const response = await fetch(media.url);
+    if (!response.ok) {
+      throw new Error(`Falha no download (${response.status})`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    if (!arrayBuffer || arrayBuffer.byteLength < 200) {
+      throw new Error('Arquivo retornado inválido ou vazio.');
+    }
+
+    const contentType = response.headers.get('content-type') || '';
+    const extension = guessExtensionFromMedia(media.url, contentType, media.kind);
+    const fileName = `flow-import-${segmentId}-${Date.now()}${extension}`;
+    const saveResult = await window.electron.videoProject.saveImage(arrayBuffer, fileName, segmentId);
+
+    if (saveResult?.success && typeof saveResult.httpUrl === 'string' && saveResult.httpUrl.trim()) {
+      const durationSec = typeof saveResult.durationMs === 'number'
+        ? Number((saveResult.durationMs / 1000).toFixed(2))
+        : media.durationSec;
+      return { url: saveResult.httpUrl, durationSec };
+    }
+
+    return null;
+  };
+
+  const handleImportFlowExtensionJson = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    try {
+      setIsImportingFlowResult(true);
+      const text = await file.text();
+      const parsed = JSON.parse(text);
+
+      if (parsed?.schemaVersion !== FLOW_EXTENSION_RESULT_SCHEMA) {
+        throw new Error(`Schema inválido: esperado "${FLOW_EXTENSION_RESULT_SCHEMA}".`);
+      }
+
+      const items = parseFlowImportItems(parsed);
+      if (items.length === 0) {
+        throw new Error('Nenhum item válido encontrado no JSON de resultado.');
+      }
+
+      let importedCount = 0;
+      let skippedCount = 0;
+      let failedCount = 0;
+      const warnings: string[] = [];
+
+      for (const item of items) {
+        const segmentId = Number(item.segmentId);
+        const hasSegment = Number.isFinite(segmentId) && segments.some(segment => segment.id === segmentId);
+
+        if (!hasSegment) {
+          skippedCount++;
+          warnings.push(`Segmento não encontrado para task ${item.taskId || 'sem-id'}.`);
+          continue;
+        }
+
+        if (item.status && item.status !== 'success') {
+          skippedCount++;
+          if (item.error) {
+            warnings.push(`Cena ${segmentId}: ${item.error}`);
+          }
+          continue;
+        }
+
+        const candidate = pickBestMediaCandidate(item);
+        if (!candidate?.url) {
+          failedCount++;
+          warnings.push(`Cena ${segmentId}: nenhuma mídia importável encontrada.`);
+          continue;
+        }
+
+        let finalUrl = candidate.url;
+        let durationSec = candidate.durationSec;
+
+        try {
+          const persisted = await tryPersistImportedMedia(segmentId, candidate);
+          if (persisted?.url) {
+            finalUrl = persisted.url;
+            durationSec = persisted.durationSec;
+          }
+        } catch (persistError: any) {
+          const reason = persistError?.message || 'erro ao salvar localmente';
+          warnings.push(`Cena ${segmentId}: usando URL remota (${reason}).`);
+        }
+
+        onUpdateImage(segmentId, finalUrl, durationSec);
+        importedCount++;
+      }
+
+      const summaryLines = [
+        `Importação concluída.`,
+        `Cenas atualizadas: ${importedCount}`,
+        `Cenas ignoradas: ${skippedCount}`,
+        `Falhas: ${failedCount}`,
+      ];
+
+      if (warnings.length > 0) {
+        summaryLines.push('', `Avisos (${warnings.length}):`, ...warnings.slice(0, 8));
+        if (warnings.length > 8) {
+          summaryLines.push(`... e mais ${warnings.length - 8} aviso(s).`);
+        }
+      }
+
+      alert(summaryLines.join('\n'));
+    } catch (error: any) {
+      console.error('Erro ao importar resultado do Flow:', error);
+      alert(`Falha ao importar JSON do Flow: ${error?.message || 'erro desconhecido'}`);
+    } finally {
+      setIsImportingFlowResult(false);
+      if (event.target) {
+        event.target.value = '';
+      }
+    }
+  };
+
   // ── Batch Processing (Processamento em lote) ──
   // Por padrão, todas as cenas estão selecionadas
   const [selectedScenes, setSelectedScenes] = useState<Set<number>>(() => new Set(segments.map(s => s.id)));
@@ -1172,6 +1595,13 @@ export function ImagesStep({
     // return 'veo2-flow'; // Veo 2 não está mais disponível no submenu do Flow
     return 'veo3'; // padrão
   };
+
+  const flowExportableCount = useMemo(() => {
+    return segments
+      .filter(segment => selectedScenes.has(segment.id))
+      .filter(segment => FLOW_SERVICES.has(getEffectiveService(segment)))
+      .length;
+  }, [segments, selectedScenes, selectedService, ingredientMode]);
 
   // Handler para gerar mídia com IA
   // Retorna true se a geração foi bem-sucedida, false caso contrário
@@ -1710,6 +2140,13 @@ export function ImagesStep({
 
   return (
     <div className="space-y-6">
+      <input
+        ref={flowResultInputRef}
+        type="file"
+        accept=".json,application/json"
+        className="hidden"
+        onChange={handleImportFlowExtensionJson}
+      />
       <div className="flex items-start justify-between gap-6">
         <div>
           <h2 className="text-2xl font-bold text-white">Prompts, Imagens e Vídeos das Cenas</h2>
@@ -1818,6 +2255,32 @@ export function ImagesStep({
               className="px-4 py-2 bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 border border-yellow-500/20 rounded-lg transition-all"
             >
               📸 Personagens e Lugares
+            </button>
+
+            <button
+              onClick={handleExportFlowExtensionJson}
+              disabled={flowExportableCount === 0}
+              className={`px-4 py-2 border rounded-lg transition-all ${
+                flowExportableCount === 0
+                  ? 'bg-white/5 text-white/30 border-white/10 cursor-not-allowed'
+                  : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-200 border-cyan-500/30'
+              }`}
+              title="Exporta JSON para automação na extensão do Chrome"
+            >
+              📤 Exportar Flow JSON ({flowExportableCount})
+            </button>
+
+            <button
+              onClick={() => flowResultInputRef.current?.click()}
+              disabled={isImportingFlowResult}
+              className={`px-4 py-2 border rounded-lg transition-all ${
+                isImportingFlowResult
+                  ? 'bg-white/5 text-white/30 border-white/10 cursor-not-allowed'
+                  : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-200 border-emerald-500/30'
+              }`}
+              title="Importa o JSON com mídias geradas pela extensão"
+            >
+              {isImportingFlowResult ? '⏳ Importando...' : '📥 Importar Resultado Flow'}
             </button>
 
             <button
