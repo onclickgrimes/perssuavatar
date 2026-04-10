@@ -557,6 +557,21 @@ const handler = {
       ingredientImagePaths?: string[];
     }) => ipcRenderer.invoke('video-project:generate-flow-image', options),
 
+    // Gerar IMAGEM via Vertex Studio (browser próprio + pool de abas)
+    generateVertexImage: (options: {
+      prompt: string;
+      count?: number;
+      model?: string;
+      aspectRatio?: string;
+      headless?: boolean;
+      poolSize?: number;
+      generationTimeoutMs?: number;
+      userDataDir?: string;
+      profileId?: string;
+      studioUrl?: string;
+      ingredientImagePaths?: string[];
+    }) => ipcRenderer.invoke('video-project:generate-vertex-image', options),
+
     // Gerar Vídeo via Grok.com
     generateGrokVideo: (options: {
       prompt: string;
@@ -570,8 +585,18 @@ const handler = {
       return () => ipcRenderer.removeListener('video-project:flow-image-progress', subscription);
     },
 
+    // Listener para progresso da geração de imagem via Vertex Studio
+    onVertexImageProgress: (callback: (data: { stage: string; message: string; percent?: number; workerId?: number; jobId?: string; queuePosition?: number }) => void) => {
+      const subscription = (_: any, data: { stage: string; message: string; percent?: number; workerId?: number; jobId?: string; queuePosition?: number }) => callback(data);
+      ipcRenderer.on('video-project:vertex-image-progress', subscription);
+      return () => ipcRenderer.removeListener('video-project:vertex-image-progress', subscription);
+    },
+
     // Cancelar fila de geração do Flow (esvazia mutex e semaphore no backend)
     cancelFlowQueue: () => ipcRenderer.invoke('video-project:cancel-flow-queue'),
+
+    // Cancelar fila da Vertex Studio (pendentes + ativos)
+    cancelVertexQueue: () => ipcRenderer.invoke('video-project:cancel-vertex-queue'),
     
     // Gerar TTS
     generateTTS: (options: { text: string; voiceName: string; model: string; }) =>

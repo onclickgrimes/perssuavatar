@@ -1436,6 +1436,23 @@ export function ImagesStep({
     return () => { cleanup?.(); };
   }, [queueProgressUpdate]);
 
+  // Listener de progresso de imagem (Flow UI / Gemini Image API)
+  useEffect(() => {
+    const cleanup = window.electron?.videoProject?.onFlowImageProgress?.((data) => {
+      queueProgressUpdate(data?.message || 'Gerando imagem...');
+    });
+    return () => { cleanup?.(); };
+  }, [queueProgressUpdate]);
+
+  // Listener de progresso de imagem via Vertex Studio
+  useEffect(() => {
+    const cleanup = window.electron?.videoProject?.onVertexImageProgress?.((data) => {
+      const worker = typeof data?.workerId === 'number' ? ` (Worker ${data.workerId})` : '';
+      queueProgressUpdate((data?.message || 'Gerando imagem com Vertex...') + worker);
+    });
+    return () => { cleanup?.(); };
+  }, [queueProgressUpdate]);
+
   // Handler para upload de mídia (imagem ou vídeo) - salva no disco
   const handleMediaUpload = async (segmentId: number, file: File) => {
     setUploadingSegments(prev => new Set([...prev, segmentId]));
@@ -1565,12 +1582,13 @@ export function ImagesStep({
     { id: 'grok',           label: 'Grok',             icon: '✖️', description: 'Geração de vídeo com Grok' },
     // { id: 'veo2-flow',      label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Google Veo 2 Fast via Google Flow' },
     { id: 'flow-image',     label: 'Imagem (Flow)',      icon: '🖼️', description: 'Google Flow (modo Criar imagens)' },
+    { id: 'vertex-image',   label: 'Imagem (Vertex)',    icon: '🧩', description: 'Vertex Studio com pool de abas' },
     { id: 'flow-image-api', label: '🍌 Nano Banana 2',   icon: '🖼️', description: 'gemini-3.1-flash-image-preview' },
     { id: 'flow-image-pro', label: '🍌 Nano Banana Pro', icon: '🖼️', description: 'gemini-3-pro-image-preview' },
     { id: 'veo2',           label: 'Veo 2 (API)',      icon: '🌊', description: 'Google Veo 2 via API oficial' },
   ];
 
-  const IMAGE_SERVICES = new Set(['flow-image', 'flow-image-api', 'flow-image-pro']);
+  const IMAGE_SERVICES = new Set(['flow-image', 'vertex-image', 'flow-image-api', 'flow-image-pro']);
   const IMAGE_API_SERVICES = new Set(['flow-image-api', 'flow-image-pro']);
   const FLOW_SERVICES = new Set(['veo3', 'veo3-lite-flow', 'veo2-flow', 'flow-image']);
   const getImageModelByService = (serviceId: string): string =>
@@ -1580,6 +1598,7 @@ export function ImagesStep({
   const supportsIngredientsForService = (serviceId: string): boolean =>
     serviceId === 'veo3'
     || serviceId === 'flow-image'
+    || serviceId === 'vertex-image'
     || serviceId === 'flow-image-api'
     || serviceId === 'flow-image-pro'
     || serviceId === 'veo3-api'
@@ -1687,17 +1706,16 @@ export function ImagesStep({
         const flowModelName = isLiteFlow ? 'Veo 3.1 - Lite' : undefined;
         const flowServiceLabel = isLiteFlow ? 'Veo 3.1 - Lite' : 'Veo 3';
 
-        // Verificar modo Ingredients e referências de personagem/lugar
+        // Para vídeo, Ingredients só é usado quando o modo foi selecionado explicitamente.
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const sceneReferencePaths = getSceneReferencePaths(segment);
-        const ingredientsRequested = isIngredientsExplicit || sceneReferencePaths.length > 0;
-        const isIngredients = !isLiteFlow && ingredientsRequested;
-        const baseIngredientPaths = (isIngredientsExplicit && !isLiteFlow) ? (ingredientImages[segmentId] || []) : [];
-        
-        // Combina ingredientes explícitos com referências de personagem/lugar (máximo 3)
-        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
+        const sceneReferencePaths = isIngredientsExplicit ? getSceneReferencePaths(segment) : [];
+        const isIngredients = !isLiteFlow && isIngredientsExplicit;
+        const baseIngredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
+        const ingredientPaths = isIngredients
+          ? Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3)
+          : [];
 
-        if (isLiteFlow && ingredientsRequested) {
+        if (isLiteFlow && isIngredientsExplicit) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Veo 3.1 - Lite não suporta Ingredients. Usando Frames...' }));
         }
 
@@ -1837,6 +1855,49 @@ export function ImagesStep({
           if (!silent) alert(`Falha na geração de imagem via Flow: ${result?.error}`);
         }
 
+      // ── IMAGE (Vertex Studio) ──
+      } else if (service === 'vertex-image') {
+        console.log(`🧩 [VertexImg] Gerando imagem para segmento ${segmentId}...`);
+        const count = imageCount[segmentId] ?? 1;
+
+        const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
+        const sceneReferencePaths = getSceneReferencePaths(segment);
+        const isIngredients = isIngredientsExplicit || sceneReferencePaths.length > 0;
+        const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
+
+        if (isIngredients && ingredientPaths.length === 0) {
+          if (!silent) alert('Nenhuma imagem de ingrediente, personagem ou lugar disponível para gerar.');
+          setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
+          return false;
+        }
+
+        setVo3Progress(prev => ({
+          ...prev,
+          [segmentId]: `Gerando ${count} imagem(ns) com Vertex${ingredientPaths.length > 0 ? ` e ${ingredientPaths.length} ref(s)` : ''}...`
+        }));
+
+        const result = await window.electron?.videoProject?.generateVertexImage?.({
+          prompt: targetGenerationPrompt,
+          count,
+          model: 'gemini-3.1-flash-image-preview',
+          aspectRatio,
+          poolSize: 4,
+          ingredientImagePaths: ingredientPaths.length > 0 ? ingredientPaths : undefined,
+        });
+
+        if (result?.success && result.httpUrls?.length > 0) {
+          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
+          onUpdateImage(segmentId, result.httpUrls[0], duration);
+          if (count > 1 && result.httpUrls.length > 1) {
+            setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls }]);
+          }
+          success = true;
+        } else {
+          console.error(`❌ [VertexImg] Falha:`, result?.error);
+          if (!silent) alert(`Falha na geração de imagem via Vertex: ${result?.error}`);
+        }
+
       // ── IMAGE API (Nano Banana 2 / Pro) ──
       } else if (IMAGE_API_SERVICES.has(service)) {
         const imageModel = getImageModelByService(service);
@@ -1901,16 +1962,16 @@ export function ImagesStep({
               ? ' Lite'
               : '';
 
-        // Verificar modo Ingredients e referências de personagem/lugar
+        // Para vídeo, Ingredients só é usado quando o modo foi selecionado explicitamente.
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const sceneReferencePaths = getSceneReferencePaths(segment);
-        
-        const ingredientsRequested = isIngredientsExplicit || sceneReferencePaths.length > 0;
-        const isIngredients = !isLiteApi && ingredientsRequested;
-        const baseIngredientPaths = (isIngredientsExplicit && !isLiteApi) ? (ingredientImages[segmentId] || []) : [];
-        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
+        const sceneReferencePaths = isIngredientsExplicit ? getSceneReferencePaths(segment) : [];
+        const isIngredients = !isLiteApi && isIngredientsExplicit;
+        const baseIngredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
+        const ingredientPaths = isIngredients
+          ? Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3)
+          : [];
 
-        if (isLiteApi && ingredientsRequested) {
+        if (isLiteApi && isIngredientsExplicit) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Veo 3.1 Lite (API) não suporta Ingredients. Usando Frames...' }));
         }
 
@@ -2100,6 +2161,7 @@ export function ImagesStep({
     setBatchProcessing(false);
     // 2. Esvaziar filas do backend (mutex + slots) para liberar chamadas em espera
     window.electron?.videoProject?.cancelFlowQueue?.().catch?.(() => {});
+    window.electron?.videoProject?.cancelVertexQueue?.().catch?.(() => {});
   }, []);
 
   // Helper para label do botão principal
@@ -2119,6 +2181,7 @@ export function ImagesStep({
     const svc = serviceOverride || getEffectiveService(segment);
     if (segment.imageUrl && !isVideo(segment.imageUrl)) {
       if (svc === 'flow-image') return '🖼️ Gerar nova Imagem (Flow)';
+      if (svc === 'vertex-image') return '🧩 Gerar nova Imagem (Vertex)';
       if (svc === 'flow-image-api') return '🍌 Gerar nova Imagem';
       if (svc === 'flow-image-pro') return '🍌 Gerar nova Imagem (Pro)';
       if (finalImages[segment.id]) return '🎬 Gerar Cena';
@@ -2133,6 +2196,7 @@ export function ImagesStep({
     if (svc === 'veo3') return '🌊 Gerar com Veo 3';
     // if (svc === 'veo2-flow') return '🌊 Gerar com Veo 2 Flow';
     if (svc === 'flow-image') return '🖼️ Imagem com Flow';
+    if (svc === 'vertex-image') return '🧩 Imagem com Vertex';
     if (svc === 'flow-image-api') return '🍌 Imagem com Nano Banana 2';
     if (svc === 'flow-image-pro') return '🍌 Imagem com Nano Banana Pro';
     return '🌊 Gerar com Veo 2';

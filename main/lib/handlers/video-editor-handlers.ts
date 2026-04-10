@@ -1574,6 +1574,76 @@ Lembre-se:
     }
   });
 
+  // Handler para gerar IMAGEM via Vertex Studio (pool de abas próprio)
+  registerVideoEditorGuardedHandle('video-project:generate-vertex-image', async (event, options: {
+    prompt: string;
+    count?: number;
+    model?: string;
+    aspectRatio?: string;
+    headless?: boolean;
+    poolSize?: number;
+    generationTimeoutMs?: number;
+    userDataDir?: string;
+    profileId?: string;
+    studioUrl?: string;
+    ingredientImagePaths?: string[];
+  }) => {
+    try {
+      const count = Math.min(options.count || 1, 4);
+      console.log(
+        `🧩 [Vertex/Img] Gerando ${count} imagem(ns)` +
+        `${options.model ? ` (model: ${options.model})` : ''}` +
+        `${options.aspectRatio ? ` (ratio: ${options.aspectRatio})` : ''}` +
+        `${options.poolSize ? ` (pool: ${options.poolSize})` : ''}` +
+        ` com prompt: "${options.prompt.substring(0, 80)}..."`
+      );
+
+      const { getVertexStudioProvider } = require('../libs/VertexStudioProvider');
+      const vertexProvider = getVertexStudioProvider({
+        headless: options.headless ?? false,
+        poolSize: options.poolSize,
+        generationTimeoutMs: options.generationTimeoutMs,
+        userDataDir: options.userDataDir,
+        profileId: options.profileId,
+        studioUrl: options.studioUrl,
+      });
+
+      const result = await vertexProvider.generateImages(
+        options.prompt,
+        count,
+        (progress: any) => {
+          event.sender.send('video-project:vertex-image-progress', progress);
+        },
+        options.aspectRatio,
+        options.ingredientImagePaths,
+        options.model
+      );
+
+      if (!result.success || !result.imagePaths?.length) {
+        return { success: false, error: result.error };
+      }
+
+      const httpUrls = result.imagePaths.map((p: string) =>
+        videoProjectService ? videoProjectService.convertToHttpUrl(p) : p
+      );
+
+      console.log(`✅ [Vertex/Img] ${result.imagePaths.length} imagem(ns) gerada(s)`);
+      return {
+        success: true,
+        imagePaths: result.imagePaths,
+        httpUrls,
+        durationMs: result.durationMs,
+      };
+    } catch (error: any) {
+      const message =
+        error?.message ||
+        error?.stack ||
+        (typeof error === 'string' ? error : JSON.stringify(error) || 'Erro desconhecido');
+      console.error('❌ [Vertex/Img] Erro:', message);
+      return { success: false, error: message };
+    }
+  });
+
   // Handler para gerar VÍDEO via Google Flow com Veo 2
   registerVideoEditorGuardedHandle('video-project:generate-vo2-flow', async (event, options: {
     prompt: string;
@@ -1709,6 +1779,19 @@ Lembre-se:
       return { success: true };
     } catch (err: any) {
       console.error('❌ [Flow] Erro ao cancelar fila:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Handler para cancelar a fila de geração da Vertex (pendentes + ativos)
+  registerVideoEditorGuardedHandle('video-project:cancel-vertex-queue', async () => {
+    try {
+      const { cancelVertexStudioQueue } = require('../libs/VertexStudioProvider');
+      cancelVertexStudioQueue();
+      console.log('⏹️ [Vertex] Fila de geração cancelada pelo usuário.');
+      return { success: true };
+    } catch (err: any) {
+      console.error('❌ [Vertex] Erro ao cancelar fila:', err.message);
       return { success: false, error: err.message };
     }
   });
