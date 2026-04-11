@@ -15,6 +15,27 @@ import { z } from 'zod';
 
 export const ASSET_DEFINITIONS = {
   // ==================== IMAGENS ====================
+  image_flux: {
+    label: 'Imagem (Flux)',
+    description: 'Imagem gerada por modelo Flux',
+    icon: '🧠',
+    badgeColor: 'bg-fuchsia-500/20 text-fuchsia-300',
+    aiDescription: 'Imagem gerada por IA via modelo Flux.',
+  },
+  image_dalle: {
+    label: 'Imagem (DALL·E)',
+    description: 'Imagem gerada por modelo DALL·E',
+    icon: '🎨',
+    badgeColor: 'bg-violet-500/20 text-violet-300',
+    aiDescription: 'Imagem gerada por IA via modelo DALL·E.',
+  },
+  image_midjourney: {
+    label: 'Imagem (Midjourney)',
+    description: 'Imagem gerada por Midjourney',
+    icon: '🖼️',
+    badgeColor: 'bg-indigo-500/20 text-indigo-300',
+    aiDescription: 'Imagem gerada por IA via Midjourney.',
+  },
   image_pexels: {
     label: 'Imagem (Pexels)',
     description: 'Foto gratuita de alta qualidade do Pexels',
@@ -44,6 +65,27 @@ export const ASSET_DEFINITIONS = {
     icon: '🎬',
     badgeColor: 'bg-teal-500/20 text-teal-300',
     aiDescription: 'Vídeo de stock gratuito do Pexels (ideal para cenas com movimento real, natureza, pessoas, cidades, ações cotidianas). Escreva o imagePrompt em inglês para ser buscado no Pexels. Exemplo: "A Man Walking along an Empty Road on a Foggy Night".',
+  },
+  video_kling: {
+    label: 'Vídeo (Kling)',
+    description: 'Vídeo gerado pelo Kling',
+    icon: '🎥',
+    badgeColor: 'bg-cyan-500/20 text-cyan-300',
+    aiDescription: 'Vídeo gerado por IA via Kling.',
+  },
+  video_runway: {
+    label: 'Vídeo (Runway)',
+    description: 'Vídeo gerado pelo Runway',
+    icon: '🎞️',
+    badgeColor: 'bg-emerald-500/20 text-emerald-300',
+    aiDescription: 'Vídeo gerado por IA via Runway.',
+  },
+  video_pika: {
+    label: 'Vídeo (Pika)',
+    description: 'Vídeo gerado pelo Pika',
+    icon: '📽️',
+    badgeColor: 'bg-sky-500/20 text-sky-300',
+    aiDescription: 'Vídeo gerado por IA via Pika.',
   },
   video_vo3: {
     label: 'Vídeo (Veo 3)',
@@ -180,7 +222,16 @@ Exemplo da estrutura do JSON:
     icon: '📊',
     badgeColor: 'bg-amber-500/20 text-amber-300',
     aiDescription: 'Linha do tempo 3D histórica (ideal para documentários, história, cronologias)',
-  }
+  },
+
+  // ==================== ÁUDIO ====================
+  audio: {
+    label: 'Áudio',
+    description: 'Clipe de áudio na timeline',
+    icon: '🎵',
+    badgeColor: 'bg-rose-500/20 text-rose-300',
+    aiDescription: 'Clipe de áudio para trilhas e efeitos sonoros.',
+  },
 } as const;
 
 // ========================================

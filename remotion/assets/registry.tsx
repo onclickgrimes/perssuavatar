@@ -288,6 +288,7 @@ const ASSET_COMPONENTS: Record<AssetType, AssetComponent> = {
   video_pika: VideoAsset,
   video_vo3: VideoAsset,
   video_veo2: VideoAsset,
+  video_frame_animate: VideoAsset,
   video_static: VideoAsset,
   
   // Vídeo especial
