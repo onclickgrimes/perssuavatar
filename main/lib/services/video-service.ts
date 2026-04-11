@@ -126,6 +126,12 @@ export interface VideoProjectInput {
       outputStart: number;
       outputEnd: number;
     }>;
+    audioMutedRanges?: Array<{
+      sourceStart: number;
+      sourceEnd: number;
+      outputStart: number;
+      outputEnd: number;
+    }>;
     backgroundMusic?: {
       src: string;
       src_local?: string;

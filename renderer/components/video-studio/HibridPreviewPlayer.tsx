@@ -60,6 +60,10 @@ const getRangeIndexForOutputTime = (timeSec: number, ranges: TimelineKeepRange[]
 
   return -1;
 };
+
+const isOutputTimeInRanges = (timeSec: number, ranges: TimelineKeepRange[]) => {
+  return ranges.some((range) => timeSec >= range.outputStart && timeSec < range.outputEnd);
+};
 const isVideoSegment = (segment: TimelineSegment, url: string) => {
   // Prioriza o tipo REAL da mídia pela URL para evitar mismatch
   // (ex.: assetType "video_*" com imagem estática enviada manualmente).
@@ -221,6 +225,9 @@ export const HibridPreviewPlayer = React.forwardRef(({
   const audioKeepRanges = useMemo<TimelineKeepRange[]>(() => {
     return Array.isArray(project?.config?.audioKeepRanges) ? project.config.audioKeepRanges : [];
   }, [project?.config?.audioKeepRanges]);
+  const audioMutedRanges = useMemo<TimelineKeepRange[]>(() => {
+    return Array.isArray(project?.config?.audioMutedRanges) ? project.config.audioMutedRanges : [];
+  }, [project?.config?.audioMutedRanges]);
 
   const syncMediaElement = useCallback((
     media: HTMLMediaElement,
@@ -314,8 +321,12 @@ export const HibridPreviewPlayer = React.forwardRef(({
       }
     }
     lastMainAudioRangeIndexRef.current = currentRangeIndex;
-    syncMediaElement(media, sourceTime, shouldPlay, mainAudioVolume);
-  }, [audioKeepRanges, mainAudioVolume, removeAudioSilences, syncMediaElement]);
+    const isMutedAtTime = removeAudioSilences
+      && audioMutedRanges.length > 0
+      && isOutputTimeInRanges(outputTime, audioMutedRanges);
+    const effectiveVolume = isMutedAtTime ? 0 : mainAudioVolume;
+    syncMediaElement(media, sourceTime, shouldPlay, effectiveVolume);
+  }, [audioKeepRanges, audioMutedRanges, mainAudioVolume, removeAudioSilences, syncMediaElement]);
 
   useEffect(() => {
     isPlayingRef.current = isPlaying;

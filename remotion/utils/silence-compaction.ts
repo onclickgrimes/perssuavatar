@@ -91,7 +91,15 @@ export function getTimelineReferenceSegments<T extends TimelineLikeSegment>(segm
 
 export function buildSilenceCompactionRanges<T extends TimelineLikeSegment>(
   segments: T[],
+  options?: {
+    /**
+     * Quando true, intervalos adjacentes (end == start) são unidos em um único range.
+     * Mantemos true por padrão para preservar o comportamento legado.
+     */
+    mergeAdjacentRanges?: boolean;
+  },
 ): TimelineKeepRange[] {
+  const mergeAdjacentRanges = options?.mergeAdjacentRanges ?? true;
   const referenceSegments = getTimelineReferenceSegments(segments);
   if (referenceSegments.length === 0) {
     return [];
@@ -108,7 +116,11 @@ export function buildSilenceCompactionRanges<T extends TimelineLikeSegment>(
     }
 
     const lastRange = mergedRanges[mergedRanges.length - 1];
-    if (!lastRange || sourceStart > lastRange.sourceEnd + EPSILON) {
+    const shouldStartNewRange = !lastRange
+      || sourceStart > lastRange.sourceEnd + EPSILON
+      || (!mergeAdjacentRanges && sourceStart >= lastRange.sourceEnd - EPSILON);
+
+    if (shouldStartNewRange) {
       mergedRanges.push({ sourceStart, sourceEnd });
       return;
     }

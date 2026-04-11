@@ -42,6 +42,36 @@ interface PreviewStepProps {
   onRemoveAudioSilencesChange: (val: boolean) => void;
   mainAudioVolume: number;
   onMainAudioVolumeChange: (val: number) => void;
+  onProjectConfigChange?: (updater: (prevConfig: any) => any) => void;
+}
+
+const getKeepRangeKey = (range: Partial<TimelineKeepRange>) => {
+  return [
+    Number(range.sourceStart || 0).toFixed(4),
+    Number(range.sourceEnd || 0).toFixed(4),
+    Number(range.outputStart || 0).toFixed(4),
+    Number(range.outputEnd || 0).toFixed(4),
+  ].join('|');
+};
+
+const normalizeAudioMutedRanges = (rawRanges: any): TimelineKeepRange[] => {
+  if (!Array.isArray(rawRanges)) {
+    return [];
+  }
+
+  return rawRanges
+    .map((range: any) => ({
+      sourceStart: Number(range?.sourceStart || 0),
+      sourceEnd: Number(range?.sourceEnd || 0),
+      outputStart: Number(range?.outputStart || 0),
+      outputEnd: Number(range?.outputEnd || 0),
+    }))
+    .filter((range) => range.sourceEnd > range.sourceStart);
+};
+
+interface PreviewHistoryState {
+  segments: any[];
+  audioMutedRanges: TimelineKeepRange[];
 }
 
 // ========================================
@@ -63,6 +93,7 @@ export function PreviewStep({
   onRemoveAudioSilencesChange,
   mainAudioVolume,
   onMainAudioVolumeChange,
+  onProjectConfigChange,
 }: PreviewStepProps) {
   // Aspect ratio
   const [selectedRatio, setSelectedRatio] = useState<string>(() => {
@@ -77,44 +108,89 @@ export function PreviewStep({
   // ========================================
   // HISTÓRICO (UNDO / REDO)
   // ========================================
-  const [history, setHistory] = useState<any[][]>([project.segments]);
+  const [history, setHistory] = useState<PreviewHistoryState[]>(() => [
+    {
+      segments: project.segments,
+      audioMutedRanges: normalizeAudioMutedRanges((project?.config as any)?.audioMutedRanges),
+    },
+  ]);
   const [historyIndex, setHistoryIndex] = useState(0);
 
-  const handleSegmentsChange = useCallback((newSegments: any[]) => {
-    if (!onSegmentsUpdate) return;
-    
+  const pushHistorySnapshot = useCallback((segments: any[], audioMutedRanges: TimelineKeepRange[]) => {
     setHistory(prev => {
       const newHistory = prev.slice(0, historyIndex + 1);
-      newHistory.push(newSegments);
+      newHistory.push({
+        segments,
+        audioMutedRanges,
+      });
       return newHistory;
     });
     setHistoryIndex(prev => prev + 1);
-    
+  }, [historyIndex]);
+
+  const handleSegmentsChange = useCallback((newSegments: any[], options?: { audioMutedRanges?: TimelineKeepRange[] }) => {
+    if (!onSegmentsUpdate) return;
+    const currentMutedRanges = normalizeAudioMutedRanges((project?.config as any)?.audioMutedRanges);
+    const nextMutedRanges = options?.audioMutedRanges ?? currentMutedRanges;
+
+    pushHistorySnapshot(newSegments, nextMutedRanges);
     onSegmentsUpdate(newSegments);
     setHasUnsavedChanges(true);
-  }, [historyIndex, onSegmentsUpdate]);
+  }, [onSegmentsUpdate, project?.config?.audioMutedRanges, pushHistorySnapshot]);
+
+  const applyAudioMutedRangesChange = useCallback((nextMutedRanges: TimelineKeepRange[], options?: { segments?: any[]; pushHistory?: boolean }) => {
+    if (!onProjectConfigChange) return;
+    const normalizedRanges = normalizeAudioMutedRanges(nextMutedRanges);
+    const snapshotSegments = options?.segments || project.segments;
+
+    if (options?.pushHistory !== false) {
+      pushHistorySnapshot(snapshotSegments, normalizedRanges);
+    }
+
+    onProjectConfigChange((prevConfig: any) => ({
+      ...(prevConfig || {}),
+      audioMutedRanges: normalizedRanges,
+    }));
+    setHasUnsavedChanges(true);
+  }, [onProjectConfigChange, project.segments, pushHistorySnapshot]);
 
   const handleUndo = useCallback(() => {
     if (historyIndex > 0) {
       const newIndex = historyIndex - 1;
       setHistoryIndex(newIndex);
+      const snapshot = history[newIndex];
+
       if (onSegmentsUpdate) {
-        onSegmentsUpdate(history[newIndex]);
-        setHasUnsavedChanges(true);
+        onSegmentsUpdate(snapshot.segments);
       }
+      if (onProjectConfigChange) {
+        onProjectConfigChange((prevConfig: any) => ({
+          ...(prevConfig || {}),
+          audioMutedRanges: snapshot.audioMutedRanges,
+        }));
+      }
+      setHasUnsavedChanges(true);
     }
-  }, [history, historyIndex, onSegmentsUpdate]);
+  }, [history, historyIndex, onProjectConfigChange, onSegmentsUpdate]);
 
   const handleRedo = useCallback(() => {
     if (historyIndex < history.length - 1) {
       const newIndex = historyIndex + 1;
       setHistoryIndex(newIndex);
+      const snapshot = history[newIndex];
+
       if (onSegmentsUpdate) {
-        onSegmentsUpdate(history[newIndex]);
-        setHasUnsavedChanges(true);
+        onSegmentsUpdate(snapshot.segments);
       }
+      if (onProjectConfigChange) {
+        onProjectConfigChange((prevConfig: any) => ({
+          ...(prevConfig || {}),
+          audioMutedRanges: snapshot.audioMutedRanges,
+        }));
+      }
+      setHasUnsavedChanges(true);
     }
-  }, [history, historyIndex, onSegmentsUpdate]);
+  }, [history, historyIndex, onProjectConfigChange, onSegmentsUpdate]);
 
   // Estados para as faixas (tracks)
   const [videoTrackCount, setVideoTrackCount] = useState(1);
@@ -146,6 +222,7 @@ export function PreviewStep({
   const [zoomLevel, setZoomLevel] = useState(DEFAULT_ZOOM);
   const currentTimeRef = useRef(0);
   const [selectedSegmentIds, setSelectedSegmentIds] = useState<number[]>([]);
+  const [selectedBaseAudioRangeKeys, setSelectedBaseAudioRangeKeys] = useState<string[]>([]);
   const [hoveredSegment, setHoveredSegment] = useState<{ id: number; x: number; y: number } | null>(null);
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -179,8 +256,30 @@ export function PreviewStep({
       return [];
     }
 
-    return buildSilenceCompactionRanges(project.segments);
+    return buildSilenceCompactionRanges(project.segments, {
+      mergeAdjacentRanges: false,
+    });
   }, [project.segments, removeAudioSilences]);
+
+  const mutedBaseAudioRanges = useMemo<TimelineKeepRange[]>(() => {
+    return normalizeAudioMutedRanges((project?.config as any)?.audioMutedRanges);
+  }, [project?.config?.audioMutedRanges]);
+
+  const activeRangeKeys = useMemo(() => {
+    return silenceCompactionRanges.map(getKeepRangeKey);
+  }, [silenceCompactionRanges]);
+
+  const activeRangeKeySet = useMemo(() => new Set(activeRangeKeys), [activeRangeKeys]);
+
+  const effectiveMutedBaseAudioRangeKeys = useMemo(() => {
+    return mutedBaseAudioRanges
+      .map(getKeepRangeKey)
+      .filter((key) => activeRangeKeySet.has(key));
+  }, [activeRangeKeySet, mutedBaseAudioRanges]);
+
+  useEffect(() => {
+    setSelectedBaseAudioRangeKeys((prev) => prev.filter((key) => activeRangeKeySet.has(key)));
+  }, [activeRangeKeySet]);
 
   const originalDurationInSeconds = useMemo(() => {
     if (!project.segments.length) {
@@ -229,13 +328,18 @@ export function PreviewStep({
     });
   }, [durationInSeconds]);
 
-  const handleFileUploadToTrack = async (type: 'video' | 'audio', trackId: number, file: File) => {
+  const handleFileUploadToTrack = useCallback(async (type: 'video' | 'audio', trackId: number, file: File) => {
     if (!onSegmentsUpdate) return;
     const isVideo = file.type.startsWith('video');
     const isImage = file.type.startsWith('image');
     const isAudio = file.type.startsWith('audio');
+    const selectedBaseRange = removeAudioSilences
+      && type === 'audio'
+      && selectedBaseAudioRangeKeys.length === 1
+      ? silenceCompactionRanges.find((range) => getKeepRangeKey(range) === selectedBaseAudioRangeKeys[0]) || null
+      : null;
     const sourceInsertionStart = removeAudioSilences
-      ? mapOutputTimeToSourceTime(currentTimeRef.current, silenceCompactionRanges)
+      ? selectedBaseRange?.sourceStart ?? mapOutputTimeToSourceTime(currentTimeRef.current, silenceCompactionRanges)
       : currentTimeRef.current;
     
     // Fallback se type for video mas for um arquivo de audio:
@@ -262,12 +366,19 @@ export function PreviewStep({
       }
     }
 
+    const selectedBaseRangeDuration = selectedBaseRange
+      ? Math.max(0.1, Number(selectedBaseRange.sourceEnd) - Number(selectedBaseRange.sourceStart))
+      : null;
+    const insertedDuration = selectedBaseRangeDuration != null
+      ? Math.min(selectedBaseRangeDuration, assetDuration || selectedBaseRangeDuration)
+      : (assetDuration || 5);
+
     const newSegment: any = {
       id: newId,
       text: '', // <-- Deixe vazio para não aparecer como legenda no vídeo
       fileName: file.name, // <-- Nova propriedade para guardar o nome na UI
       start: sourceInsertionStart,
-      end: sourceInsertionStart + (assetDuration || 5),
+      end: sourceInsertionStart + insertedDuration,
       speaker: 0,
       assetType: assetType,
       imageUrl: url,
@@ -275,9 +386,38 @@ export function PreviewStep({
       asset_duration: assetDuration,
     };
 
+    let nextMutedRangesForHistory = mutedBaseAudioRanges;
+    if (selectedBaseRange && onProjectConfigChange) {
+      const mutedMap = new Map<string, TimelineKeepRange>();
+
+      mutedBaseAudioRanges.forEach((range) => {
+        mutedMap.set(getKeepRangeKey(range), range);
+      });
+      mutedMap.set(getKeepRangeKey(selectedBaseRange), selectedBaseRange);
+
+      nextMutedRangesForHistory = Array.from(mutedMap.values());
+      applyAudioMutedRangesChange(nextMutedRangesForHistory, {
+        segments: project.segments,
+        pushHistory: false,
+      });
+      setSelectedBaseAudioRangeKeys([]);
+    }
+
     const updated = [...project.segments, newSegment];
-    handleSegmentsChange(updated);
-  };
+    handleSegmentsChange(updated, {
+      audioMutedRanges: nextMutedRangesForHistory,
+    });
+  }, [
+    applyAudioMutedRangesChange,
+    handleSegmentsChange,
+    mutedBaseAudioRanges,
+    onProjectConfigChange,
+    onSegmentsUpdate,
+    project.segments,
+    removeAudioSilences,
+    selectedBaseAudioRangeKeys,
+    silenceCompactionRanges,
+  ]);
 
   const handleSegmentMove = useCallback((id: number, newStart: number, newTrack: number) => {
     if (!onSegmentsUpdate) return;
@@ -389,6 +529,13 @@ export function PreviewStep({
   // Computations
   const totalTimelineWidth = Math.max((durationInSeconds + 10) * zoomLevel, viewportWidth);
   const hoveredSeg = hoveredSegment ? visualSegments.find(s => s.id === hoveredSegment.id) : null;
+  const effectiveMutedBaseAudioRanges = useMemo<TimelineKeepRange[]>(() => {
+    if (effectiveMutedBaseAudioRangeKeys.length === 0) {
+      return [];
+    }
+    const mutedKeySet = new Set(effectiveMutedBaseAudioRangeKeys);
+    return silenceCompactionRanges.filter((range) => mutedKeySet.has(getKeepRangeKey(range)));
+  }, [effectiveMutedBaseAudioRangeKeys, silenceCompactionRanges]);
 
   // Preview project (sem Remotion)
   const previewProject = useMemo(() => {
@@ -405,6 +552,7 @@ export function PreviewStep({
         fitVideoToScene,
         removeAudioSilences,
         audioKeepRanges: silenceCompactionRanges,
+        audioMutedRanges: effectiveMutedBaseAudioRanges,
         componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed,
         defaultFont: selectedNiche?.default_font,
       },
@@ -416,6 +564,7 @@ export function PreviewStep({
     selectedNiche,
     selectedRatio,
     silenceCompactionRanges,
+    effectiveMutedBaseAudioRanges,
     subtitleMode,
     visualSegments,
   ]);
@@ -710,11 +859,42 @@ export function PreviewStep({
   // ACTIONS (SPLIT, DELETE)
   // ========================================
   const handleDeleteSegment = useCallback(() => {
+    if (selectedBaseAudioRangeKeys.length > 0 && removeAudioSilences) {
+      const selectedKeySet = new Set(selectedBaseAudioRangeKeys);
+      const rangesToMute = silenceCompactionRanges.filter((range) => selectedKeySet.has(getKeepRangeKey(range)));
+      if (rangesToMute.length > 0 && onProjectConfigChange) {
+        const mutedMap = new Map<string, TimelineKeepRange>();
+
+        mutedBaseAudioRanges.forEach((range) => {
+          mutedMap.set(getKeepRangeKey(range), range);
+        });
+        rangesToMute.forEach((range) => mutedMap.set(getKeepRangeKey(range), range));
+
+        applyAudioMutedRangesChange(Array.from(mutedMap.values()), {
+          segments: project.segments,
+        });
+      }
+
+      setSelectedSegmentIds([]);
+      setSelectedBaseAudioRangeKeys([]);
+      return;
+    }
+
     if (selectedSegmentIds.length === 0) return;
     const newSegments = project.segments.filter(s => !selectedSegmentIds.includes(s.id));
     handleSegmentsChange(newSegments);
     setSelectedSegmentIds([]);
-  }, [project.segments, selectedSegmentIds, handleSegmentsChange]);
+  }, [
+    applyAudioMutedRangesChange,
+    handleSegmentsChange,
+    mutedBaseAudioRanges,
+    onProjectConfigChange,
+    project.segments,
+    removeAudioSilences,
+    selectedBaseAudioRangeKeys,
+    selectedSegmentIds,
+    silenceCompactionRanges,
+  ]);
 
   const handleSplitSegment = useCallback(() => {
     if (selectedSegmentIds.length === 0) return;
@@ -822,7 +1002,10 @@ export function PreviewStep({
     setHoveredSegment(null);
   };
 
-  const handleBackgroundClick = () => setSelectedSegmentIds([]);
+  const handleBackgroundClick = () => {
+    setSelectedSegmentIds([]);
+    setSelectedBaseAudioRangeKeys([]);
+  };
 
   // Progress bar seek
   const handleProgressClick = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -954,13 +1137,16 @@ export function PreviewStep({
                    canUndo={historyIndex > 0} 
                    canRedo={historyIndex < history.length - 1} 
                    canSplit={selectedSegmentIds.length > 0} 
-                   canDelete={selectedSegmentIds.length > 0} 
+                   canDelete={selectedSegmentIds.length > 0 || selectedBaseAudioRangeKeys.length > 0} 
                 />
                 <Timeline 
                    visualSegments={visualSegments} 
                    durationInSeconds={durationInSeconds} 
                    audioUrl={audioUrl} 
                    audioKeepRanges={removeAudioSilences ? silenceCompactionRanges : undefined}
+                   selectedBaseAudioRangeKeys={selectedBaseAudioRangeKeys}
+                   mutedBaseAudioRangeKeys={effectiveMutedBaseAudioRangeKeys}
+                   onSelectedBaseAudioRangeKeysChange={setSelectedBaseAudioRangeKeys}
                    zoomLevel={zoomLevel} 
                    viewportWidth={viewportWidth} 
                    totalTimelineWidth={totalTimelineWidth} 
@@ -1121,13 +1307,16 @@ export function PreviewStep({
                  canUndo={historyIndex > 0} 
                  canRedo={historyIndex < history.length - 1} 
                  canSplit={selectedSegmentIds.length > 0} 
-                 canDelete={selectedSegmentIds.length > 0} 
+                 canDelete={selectedSegmentIds.length > 0 || selectedBaseAudioRangeKeys.length > 0} 
               />
               <Timeline 
                  visualSegments={visualSegments} 
                  durationInSeconds={durationInSeconds} 
                  audioUrl={audioUrl} 
                  audioKeepRanges={removeAudioSilences ? silenceCompactionRanges : undefined}
+                 selectedBaseAudioRangeKeys={selectedBaseAudioRangeKeys}
+                 mutedBaseAudioRangeKeys={effectiveMutedBaseAudioRangeKeys}
+                 onSelectedBaseAudioRangeKeysChange={setSelectedBaseAudioRangeKeys}
                  zoomLevel={zoomLevel} 
                  viewportWidth={viewportWidth} 
                  totalTimelineWidth={totalTimelineWidth} 

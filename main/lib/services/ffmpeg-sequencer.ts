@@ -207,6 +207,9 @@ export class FFmpegSequencer {
     const audioKeepRanges = Array.isArray((project.config as any)?.audioKeepRanges)
       ? (project.config as any).audioKeepRanges
       : [];
+    const audioMutedRanges = Array.isArray((project.config as any)?.audioMutedRanges)
+      ? (project.config as any).audioMutedRanges
+      : [];
 
     const rawScenes = project.scenes || (project as any).segments || [];
     const sortedScenes = rawScenes
@@ -543,6 +546,15 @@ export class FFmpegSequencer {
             const sourceStart = Math.max(0, Number(range.sourceStart ?? 0));
             const sourceEnd = Math.max(sourceStart, Number(range.sourceEnd ?? sourceStart));
             const outputStart = Math.max(0, Number(range.outputStart ?? 0));
+            const outputEnd = Math.max(outputStart, Number(range.outputEnd ?? outputStart));
+            const isMutedRange = audioMutedRanges.some((mutedRange: any) => {
+              const mutedStart = Math.max(0, Number(mutedRange?.outputStart ?? 0));
+              const mutedEnd = Math.max(mutedStart, Number(mutedRange?.outputEnd ?? mutedStart));
+              return outputEnd > mutedStart + 0.0001 && outputStart < mutedEnd - 0.0001;
+            });
+            if (isMutedRange) {
+              return;
+            }
             const delayMs = Math.max(0, Math.round(outputStart * 1000));
             const audioLabel = `[${sourceLabel}_${idx}]`;
 

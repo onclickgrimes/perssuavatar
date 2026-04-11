@@ -154,6 +154,12 @@ export interface VideoProjectData {
         backgroundColor?: string;
         fitVideoToScene?: boolean;
         removeAudioSilences?: boolean;
+        audioMutedRanges?: Array<{
+            sourceStart: number;
+            sourceEnd: number;
+            outputStart: number;
+            outputEnd: number;
+        }>;
         mainAudioVolume?: number;
     };
 }
@@ -199,6 +205,12 @@ export interface RemotionProject {
         fitVideoToScene?: boolean;
         removeAudioSilences?: boolean;
         audioKeepRanges?: Array<{
+            sourceStart: number;
+            sourceEnd: number;
+            outputStart: number;
+            outputEnd: number;
+        }>;
+        audioMutedRanges?: Array<{
             sourceStart: number;
             sourceEnd: number;
             outputStart: number;
@@ -2440,7 +2452,29 @@ Responda APENAS com um objeto JSON válido no formato:
         console.log('🔧 convertToRemotionProject - subtitleMode:', project.subtitleMode);
         const removeAudioSilences = project.config?.removeAudioSilences === true;
         const audioKeepRanges = removeAudioSilences
-            ? buildSilenceCompactionRanges(project.segments)
+            ? buildSilenceCompactionRanges(project.segments, {
+                mergeAdjacentRanges: false,
+            })
+            : [];
+        const getRangeKey = (range: { sourceStart: number; sourceEnd: number; outputStart: number; outputEnd: number; }) => {
+            return [
+                Number(range.sourceStart || 0).toFixed(4),
+                Number(range.sourceEnd || 0).toFixed(4),
+                Number(range.outputStart || 0).toFixed(4),
+                Number(range.outputEnd || 0).toFixed(4),
+            ].join('|');
+        };
+        const validRangeKeySet = new Set(audioKeepRanges.map(getRangeKey));
+        const audioMutedRanges = Array.isArray(project.config?.audioMutedRanges)
+            ? project.config!.audioMutedRanges
+                .map((range: any) => ({
+                    sourceStart: Number(range?.sourceStart || 0),
+                    sourceEnd: Number(range?.sourceEnd || 0),
+                    outputStart: Number(range?.outputStart || 0),
+                    outputEnd: Number(range?.outputEnd || 0),
+                }))
+                .filter((range) => range.sourceEnd > range.sourceStart)
+                .filter((range) => validRangeKeySet.has(getRangeKey(range)))
             : [];
         const timelineSegments = removeAudioSilences
             ? compactTimelineSegments(project.segments, audioKeepRanges, { compactWords: true })
@@ -2530,6 +2564,9 @@ Responda APENAS com um objeto JSON válido no formato:
                 removeAudioSilences,
                 ...(audioKeepRanges.length > 0 && {
                     audioKeepRanges,
+                }),
+                ...(audioMutedRanges.length > 0 && {
+                    audioMutedRanges,
                 }),
                 assetsBaseUrl: `http://localhost:${this.imageServerPort}`, // ✅ URL base dinâmica
                 // Incluir áudio da narração/transcrição

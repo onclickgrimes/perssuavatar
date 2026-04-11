@@ -43,7 +43,15 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
   const config: Partial<ProjectConfig> = project.config || {};
   let backgroundColor = config.backgroundColor || '#000000';
   const audioKeepRanges = config.audioKeepRanges || [];
+  const audioMutedRanges = config.audioMutedRanges || [];
   const shouldCompactAudio = config.removeAudioSilences && audioKeepRanges.length > 0;
+  const isAudioRangeMuted = (outputStart: number, outputEnd: number) => {
+    if (audioMutedRanges.length === 0) return false;
+    return audioMutedRanges.some((range) => {
+      return outputEnd > range.outputStart + 0.0001
+        && outputStart < range.outputEnd - 0.0001;
+    });
+  };
   
   if (config.motionGraphicsOnly) {
     backgroundColor = 'transparent';
@@ -147,6 +155,10 @@ export const VideoProjectComposition: React.FC<VideoProjectCompositionProps> = (
           shouldCompactAudio ? (
             <>
               {audioKeepRanges.map((range, index) => {
+                if (isAudioRangeMuted(range.outputStart, range.outputEnd)) {
+                  return null;
+                }
+
                 const from = Math.round(range.outputStart * fps);
                 const durationInFrames = Math.max(1, Math.round((range.outputEnd - range.outputStart) * fps));
                 const startFrom = Math.round(range.sourceStart * fps);

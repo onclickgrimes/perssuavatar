@@ -1,9 +1,11 @@
-import React, { useRef, useState } from 'react';
-import { FILMORA, getRulerSteps, formatRulerTime, formatTimecode } from './constants';
+import React, { useMemo, useRef, useState } from 'react';
+import { FILMORA, getRulerSteps, formatRulerTime } from './constants';
 import { Icons } from './Icons';
 import { SceneThumbnail } from './SceneThumbnail';
 import { AudioWaveformDisplay } from './AudioWaveformDisplay';
-import type { TimelineKeepRange } from '../../../../remotion/utils/silence-compaction';
+import {
+  type TimelineKeepRange,
+} from '../../../../remotion/utils/silence-compaction';
 
 interface TimelineProps {
   // Data
@@ -11,6 +13,9 @@ interface TimelineProps {
   durationInSeconds: number;
   audioUrl: string;
   audioKeepRanges?: TimelineKeepRange[];
+  selectedBaseAudioRangeKeys: string[];
+  mutedBaseAudioRangeKeys: string[];
+  onSelectedBaseAudioRangeKeysChange: (keys: string[]) => void;
   zoomLevel: number;
   viewportWidth: number;
   totalTimelineWidth: number;
@@ -46,11 +51,21 @@ interface TimelineProps {
   currentTimeRef: React.MutableRefObject<number>;
 }
 
+const RANGE_OVERLAP_EPSILON = 0.0001;
+
+const isAudioTimelineSegment = (segment: any): boolean => {
+  const assetType = String(segment?.assetType || segment?.asset_type || '').toLowerCase();
+  return assetType.startsWith('audio');
+};
+
 export function Timeline({
   visualSegments,
   durationInSeconds,
   audioUrl,
   audioKeepRanges,
+  selectedBaseAudioRangeKeys,
+  mutedBaseAudioRangeKeys,
+  onSelectedBaseAudioRangeKeysChange,
   zoomLevel,
   viewportWidth,
   totalTimelineWidth,
@@ -82,6 +97,36 @@ export function Timeline({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const labelsScrollRef = useRef<HTMLDivElement>(null);
   const [activeUpload, setActiveUpload] = useState<{type: 'video'|'audio', trackId: number} | null>(null);
+  const selectedBaseAudioRangeKeySet = useMemo(
+    () => new Set(selectedBaseAudioRangeKeys),
+    [selectedBaseAudioRangeKeys],
+  );
+  const mutedBaseAudioRangeKeySet = useMemo(
+    () => new Set(mutedBaseAudioRangeKeys),
+    [mutedBaseAudioRangeKeys],
+  );
+  const hasCompactedBaseRanges = Array.isArray(audioKeepRanges) && audioKeepRanges.length > 0;
+
+  const baseAudioRanges = useMemo(() => {
+    if (!Array.isArray(audioKeepRanges) || audioKeepRanges.length === 0) {
+      return [];
+    }
+
+    return audioKeepRanges
+      .map((range, index) => {
+        const outputStart = Number(range.outputStart || 0);
+        const outputEnd = Number(range.outputEnd || outputStart);
+        const duration = Math.max(0, outputEnd - outputStart);
+
+        return {
+          ...range,
+          key: `${Number(range.sourceStart || 0).toFixed(4)}|${Number(range.sourceEnd || 0).toFixed(4)}|${Number(range.outputStart || 0).toFixed(4)}|${Number(range.outputEnd || 0).toFixed(4)}`,
+          duration,
+        };
+      })
+      .filter((range) => range.duration > RANGE_OVERLAP_EPSILON)
+      .filter((range) => !mutedBaseAudioRangeKeySet.has(range.key));
+  }, [audioKeepRanges, mutedBaseAudioRangeKeySet]);
 
   const handleUploadClick = (type: 'video' | 'audio', trackId: number) => {
     setActiveUpload({ type, trackId });
@@ -141,6 +186,7 @@ export function Timeline({
     const isMultiSelect = e.ctrlKey || e.metaKey;
     if (!isMultiSelect) {
       setSelectedSegmentIds([]);
+      onSelectedBaseAudioRangeKeysChange([]);
     }
 
     let latestClientX = e.clientX;
@@ -176,7 +222,7 @@ export function Timeline({
       visualSegments.forEach(seg => {
         const segStart = seg.start * zoomLevel;
         const segEnd = seg.end * zoomLevel;
-        const isAudio = (seg.assetType || '').startsWith('audio');
+        const isAudio = isAudioTimelineSegment(seg);
         
         let trackTop = 0;
         let trackBottom = 0;
@@ -273,6 +319,7 @@ export function Timeline({
       const deltaX = Math.abs(upEvent.clientX - (startX + rect.left));
       const deltaY = Math.abs(upEvent.clientY - (startY + rect.top));
       if (deltaX < 3 && deltaY < 3) {
+        onSelectedBaseAudioRangeKeysChange([]);
         handleBackgroundClick();
       }
     };
@@ -314,6 +361,7 @@ export function Timeline({
     if (e.button !== 0) return; // Só permite clique esquerdo
     e.stopPropagation();
     e.preventDefault(); // Previne o drag-and-drop nativo do HTML5 que causa o ícone de proibido (🚫)
+    onSelectedBaseAudioRangeKeysChange([]);
     // Lógica de Multi-seleção
     setSelectedSegmentIds(prev => {
       if (e.ctrlKey || e.metaKey) {
@@ -410,6 +458,7 @@ export function Timeline({
     if (e.button !== 0) return; // Só permite clique esquerdo
     e.stopPropagation();
     e.preventDefault(); // Previne o drag-and-drop nativo
+    onSelectedBaseAudioRangeKeysChange([]);
     setSelectedSegmentIds(prev => prev.includes(seg.id) ? prev : [seg.id]);
     
     const startX = e.clientX;
@@ -706,7 +755,7 @@ export function Timeline({
                 }} />
 
                 {visualSegments
-                  .filter(s => !(s.assetType || '').startsWith('audio'))
+                  .filter((s) => !isAudioTimelineSegment(s))
                   .filter(s => {
                     const isDragging = dragState?.id === s.id;
                     const trackToRender = isDragging ? dragState.currentTrack : (s.track || 1);
@@ -823,35 +872,107 @@ export function Timeline({
 
                 {/* Se for a primeira faixa de áudio e tiver o audioUrl base do projeto */}
                 {trackIndex === 1 && audioUrl && (
-                  <div 
-                    className="absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden"
-                    style={{ 
-                      left: 0, 
-                      width: Math.max(4, durationInSeconds * zoomLevel),
-                      background: `linear-gradient(180deg, ${FILMORA.trackAudio}25 0%, ${FILMORA.trackAudio}10 100%)`,
-                      border: `1px solid ${FILMORA.trackAudio}40`,
-                    }}
-                  >
-                    <AudioWaveformDisplay 
-                      audioUrl={audioUrl} 
-                      color={FILMORA.trackAudio} 
-                      duration={durationInSeconds} 
-                      audioKeepRanges={audioKeepRanges}
-                      widthScale={zoomLevel} 
-                    />
-                    <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: FILMORA.trackAudio }} />
-                    <div className="absolute top-1 left-1.5 z-10">
-                      <span className="text-[7px] font-bold uppercase tracking-wider px-1 py-[1px] rounded-sm" 
-                        style={{ background: `${FILMORA.trackAudio}40`, color: `${FILMORA.trackAudio}` }}>
-                        ♫ Base
-                      </span>
-                    </div>
-                  </div>
+                  <>
+                    {hasCompactedBaseRanges ? (
+                      <>
+                        {baseAudioRanges.map((range, index) => {
+                          const left = range.outputStart * zoomLevel;
+                          const width = Math.max(4, range.duration * zoomLevel);
+                          const rangeKeepRange: TimelineKeepRange[] = [{
+                            sourceStart: range.sourceStart,
+                            sourceEnd: range.sourceEnd,
+                            outputStart: 0,
+                            outputEnd: range.duration,
+                          }];
+                          const isRangeSelected = selectedBaseAudioRangeKeySet.has(range.key);
+
+                          return (
+                            <div
+                              key={`audio-base-${range.key}`}
+                              className="absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden transition-shadow"
+                              style={{
+                                left,
+                                width,
+                                cursor: 'pointer',
+                                background: `linear-gradient(180deg, ${FILMORA.trackAudio}25 0%, ${FILMORA.trackAudio}10 100%)`,
+                                border: `1px solid ${isRangeSelected ? FILMORA.trackAudio : `${FILMORA.trackAudio}40`}`,
+                                boxShadow: isRangeSelected
+                                  ? `0 0 10px ${FILMORA.trackAudio}30, inset 0 1px 0 ${FILMORA.trackAudio}20`
+                                  : 'none',
+                              }}
+                              onMouseDown={(event) => event.stopPropagation()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                const isMultiSelect = event.ctrlKey || event.metaKey;
+                                setSelectedSegmentIds([]);
+                                onSelectedBaseAudioRangeKeysChange((() => {
+                                  const previous = selectedBaseAudioRangeKeys;
+                                  if (isMultiSelect) {
+                                    const next = new Set(previous);
+                                    if (next.has(range.key)) next.delete(range.key);
+                                    else next.add(range.key);
+                                    return Array.from(next);
+                                  }
+
+                                  return [range.key];
+                                })());
+                              }}
+                              title="Clique para selecionar este trecho de áudio"
+                            >
+                              <AudioWaveformDisplay
+                                audioUrl={audioUrl}
+                                color={FILMORA.trackAudio}
+                                duration={range.duration}
+                                audioKeepRanges={rangeKeepRange}
+                                widthScale={zoomLevel}
+                              />
+                              <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: FILMORA.trackAudio }} />
+                              <div className="absolute top-1 left-1.5 z-10">
+                                <span
+                                  className="text-[7px] font-bold uppercase tracking-wider px-1 py-[1px] rounded-sm"
+                                  style={{ background: `${FILMORA.trackAudio}40`, color: `${FILMORA.trackAudio}` }}
+                                >
+                                  {`♫ Base ${index + 1}`}
+                                </span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </>
+                    ) : (
+                      <div
+                        className="absolute top-[3px] bottom-[3px] rounded-[3px] overflow-hidden"
+                        style={{
+                          left: 0,
+                          width: Math.max(4, durationInSeconds * zoomLevel),
+                          background: `linear-gradient(180deg, ${FILMORA.trackAudio}25 0%, ${FILMORA.trackAudio}10 100%)`,
+                          border: `1px solid ${FILMORA.trackAudio}40`,
+                        }}
+                      >
+                        <AudioWaveformDisplay
+                          audioUrl={audioUrl}
+                          color={FILMORA.trackAudio}
+                          duration={durationInSeconds}
+                          audioKeepRanges={audioKeepRanges}
+                          widthScale={zoomLevel}
+                        />
+                        <div className="absolute top-0 left-0 right-0 h-[2px]" style={{ background: FILMORA.trackAudio }} />
+                        <div className="absolute top-1 left-1.5 z-10">
+                          <span
+                            className="text-[7px] font-bold uppercase tracking-wider px-1 py-[1px] rounded-sm"
+                            style={{ background: `${FILMORA.trackAudio}40`, color: `${FILMORA.trackAudio}` }}
+                          >
+                            ♫ Base
+                          </span>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* Segmentos de áudio upados pra essa faixa */}
                 {visualSegments
-                  .filter(s => (s.assetType || '').startsWith('audio'))
+                  .filter((s) => isAudioTimelineSegment(s))
                   .filter(s => {
                     const isDragging = dragState?.id === s.id;
                     const trackToRender = isDragging ? dragState.currentTrack : (s.track || 1);
@@ -951,7 +1072,7 @@ export function Timeline({
                   );
                 })}
 
-                {trackIndex === 1 && !audioUrl && visualSegments.filter(s => (s.track || 1) === trackIndex && (s.assetType || '').startsWith('audio')).length === 0 && (
+                {trackIndex === 1 && !audioUrl && visualSegments.filter((s) => (s.track || 1) === trackIndex && isAudioTimelineSegment(s)).length === 0 && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <span className="text-[10px]" style={{ color: FILMORA.textDim }}>Sem áudio</span>
                   </div>

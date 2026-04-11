@@ -510,6 +510,14 @@ export const ProjectConfigSchema = z.object({
     outputStart: z.number(),
     outputEnd: z.number(),
   })).optional(),
+
+  /** Intervalos compactados da timeline onde o áudio base deve ficar mudo */
+  audioMutedRanges: z.array(z.object({
+    sourceStart: z.number(),
+    sourceEnd: z.number(),
+    outputStart: z.number(),
+    outputEnd: z.number(),
+  })).optional(),
   
   /** Apenas para renderização Híbrida/Preview: renderizar apenas overlays/textos com fundo transparente */
   motionGraphicsOnly: z.boolean().optional(),

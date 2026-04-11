@@ -4,6 +4,36 @@ import {
   type TimelineKeepRange,
 } from '../../../../remotion/utils/silence-compaction';
 
+const audioBufferPromiseCache = new Map<string, Promise<AudioBuffer>>();
+
+const loadAudioBuffer = async (audioUrl: string): Promise<AudioBuffer> => {
+  const cachedPromise = audioBufferPromiseCache.get(audioUrl);
+  if (cachedPromise) {
+    return cachedPromise;
+  }
+
+  const decodePromise = (async () => {
+    const response = await fetch(audioUrl);
+    const arrayBuffer = await response.arrayBuffer();
+    const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+    const audioCtx = new Ctx();
+    try {
+      return await audioCtx.decodeAudioData(arrayBuffer);
+    } finally {
+      await audioCtx.close().catch(() => {});
+    }
+  })();
+
+  audioBufferPromiseCache.set(audioUrl, decodePromise);
+
+  try {
+    return await decodePromise;
+  } catch (error) {
+    audioBufferPromiseCache.delete(audioUrl);
+    throw error;
+  }
+};
+
 // ========================================
 // WAVEFORM COMPONENT
 // ========================================
@@ -28,13 +58,8 @@ export function AudioWaveformDisplay({
     let cancelled = false;
     const load = async () => {
       try {
-        const response = await fetch(audioUrl);
-        const arrayBuffer = await response.arrayBuffer();
-        const Ctx = window.AudioContext || (window as any).webkitAudioContext;
-        const audioCtx = new Ctx();
-        const decoded = await audioCtx.decodeAudioData(arrayBuffer);
+        const decoded = await loadAudioBuffer(audioUrl);
         if (!cancelled) setBuffer(decoded);
-        audioCtx.close();
       } catch (e) {
         console.error('Erro ao carregar waveform:', e);
       }

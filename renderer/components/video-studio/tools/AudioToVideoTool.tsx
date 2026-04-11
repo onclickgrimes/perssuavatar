@@ -1107,6 +1107,10 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
               ...prev,
               config: { ...prev.config, mainAudioVolume: val }
             }))}
+            onProjectConfigChange={(updater) => setProject(prev => ({
+              ...prev,
+              config: updater(prev.config || {}),
+            }))}
           />
         );
       
@@ -1167,6 +1171,10 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           onMainAudioVolumeChange={(val) => setProject(prev => ({
             ...prev,
             config: { ...prev.config, mainAudioVolume: val }
+          }))}
+          onProjectConfigChange={(updater) => setProject(prev => ({
+            ...prev,
+            config: updater(prev.config || {}),
           }))}
         />
       </div>
