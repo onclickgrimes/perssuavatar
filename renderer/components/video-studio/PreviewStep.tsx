@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
 import { ProjectState } from '../../types/video-studio';
 import type { ChannelNiche } from './NicheModal';
 import { 
@@ -74,6 +74,91 @@ interface PreviewHistoryState {
   audioMutedRanges: TimelineKeepRange[];
 }
 
+interface PreviewHistoryStore {
+  entries: PreviewHistoryState[];
+  index: number;
+}
+
+type PreviewHistoryAction =
+  | { type: 'push'; snapshot: PreviewHistoryState }
+  | { type: 'set-index'; index: number };
+
+const areMutedRangeListsEqual = (left: TimelineKeepRange[], right: TimelineKeepRange[]) => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+
+  for (let i = 0; i < left.length; i += 1) {
+    if (getKeepRangeKey(left[i]) !== getKeepRangeKey(right[i])) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const areSegmentsSnapshotsEqual = (left: any[], right: any[]) => {
+  if (left === right) return true;
+  if (left.length !== right.length) return false;
+
+  try {
+    return JSON.stringify(left) === JSON.stringify(right);
+  } catch (_) {
+    return false;
+  }
+};
+
+const isSameHistorySnapshot = (left: PreviewHistoryState, right: PreviewHistoryState) => {
+  return (
+    areSegmentsSnapshotsEqual(left.segments, right.segments) &&
+    areMutedRangeListsEqual(left.audioMutedRanges, right.audioMutedRanges)
+  );
+};
+
+const buildInitialHistoryStore = (project: ProjectState): PreviewHistoryStore => ({
+  entries: [
+    {
+      segments: project.segments,
+      audioMutedRanges: normalizeAudioMutedRanges((project?.config as any)?.audioMutedRanges),
+    },
+  ],
+  index: 0,
+});
+
+const previewHistoryReducer = (state: PreviewHistoryStore, action: PreviewHistoryAction): PreviewHistoryStore => {
+  switch (action.type) {
+    case 'push': {
+      const truncatedEntries = state.entries.slice(0, state.index + 1);
+      const lastSnapshot = truncatedEntries[truncatedEntries.length - 1];
+      if (lastSnapshot && isSameHistorySnapshot(lastSnapshot, action.snapshot)) {
+        return state;
+      }
+
+      const nextEntries = [...truncatedEntries, action.snapshot];
+      return {
+        entries: nextEntries,
+        index: nextEntries.length - 1,
+      };
+    }
+    case 'set-index': {
+      if (!state.entries.length) {
+        return state;
+      }
+
+      const boundedIndex = Math.max(0, Math.min(action.index, state.entries.length - 1));
+      if (boundedIndex === state.index) {
+        return state;
+      }
+
+      return {
+        ...state,
+        index: boundedIndex,
+      };
+    }
+    default:
+      return state;
+  }
+};
+
 // ========================================
 // COMPONENTE PRINCIPAL
 // ========================================
@@ -108,32 +193,28 @@ export function PreviewStep({
   // ========================================
   // HISTÓRICO (UNDO / REDO)
   // ========================================
-  const [history, setHistory] = useState<PreviewHistoryState[]>(() => [
-    {
-      segments: project.segments,
-      audioMutedRanges: normalizeAudioMutedRanges((project?.config as any)?.audioMutedRanges),
-    },
-  ]);
-  const [historyIndex, setHistoryIndex] = useState(0);
+  const [historyState, dispatchHistory] = useReducer(previewHistoryReducer, project, buildInitialHistoryStore);
+  const history = historyState.entries;
+  const historyIndex = historyState.index;
 
   const pushHistorySnapshot = useCallback((segments: any[], audioMutedRanges: TimelineKeepRange[]) => {
-    setHistory(prev => {
-      const newHistory = prev.slice(0, historyIndex + 1);
-      newHistory.push({
+    dispatchHistory({
+      type: 'push',
+      snapshot: {
         segments,
-        audioMutedRanges,
-      });
-      return newHistory;
+        audioMutedRanges: normalizeAudioMutedRanges(audioMutedRanges),
+      },
     });
-    setHistoryIndex(prev => prev + 1);
-  }, [historyIndex]);
+  }, []);
 
-  const handleSegmentsChange = useCallback((newSegments: any[], options?: { audioMutedRanges?: TimelineKeepRange[] }) => {
+  const handleSegmentsChange = useCallback((newSegments: any[], options?: { audioMutedRanges?: TimelineKeepRange[]; pushHistory?: boolean }) => {
     if (!onSegmentsUpdate) return;
     const currentMutedRanges = normalizeAudioMutedRanges((project?.config as any)?.audioMutedRanges);
     const nextMutedRanges = options?.audioMutedRanges ?? currentMutedRanges;
 
-    pushHistorySnapshot(newSegments, nextMutedRanges);
+    if (options?.pushHistory !== false) {
+      pushHistorySnapshot(newSegments, nextMutedRanges);
+    }
     onSegmentsUpdate(newSegments);
     setHasUnsavedChanges(true);
   }, [onSegmentsUpdate, project?.config?.audioMutedRanges, pushHistorySnapshot]);
@@ -157,7 +238,7 @@ export function PreviewStep({
   const handleUndo = useCallback(() => {
     if (historyIndex > 0) {
       const newIndex = historyIndex - 1;
-      setHistoryIndex(newIndex);
+      dispatchHistory({ type: 'set-index', index: newIndex });
       const snapshot = history[newIndex];
 
       if (onSegmentsUpdate) {
@@ -176,7 +257,7 @@ export function PreviewStep({
   const handleRedo = useCallback(() => {
     if (historyIndex < history.length - 1) {
       const newIndex = historyIndex + 1;
-      setHistoryIndex(newIndex);
+      dispatchHistory({ type: 'set-index', index: newIndex });
       const snapshot = history[newIndex];
 
       if (onSegmentsUpdate) {
@@ -419,7 +500,7 @@ export function PreviewStep({
     silenceCompactionRanges,
   ]);
 
-  const handleSegmentMove = useCallback((id: number, newStart: number, newTrack: number) => {
+  const handleSegmentMove = useCallback((id: number, newStart: number, newTrack: number, options?: { pushHistory?: boolean }) => {
     if (!onSegmentsUpdate) return;
     const sourceStart = removeAudioSilences
       ? mapOutputTimeToSourceTime(newStart, silenceCompactionRanges)
@@ -434,10 +515,10 @@ export function PreviewStep({
     });
     // Ordena pelo tempo de início para manter a timeline consistente
     updated.sort((a, b) => a.start - b.start);
-    handleSegmentsChange(updated);
+    handleSegmentsChange(updated, { pushHistory: options?.pushHistory });
   }, [handleSegmentsChange, onSegmentsUpdate, project.segments, removeAudioSilences, silenceCompactionRanges]);
 
-  const handleSegmentTrim = useCallback((id: number, newStart: number, newEnd: number) => {
+  const handleSegmentTrim = useCallback((id: number, newStart: number, newEnd: number, options?: { pushHistory?: boolean }) => {
     if (!onSegmentsUpdate) return;
     const sourceStart = removeAudioSilences
       ? mapOutputTimeToSourceTime(newStart, silenceCompactionRanges)
@@ -453,7 +534,7 @@ export function PreviewStep({
       return s;
     });
     updated.sort((a, b) => a.start - b.start);
-    handleSegmentsChange(updated);
+    handleSegmentsChange(updated, { pushHistory: options?.pushHistory });
   }, [handleSegmentsChange, onSegmentsUpdate, project.segments, removeAudioSilences, silenceCompactionRanges]);
 
   const handleBackClick = useCallback(() => {
@@ -840,14 +921,14 @@ export function PreviewStep({
     handleSegmentsChange(updated);
   }, [project.segments, handleSegmentsChange, onSegmentsUpdate]);
 
-  const handleAudioChange = useCallback((audio: any) => {
+  const handleAudioChange = useCallback((audio: any, options?: { pushHistory?: boolean }) => {
     if (!onSegmentsUpdate || selectedSegmentIds.length === 0) return;
     const updated = project.segments.map(seg =>
       selectedSegmentIds.includes(seg.id) 
         ? { ...seg, audio: { ...seg.audio, ...audio } } 
         : seg
     );
-    handleSegmentsChange(updated);
+    handleSegmentsChange(updated, { pushHistory: options?.pushHistory });
   }, [project.segments, selectedSegmentIds, handleSegmentsChange, onSegmentsUpdate]);
 
   const handleMainAudioVolumeChange = useCallback((volume: number) => {

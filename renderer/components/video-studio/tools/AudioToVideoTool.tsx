@@ -970,12 +970,16 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed, // ✅ Componentes permitidos (nicho ou projeto salvo)
           defaultFont: selectedNiche?.default_font, // ✅ Fonte padrão do nicho
           config: {
+            ...(project.config || {}),
             width: dims.width,
             height: dims.height,
             fps: 30, // Default 30fps
             fitVideoToScene: project.config?.fitVideoToScene ?? true,
             removeAudioSilences: project.config?.removeAudioSilences ?? false,
             mainAudioVolume: project.config?.mainAudioVolume ?? 1.0,
+            ...(Array.isArray(project.config?.audioMutedRanges) && {
+              audioMutedRanges: project.config?.audioMutedRanges,
+            }),
           }
         });
 

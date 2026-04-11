@@ -28,9 +28,9 @@ interface TimelineProps {
   onAddVideoTrack: () => void;
   onAddAudioTrack: () => void;
   onFileUploadToTrack: (type: 'video' | 'audio', trackId: number, file: File) => void;
-  onSegmentMove: (id: number, newStart: number, newTrack: number) => void;
-  onSegmentTrim: (id: number, newStart: number, newEnd: number) => void;
-  onAudioChange: (audio: any) => void;
+  onSegmentMove: (id: number, newStart: number, newTrack: number, options?: { pushHistory?: boolean }) => void;
+  onSegmentTrim: (id: number, newStart: number, newEnd: number, options?: { pushHistory?: boolean }) => void;
+  onAudioChange: (audio: any, options?: { pushHistory?: boolean }) => void;
 
   // Hover
   hoveredSegment: { id: number; x: number; y: number } | null;
@@ -427,13 +427,11 @@ export function Timeline({
     const handleMouseUp = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
-      
-      setDragState(prev => {
-        if (prev && (prev.currentStart !== prev.initialStart || prev.currentTrack !== prev.initialTrack)) {
-          onSegmentMove(prev.id, prev.currentStart, prev.currentTrack);
-        }
-        return null;
-      });
+
+      if (currentStart !== initialStart || currentTrack !== initialTrack) {
+        onSegmentMove(seg.id, currentStart, currentTrack, { pushHistory: true });
+      }
+      setDragState(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -508,13 +506,11 @@ export function Timeline({
     const handleMouseUp = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
-      
-      setTrimState(prev => {
-        if (prev && (prev.currentStart !== prev.initialStart || prev.currentEnd !== prev.initialEnd)) {
-          onSegmentTrim(prev.id, prev.currentStart, prev.currentEnd);
-        }
-        return null;
-      });
+
+      if (currentStart !== initialStart || currentEnd !== initialEnd) {
+        onSegmentTrim(seg.id, currentStart, currentEnd, { pushHistory: true });
+      }
+      setTrimState(null);
     };
 
     window.addEventListener('mousemove', handleMouseMove);
@@ -527,6 +523,8 @@ export function Timeline({
     e.preventDefault();
     const startX = e.clientX;
     const initialDuration = seg.audio?.[type] ?? 0;
+    let currentDuration = initialDuration;
+    let hasMoved = false;
     
     const handleMouseMove = (mvEvent: MouseEvent) => {
       const deltaX = mvEvent.clientX - startX;
@@ -537,13 +535,19 @@ export function Timeline({
       
       const maxFade = (seg.end - seg.start) / 2.1; // Limita a quase metade
       newDuration = Math.max(0, Math.min(newDuration, maxFade));
-      
-      onAudioChange({ [type]: newDuration });
+
+      currentDuration = newDuration;
+      hasMoved = true;
+      onAudioChange({ [type]: newDuration }, { pushHistory: false });
     };
     
     const handleMouseUp = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+
+      if (hasMoved && Math.abs(currentDuration - initialDuration) > 0.0001) {
+        onAudioChange({ [type]: currentDuration }, { pushHistory: true });
+      }
     };
     
     window.addEventListener('mousemove', handleMouseMove);
