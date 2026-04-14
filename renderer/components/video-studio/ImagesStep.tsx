@@ -2956,10 +2956,15 @@ export function ImagesStep({
                   const isVideoService = svc === 'veo3' || svc === 'veo3-lite-flow' || svc === 'veo3-api' || svc === 'veo3-fast-api' || svc === 'veo3-lite-api' || svc === 'veo2-flow' || svc === 'veo2' || svc === 'grok';
                   const currentIndex = carouselIndices[segment.id] || 0;
                   const isIngredientsMode = supportsIngredientsForService(svc) && ingredientMode[segment.id] === 'ingredients';
+                  const shouldShowIngredientsPanel = isIngredientsMode && !(
+                    IMAGE_SERVICES.has(svc)
+                    && hasImage
+                    && !isVideo(segment.imageUrl)
+                  );
                   const showCarousel = isVideoService && hasImage && !isVideo(segment.imageUrl) && !isIngredientsMode;
 
                   // 0. MODO INGREDIENTS
-                  if (isIngredientsMode) {
+                  if (shouldShowIngredientsPanel) {
                     const imgs = ingredientImages[segment.id] || [];
                     const ingredientLimit = getIngredientLimitByService(svc);
                     const maxManualSlots = Math.max(0, ingredientLimit - segmentSceneReferencePaths.length);
