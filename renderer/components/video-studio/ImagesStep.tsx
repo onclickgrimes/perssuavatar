@@ -83,11 +83,31 @@ interface AnalysisReferenceContext {
   locations?: AnalysisReferenceContextItem[];
 }
 
+interface HoverImagePreviewState {
+  src: string;
+  label?: string;
+  x: number;
+  y: number;
+}
+
+interface SceneReferencePickerState {
+  segmentId: number;
+  kind: 'character' | 'location';
+  characterIndex?: number;
+}
+
 type StoryReferenceKind = 'character' | 'location';
 type StoryReferenceImageProvider = 'flow-image' | 'flow-image-api' | 'flow-image-pro';
 
 const FLOW_EXTENSION_JOB_SCHEMA = 'flow-extension-job.v1';
 const FLOW_EXTENSION_RESULT_SCHEMA = 'flow-extension-result.v1';
+const IMAGE_REFERENCE_LIMIT = 10;
+const DEFAULT_INGREDIENT_LIMIT = 3;
+const IMAGE_SERVICE_IDS = new Set(['flow-image', 'vertex-image', 'flow-image-api', 'flow-image-pro']);
+
+const getIngredientLimitByService = (serviceId: string): number => {
+  return IMAGE_SERVICE_IDS.has(serviceId) ? IMAGE_REFERENCE_LIMIT : DEFAULT_INGREDIENT_LIMIT;
+};
 
 type FlowExportService = 'veo3' | 'veo3-lite-flow' | 'veo2-flow' | 'flow-image';
 type FlowExportMediaType = 'image' | 'video';
@@ -309,7 +329,7 @@ export function ImagesStep({
   const [carouselIndices, setCarouselIndices] = useState<Record<number, number>>({});
 
   // ── Ingredients (Veo 3.1, exceto modelos Lite) ──
-  // 'frames' = usa Inicial/Final (padrão), 'ingredients' = usa até 3 imagens como ingredientes
+  // 'frames' = usa Inicial/Final (padrão), 'ingredients' = usa imagens de referência (limite depende do serviço)
   const [ingredientMode, setIngredientMode] = useState<Record<number, 'frames' | 'ingredients'>>({});
   const [ingredientImages, setIngredientImages] = useState<Record<number, string[]>>({});
 
@@ -319,13 +339,95 @@ export function ImagesStep({
   const [referencesError, setReferencesError] = useState<string | null>(null);
   const characterReferences = Array.isArray(storyReferences?.characters) ? storyReferences.characters : [];
   const locationReferences = Array.isArray(storyReferences?.locations) ? storyReferences.locations : [];
+  const sortedCharacterReferences = useMemo(() => {
+    return [...characterReferences]
+      .filter(item => Number.isFinite(item.id) && item.id > 0)
+      .sort((a, b) => a.id - b.id);
+  }, [characterReferences]);
+  const sortedLocationReferences = useMemo(() => {
+    return [...locationReferences]
+      .filter(item => Number.isFinite(item.id) && item.id > 0)
+      .sort((a, b) => a.id - b.id);
+  }, [locationReferences]);
   const characterStyle = String(storyReferences?.characterStyle || 'fotorrealista').trim() || 'fotorrealista';
   const locationStyle = String(storyReferences?.locationStyle || 'fotorrealista').trim() || 'fotorrealista';
   const [globalInstruction, setGlobalInstruction] = useState('');
   const [sceneInstructions, setSceneInstructions] = useState<Record<number, string>>({});
   const [pendingSceneId, setPendingSceneId] = useState<number | null>(null);
+  const [hoverImagePreview, setHoverImagePreview] = useState<HoverImagePreviewState | null>(null);
+  const [sceneReferencePicker, setSceneReferencePicker] = useState<SceneReferencePickerState | null>(null);
   const [isImportingFlowResult, setIsImportingFlowResult] = useState(false);
   const flowResultInputRef = useRef<HTMLInputElement | null>(null);
+  const hoverPreviewTimerRef = useRef<number | null>(null);
+  const hoverPreviewRequestKeyRef = useRef<string | null>(null);
+
+  const showHoverImagePreview = (
+    event: React.MouseEvent<HTMLElement>,
+    imageUrl?: string,
+    label?: string
+  ) => {
+    if (!imageUrl) {
+      hideHoverImagePreview();
+      return;
+    }
+    const previewSrc = getMediaSrc(imageUrl);
+    if (!previewSrc) {
+      hideHoverImagePreview();
+      return;
+    }
+
+    const previewWidth = Math.min(window.innerWidth * 0.56, 520);
+    const previewHeight = Math.min(window.innerHeight * 0.72, 560);
+    const offset = 8;
+    const margin = 12;
+    const targetRect = event.currentTarget.getBoundingClientRect();
+
+    let left = targetRect.right + offset;
+    if (left + previewWidth + margin > window.innerWidth) {
+      left = targetRect.left - previewWidth - offset;
+    }
+    left = Math.max(margin, Math.min(left, window.innerWidth - previewWidth - margin));
+
+    let top = targetRect.top;
+    top = Math.max(margin, Math.min(top, window.innerHeight - previewHeight - margin));
+
+    const requestKey = `${previewSrc}|${label || ''}|${Math.round(left)}|${Math.round(top)}`;
+    hoverPreviewRequestKeyRef.current = requestKey;
+
+    if (hoverPreviewTimerRef.current !== null) {
+      window.clearTimeout(hoverPreviewTimerRef.current);
+      hoverPreviewTimerRef.current = null;
+    }
+
+    hoverPreviewTimerRef.current = window.setTimeout(() => {
+      if (hoverPreviewRequestKeyRef.current !== requestKey) return;
+      setHoverImagePreview({
+        src: previewSrc,
+        label,
+        x: left,
+        y: top,
+      });
+      hoverPreviewTimerRef.current = null;
+    }, 1000);
+  };
+
+  const hideHoverImagePreview = () => {
+    hoverPreviewRequestKeyRef.current = null;
+    if (hoverPreviewTimerRef.current !== null) {
+      window.clearTimeout(hoverPreviewTimerRef.current);
+      hoverPreviewTimerRef.current = null;
+    }
+    setHoverImagePreview(null);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (hoverPreviewTimerRef.current !== null) {
+        window.clearTimeout(hoverPreviewTimerRef.current);
+        hoverPreviewTimerRef.current = null;
+      }
+    };
+  }, []);
 
   const setCharacterReferences = useCallback((next: React.SetStateAction<CharacterReferenceItem[]>) => {
     onStoryReferencesChange(prev => {
@@ -902,27 +1004,120 @@ export function ImagesStep({
     }
   };
 
-  const parseCharactersInScene = (charsRaw: unknown): string | null => {
-    return normalizeCharactersField(charsRaw) || null;
-  };
-
   const parseSceneReferenceIds = (raw: unknown): number[] => {
     const normalized = normalizeCharactersField(raw);
     if (!normalized) return [];
 
-    return normalized
-      .split(',')
-      .map(part => parseInt(part.trim(), 10))
-      .filter(id => !isNaN(id) && id > 0);
+    return Array.from(new Set(
+      normalized
+        .split(',')
+        .map(part => toPositiveInt(part))
+        .filter((id): id is number => id !== null)
+    ));
   };
 
-  const getCharactersInScene = (segment: TranscriptionSegment): string | null => {
-    return parseCharactersInScene(segment.IdOfTheCharactersInTheScene);
+  const serializeSceneReferenceIds = (ids: number[]): string | undefined => {
+    const normalizedIds = Array.from(new Set(
+      ids
+        .map(id => toPositiveInt(id))
+        .filter((id): id is number => id !== null)
+    ));
+    if (normalizedIds.length === 0) return undefined;
+    return normalizedIds.join(', ');
   };
 
-  const getLocationsInScene = (segment: TranscriptionSegment): string | null => {
-    return normalizeCharactersField(segment.IdOfTheLocationInTheScene) || null;
+  const getSceneCharacterIds = (segment: TranscriptionSegment): number[] => {
+    return parseSceneReferenceIds(segment.IdOfTheCharactersInTheScene);
   };
+
+  const getSceneLocationIds = (segment: TranscriptionSegment): number[] => {
+    return parseSceneReferenceIds(segment.IdOfTheLocationInTheScene);
+  };
+
+  useEffect(() => {
+    if (!sceneReferencePicker) return;
+
+    const segment = segments.find(item => item.id === sceneReferencePicker.segmentId);
+    if (!segment) {
+      setSceneReferencePicker(null);
+      return;
+    }
+
+    if (sceneReferencePicker.kind === 'character') {
+      const index = sceneReferencePicker.characterIndex;
+      const ids = getSceneCharacterIds(segment);
+      if (typeof index !== 'number' || index < 0 || index >= ids.length) {
+        setSceneReferencePicker(null);
+      }
+    }
+  }, [sceneReferencePicker, segments]);
+
+  useEffect(() => {
+    if (!sceneReferencePicker) return;
+
+    const handlePointerDownOutside = (event: MouseEvent) => {
+      const target = event.target as HTMLElement | null;
+      if (!target) return;
+      if (target.closest('[data-scene-reference-root="true"]')) return;
+      setSceneReferencePicker(null);
+    };
+
+    window.addEventListener('mousedown', handlePointerDownOutside);
+    return () => window.removeEventListener('mousedown', handlePointerDownOutside);
+  }, [sceneReferencePicker]);
+
+  const updateSceneCharacterIds = useCallback((segmentId: number, ids: number[]) => {
+    if (!onSegmentsUpdate) return;
+
+    const nextValue = serializeSceneReferenceIds(ids);
+    const newSegments = segments.map(segment =>
+      segment.id === segmentId
+        ? { ...segment, IdOfTheCharactersInTheScene: nextValue }
+        : segment
+    );
+    onSegmentsUpdate(newSegments);
+  }, [onSegmentsUpdate, segments]);
+
+  const updateSceneLocationId = useCallback((segmentId: number, nextLocationId: number | null) => {
+    if (!onSegmentsUpdate) return;
+
+    const nextValue = nextLocationId ? String(nextLocationId) : undefined;
+    const newSegments = segments.map(segment =>
+      segment.id === segmentId
+        ? { ...segment, IdOfTheLocationInTheScene: nextValue }
+        : segment
+    );
+    onSegmentsUpdate(newSegments);
+  }, [onSegmentsUpdate, segments]);
+
+  const addCharacterToScene = useCallback((segment: TranscriptionSegment, preferredId?: number) => {
+    const currentIds = getSceneCharacterIds(segment);
+    const availableIds = characterReferences
+      .map(reference => reference.id)
+      .filter(id => id > 0 && !currentIds.includes(id));
+
+    const nextCharacterId = preferredId && availableIds.includes(preferredId)
+      ? preferredId
+      : availableIds[0];
+    if (!nextCharacterId) return;
+
+    updateSceneCharacterIds(segment.id, [...currentIds, nextCharacterId]);
+  }, [characterReferences, updateSceneCharacterIds]);
+
+  const replaceSceneCharacterAtIndex = useCallback((segment: TranscriptionSegment, index: number, nextCharacterId: number) => {
+    const currentIds = getSceneCharacterIds(segment);
+    if (index < 0 || index >= currentIds.length) return;
+    const updatedIds = [...currentIds];
+    updatedIds[index] = nextCharacterId;
+    updateSceneCharacterIds(segment.id, updatedIds);
+  }, [updateSceneCharacterIds]);
+
+  const removeSceneCharacterAtIndex = useCallback((segment: TranscriptionSegment, index: number) => {
+    const currentIds = getSceneCharacterIds(segment);
+    if (index < 0 || index >= currentIds.length) return;
+    const updatedIds = currentIds.filter((_, currentIndex) => currentIndex !== index);
+    updateSceneCharacterIds(segment.id, updatedIds);
+  }, [updateSceneCharacterIds]);
 
   const getSceneReferencePaths = (segment: TranscriptionSegment): string[] => {
     const characterIds = parseSceneReferenceIds(segment.IdOfTheCharactersInTheScene);
@@ -1015,7 +1210,7 @@ export function ImagesStep({
       const sceneReferencePaths = getSceneReferencePaths(segment);
       const ingredientImageUrls = Array.from(
         new Set([...explicitIngredientPaths, ...sceneReferencePaths])
-      ).slice(0, 3);
+      ).slice(0, getIngredientLimitByService(service));
 
       tasks.push({
         taskId: `seg-${segment.id}`,
@@ -1529,10 +1724,19 @@ export function ImagesStep({
     });
   };
 
-  // Upload de imagem de ingrediente (max 3 por segmento)
+  // Upload de imagem de ingrediente (limite depende do serviço)
   const handleIngredientUpload = async (segmentId: number, file: File) => {
+    const segment = segments.find(item => item.id === segmentId);
+    const serviceId = segment ? getEffectiveService(segment) : 'veo3';
+    const referenceLimit = getIngredientLimitByService(serviceId);
     const current = ingredientImages[segmentId] || [];
-    if (current.length >= 3) return; // limite de 3
+    const sceneReferencePaths = segment ? getSceneReferencePaths(segment) : [];
+    const currentReferenceCount = Array.from(new Set([...current, ...sceneReferencePaths])).length;
+    if (currentReferenceCount >= referenceLimit) {
+      alert(`Limite de ${referenceLimit} referências atingido para este serviço.`);
+      return;
+    }
+
     setUploadingSegments(prev => new Set([...prev, segmentId]));
     try {
       if (!window.electron?.videoProject?.saveImage) {
@@ -1588,7 +1792,7 @@ export function ImagesStep({
     { id: 'veo2',           label: 'Veo 2 (API)',      icon: '🌊', description: 'Google Veo 2 via API oficial' },
   ];
 
-  const IMAGE_SERVICES = new Set(['flow-image', 'vertex-image', 'flow-image-api', 'flow-image-pro']);
+  const IMAGE_SERVICES = IMAGE_SERVICE_IDS;
   const IMAGE_API_SERVICES = new Set(['flow-image-api', 'flow-image-pro']);
   const FLOW_SERVICES = new Set(['veo3', 'veo3-lite-flow', 'veo2-flow', 'flow-image']);
   const getImageModelByService = (serviceId: string): string =>
@@ -1597,10 +1801,7 @@ export function ImagesStep({
       : 'gemini-3.1-flash-image-preview';
   const supportsIngredientsForService = (serviceId: string): boolean =>
     serviceId === 'veo3'
-    || serviceId === 'flow-image'
-    || serviceId === 'vertex-image'
-    || serviceId === 'flow-image-api'
-    || serviceId === 'flow-image-pro'
+    || IMAGE_SERVICE_IDS.has(serviceId)
     || serviceId === 'veo3-api'
     || serviceId === 'veo3-fast-api';
 
@@ -1712,7 +1913,7 @@ export function ImagesStep({
         const isIngredients = !isLiteFlow && isIngredientsExplicit;
         const baseIngredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
         const ingredientPaths = isIngredients
-          ? Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3)
+          ? Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, getIngredientLimitByService(service))
           : [];
 
         if (isLiteFlow && isIngredientsExplicit) {
@@ -1824,7 +2025,7 @@ export function ImagesStep({
         const isIngredients = isIngredientsExplicit || sceneReferencePaths.length > 0;
         const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
         
-        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, getIngredientLimitByService(service));
 
         if (isIngredients && ingredientPaths.length === 0) {
           if (!silent) alert('Nenhuma imagem de ingrediente, personagem ou lugar disponível para gerar.');
@@ -1864,7 +2065,7 @@ export function ImagesStep({
         const sceneReferencePaths = getSceneReferencePaths(segment);
         const isIngredients = isIngredientsExplicit || sceneReferencePaths.length > 0;
         const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
-        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, getIngredientLimitByService(service));
 
         if (isIngredients && ingredientPaths.length === 0) {
           if (!silent) alert('Nenhuma imagem de ingrediente, personagem ou lugar disponível para gerar.');
@@ -1912,7 +2113,7 @@ export function ImagesStep({
         const isIngredients = isIngredientsExplicit || sceneReferencePaths.length > 0;
         const baseIngredientPaths = isIngredientsExplicit ? (ingredientImages[segmentId] || []) : [];
         
-        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3);
+        const ingredientPaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, getIngredientLimitByService(service));
 
         if (isIngredients && ingredientPaths.length === 0) {
           if (!silent) alert('Nenhuma imagem de ingrediente, personagem ou lugar disponível para gerar.');
@@ -1968,7 +2169,7 @@ export function ImagesStep({
         const isIngredients = !isLiteApi && isIngredientsExplicit;
         const baseIngredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
         const ingredientPaths = isIngredients
-          ? Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, 3)
+          ? Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, getIngredientLimitByService(service))
           : [];
 
         if (isLiteApi && isIngredientsExplicit) {
@@ -2455,6 +2656,25 @@ export function ImagesStep({
                           });
                           return next;
                         });
+                        if (IMAGE_SERVICES.has(svc.id)) {
+                          setIngredientMode(prev => {
+                            const next = { ...prev };
+                            Array.from(selectedScenes).forEach(id => {
+                              next[id] = 'ingredients';
+                            });
+                            return next;
+                          });
+                        } else if (!supportsIngredientsForService(svc.id)) {
+                          setIngredientMode(prev => {
+                            const next = { ...prev };
+                            Array.from(selectedScenes).forEach(id => {
+                              if (next[id] === 'ingredients') {
+                                next[id] = 'frames';
+                              }
+                            });
+                            return next;
+                          });
+                        }
                         setShowBatchSettings(false);
                       }}
                       className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-all outline-none"
@@ -2620,6 +2840,37 @@ export function ImagesStep({
           const transitionLabel = segment.transition
             ? TRANSITIONS[segment.transition as Transition]?.label || segment.transition
             : '';
+          const sceneCharacterIds = getSceneCharacterIds(segment);
+          const sceneLocationIds = getSceneLocationIds(segment);
+          const sceneLocationId = sceneLocationIds[0] ?? null;
+          const sceneCharacterSlots = sceneCharacterIds.map((id, index) => ({
+            id,
+            index,
+            reference: sortedCharacterReferences.find(reference => reference.id === id) || null,
+          }));
+          const sceneLocationReference = sceneLocationId
+            ? (sortedLocationReferences.find(reference => reference.id === sceneLocationId) || null)
+            : null;
+          const availableCharacterIds = sortedCharacterReferences
+            .map(reference => reference.id)
+            .filter(id => !sceneCharacterIds.includes(id));
+          const segmentManualIngredients = ingredientImages[segment.id] || [];
+          const segmentSceneReferencePaths = getSceneReferencePaths(segment);
+          const segmentReferenceLimit = getIngredientLimitByService(effectiveService);
+          const segmentTotalReferenceCount = Array.from(new Set([
+            ...segmentManualIngredients,
+            ...segmentSceneReferencePaths,
+          ])).length;
+          const canAddCharacterToScene = Boolean(onSegmentsUpdate)
+            && availableCharacterIds.length > 0
+            && segmentTotalReferenceCount < segmentReferenceLimit;
+          const canAddLocationToScene = Boolean(onSegmentsUpdate)
+            && !sceneLocationId
+            && sortedLocationReferences.length > 0
+            && segmentTotalReferenceCount < segmentReferenceLimit;
+          const isReferencesDisabled = !onSegmentsUpdate || isGenerating || isUploading;
+          const isLocationPickerOpen = sceneReferencePicker?.segmentId === segment.id
+            && sceneReferencePicker.kind === 'location';
 
           return (
             <div
@@ -2707,23 +2958,33 @@ export function ImagesStep({
                   const isIngredientsMode = supportsIngredientsForService(svc) && ingredientMode[segment.id] === 'ingredients';
                   const showCarousel = isVideoService && hasImage && !isVideo(segment.imageUrl) && !isIngredientsMode;
 
-                  // 0. MODO INGREDIENTS: 3 slots de upload de imagem
+                  // 0. MODO INGREDIENTS
                   if (isIngredientsMode) {
                     const imgs = ingredientImages[segment.id] || [];
+                    const ingredientLimit = getIngredientLimitByService(svc);
+                    const maxManualSlots = Math.max(0, ingredientLimit - segmentSceneReferencePaths.length);
+                    const slotCount = Math.max(1, Math.max(imgs.length, maxManualSlots));
+                    const slotColumnsClass = ingredientLimit > DEFAULT_INGREDIENT_LIMIT
+                      ? 'grid-cols-5'
+                      : 'grid-cols-3';
+                    const canAddIngredient = segmentTotalReferenceCount < ingredientLimit;
+
                     return (
                       <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/5 to-purple-500/5 flex items-center justify-center p-4">
-                        <div className="flex gap-3 items-center justify-center w-full">
-                          {[0, 1, 2].map(idx => {
+                        <div className={`grid ${slotColumnsClass} gap-2 w-full max-w-[520px]`}>
+                          {Array.from({ length: slotCount }, (_, idx) => {
                             const imgUrl = imgs[idx];
                             if (imgUrl) {
                               return (
-                                <div key={idx} className="relative w-1/3 aspect-square rounded-xl overflow-hidden border-2 border-cyan-500/30 group/slot">
+                                <div key={idx} className="relative aspect-square rounded-xl overflow-hidden border-2 border-cyan-500/30 group/slot">
                                   <img
                                     src={getMediaSrc(imgUrl)}
                                     className="w-full h-full object-cover"
                                     alt={`Ingrediente ${idx + 1}`}
                                     loading="lazy"
                                     decoding="async"
+                                    onMouseEnter={(e) => showHoverImagePreview(e, imgUrl, `Ingrediente ${idx + 1}`)}
+                                    onMouseLeave={hideHoverImagePreview}
                                   />
                                   <div className="absolute inset-0 bg-black/60 opacity-0 group-hover/slot:opacity-100 transition-opacity flex items-center justify-center gap-1.5">
                                     <button
@@ -2747,13 +3008,21 @@ export function ImagesStep({
                               );
                             }
                             return (
-                              <label key={idx} className="w-1/3 aspect-square rounded-xl border-2 border-dashed border-cyan-500/25 hover:border-cyan-400/50 flex flex-col items-center justify-center cursor-pointer transition-all bg-black/20 hover:bg-cyan-500/10">
+                              <label
+                                key={idx}
+                                className={`aspect-square rounded-xl border-2 border-dashed flex flex-col items-center justify-center transition-all bg-black/20 ${
+                                  canAddIngredient
+                                    ? 'border-cyan-500/25 hover:border-cyan-400/50 cursor-pointer hover:bg-cyan-500/10'
+                                    : 'border-white/10 cursor-not-allowed opacity-60'
+                                }`}
+                              >
                                 <span className="text-cyan-400/60 text-2xl mb-1">+</span>
                                 <span className="text-white/30 text-[10px]">Imagem {idx + 1}</span>
                                 <input
                                   type="file"
                                   accept="image/*"
                                   className="hidden"
+                                  disabled={!canAddIngredient}
                                   onChange={e => {
                                     const file = e.target.files?.[0];
                                     if (file) handleIngredientUpload(segment.id, file);
@@ -2763,8 +3032,8 @@ export function ImagesStep({
                             );
                           })}
                         </div>
-                        <div className="absolute bottom-2 right-2 px-2 py-0.5 bg-black/60 text-white/40 text-[10px] rounded backdrop-blur-sm">
-                          Ingredients · {imgs.length}/3
+                        <div className="absolute bottom-2 left-2 px-2 py-0.5 bg-black/60 text-white/40 text-[10px] rounded backdrop-blur-sm">
+                          Ingredients - {segmentTotalReferenceCount}/{ingredientLimit}
                         </div>
                       </div>
                     );
@@ -2982,27 +3251,319 @@ export function ImagesStep({
                       ✨ {transitionLabel}
                     </span>
                   )}
-                  {(() => {
-                    const chars = getCharactersInScene(segment);
-                    if (!chars) return null;
-                    return (
-                      <span className="px-2 py-0.5 bg-yellow-500/20 text-yellow-300 rounded text-xs">
-                        🧑‍🤝‍🧑 {chars}
-                      </span>
-                    );
-                  })()}
-                  {(() => {
-                    const locations = getLocationsInScene(segment);
-                    if (!locations) return null;
-                    return (
-                      <span className="px-2 py-0.5 bg-cyan-500/20 text-cyan-300 rounded text-xs">
-                        📍 {locations}
-                      </span>
-                    );
-                  })()}
                 </div>
 
                 <p className="text-white/80 text-sm italic">"{segment.text}"</p>
+
+                <div className="space-y-2">
+                  <div className="text-[11px] text-white/45">
+                    Referencias usadas: {segmentTotalReferenceCount}/{segmentReferenceLimit} imagens
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    {sceneCharacterSlots.map(({ id: characterId, index, reference }) => {
+                      const isPickerOpen = sceneReferencePicker?.segmentId === segment.id
+                        && sceneReferencePicker.kind === 'character'
+                        && sceneReferencePicker.characterIndex === index;
+                      const replacementOptions = sortedCharacterReferences.filter(item => item.id !== characterId);
+
+                      return (
+                        <div key={`scene-char-preview-${segment.id}-${characterId}-${index}`} className="relative" data-scene-reference-root="true">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isReferencesDisabled) return;
+                              setSceneReferencePicker(current =>
+                                current?.segmentId === segment.id
+                                && current.kind === 'character'
+                                && current.characterIndex === index
+                              ? null
+                              : { segmentId: segment.id, kind: 'character', characterIndex: index }
+                              );
+                            }}
+                            onMouseEnter={(e) => showHoverImagePreview(e, reference?.imageUrl, reference?.character || `Personagem ${characterId}`)}
+                            onMouseLeave={hideHoverImagePreview}
+                            disabled={isReferencesDisabled}
+                            className={`group/ref-thumb relative w-16 h-16 rounded-md border bg-black/30 overflow-hidden transition-all ${
+                              isPickerOpen
+                                ? 'border-yellow-300 ring-2 ring-yellow-300/30'
+                                : 'border-yellow-500/30 hover:border-yellow-300/60'
+                            } ${isReferencesDisabled ? 'opacity-60 cursor-not-allowed' : ''}`}
+                          >
+                            {reference?.imageUrl ? (
+                              <img
+                                src={getMediaSrc(reference.imageUrl)}
+                                alt={reference.character || `Personagem ${characterId}`}
+                                className="w-full h-full object-cover"
+                                loading="lazy"
+                                decoding="async"
+                              />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-[10px] text-white/30 text-center px-1">
+                                Sem imagem
+                              </div>
+                            )}
+                            <span className="absolute inset-0 pointer-events-none flex items-center justify-center bg-black/35 opacity-0 group-hover/ref-thumb:opacity-100 transition-opacity">
+                              <span className="w-9 h-9 rounded-full border-2 border-white bg-black/35 flex items-center justify-center">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                  <path d="M12 20h9"/>
+                                  <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>
+                                </svg>
+                              </span>
+                            </span>
+                          </button>
+                          <p className="mt-1 text-[10px] text-yellow-200 truncate w-16" title={reference?.character || `Personagem ${characterId}`}>
+                            {reference?.character || `Personagem ${characterId}`}
+                          </p>
+
+                          {isPickerOpen && (
+                            <div
+                              className="absolute top-full left-0 mt-2 z-40 w-[230px] rounded-lg border border-yellow-500/30 bg-[#1a1a2e] p-2 shadow-xl"
+                              onMouseLeave={() => setSceneReferencePicker(null)}
+                            >
+                              <div className="flex items-center justify-between mb-2">
+                                <span className="text-[11px] text-yellow-200 font-medium">Personagem</span>
+                                <div className="flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      if (!canAddCharacterToScene) return;
+                                      addCharacterToScene(segment, availableCharacterIds[0]);
+                                    }}
+                                    disabled={!canAddCharacterToScene || isReferencesDisabled}
+                                    className={`w-6 h-6 rounded border text-xs transition-all ${
+                                      !canAddCharacterToScene || isReferencesDisabled
+                                        ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                                        : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/30'
+                                    }`}
+                                    title="Adicionar outro personagem"
+                                  >
+                                    +
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      removeSceneCharacterAtIndex(segment, index);
+                                      setSceneReferencePicker(null);
+                                    }}
+                                    disabled={isReferencesDisabled}
+                                    className={`w-6 h-6 rounded border text-xs transition-all ${
+                                      isReferencesDisabled
+                                        ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                                        : 'bg-red-500/20 border-red-500/40 text-red-200 hover:bg-red-500/30'
+                                    }`}
+                                    title="Remover este personagem"
+                                  >
+                                    x
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-4 gap-1">
+                                {replacementOptions.length === 0 ? (
+                                  <div className="col-span-4 text-[11px] text-white/40 text-center py-2">
+                                    Nenhum outro personagem disponivel
+                                  </div>
+                                ) : (
+                                  replacementOptions.map(option => (
+                                    <button
+                                      key={`scene-char-replace-${segment.id}-${index}-${option.id}`}
+                                      type="button"
+                                      onClick={() => {
+                                        replaceSceneCharacterAtIndex(segment, index, option.id);
+                                        setSceneReferencePicker(null);
+                                      }}
+                                      onMouseEnter={(e) => showHoverImagePreview(e, option.imageUrl, option.character || `Personagem ${option.id}`)}
+                                      onMouseLeave={hideHoverImagePreview}
+                                      disabled={isReferencesDisabled}
+                                      className={`w-full aspect-square rounded border overflow-hidden transition-all ${
+                                        isReferencesDisabled
+                                          ? 'opacity-60 cursor-not-allowed border-white/10'
+                                          : 'border-white/20 hover:border-yellow-300/60'
+                                      }`}
+                                      title={option.character || `Personagem ${option.id}`}
+                                    >
+                                      {option.imageUrl ? (
+                                        <img
+                                          src={getMediaSrc(option.imageUrl)}
+                                          alt={option.character || `Personagem ${option.id}`}
+                                          className="w-full h-full object-cover"
+                                          loading="lazy"
+                                          decoding="async"
+                                        />
+                                      ) : (
+                                        <div className="w-full h-full flex items-center justify-center text-[9px] text-white/35 px-1 text-center">
+                                          #{option.id}
+                                        </div>
+                                      )}
+                                    </button>
+                                  ))
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+
+                    {sceneCharacterSlots.length === 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (!canAddCharacterToScene) return;
+                          addCharacterToScene(segment, availableCharacterIds[0]);
+                        }}
+                        disabled={!canAddCharacterToScene || isReferencesDisabled}
+                        className={`w-16 h-16 rounded-md border-2 border-dashed text-xs transition-all ${
+                          !canAddCharacterToScene || isReferencesDisabled
+                            ? 'border-white/10 text-white/25 cursor-not-allowed'
+                            : 'border-yellow-500/40 text-yellow-200 hover:border-yellow-300/70 hover:bg-yellow-500/10'
+                        }`}
+                        title="Adicionar personagem"
+                      >
+                        + P
+                      </button>
+                    )}
+
+                    <div className="relative" data-scene-reference-root="true">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isReferencesDisabled) return;
+                          setSceneReferencePicker(current =>
+                            current?.segmentId === segment.id && current.kind === 'location'
+                              ? null
+                              : { segmentId: segment.id, kind: 'location' }
+                          );
+                        }}
+                        onMouseEnter={(e) => showHoverImagePreview(e, sceneLocationReference?.imageUrl, sceneLocationReference?.location || 'Local')}
+                        onMouseLeave={hideHoverImagePreview}
+                        disabled={isReferencesDisabled || sortedLocationReferences.length === 0}
+                        className={`group/ref-thumb relative w-16 h-16 rounded-md border bg-black/30 overflow-hidden transition-all ${
+                          isLocationPickerOpen
+                            ? 'border-cyan-300 ring-2 ring-cyan-300/30'
+                            : 'border-cyan-500/30 hover:border-cyan-300/60'
+                        } ${(isReferencesDisabled || sortedLocationReferences.length === 0) ? 'opacity-60 cursor-not-allowed' : ''}`}
+                      >
+                        {sceneLocationReference?.imageUrl ? (
+                          <img
+                            src={getMediaSrc(sceneLocationReference.imageUrl)}
+                            alt={sceneLocationReference.location || `Lugar ${sceneLocationReference?.id || ''}`}
+                            className="w-full h-full object-cover"
+                            loading="lazy"
+                            decoding="async"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-[10px] text-white/30 text-center px-1">
+                            Sem local
+                          </div>
+                        )}
+                        <span className="absolute inset-0 pointer-events-none flex items-center justify-center bg-black/35 opacity-0 group-hover/ref-thumb:opacity-100 transition-opacity">
+                          <span className="w-9 h-9 rounded-full border-2 border-white bg-black/35 flex items-center justify-center">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M12 20h9"/>
+                              <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>
+                            </svg>
+                          </span>
+                        </span>
+                      </button>
+                      <p className="mt-1 text-[10px] text-cyan-200 truncate w-16" title={sceneLocationReference?.location || 'Local'}>
+                        {sceneLocationReference?.location || 'Local'}
+                      </p>
+
+                      {isLocationPickerOpen && (
+                        <div
+                          className="absolute top-full left-0 mt-2 z-40 w-[230px] rounded-lg border border-cyan-500/30 bg-[#1a1a2e] p-2 shadow-xl"
+                          onMouseLeave={() => setSceneReferencePicker(null)}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <span className="text-[11px] text-cyan-200 font-medium">Local</span>
+                            <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (!canAddLocationToScene || isReferencesDisabled) return;
+                                  const firstLocationId = sortedLocationReferences[0]?.id;
+                                  if (!firstLocationId) return;
+                                  updateSceneLocationId(segment.id, firstLocationId);
+                                }}
+                                disabled={!canAddLocationToScene || isReferencesDisabled}
+                                className={`w-6 h-6 rounded border text-xs transition-all ${
+                                  !canAddLocationToScene || isReferencesDisabled
+                                    ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                                    : 'bg-cyan-500/20 border-cyan-500/40 text-cyan-200 hover:bg-cyan-500/30'
+                                }`}
+                                title="Adicionar local"
+                              >
+                                +
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  updateSceneLocationId(segment.id, null);
+                                  setSceneReferencePicker(null);
+                                }}
+                                disabled={isReferencesDisabled || !sceneLocationId}
+                                className={`w-6 h-6 rounded border text-xs transition-all ${
+                                  isReferencesDisabled || !sceneLocationId
+                                    ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                                    : 'bg-red-500/20 border-red-500/40 text-red-200 hover:bg-red-500/30'
+                                }`}
+                                title="Remover local"
+                              >
+                                x
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-4 gap-1">
+                            {sortedLocationReferences.filter(item => item.id !== sceneLocationId).length === 0 ? (
+                              <div className="col-span-4 text-[11px] text-white/40 text-center py-2">
+                                Nenhum outro local disponivel
+                              </div>
+                            ) : (
+                              sortedLocationReferences
+                                .filter(item => item.id !== sceneLocationId)
+                                .map(option => (
+                                  <button
+                                    key={`scene-location-replace-${segment.id}-${option.id}`}
+                                    type="button"
+                                    onClick={() => {
+                                      updateSceneLocationId(segment.id, option.id);
+                                      setSceneReferencePicker(null);
+                                    }}
+                                    onMouseEnter={(e) => showHoverImagePreview(e, option.imageUrl, option.location || `Lugar ${option.id}`)}
+                                    onMouseLeave={hideHoverImagePreview}
+                                    disabled={isReferencesDisabled || (!sceneLocationId && !canAddLocationToScene)}
+                                    className={`w-full aspect-square rounded border overflow-hidden transition-all ${
+                                      isReferencesDisabled || (!sceneLocationId && !canAddLocationToScene)
+                                        ? 'opacity-60 cursor-not-allowed border-white/10'
+                                        : 'border-white/20 hover:border-cyan-300/60'
+                                    }`}
+                                    title={option.location || `Lugar ${option.id}`}
+                                  >
+                                    {option.imageUrl ? (
+                                      <img
+                                        src={getMediaSrc(option.imageUrl)}
+                                        alt={option.location || `Lugar ${option.id}`}
+                                        className="w-full h-full object-cover"
+                                        loading="lazy"
+                                        decoding="async"
+                                      />
+                                    ) : (
+                                      <div className="w-full h-full flex items-center justify-center text-[9px] text-white/35 px-1 text-center">
+                                        #{option.id}
+                                      </div>
+                                    )}
+                                  </button>
+                                ))
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
 
                 {onAnalyzeScene && (
                   <div className="flex items-center gap-2">
@@ -3186,11 +3747,12 @@ export function ImagesStep({
                                 key={svc.id}
                                 onClick={() => {
                                   setSelectedService(prev => ({ ...prev, [segment.id]: svc.id }));
-                                  // Resetar count para 1 ao trocar para serviço de vídeo
                                   if (svc.id === 'veo3' || svc.id === 'veo3-lite-flow' || svc.id === 'veo2-flow' || svc.id === 'grok') {
                                     setImageCount(prev => ({ ...prev, [segment.id]: 1 }));
                                   }
-                                  // Resetar modo ingredients quando o serviço não suportar ingredients (ex.: modelos Lite)
+                                  if (IMAGE_SERVICES.has(svc.id)) {
+                                    setIngredientMode(prev => ({ ...prev, [segment.id]: 'ingredients' }));
+                                  }
                                   if (!supportsIngredientsForService(svc.id) && ingredientMode[segment.id] === 'ingredients') {
                                     setIngredientMode(prev => ({ ...prev, [segment.id]: 'frames' }));
                                   }
@@ -3221,6 +3783,41 @@ export function ImagesStep({
           );
         })}
       </div>
+
+      {hoverImagePreview && (
+        <div
+          className="fixed z-[120] pointer-events-none"
+          style={{
+            left: hoverImagePreview.x,
+            top: hoverImagePreview.y,
+          }}
+        >
+          <div
+            className="rounded-xl border border-white/20 bg-black/85 p-1.5 shadow-2xl backdrop-blur-sm overflow-hidden"
+            style={{
+              maxWidth: 'min(56vw, 520px)',
+              maxHeight: 'min(72vh, 560px)',
+            }}
+          >
+            <div className="rounded-lg overflow-hidden bg-black/40">
+              <img
+                src={hoverImagePreview.src}
+                alt={hoverImagePreview.label || 'Preview'}
+                className="block w-auto h-auto object-contain max-w-full"
+                style={{
+                  maxWidth: 'min(56vw, 520px)',
+                  maxHeight: 'min(72vh, 520px)',
+                }}
+              />
+            </div>
+            {hoverImagePreview.label && (
+              <p className="text-[11px] text-white/75 px-1 pt-1.5 leading-tight max-w-[520px] truncate">
+                {hoverImagePreview.label}
+              </p>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Modal picker de imagens geradas pelo Flow (fila) */}
       {pickerQueue.length > 0 && (() => {
@@ -3892,3 +4489,4 @@ export function ImagesStep({
     </div>
   );
 }
+
