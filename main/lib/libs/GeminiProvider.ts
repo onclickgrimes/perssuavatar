@@ -52,13 +52,13 @@ function parseGeminiPacket(rawData: string): string | null {
   try {
     // Remove o prefixo de segurança ")]}'" se existir
     let cleanData = rawData.replace(/^\)\]\}'/, '').trim();
-    
+
     // Divide em chunks (cada chunk começa com um número de tamanho)
     // Formato: "160\n[["wrb.fr",...]]]\n926\n[["wrb.fr",...]]"
     const chunks: string[] = [];
     const lines = cleanData.split('\n');
     let currentChunk = '';
-    
+
     for (const line of lines) {
       const trimmed = line.trim();
       // Se a linha é apenas um número, é o início de um novo chunk
@@ -82,23 +82,23 @@ function parseGeminiPacket(rawData: string): string | null {
       try {
         // Tenta fazer parse do JSON
         if (!chunk.startsWith('[')) continue;
-        
+
         const envelope = JSON.parse(chunk);
         if (!Array.isArray(envelope) || !Array.isArray(envelope[0])) continue;
-        
+
         // Verifica se é um envelope wrb.fr
         if (envelope[0][0] !== 'wrb.fr') continue;
-        
+
         const payloadString = envelope[0][2];
         if (!payloadString || typeof payloadString !== 'string') continue;
 
         const data = JSON.parse(payloadString);
-        
+
         // Busca o texto em múltiplos caminhos possíveis
         // IMPORTANTE: data[4][0][0] é o ID (rc_xxx), NÃO o texto!
         // O texto está em data[4][0][1] ou data[4][0][33]
         let textContent: string | null = null;
-        
+
         // Caminho 1: data[4][0][1][0] - resposta principal (ex: ["Tudo"])
         if (data[4]?.[0]?.[1]) {
           const responseArray = data[4][0][1];
@@ -110,7 +110,7 @@ function parseGeminiPacket(rawData: string): string | null {
             }
           }
         }
-        
+
         // Caminho 2: data[4][0][33][0][0] - conteúdo expandido/thinking
         if (!textContent && data[4]?.[0]?.[33]) {
           const expanded = data[4][0][33];
@@ -129,15 +129,15 @@ function parseGeminiPacket(rawData: string): string | null {
             }
           }
         }
-        
+
         // Caminho 3: data[4][0][0] - mas SÓ SE não for um ID
         if (!textContent && data[4]?.[0]?.[0]) {
           const candidate = data[4][0][0];
           // Verifica se é texto real e não um ID
-          if (typeof candidate === 'string' && 
-              candidate.length > 10 && 
-              !candidate.startsWith('rc_') &&
-              !candidate.match(/^[a-z0-9_]+$/)) {
+          if (typeof candidate === 'string' &&
+            candidate.length > 10 &&
+            !candidate.startsWith('rc_') &&
+            !candidate.match(/^[a-z0-9_]+$/)) {
             textContent = candidate;
           }
         }
@@ -148,7 +148,7 @@ function parseGeminiPacket(rawData: string): string | null {
           if (textContent.match(/^rc_[a-f0-9]+$/)) {
             continue;
           }
-          
+
           // Mantém o texto bruto para não quebrar respostas JSON (escapes são relevantes)
           if (!foundText || textContent.length > foundText.length) {
             foundText = textContent;
@@ -180,7 +180,7 @@ export class GeminiProvider {
   private isConnected: boolean = false;
   private _isLoggedIn: boolean = false;
   private _userInfo: GeminiUserInfo | null = null;
-  
+
   // Estado para streaming
   private streamCleanup: StreamCleanupFn | null = null;
   private lastStreamText: string = '';
@@ -202,7 +202,7 @@ export class GeminiProvider {
     };
 
     // Define diretório de dados do usuário (mesmo padrão do TikTok/Instagram)
-    this.userDataDir = this.config.userDataDir || 
+    this.userDataDir = this.config.userDataDir ||
       path.join(app.getPath('userData'), 'provider-cookies', 'profiles', this.config.id);
 
     this.ensureDirectoriesExist();
@@ -218,7 +218,7 @@ export class GeminiProvider {
     if (!fs.existsSync(this.userDataDir)) {
       fs.mkdirSync(this.userDataDir, { recursive: true });
     }
-    
+
     // Diretório para screenshots de debug
     this.debugDir = path.join(this.userDataDir, 'debug-screenshots');
     if (!fs.existsSync(this.debugDir)) {
@@ -231,12 +231,12 @@ export class GeminiProvider {
    */
   private async takeDebugScreenshot(stepName: string): Promise<void> {
     if (!this.page || !this.debugDir) return;
-    
+
     try {
       const timestamp = Date.now();
       const filename = `${timestamp}_${stepName.replace(/[^a-zA-Z0-9]/g, '_')}.png`;
       const filepath = path.join(this.debugDir, filename);
-      
+
       await this.page.screenshot({ path: filepath, fullPage: false });
       console.log(`📸 [Gemini Debug] Screenshot: ${stepName} -> ${filename}`);
     } catch (err) {
@@ -341,6 +341,9 @@ export class GeminiProvider {
       '--no-default-browser-check',
       '--disable-default-apps',
       '--disable-popup-blocking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
       '--new-window',
     ];
 
@@ -487,14 +490,14 @@ export class GeminiProvider {
       // Inicializa sessão CDP para interceptação de rede
       this.cdpClient = await this.page.target().createCDPSession();
       await this.cdpClient.send('Network.enable');
-      
+
       // Habilita Fetch domain para interceptar respostas streaming
       await this.cdpClient.send('Fetch.enable', {
         patterns: [
           { urlPattern: '*StreamGenerate*', requestStage: 'Response' }
         ]
       });
-      
+
       console.log(`📡 [Gemini] CDP Session iniciada (Network + Fetch)`);
 
       this.isConnected = true;
@@ -523,20 +526,20 @@ export class GeminiProvider {
 
     try {
       console.log(`🌐 [Gemini] Navegando para ${GeminiProvider.GEMINI_URL}...`);
-      
-      await this.page.goto(GeminiProvider.GEMINI_URL, { 
+
+      await this.page.goto(GeminiProvider.GEMINI_URL, {
         waitUntil: 'networkidle2',
-        timeout: 30000 
+        timeout: 30000
       });
 
       await this.randomDelay(2000, 3000);
 
       this._isLoggedIn = await this.checkLoginStatus();
-      
+
       // if (this._isLoggedIn) {
       //   await this.extractUserInfo();
       // }
-      
+
       return this._isLoggedIn;
     } catch (error) {
       console.error(`❌ [Gemini] Erro ao navegar:`, error);
@@ -553,7 +556,7 @@ export class GeminiProvider {
     try {
       const currentUrl = this.page.url();
       const pageContent = await this.page.content();
-      
+
       // Se redirecionou para login do Google
       if (currentUrl.includes('accounts.google.com')) {
         console.log(`⚠️ [Gemini] Usuário não está logado (redirecionado para login)`);
@@ -562,11 +565,11 @@ export class GeminiProvider {
       }
 
       // Verifica elementos que indicam login no Gemini
-      const isLoggedIn = pageContent.includes('bard-main-container') || 
-                         pageContent.includes('conversation-container') ||
-                         pageContent.includes('gemini-app') ||
-                         pageContent.includes('model-response') ||
-                         currentUrl.includes('gemini.google.com/app');
+      const isLoggedIn = pageContent.includes('bard-main-container') ||
+        pageContent.includes('conversation-container') ||
+        pageContent.includes('gemini-app') ||
+        pageContent.includes('model-response') ||
+        currentUrl.includes('gemini.google.com/app');
 
       this._isLoggedIn = isLoggedIn;
       console.log(`${isLoggedIn ? '✅' : '⚠️'} [Gemini] Status de login: ${isLoggedIn ? 'logado' : 'não logado'}`);
@@ -587,16 +590,16 @@ export class GeminiProvider {
 
     try {
       console.log(`📍 [Gemini] Extraindo informações do usuário...`);
-      
+
       await this.randomDelay(1000, 2000);
-      
+
       // Tenta extrair informações do usuário do DOM
       const userInfo = await this.page.evaluate(() => {
         // Procura por elementos com email ou nome
         const emailElement = document.querySelector('[data-email]');
         const nameElement = document.querySelector('[data-name]');
         const avatarElement = document.querySelector('img[src*="googleusercontent"]') as HTMLImageElement;
-        
+
         return {
           email: emailElement?.getAttribute('data-email') || undefined,
           name: nameElement?.getAttribute('data-name') || undefined,
@@ -632,7 +635,7 @@ export class GeminiProvider {
 
     while (Date.now() - startTime < timeoutMs) {
       const currentUrl = this.page.url();
-      
+
       if (currentUrl.includes('gemini.google.com') && !currentUrl.includes('accounts.google.com')) {
         const isLoggedIn = await this.checkLoginStatus();
         if (isLoggedIn) {
@@ -690,7 +693,7 @@ export class GeminiProvider {
     // Listener para chunks de dados recebidos
     const dataReceivedListener = async (params: any) => {
       if (!this.streamRequestIds.has(params.requestId)) return;
-      
+
       try {
         // Obtém o corpo da resposta até agora
         const { body } = await this.cdpClient!.send('Network.getResponseBody', {
@@ -699,7 +702,7 @@ export class GeminiProvider {
 
         if (body) {
           const fullText = parseGeminiPacket(body);
-          
+
           if (fullText && fullText.length > this.lastStreamText.length) {
             const newChunk = fullText.slice(this.lastStreamText.length);
             this.lastStreamText = fullText;
@@ -722,14 +725,14 @@ export class GeminiProvider {
 
         if (body) {
           const fullText = parseGeminiPacket(body);
-          
+
           if (fullText && fullText.length > this.lastStreamText.length) {
             const newChunk = fullText.slice(this.lastStreamText.length);
             this.lastStreamText = fullText;
             onChunk(newChunk);
           }
         }
-        
+
         this.streamRequestIds.delete(params.requestId);
       } catch (err: any) {
         // Erro esperado quando resposta ainda não está disponível
@@ -742,7 +745,7 @@ export class GeminiProvider {
     this.cdpClient.on('Network.dataReceived', dataReceivedListener);
     // @ts-ignore - CDP event typing
     this.cdpClient.on('Network.loadingFinished', loadingFinishedListener);
-    
+
     console.log(`📡 [Gemini] Stream de respostas iniciado (CDP)`);
 
     // Função de cleanup
@@ -784,7 +787,7 @@ export class GeminiProvider {
       // Função para resetar o timer de "fim da resposta"
       const resetTimer = () => {
         if (silenceTimer) clearTimeout(silenceTimer);
-        
+
         silenceTimer = setTimeout(() => {
           if (hasStarted && finalResponse) {
             cleanup();
@@ -837,7 +840,7 @@ export class GeminiProvider {
               finalResponse = currentText;
             }
           }
-          
+
           cleanup();
           console.log(`✅ [Gemini] Resposta completa (loading finished): ${finalResponse.length} chars`);
           resolve(finalResponse);
@@ -937,17 +940,17 @@ export class GeminiProvider {
     // Verifica se o navegador ainda está conectado
     if (!this.isBrowserConnected()) {
       console.log(`⚠️ [Gemini] Navegador desconectado, reinicializando...`);
-      
+
       // Limpa referências antigas
       this.browser = null;
       this.page = null;
       this.cdpClient = null;
       this._isLoggedIn = false;
-      
+
       // Reinicializa
       await this.init();
       await this.goToGemini();
-      
+
       if (!this._isLoggedIn) {
         throw new Error('Não foi possível reconectar ao Gemini. Faça login novamente.');
       }
@@ -1044,11 +1047,11 @@ export class GeminiProvider {
         const readStream = async (handle: string, fetchRequestId: string, responseStatusCode: number, responseHeaders: any[]) => {
           if (!this.cdpClient || isReading) return;
           isReading = true;
-          
+
           const rawChunks: string[] = [];
           let rawBodyLength = 0;
           let readCount = 0;
-          
+
           try {
             while (true) {
               const result = await this.cdpClient.send('IO.read', {
@@ -1058,10 +1061,10 @@ export class GeminiProvider {
 
               if (result.data) {
                 // Decodifica base64 se necessário
-                const chunk = result.base64Encoded 
+                const chunk = result.base64Encoded
                   ? Buffer.from(result.data, 'base64').toString('utf-8')
                   : result.data;
-                
+
                 rawChunks.push(chunk);
                 rawBodyLength += chunk.length;
 
@@ -1082,7 +1085,7 @@ export class GeminiProvider {
                 const rawBody = rawChunks.join('');
                 console.log(`📡 [Stream] EOF alcançado, repassando ${rawBodyLength} bytes para a página`);
                 await this.cdpClient.send('IO.close', { handle });
-                
+
                 // Repassa os dados para a página usando fulfillRequest
                 try {
                   await this.cdpClient.send('Fetch.fulfillRequest', {
@@ -1116,33 +1119,33 @@ export class GeminiProvider {
           } catch (err: any) {
             console.error(`❌ [Stream] Erro na leitura:`, err.message);
           }
-          
+
           isReading = false;
         };
 
         // Listener para requisições interceptadas pelo Fetch
         const fetchListener = async (params: any) => {
           const { requestId, request, responseStatusCode, responseHeaders } = params;
-          
+
           if (request?.url?.includes('StreamGenerate')) {
             console.log(`📡 [Fetch] StreamGenerate interceptado`);
             touchInactivity();
-            
+
             try {
               // Obtém o stream handle para ler os dados progressivamente
               const streamResult = await this.cdpClient!.send('Fetch.takeResponseBodyAsStream', {
                 requestId
               });
-              
+
               streamHandle = streamResult.stream;
               console.log(`📡 [Fetch] Stream handle obtido: ${streamHandle}`);
-              
+
               // Inicia a leitura do stream (passa requestId e headers para fulfillRequest)
               readStream(streamHandle, requestId, responseStatusCode, responseHeaders);
-              
+
             } catch (err: any) {
               console.error(`❌ [Fetch] Erro ao obter stream:`, err.message);
-              
+
               // Fallback: continua a requisição normalmente
               try {
                 await this.cdpClient!.send('Fetch.continueRequest', { requestId });
@@ -1199,7 +1202,7 @@ export class GeminiProvider {
 
       // Desconecta CDP
       if (this.cdpClient) {
-        await this.cdpClient.detach().catch(() => {});
+        await this.cdpClient.detach().catch(() => { });
         this.cdpClient = null;
       }
 

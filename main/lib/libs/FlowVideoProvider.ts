@@ -298,6 +298,9 @@ export class FlowVideoProvider {
       '--no-default-browser-check',
       '--disable-default-apps',
       '--disable-popup-blocking',
+      '--disable-background-timer-throttling',
+      '--disable-backgrounding-occluded-windows',
+      '--disable-renderer-backgrounding',
       '--new-window',
     ];
 
@@ -708,7 +711,7 @@ export class FlowVideoProvider {
       }
 
       // Trazer a aba para o foreground para evitar que Chrome congele o Execution Context
-      try { await this.page.bringToFront(); } catch (e) {}
+      try { await this.page.bringToFront(); } catch (e) { }
 
       // 1b. Verificar créditos antes de iniciar
       emitProgress('navigating', 'Verificando créditos...');
@@ -1758,7 +1761,7 @@ export class FlowVideoProvider {
 
       if (absPath.startsWith('http://') || absPath.startsWith('https://')) {
         console.log(`🖼️ [Flow] URL detectada, baixando temporariamente para upload...`);
-        
+
         let baseName = '';
         try {
           const urlObj = new URL(absPath);
@@ -1766,11 +1769,11 @@ export class FlowVideoProvider {
         } catch {
           baseName = pathModule.basename(absPath.split('?')[0]);
         }
-        
+
         if (!baseName || baseName === '/' || baseName.trim() === '') {
           baseName = `temp_ref_${targetFrame}_${Buffer.from(absPath).toString('base64').substring(0, 10)}.jpg`;
         }
-        
+
         // Mantém constância do hash/nome da imagem (ex para cruzar dados locais com online)
         const tempFilename = `flow_temp_${baseName}`;
         const tempPath = pathModule.join(this.outputDir, tempFilename);
@@ -1862,7 +1865,7 @@ export class FlowVideoProvider {
           let hashMatchText = filenameOrig.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
           const hashStrValue = hashMatchText ? hashMatchText[1] : '';
           const hashEscaped = JSON.stringify(hashStrValue);
-          
+
           let clickedExistingInGallery = await this.page.evaluate(`(function() {
             var filenameStr = ${filenameEscaped}.toLowerCase();
             var hashStr = ${hashEscaped}.toLowerCase();
@@ -2196,7 +2199,7 @@ export class FlowVideoProvider {
 
       if (absPath.startsWith('http://') || absPath.startsWith('https://')) {
         console.log(`🧪 [Flow] URL detectada, baixando temporariamente para upload...`);
-        
+
         let baseName = '';
         try {
           const urlObj = new URL(absPath);
@@ -2204,11 +2207,11 @@ export class FlowVideoProvider {
         } catch {
           baseName = pathModule.basename(absPath.split('?')[0]);
         }
-        
+
         if (!baseName || baseName === '/' || baseName.trim() === '') {
           baseName = `temp_ingredient_${Buffer.from(absPath).toString('base64').substring(0, 10)}.jpg`;
         }
-        
+
         // Garante a mesma constância de nome para reaproveitamento
         const tempFilename = `flow_temp_${baseName}`;
         const tempPath = pathModule.join(this.outputDir, tempFilename);
@@ -2296,7 +2299,7 @@ export class FlowVideoProvider {
       let hashMatchText = filename.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
       const hashStrValue = hashMatchText ? hashMatchText[1] : '';
       const hashEscaped = JSON.stringify(hashStrValue);
-      
+
       const existingClicked = await this.page.evaluate(`(function() {
         var filenameStr = ${filenameEscaped}.toLowerCase();
         var hashStr = ${hashEscaped}.toLowerCase();
@@ -2326,7 +2329,7 @@ export class FlowVideoProvider {
       if (existingClicked) {
         console.log(`✅ [Flow] Imagem existente já selecionada da galeria: ${filename}`);
         await this.randomDelay(800, 1200);
-        
+
         // Clica fora para fechar o popover (pode usar o botão X ou Escape)
         try { await this.page.keyboard.press('Escape'); } catch (e) { /* ignore */ }
         return true;
@@ -2431,9 +2434,9 @@ export class FlowVideoProvider {
         }
 
         if (isImageReady) {
-           console.log(`✅ [Flow] Ingrediente processado e estabilizado! (${Math.round((Date.now() - startWait) / 1000)}s)`);
+          console.log(`✅ [Flow] Ingrediente processado e estabilizado! (${Math.round((Date.now() - startWait) / 1000)}s)`);
         } else {
-           console.warn(`⚠️ [Flow] Timeout ao aguardar processamento total da nova imagem. Apenas seguindo em frente...`);
+          console.warn(`⚠️ [Flow] Timeout ao aguardar processamento total da nova imagem. Apenas seguindo em frente...`);
         }
 
         // Fechar qualquer dialog aberto (fallback de segurança caso o modal de upload não feche sozinho)
@@ -3025,7 +3028,7 @@ export class FlowVideoProvider {
       if (!this.page) throw new Error('Página não disponível');
 
       // Trazer a aba para o foreground para evitar que Chrome congele o Execution Context
-      try { await this.page.bringToFront(); } catch (e) {}
+      try { await this.page.bringToFront(); } catch (e) { }
 
       // 2. Navegar para o Flow se necessário
       const currentUrl = this.page.url();
@@ -3080,7 +3083,7 @@ export class FlowVideoProvider {
           }
         }
         if (uploadedIngredients < ingredientImagePaths.length) {
-           console.warn(`⚠️ [Flow/Img] Apenas ${uploadedIngredients} de ${ingredientImagePaths.length} referências foram enviadas.`);
+          console.warn(`⚠️ [Flow/Img] Apenas ${uploadedIngredients} de ${ingredientImagePaths.length} referências foram enviadas.`);
         }
       }
 
