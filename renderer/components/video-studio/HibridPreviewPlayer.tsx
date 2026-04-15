@@ -290,9 +290,12 @@ export const HibridPreviewPlayer = React.forwardRef(({
   ) => {
     const isVideo = media instanceof HTMLVideoElement;
     const sceneDuration = Math.max(0, segment.end - segment.start);
-    const assetDuration = toPositiveNumber(segment.asset_duration)
-      ?? toPositiveNumber(segment.assetDuration)
-      ?? toPositiveNumber(media.duration);
+    // Preferimos a duracao real do arquivo quando ela ja foi carregada.
+    // Isso evita acelerar demais em projetos antigos com asset_duration incorreto.
+    const mediaDuration = toPositiveNumber(media.duration);
+    const segmentAssetDuration = toPositiveNumber(segment.asset_duration)
+      ?? toPositiveNumber(segment.assetDuration);
+    const assetDuration = mediaDuration ?? segmentAssetDuration;
     const playbackRate = fitVideoToScene && isVideo && assetDuration && sceneDuration > 0
       ? calculatePlaybackRate(assetDuration, sceneDuration)
       : 1;

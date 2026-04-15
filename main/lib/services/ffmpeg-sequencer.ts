@@ -26,6 +26,11 @@ interface SceneAudioCandidate {
   playbackTempo: number;
 }
 
+interface MediaProbeInfo {
+  hasAudio: boolean;
+  durationSec: number | null;
+}
+
 export class FFmpegSequencer {
   constructor(private outputDir: string, private tempDir: string) {
     if (!fs.existsSync(tempDir)) {
@@ -214,6 +219,18 @@ export class FFmpegSequencer {
 
   private clamp(value: number, min: number, max: number): number {
     return Math.min(max, Math.max(min, value));
+  }
+
+  private toPositiveNumber(value: unknown): number | null {
+    const num = Number(value);
+    if (!Number.isFinite(num) || num <= 0) {
+      return null;
+    }
+    return num;
+  }
+
+  private getMediaProbeCacheKey(source: string): string {
+    return source.startsWith('http') ? source : path.normalize(source).toLowerCase();
   }
 
   private isLikelyImageSource(source: string): boolean {
@@ -437,6 +454,80 @@ export class FFmpegSequencer {
     return hasAudio;
   }
 
+  private async probeMediaInfo(source: string, cache: Map<string, MediaProbeInfo>): Promise<MediaProbeInfo> {
+    const emptyResult: MediaProbeInfo = { hasAudio: false, durationSec: null };
+    if (!source) {
+      return emptyResult;
+    }
+
+    const key = this.getMediaProbeCacheKey(source);
+    const cached = cache.get(key);
+    if (cached) {
+      return cached;
+    }
+
+    const result = await new Promise<MediaProbeInfo>((resolve) => {
+      ffmpeg.ffprobe(source, (err: any, metadata: any) => {
+        if (err) {
+          console.warn(`[FFmpeg] ffprobe falhou para asset (${source}): ${err.message || err}`);
+          resolve(emptyResult);
+          return;
+        }
+
+        const streams = Array.isArray(metadata?.streams) ? metadata.streams : [];
+        const hasAudio = streams.some((stream: any) => stream?.codec_type === 'audio');
+
+        const durationFromFormat = this.toPositiveNumber(metadata?.format?.duration);
+        const durationFromStream = streams
+          .map((stream: any) => this.toPositiveNumber(stream?.duration))
+          .find((duration: number | null): duration is number => duration !== null);
+
+        resolve({
+          hasAudio,
+          durationSec: durationFromFormat ?? durationFromStream ?? null,
+        });
+      });
+    });
+
+    cache.set(key, result);
+    return result;
+  }
+
+  private resolveAssetDurationSeconds(params: {
+    scene: any;
+    sceneDefinedDuration: number;
+    sourcePath?: string;
+    mediaProbeCache: Map<string, MediaProbeInfo>;
+  }): number | null {
+    const { scene, sceneDefinedDuration, sourcePath, mediaProbeCache } = params;
+
+    if (sourcePath) {
+      const cached = mediaProbeCache.get(this.getMediaProbeCacheKey(sourcePath));
+      const probedDuration = this.toPositiveNumber(cached?.durationSec);
+      if (probedDuration !== null) {
+        return probedDuration;
+      }
+    }
+
+    const rawDuration = this.toPositiveNumber(scene?.asset_duration ?? scene?.assetDuration);
+    if (rawDuration === null) {
+      return null;
+    }
+
+    // Fallback para projetos legados onde asset_duration foi salvo em milissegundos.
+    const msCandidate = rawDuration / 1000;
+    if (rawDuration >= 1000 && msCandidate >= 0.1) {
+      const rawDelta = sceneDefinedDuration > 0 ? Math.abs(rawDuration - sceneDefinedDuration) : Number.POSITIVE_INFINITY;
+      const msDelta = sceneDefinedDuration > 0 ? Math.abs(msCandidate - sceneDefinedDuration) : Number.POSITIVE_INFINITY;
+      const looksLikeMilliseconds = msDelta + 0.05 < rawDelta && msCandidate <= 600;
+      if (looksLikeMilliseconds) {
+        return msCandidate;
+      }
+    }
+
+    return rawDuration;
+  }
+
   private buildAtempoChain(rawTempo: number): string {
     const tempo = Number.isFinite(rawTempo) && rawTempo > 0 ? rawTempo : 1;
     if (Math.abs(tempo - 1) < 0.0001) {
@@ -463,6 +554,7 @@ export class FFmpegSequencer {
   private async renderVideoOnlyPass(params: {
     scenes: any[];
     orderedOverlays: any[];
+    mediaProbeCache: Map<string, MediaProbeInfo>;
     width: number;
     height: number;
     fps: number;
@@ -514,7 +606,12 @@ export class FFmpegSequencer {
 
         const outLabel = `[v${index}]`;
         const isActuallyImage = this.isLikelyImageSource(localPath);
-        const assetDuration = Number(scene.asset_duration ?? scene.assetDuration ?? 0);
+        const assetDuration = this.resolveAssetDurationSeconds({
+          scene,
+          sceneDefinedDuration,
+          sourcePath: localPath,
+          mediaProbeCache: params.mediaProbeCache,
+        });
         const transform = scene.transform || {};
         const transformScale = this.clamp(Number(transform.scale ?? 1), 0.02, 4);
         const transformPositionX = Number(transform.positionX ?? 0);
@@ -525,7 +622,7 @@ export class FFmpegSequencer {
           Math.abs(transformPositionY) > 0.0001;
 
         let filter = `[${index}:v]`;
-        if (params.fitVideoToScene && assetDuration > 0 && !isActuallyImage && !!localPath) {
+        if (params.fitVideoToScene && assetDuration && !isActuallyImage && !!localPath) {
           const speedFactor = sceneDefinedDuration / assetDuration;
           filter += `setpts=${speedFactor}*PTS,`;
         }
@@ -613,8 +710,13 @@ export class FFmpegSequencer {
         const maxOverlayH = Math.max(2, Math.round(params.height * scale));
         let overlayFilter = `[${overlayInputIndex}:v]`;
 
-        const assetDuration = Number(scene.asset_duration ?? scene.assetDuration ?? 0);
-        if (params.fitVideoToScene && assetDuration > 0 && !isActuallyImage) {
+        const assetDuration = this.resolveAssetDurationSeconds({
+          scene,
+          sceneDefinedDuration: overlayDuration,
+          sourcePath: localPath,
+          mediaProbeCache: params.mediaProbeCache,
+        });
+        if (params.fitVideoToScene && assetDuration && !isActuallyImage) {
           const speedFactor = overlayDuration / assetDuration;
           overlayFilter += `setpts=${speedFactor}*PTS,`;
         }
@@ -982,6 +1084,7 @@ export class FFmpegSequencer {
     projectDuration: number;
     scenes: any[];
     orderedOverlays: any[];
+    mediaProbeCache: Map<string, MediaProbeInfo>;
     sceneAudioCandidates: SceneAudioCandidate[];
     removeAudioSilences: boolean;
     audioKeepRanges: Array<any>;
@@ -1001,6 +1104,7 @@ export class FFmpegSequencer {
         await this.renderVideoOnlyPass({
           scenes: params.scenes,
           orderedOverlays: params.orderedOverlays,
+          mediaProbeCache: params.mediaProbeCache,
           width: params.width,
           height: params.height,
           fps: params.fps,
@@ -1172,8 +1276,17 @@ export class FFmpegSequencer {
     }
 
     // Pré-coleta de trilhas de áudio dos clipes de vídeo para evitar erro em arquivos sem stream de áudio.
+    const mediaProbeCache = new Map<string, MediaProbeInfo>();
+    const scenesForProbe = [...baseTrackScenes, ...orderedOverlayScenes];
+    for (const scene of scenesForProbe) {
+      const localPath = scene.asset_local_path || scene.asset_url || scene.imageUrl || '';
+      if (!localPath || this.isLikelyImageSource(localPath)) {
+        continue;
+      }
+      await this.probeMediaInfo(localPath, mediaProbeCache);
+    }
+
     const sceneAudioCandidates: SceneAudioCandidate[] = [];
-    const audioProbeCache = new Map<string, boolean>();
     let probeInputIndex = 0;
 
     for (let index = 0; index < baseTrackScenes.length; index++) {
@@ -1184,14 +1297,19 @@ export class FFmpegSequencer {
       const sceneDefinedDuration = Math.max(0.1, endTime - startTime);
 
       if (localPath && !this.isLikelyImageSource(localPath)) {
-        const hasAudio = await this.probeHasAudioStream(localPath, audioProbeCache);
-        if (hasAudio) {
+        const mediaInfo = await this.probeMediaInfo(localPath, mediaProbeCache);
+        if (mediaInfo.hasAudio) {
           const baseVolume = this.clamp(Number(scene.audio?.volume ?? 1), 0, 1);
           if (baseVolume > 0) {
-            const assetDuration = Number(scene.asset_duration ?? scene.assetDuration ?? 0);
+            const assetDuration = this.resolveAssetDurationSeconds({
+              scene,
+              sceneDefinedDuration,
+              sourcePath: localPath,
+              mediaProbeCache,
+            });
             let playbackTempo = 1;
             const isAudioOnly = this.isAudioOnlyScene(scene, localPath);
-            if (fitVideoToScene && assetDuration > 0 && sceneDefinedDuration > 0 && !isAudioOnly) {
+            if (fitVideoToScene && assetDuration && sceneDefinedDuration > 0 && !isAudioOnly) {
               const speedFactor = sceneDefinedDuration / assetDuration;
               playbackTempo = speedFactor > 0 ? 1 / speedFactor : 1;
             }
@@ -1226,14 +1344,19 @@ export class FFmpegSequencer {
       const overlayDuration = Math.max(0.1, endTime - startTime);
 
       if (!this.isLikelyImageSource(localPath)) {
-        const hasAudio = await this.probeHasAudioStream(localPath, audioProbeCache);
-        if (hasAudio) {
+        const mediaInfo = await this.probeMediaInfo(localPath, mediaProbeCache);
+        if (mediaInfo.hasAudio) {
           const baseVolume = this.clamp(Number(scene.audio?.volume ?? 1), 0, 1);
           if (baseVolume > 0) {
-            const assetDuration = Number(scene.asset_duration ?? scene.assetDuration ?? 0);
+            const assetDuration = this.resolveAssetDurationSeconds({
+              scene,
+              sceneDefinedDuration: overlayDuration,
+              sourcePath: localPath,
+              mediaProbeCache,
+            });
             let playbackTempo = 1;
             const isAudioOnly = this.isAudioOnlyScene(scene, localPath);
-            if (fitVideoToScene && assetDuration > 0 && overlayDuration > 0 && !isAudioOnly) {
+            if (fitVideoToScene && assetDuration && overlayDuration > 0 && !isAudioOnly) {
               const speedFactor = overlayDuration / assetDuration;
               playbackTempo = speedFactor > 0 ? 1 / speedFactor : 1;
             }
@@ -1284,6 +1407,7 @@ export class FFmpegSequencer {
         projectDuration,
         scenes,
         orderedOverlays,
+        mediaProbeCache,
         sceneAudioCandidates,
         removeAudioSilences,
         audioKeepRanges,
@@ -1344,7 +1468,12 @@ export class FFmpegSequencer {
         const outLabel = `[v${index}]`;
 
         const isActuallyImage = this.isLikelyImageSource(localPath);
-        const assetDuration = Number(scene.asset_duration ?? scene.assetDuration ?? 0);
+        const assetDuration = this.resolveAssetDurationSeconds({
+          scene,
+          sceneDefinedDuration,
+          sourcePath: localPath,
+          mediaProbeCache,
+        });
         const transform = scene.transform || {};
         const transformScale = this.clamp(Number(transform.scale ?? 1), 0.02, 4);
         const transformPositionX = Number(transform.positionX ?? 0);
@@ -1357,7 +1486,7 @@ export class FFmpegSequencer {
         let filter = `[${inputIndex}:v]`;
 
         // 1. Ajuste matemático de velocidade (Fit Video To Scene)
-        if (fitVideoToScene && assetDuration > 0 && !isActuallyImage && !!localPath) {
+        if (fitVideoToScene && assetDuration && !isActuallyImage && !!localPath) {
           const speedFactor = sceneDefinedDuration / assetDuration;
           filter += `setpts=${speedFactor}*PTS,`;
         }
@@ -1460,8 +1589,13 @@ export class FFmpegSequencer {
 
         let overlayFilter = `[${overlayInputIndex}:v]`;
 
-        const assetDuration = Number(scene.asset_duration ?? scene.assetDuration ?? 0);
-        if (fitVideoToScene && assetDuration > 0 && !isActuallyImage) {
+        const assetDuration = this.resolveAssetDurationSeconds({
+          scene,
+          sceneDefinedDuration: overlayDuration,
+          sourcePath: localPath,
+          mediaProbeCache,
+        });
+        if (fitVideoToScene && assetDuration && !isActuallyImage) {
           const speedFactor = overlayDuration / assetDuration;
           overlayFilter += `setpts=${speedFactor}*PTS,`;
         }

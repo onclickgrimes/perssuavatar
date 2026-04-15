@@ -904,10 +904,13 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           newSeg.sourceImageUrl = imageUrl;
         }
 
-        if (duration !== undefined) {
+        if (!isVideoFile) {
+          // Em imagens/audio, nunca manter asset_duration para nao contaminar ajuste de velocidade.
+          delete newSeg.asset_duration;
+        } else if (typeof duration === 'number' && Number.isFinite(duration) && duration > 0) {
           newSeg.asset_duration = duration;
-        } else if (!imageUrl || !isVideoFile) {
-          // Se removeu ou voltou para imagem estática, remove duração do vídeo
+        } else if (seg.imageUrl !== imageUrl) {
+          // Novo video sem duracao valida: limpa valor antigo para forcar reprobe do metadata.
           delete newSeg.asset_duration;
         }
         
@@ -1325,3 +1328,4 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     </div>
   );
 }
+

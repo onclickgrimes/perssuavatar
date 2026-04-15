@@ -112,6 +112,7 @@ import serve from 'electron-serve'
 import { createWindow } from './helpers'
 import { VoiceAssistant } from './lib/voice-assistant';
 import ffmpeg from 'fluent-ffmpeg';
+import ffprobeInstaller from '@ffprobe-installer/ffprobe';
 import { initializeDatabase, getTranscriptionSettings, getUserSettings, setTranscriptionSettings } from './lib/database';
 import { registerDatabaseHandlers } from './lib/handlers/database-handlers';
 import { registerNicheHandlers } from './lib/handlers/niche-handlers';
@@ -145,18 +146,27 @@ import { promisify } from 'util';
 import { exec as execCallback } from 'child_process';
 const execAsync = promisify(execCallback);
 
-// Get ffmpeg path - different for dev vs prod
+const normalizeBinaryPathForProd = (binaryPath: string) => (
+  isProd ? binaryPath.replace('app.asar', 'app.asar.unpacked') : binaryPath
+);
+
+// Get ffmpeg/ffprobe path - different for dev vs prod
 let ffmpegPath: string;
+let ffprobePath: string;
 if (isProd) {
   // In production, ffmpeg-static will be in asar.unpacked
   ffmpegPath = require('ffmpeg-static');
-  ffmpegPath = ffmpegPath.replace('app.asar', 'app.asar.unpacked');
+  ffmpegPath = normalizeBinaryPathForProd(ffmpegPath);
+  ffprobePath = normalizeBinaryPathForProd(ffprobeInstaller.path);
 } else {
   // In development, use the path directly from node_modules
   ffmpegPath = path.join(process.cwd(), 'node_modules', 'ffmpeg-static', 'ffmpeg.exe');
+  ffprobePath = ffprobeInstaller.path;
 }
 console.log('FFmpeg path:', ffmpegPath);
+console.log('FFprobe path:', ffprobePath);
 ffmpeg.setFfmpegPath(ffmpegPath);
+ffmpeg.setFfprobePath(ffprobePath);
 
 export let mainWindow;
 let screenshotGalleryWindow: BrowserWindow | null = null;
