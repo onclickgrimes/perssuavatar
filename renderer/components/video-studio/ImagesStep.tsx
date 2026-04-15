@@ -1131,6 +1131,26 @@ export function ImagesStep({
     return Array.from(new Set([...characterReferencePaths, ...locationReferencePaths]));
   };
 
+  const mergeReferencePathsWithPriority = (
+    primaryPath: string | undefined,
+    otherPaths: string[],
+    limit?: number
+  ): string[] => {
+    const merged: string[] = [];
+    const appendPath = (rawPath?: string) => {
+      if (typeof rawPath !== 'string') return;
+      const normalizedPath = rawPath.trim();
+      if (!normalizedPath) return;
+      if (merged.includes(normalizedPath)) return;
+      merged.push(normalizedPath);
+    };
+
+    appendPath(primaryPath);
+    otherPaths.forEach(path => appendPath(path));
+
+    return typeof limit === 'number' ? merged.slice(0, limit) : merged;
+  };
+
   const toSafeFileStem = (value: string): string => {
     return value
       .normalize('NFD')
@@ -1913,7 +1933,11 @@ export function ImagesStep({
         const isIngredients = !isLiteFlow && isIngredientsExplicit;
         const baseIngredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
         const ingredientPaths = isIngredients
-          ? Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, getIngredientLimitByService(service))
+          ? mergeReferencePathsWithPriority(
+            referenceImagePath,
+            [...baseIngredientPaths, ...sceneReferencePaths],
+            getIngredientLimitByService(service)
+          )
           : [];
 
         if (isLiteFlow && isIngredientsExplicit) {
@@ -1981,11 +2005,10 @@ export function ImagesStep({
         // Coleta possíveis inputs de imagem permitidos pelo provedor Grok (que aceita arrays de imagens)
         const sceneReferencePaths = getSceneReferencePaths(segment);
         const baseIngredientPaths = ingredientImages[segmentId] || [];
-        const grokImagePaths = Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths]));
-
-        if (referenceImagePath && !grokImagePaths.includes(referenceImagePath)) {
-          grokImagePaths.push(referenceImagePath);
-        }
+        const grokImagePaths = mergeReferencePathsWithPriority(
+          referenceImagePath,
+          [...baseIngredientPaths, ...sceneReferencePaths]
+        );
 
         if (grokImagePaths.length > 0) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com Grok (${grokImagePaths.length} ref(s))...` }));
@@ -2169,7 +2192,11 @@ export function ImagesStep({
         const isIngredients = !isLiteApi && isIngredientsExplicit;
         const baseIngredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
         const ingredientPaths = isIngredients
-          ? Array.from(new Set([...baseIngredientPaths, ...sceneReferencePaths])).slice(0, getIngredientLimitByService(service))
+          ? mergeReferencePathsWithPriority(
+            referenceImagePath,
+            [...baseIngredientPaths, ...sceneReferencePaths],
+            getIngredientLimitByService(service)
+          )
           : [];
 
         if (isLiteApi && isIngredientsExplicit) {
