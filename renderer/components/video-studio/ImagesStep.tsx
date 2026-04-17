@@ -1927,18 +1927,23 @@ export function ImagesStep({
         const flowModelName = isLiteFlow ? 'Veo 3.1 - Lite' : undefined;
         const flowServiceLabel = isLiteFlow ? 'Veo 3.1 - Lite' : 'Veo 3';
 
-        // Para vídeo, Ingredients só é usado quando o modo foi selecionado explicitamente.
+        // Para vídeo, Ingredients é usado no modo explícito ou automaticamente quando não há frame inicial.
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const sceneReferencePaths = isIngredientsExplicit ? getSceneReferencePaths(segment) : [];
-        const isIngredients = !isLiteFlow && isIngredientsExplicit;
-        const baseIngredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
-        const ingredientPaths = isIngredients
+        const shouldAutoUseIngredients = !isLiteFlow && !referenceImagePath;
+        const shouldCollectIngredients = isIngredientsExplicit || shouldAutoUseIngredients;
+        const sceneReferencePaths = shouldCollectIngredients ? getSceneReferencePaths(segment) : [];
+        const baseIngredientPaths = shouldCollectIngredients ? (ingredientImages[segmentId] || []) : [];
+        const ingredientPaths = !isLiteFlow && shouldCollectIngredients
           ? mergeReferencePathsWithPriority(
             referenceImagePath,
             [...baseIngredientPaths, ...sceneReferencePaths],
             getIngredientLimitByService(service)
           )
           : [];
+        const isIngredients = !isLiteFlow && (
+          isIngredientsExplicit
+          || (shouldAutoUseIngredients && ingredientPaths.length > 0)
+        );
 
         if (isLiteFlow && isIngredientsExplicit) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Veo 3.1 - Lite não suporta Ingredients. Usando Frames...' }));
@@ -2186,18 +2191,23 @@ export function ImagesStep({
               ? ' Lite'
               : '';
 
-        // Para vídeo, Ingredients só é usado quando o modo foi selecionado explicitamente.
+        // Para vídeo, Ingredients é usado no modo explícito ou automaticamente quando não há frame inicial.
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
-        const sceneReferencePaths = isIngredientsExplicit ? getSceneReferencePaths(segment) : [];
-        const isIngredients = !isLiteApi && isIngredientsExplicit;
-        const baseIngredientPaths = isIngredients ? (ingredientImages[segmentId] || []) : [];
-        const ingredientPaths = isIngredients
+        const shouldAutoUseIngredients = !isLiteApi && !referenceImagePath;
+        const shouldCollectIngredients = isIngredientsExplicit || shouldAutoUseIngredients;
+        const sceneReferencePaths = shouldCollectIngredients ? getSceneReferencePaths(segment) : [];
+        const baseIngredientPaths = shouldCollectIngredients ? (ingredientImages[segmentId] || []) : [];
+        const ingredientPaths = !isLiteApi && shouldCollectIngredients
           ? mergeReferencePathsWithPriority(
             referenceImagePath,
             [...baseIngredientPaths, ...sceneReferencePaths],
             getIngredientLimitByService(service)
           )
           : [];
+        const isIngredients = !isLiteApi && (
+          isIngredientsExplicit
+          || (shouldAutoUseIngredients && ingredientPaths.length > 0)
+        );
 
         if (isLiteApi && isIngredientsExplicit) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Veo 3.1 Lite (API) não suporta Ingredients. Usando Frames...' }));
