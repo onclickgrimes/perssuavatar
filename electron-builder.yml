@@ -11,3 +11,4 @@ files:
       - app
       - migrations
 publish: null
+npmRebuild: false
