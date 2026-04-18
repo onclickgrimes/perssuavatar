@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Flow Video Provider - Automação do Google Flow (Veo 3) via Puppeteer
  * 
  * Gerencia a geração de vídeos usando o Google Flow (labs.google/fx/pt/tools/flow).
@@ -1806,6 +1806,9 @@ export class FlowVideoProvider {
 
       try {
         console.log(`🔎 [Flow] Buscando botão de upload para o quadro ${targetFrame}...`);
+        // Novo Flow: em alguns layouts, o clique no próprio slot já dispara o file chooser.
+        // Precisamos armá-lo antes de qualquer clique na área de frame.
+        const futureFileChooser = this.page.waitForFileChooser({ timeout: 10000 }).catch(() => null);
 
         // 1. Abre a galeria/modal clicando no slot correspondente (Inicial / Final)
         let openedGallery = (await this.page.evaluate(`(function(targetFrame) {
@@ -1897,7 +1900,8 @@ export class FlowVideoProvider {
             await this.randomDelay(800, 1200);
           } else {
             console.log(`🔎 [Flow] Imagem não encontrada na galeria. Prosseguindo genérico upload...`);
-            const futureFileChooser = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
+            // Alguns layouts abrem um segundo trigger (botão "upload") dentro do modal.
+            const futureFileChooser2 = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
 
             // 2. Procura globalmente o gatilho de "upload" dentro da janela modal.
             // O Flow já alternou entre <button> e <div role/cursor> com ícone "upload".
@@ -2000,17 +2004,40 @@ export class FlowVideoProvider {
 
             if (clickedUploadBtn) {
               console.log(`✅ [Flow] Botão genérico de upload acionado. Interceptando File Chooser...`);
-              const fileChooser = await futureFileChooser;
-              if (fileChooser) {
-                console.log(`✅ [Flow] File Chooser interceptado com sucesso! Injetando ${absPath}`);
-                await fileChooser.accept([absPath]);
-                uploadSuccess = true;
-                await this.randomDelay(500, 1000); // dá um tempinho extra para fechar o modal solo
-              } else {
-                console.warn(`⚠️ [Flow] File Chooser não foi detectado após o clique.`);
+            }
+
+            // 3. Interceptar FileChooser (pode vir do clique no slot ou do clique no botão upload)
+            let fileChooser = await futureFileChooser;
+            if (!fileChooser && clickedUploadBtn) {
+              fileChooser = await futureFileChooser2;
+            }
+
+            // 4. Retry final: tentar abrir chooser por input[type=file]
+            if (!fileChooser) {
+              console.warn(`⚠️ [Flow] FileChooser não detectado inicialmente. Tentando fallback por input[type=file]...`);
+              const retryChooser = this.page.waitForFileChooser({ timeout: 5000 }).catch(() => null);
+              const fileInputs = await this.page.$$('input[type="file"]');
+              for (const fi of fileInputs) {
+                try {
+                  await fi.evaluate((el: any) => el.click());
+                  break;
+                } catch {
+                  // ignora erros e tenta o próximo input
+                }
               }
+              fileChooser = await retryChooser;
+            }
+
+            if (fileChooser) {
+              console.log(`✅ [Flow] File Chooser interceptado com sucesso! Injetando ${absPath}`);
+              await fileChooser.accept([absPath]);
+              uploadSuccess = true;
+              await this.randomDelay(500, 1000); // dá um tempinho extra para fechar o modal solo
             } else {
-              console.warn(`⚠️ [Flow] Falha ao encontrar elemento de upload dentro do modal aberto.`);
+              if (!clickedUploadBtn) {
+                console.warn(`⚠️ [Flow] Falha ao encontrar elemento de upload dentro do modal aberto.`);
+              }
+              console.warn(`⚠️ [Flow] FileChooser não foi detectado após todas as tentativas.`);
               try { await this.page.keyboard.press('Escape'); } catch { } // Força escape para destravar a tela
             }
           }
@@ -2179,11 +2206,223 @@ export class FlowVideoProvider {
   }
 
   /**
+   * Tenta copiar um arquivo para o clipboard do SO preservando nome original
+   * (equivalente ao Ctrl+C em arquivo no Explorer/Finder).
+   */
+  private async copyFilePathToSystemClipboard(filePath: string): Promise<boolean> {
+    try {
+      const fsLocal = require('fs');
+      if (!fsLocal.existsSync(filePath)) return false;
+
+      // Windows: Set-Clipboard -LiteralPath copia como arquivo (FileDropList),
+      // preservando nome original quando colado em inputs/web apps que suportam paste de arquivo.
+      if (process.platform === 'win32') {
+        const escaped = filePath.replace(/'/g, "''");
+        await new Promise<void>((resolve, reject) => {
+          const ps = spawn(
+            'powershell.exe',
+            ['-NoProfile', '-NonInteractive', '-Command', `Set-Clipboard -LiteralPath '${escaped}'`],
+            { windowsHide: true }
+          );
+
+          let stderr = '';
+          ps.stderr.on('data', (chunk: Buffer | string) => {
+            stderr += String(chunk || '');
+          });
+          ps.on('error', reject);
+          ps.on('close', (code: number | null) => {
+            if (code === 0) resolve();
+            else reject(new Error(stderr || `Set-Clipboard falhou (code ${code})`));
+          });
+        });
+        return true;
+      }
+
+      return false;
+    } catch (err: any) {
+      console.warn(`⚠️ [Flow] Falha ao copiar arquivo para clipboard do sistema:`, err?.message || err);
+      return false;
+    }
+  }
+
+  /**
+   * Cola um ingrediente no campo de prompt (fallback quando a imagem não existe na galeria)
+   * e aguarda o preview ficar totalmente carregado.
+   */
+  private async pasteIngredientImageIntoPrompt(absPath: string): Promise<boolean> {
+    if (!this.page) return false;
+
+    try {
+      const fsLocal = require('fs');
+      const { clipboard } = require('electron');
+
+      if (!fsLocal.existsSync(absPath)) {
+        console.warn(`⚠️ [Flow] Arquivo do ingrediente não encontrado para colagem: ${absPath}`);
+        return false;
+      }
+
+      const promptSelectors = [
+        'div[contenteditable="true"][role="textbox"]',
+        'div[contenteditable="true"][data-slate-editor="true"]',
+        'textarea[placeholder*="Describe"]',
+        'textarea[placeholder*="describe"]',
+        'textarea[placeholder*="prompt"]',
+        'textarea',
+      ];
+
+      let promptInput: import('puppeteer').ElementHandle | null = null;
+      for (const selector of promptSelectors) {
+        const el = await this.page.$(selector);
+        if (el && await this.isVisible(el)) {
+          promptInput = el;
+          break;
+        }
+      }
+
+      if (!promptInput) {
+        console.warn(`⚠️ [Flow] Campo de prompt não encontrado para colar ingrediente.`);
+        return false;
+      }
+
+      const basePromptImageCount = (await this.page.evaluate(`(function() {
+        function hasIconText(root, iconText) {
+          var icons = root.querySelectorAll('i');
+          for (var i = 0; i < icons.length; i++) {
+            if ((icons[i].textContent || '').trim() === iconText) return true;
+          }
+          return false;
+        }
+
+        function getPromptComposerRoot() {
+          var textbox = document.querySelector('div[role="textbox"][contenteditable="true"]');
+          if (!textbox) textbox = document.querySelector('div[contenteditable="true"]');
+          if (!textbox) return null;
+
+          var root = textbox;
+          var current = textbox;
+          for (var depth = 0; depth < 8 && current; depth++) {
+            if (hasIconText(current, 'arrow_forward') || hasIconText(current, 'add_2')) {
+              root = current;
+            }
+            current = current.parentElement;
+          }
+          return root;
+        }
+
+        var root = getPromptComposerRoot();
+        if (!root) return 0;
+        var imgs = root.querySelectorAll('img[src*="/fx/api/trpc/media"], img[src^="blob:"]');
+        return imgs.length;
+      })()`)) as number;
+
+      // Exigência: preservar nome real do arquivo.
+      // Portanto, NÃO fazemos fallback para bitmap (que costuma virar image.png).
+      let clipboardPrepared = await this.copyFilePathToSystemClipboard(absPath);
+      if (!clipboardPrepared) {
+        console.warn(`⚠️ [Flow] Não foi possível preparar clipboard como arquivo. Abortando para evitar nome genérico.`);
+        return false;
+      }
+      console.log(`📋 [Flow] Clipboard preparado como arquivo (nome original preservado).`);
+
+      await promptInput.click();
+      await promptInput.evaluate((el: Element) => {
+        const node = el as HTMLElement;
+        try {
+          node.scrollIntoView({ block: 'center', inline: 'nearest' });
+        } catch { }
+        try { node.click(); } catch { }
+        try { node.focus(); } catch { }
+      });
+
+      await this.randomDelay(120, 220);
+      const pasteModifier = process.platform === 'darwin' ? 'Meta' : 'Control';
+      await this.page.keyboard.down(pasteModifier);
+      await this.page.keyboard.press('V');
+      await this.page.keyboard.up(pasteModifier);
+
+      console.log(`📋 [Flow] Imagem de ingrediente colada no prompt. Aguardando preview estabilizar...`);
+
+      const expectedCount = basePromptImageCount + 1;
+      const maxWaitMs = 120000;
+      const startWait = Date.now();
+
+      while (Date.now() - startWait < maxWaitMs) {
+        const isReady = (await this.page.evaluate(`(function(minExpectedCount) {
+          function hasIconText(root, iconText) {
+            var icons = root.querySelectorAll('i');
+            for (var i = 0; i < icons.length; i++) {
+              if ((icons[i].textContent || '').trim() === iconText) return true;
+            }
+            return false;
+          }
+
+          function getPromptComposerRoot() {
+            var textbox = document.querySelector('div[role="textbox"][contenteditable="true"]');
+            if (!textbox) textbox = document.querySelector('div[contenteditable="true"]');
+            if (!textbox) return null;
+
+            var root = textbox;
+            var current = textbox;
+            for (var depth = 0; depth < 8 && current; depth++) {
+              if (hasIconText(current, 'arrow_forward') || hasIconText(current, 'add_2')) {
+                root = current;
+              }
+              current = current.parentElement;
+            }
+            return root;
+          }
+
+          var root = getPromptComposerRoot();
+          if (!root) return false;
+
+          var imgs = root.querySelectorAll('img[src*="/fx/api/trpc/media"], img[src^="blob:"]');
+          if (imgs.length < minExpectedCount) return false;
+
+          for (var i = 0; i < imgs.length; i++) {
+            var img = imgs[i];
+            var style = window.getComputedStyle(img);
+            var opacity = parseFloat(style.opacity || '1');
+            if (isNaN(opacity)) opacity = 1;
+
+            var parentOpacity = 1;
+            if (img.parentElement) {
+              var pStyle = window.getComputedStyle(img.parentElement);
+              parentOpacity = parseFloat(pStyle.opacity || '1');
+              if (isNaN(parentOpacity)) parentOpacity = 1;
+            }
+
+            if (opacity < 0.99 || parentOpacity < 0.99) return false;
+            if (img.complete === false) return false;
+            if ((img.naturalWidth || 0) <= 0) return false;
+          }
+
+          return true;
+        })(${expectedCount})`)) as boolean;
+
+        if (isReady) {
+          const elapsed = Math.round((Date.now() - startWait) / 1000);
+          console.log(`✅ [Flow] Preview do ingrediente carregado no prompt (${elapsed}s).`);
+          return true;
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      console.warn(`⚠️ [Flow] Timeout aguardando preview do ingrediente no prompt (60s).`);
+      return false;
+    } catch (error: any) {
+      console.warn(`⚠️ [Flow] Falha ao colar ingrediente no prompt:`, error.message);
+      return false;
+    }
+  }
+
+  /**
    * Envia uma imagem como ingrediente para a geração de vídeo no Flow.
    * 
    * Após o configureFlowDropdown já ter selecionado o modo Ingredients,
-   * este método clica no botão "add_2" (que aparece na área de ingredients)
-   * para abrir o dialog de upload, e injeta a imagem via FileChooser.
+   * este método tenta primeiro selecionar a imagem existente na galeria.
+   * Se não encontrar, faz fallback para colar a imagem direto no campo de prompt
+   * (Ctrl+V/Meta+V) e aguarda o preview ficar 100% carregado.
    * Suporta até 3 imagens. Disponível apenas no modelo 3.1 - Fast.
    */
   private async uploadIngredientImage(imagePath: string): Promise<boolean> {
@@ -2196,6 +2435,19 @@ export class FlowVideoProvider {
       let absPath = imagePath;
       const pathModule = require('path');
       const fs = require('fs');
+      const crypto = require('crypto');
+
+      const sanitizeBaseName = (name: string): string => {
+        const cleaned = (name || '').replace(/[^\w.\-]+/g, '_').replace(/^_+|_+$/g, '');
+        return cleaned || 'image';
+      };
+
+      const buildDeterministicTempFilename = (originalBaseName: string, discriminator: string): string => {
+        const ext = pathModule.extname(originalBaseName || '') || '.jpg';
+        const nameNoExt = sanitizeBaseName(pathModule.basename(originalBaseName || 'image', ext));
+        const hash = crypto.createHash('sha1').update(discriminator).digest('hex').substring(0, 12);
+        return `flow_temp_${nameNoExt}_${hash}${ext}`;
+      };
 
       if (absPath.startsWith('http://') || absPath.startsWith('https://')) {
         console.log(`🧪 [Flow] URL detectada, baixando temporariamente para upload...`);
@@ -2212,8 +2464,9 @@ export class FlowVideoProvider {
           baseName = `temp_ingredient_${Buffer.from(absPath).toString('base64').substring(0, 10)}.jpg`;
         }
 
-        // Garante a mesma constância de nome para reaproveitamento
-        const tempFilename = `flow_temp_${baseName}`;
+        // Nome determinístico por URL completa para evitar colisão
+        // (ex: duas URLs diferentes com basename "image.png").
+        const tempFilename = buildDeterministicTempFilename(baseName, `url:${absPath}`);
         const tempPath = pathModule.join(this.outputDir, tempFilename);
 
         if (!fs.existsSync(tempPath)) {
@@ -2238,12 +2491,10 @@ export class FlowVideoProvider {
       }
 
       absPath = pathModule.resolve(absPath);
+
       console.log(`🧪 [Flow] Caminho absoluto do ingrediente: ${absPath}`);
 
       // 1. Encontrar e clicar no botão com ícone "add_2" (área de ingredients do Flow)
-      // Preparar FileChooser ANTES de clicar
-      const futureFileChooser = this.page.waitForFileChooser({ timeout: 10000 }).catch(() => null);
-
       // Buscar botão add_2 via Puppeteer (API nativa, sem page.evaluate com string)
       const allButtons = await this.page.$$('button');
       let clickedAdd = false;
@@ -2283,51 +2534,192 @@ export class FlowVideoProvider {
       }
 
       if (!clickedAdd) {
-        console.warn(`⚠️ [Flow] Nenhum botão de upload de ingrediente encontrado.`);
-        return false;
+        console.warn(`⚠️ [Flow] Nenhum botão de galeria de ingrediente encontrado. Tentando colar imagem direto no prompt...`);
+        return await this.pasteIngredientImageIntoPrompt(absPath);
       }
 
       await this.randomDelay(800, 1200);
+      await this.page.waitForSelector('div[data-testid="virtuoso-item-list"], div[data-testid="virtuoso-item-list"] img', { timeout: 3000 }).catch(() => null);
 
       // NOVO: Verificar se a imagem já existe na galeria!
-      const filename = pathModule.basename(absPath);
-      let clickedExisting = false;
+      // Observação: em uploads por URL, o arquivo local pode virar "flow_temp_<nome>".
+      // Por isso, usamos múltiplos candidatos de nome para comparar com alt/label do item.
+      const originalInputBasename = (() => {
+        try {
+          if (imagePath.startsWith('http://') || imagePath.startsWith('https://')) {
+            const urlObj = new URL(imagePath);
+            const fromUrl = pathModule.basename(urlObj.pathname || '');
+            return fromUrl || '';
+          }
+          return pathModule.basename(imagePath);
+        } catch {
+          try { return pathModule.basename(imagePath.split('?')[0]); } catch { return ''; }
+        }
+      })();
 
-      // Executando no contexto do browser para ser mais rápido e tolerante a DOM voador (como no virtuoso-scroller)
-      const filenameEscaped = JSON.stringify(filename);
-      // Tentativa de extrair hash de 36 caracteres do nome do arquivo (ex: para reaproveitar imagens geradas pelo Flow)
-      let hashMatchText = filename.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
+      const matchNamesSet = new Set<string>();
+      const pushNameCandidate = (name?: string) => {
+        if (!name) return;
+        const norm = String(name).trim().toLowerCase();
+        if (!norm) return;
+        matchNamesSet.add(norm);
+        // Remove prefixos temporários comuns para comparar com o nome mostrado na galeria.
+        if (norm.startsWith('flow_temp_')) matchNamesSet.add(norm.substring('flow_temp_'.length));
+        if (norm.startsWith('temp_ingredient_')) matchNamesSet.add(norm.substring('temp_ingredient_'.length));
+      };
+
+      pushNameCandidate(pathModule.basename(absPath));
+      pushNameCandidate(originalInputBasename);
+      try {
+        pushNameCandidate(decodeURIComponent(pathModule.basename(absPath)));
+      } catch { }
+      try {
+        pushNameCandidate(decodeURIComponent(originalInputBasename));
+      } catch { }
+
+      const filenameCandidates = Array.from(matchNamesSet);
+      const filenameCandidatesEscaped = JSON.stringify(filenameCandidates);
+
+      // Tentativa de extrair hash de 36 caracteres (UUID) de qualquer fonte disponível.
+      const combinedForHash = `${absPath} ${imagePath} ${filenameCandidates.join(' ')}`;
+      let hashMatchText = combinedForHash.match(/([a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12})/i);
       const hashStrValue = hashMatchText ? hashMatchText[1] : '';
       const hashEscaped = JSON.stringify(hashStrValue);
 
-      const existingClicked = await this.page.evaluate(`(function() {
-        var filenameStr = ${filenameEscaped}.toLowerCase();
+      console.log(`🔍 [Flow] Procurando item na galeria por candidatos: ${filenameCandidates.join(', ') || '(vazio)'}${hashStrValue ? ` | hash: ${hashStrValue}` : ''}`);
+
+      const existingPick = (await this.page.evaluate(`(function() {
+        var candidateNames = ${filenameCandidatesEscaped};
         var hashStr = ${hashEscaped}.toLowerCase();
-        var virtuosoItems = document.querySelectorAll('div[data-testid="virtuoso-item-list"] div[data-known-size="56"] img');
-        for (var i = 0; i < virtuosoItems.length; i++) {
-          var img = virtuosoItems[i];
-          var altText = (img.getAttribute('alt') || '').toLowerCase();
-          var pDiv = img.parentElement ? (img.parentElement.textContent || '') : '';
-          var srcUrl = (img.getAttribute('src') || '').toLowerCase();
-          
-          if (
-            altText.indexOf(filenameStr) !== -1 || 
-            pDiv.toLowerCase().indexOf(filenameStr) !== -1 ||
-            (hashStr !== "" && srcUrl.indexOf(hashStr) !== -1)
-          ) {
-            // Clica na div wrapper (jUfWAo, etc) para selecionar
-            var clickableDiv = img.parentElement;
-            if (clickableDiv) {
-              clickableDiv.click();
-              return true;
-            }
+
+        function normalize(s) {
+          return (s || '').toString().toLowerCase().trim();
+        }
+
+        function stripExt(s) {
+          var norm = normalize(s);
+          var dot = norm.lastIndexOf('.');
+          if (dot <= 0) return norm;
+          return norm.substring(0, dot);
+        }
+
+        function isVisible(el) {
+          if (!el || !el.getBoundingClientRect) return false;
+          var rect = el.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return false;
+          var style = window.getComputedStyle(el);
+          if (!style) return true;
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          var opacity = parseFloat(style.opacity || '1');
+          if (!isNaN(opacity) && opacity <= 0) return false;
+          return true;
+        }
+
+        function textMatchesAnyCandidate(text) {
+          var normText = normalize(text);
+          if (!normText) return false;
+          var normTextNoExt = stripExt(normText);
+
+          for (var i = 0; i < candidateNames.length; i++) {
+            var c = normalize(candidateNames[i]);
+            if (!c) continue;
+            var cNoExt = stripExt(c);
+            if (normText === c || normText.indexOf(c) !== -1) return true;
+            if (normTextNoExt === cNoExt || normTextNoExt.indexOf(cNoExt) !== -1) return true;
+          }
+          return false;
+        }
+
+        function clickNode(node) {
+          if (!node || typeof node.click !== 'function') return false;
+          try {
+            try { node.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true })); } catch (e0) { }
+            try { node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })); } catch (e1) { }
+            node.click();
+            try { node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true })); } catch (e2) { }
+            return true;
+          } catch (e) {
+            return false;
           }
         }
-        return false;
-      })()`);
 
-      if (existingClicked) {
-        console.log(`✅ [Flow] Imagem existente já selecionada da galeria: ${filename}`);
+        var listRoots = Array.from(document.querySelectorAll('div[data-testid="virtuoso-item-list"]'));
+        var visibleRoots = listRoots.filter(function(root) { return isVisible(root); });
+        var rootsToScan = visibleRoots.length > 0 ? visibleRoots : listRoots;
+
+        var allImgs = [];
+        for (var r = 0; r < rootsToScan.length; r++) {
+          var imgsInRoot = rootsToScan[r].querySelectorAll('img');
+          for (var ii = 0; ii < imgsInRoot.length; ii++) {
+            allImgs.push(imgsInRoot[ii]);
+          }
+        }
+
+        // Fallback ultra genérico
+        if (allImgs.length === 0) {
+          var fallbackImgs = document.querySelectorAll('img[src*="/fx/api/trpc/media.getMediaUrlRedirect"]');
+          for (var ff = 0; ff < fallbackImgs.length; ff++) allImgs.push(fallbackImgs[ff]);
+        }
+
+        var sample = [];
+        var matchedCount = 0;
+
+        for (var i = 0; i < allImgs.length; i++) {
+          var img = allImgs[i];
+          if (!isVisible(img) && !isVisible(img.parentElement)) continue;
+          var altText = normalize(img.getAttribute('alt') || '');
+          var srcUrl = normalize(img.getAttribute('src') || '');
+
+          var row = img.closest('div[data-known-size]') || img.closest('div[data-index]') || img.parentElement;
+          var rowText = normalize(row ? row.textContent || '' : '');
+          var parentText = normalize(img.parentElement ? img.parentElement.textContent || '' : '');
+
+          if (sample.length < 6) {
+            sample.push((altText || rowText || srcUrl || '').substring(0, 120));
+          }
+
+          var matchedByName = textMatchesAnyCandidate(altText) || textMatchesAnyCandidate(rowText) || textMatchesAnyCandidate(parentText);
+          var matchedByHash = hashStr !== '' && srcUrl.indexOf(hashStr) !== -1;
+
+          if (!matchedByName && !matchedByHash) continue;
+          matchedCount++;
+
+          // Preferir clicar no wrapper do item da lista; fallback para pai da img e a própria img.
+          var clickable = img.closest('div[data-known-size] > div') || row || img.parentElement || img;
+          if (clickNode(clickable) || clickNode(img.parentElement) || clickNode(img)) {
+            return {
+              clicked: true,
+              roots: listRoots.length,
+              visibleRoots: visibleRoots.length,
+              totalImgs: allImgs.length,
+              matchedCount: matchedCount,
+              pickedAlt: altText,
+              pickedSrc: srcUrl
+            };
+          }
+        }
+
+        return {
+          clicked: false,
+          roots: listRoots.length,
+          visibleRoots: visibleRoots.length,
+          totalImgs: allImgs.length,
+          matchedCount: matchedCount,
+          sample: sample.join(' || ')
+        };
+      })()`)) as {
+        clicked: boolean;
+        roots?: number;
+        visibleRoots?: number;
+        totalImgs?: number;
+        matchedCount?: number;
+        pickedAlt?: string;
+        pickedSrc?: string;
+        sample?: string;
+      };
+
+      if (existingPick?.clicked) {
+        console.log(`✅ [Flow] Imagem existente já selecionada da galeria. (roots=${existingPick.roots || 0}, imgs=${existingPick.totalImgs || 0})`);
         await this.randomDelay(800, 1200);
 
         // Clica fora para fechar o popover (pode usar o botão X ou Escape)
@@ -2335,118 +2727,11 @@ export class FlowVideoProvider {
         return true;
       }
 
-      console.log(`🔎 [Flow] Imagem não encontrada na galeria. Prosseguindo para upload de arquivo local...`);
-
-      // 2. O clique no add_2 abre um dialog/popover. Procurar botão de upload dentro dele.
-      // Preparar segundo FileChooser caso o dialog tenha um botão de upload separado
-      const futureFileChooser2 = this.page.waitForFileChooser({ timeout: 8000 }).catch(() => null);
-
-      // Procurar botão "Faça upload" ou ícone "upload" no dialog
-      const uploadBtns = await this.page.$$('button');
-      let clickedUpload = false;
-      for (let i = uploadBtns.length - 1; i >= 0; i--) {
-        const btn = uploadBtns[i];
-        if (!(await this.isVisible(btn))) continue;
-        const text = (await this.getTextContent(btn)).toLowerCase().trim();
-        const icons = await btn.$$('i');
-        let hasUploadIcon = false;
-        for (const icon of icons) {
-          const iText = (await this.getTextContent(icon)).trim();
-          if (iText === 'upload' || iText === 'file_upload') {
-            hasUploadIcon = true;
-            break;
-          }
-        }
-        if (hasUploadIcon || text.includes('upload') || text.includes('fa\u00e7a upload') || text.includes('from your device')) {
-          await btn.click();
-          clickedUpload = true;
-          console.log(`✅ [Flow] Botão de upload clicado no dialog`);
-          break;
-        }
-      }
-
-      // 3. Interceptar FileChooser
-      let fileChooser = await futureFileChooser;
-      if (!fileChooser && clickedUpload) {
-        fileChooser = await futureFileChooser2;
-      }
-
-      // Se nenhum FileChooser até agora, talvez o add_2 já tenha aberto direto
-      if (!fileChooser) {
-        console.warn(`⚠️ [Flow] FileChooser não detectado. Tentando clicar add_2 novamente...`);
-        // Tentar novamente
-        const retry = this.page.waitForFileChooser({ timeout: 5000 }).catch(() => null);
-        // Clicar em qualquer input[type=file] visível
-        const fileInputs = await this.page.$$('input[type="file"]');
-        for (const fi of fileInputs) {
-          try {
-            await fi.evaluate((el: any) => el.click());
-            break;
-          } catch (e) { /* ignore */ }
-        }
-        fileChooser = await retry;
-      }
-
-      if (fileChooser) {
-        console.log(`✅ [Flow] FileChooser interceptado! Injetando ${absPath}`);
-        await fileChooser.accept([absPath]);
-
-        console.log(`⏳ [Flow] Aguardando processamento da imagem do ingrediente...`);
-        const maxWaitMs = 60000; // Máximo de 60 segundos
-        const startWait = Date.now();
-        let isImageReady = false;
-
-        while (Date.now() - startWait < maxWaitMs) {
-          isImageReady = (await this.page.evaluate(`(function() {
-             var imgs = document.querySelectorAll('img');
-             var uploadingFound = false;
-             var uploadedFound = false;
-             
-             for (var i = 0; i < imgs.length; i++) {
-                var img = imgs[i];
-                var src = img.getAttribute('src') || '';
-                
-                if (src.indexOf('/fx/api/trpc/media') !== -1 || src.indexOf('blob:') === 0) {
-                   var style = window.getComputedStyle(img);
-                   var pNode = img.parentNode;
-                   var pOpacity = pNode ? window.getComputedStyle(pNode).opacity : '1';
-                   
-                   if (style.opacity === '0' || pOpacity === '0') {
-                      uploadingFound = true;
-                   } else {
-                      uploadedFound = true;
-                   }
-                }
-             }
-             
-             // Se detectou qualquer imagem no DOM que ainda está com opacidade 0 (carregando), recusa
-             if (uploadingFound) return false;
-             // Se tem imagens totalmente sólidas (opacidade normal) e nenhuma em andamento, aceita
-             if (uploadedFound) return true;
-             
-             return false;
-          })()`)) as boolean;
-
-          if (isImageReady) {
-            break;
-          }
-          await new Promise(r => setTimeout(r, 1000));
-        }
-
-        if (isImageReady) {
-          console.log(`✅ [Flow] Ingrediente processado e estabilizado! (${Math.round((Date.now() - startWait) / 1000)}s)`);
-        } else {
-          console.warn(`⚠️ [Flow] Timeout ao aguardar processamento total da nova imagem. Apenas seguindo em frente...`);
-        }
-
-        // Fechar qualquer dialog aberto (fallback de segurança caso o modal de upload não feche sozinho)
-        try { await this.page.keyboard.press('Escape'); } catch (e) { /* ignore */ }
-        return true;
-      } else {
-        console.warn(`⚠️ [Flow] FileChooser não foi detectado após todas as tentativas.`);
-        try { await this.page.keyboard.press('Escape'); } catch (e) { /* ignore */ }
-        return false;
-      }
+      console.log(`🔎 [Flow] Imagem não encontrada na galeria (roots=${existingPick?.roots || 0}, visibleRoots=${existingPick?.visibleRoots || 0}, imgs=${existingPick?.totalImgs || 0}, matched=${existingPick?.matchedCount || 0}). sample=${existingPick?.sample || 'n/a'}. Fazendo fallback para colagem direta no prompt...`);
+      // Fecha o popover de galeria para não capturar o Ctrl+V no local errado.
+      try { await this.page.keyboard.press('Escape'); } catch (e) { /* ignore */ }
+      await this.randomDelay(200, 350);
+      return await this.pasteIngredientImageIntoPrompt(absPath);
 
     } catch (error: any) {
       console.error(`❌ [Flow] Erro ao enviar ingrediente:`, error.message);
