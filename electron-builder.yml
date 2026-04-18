@@ -12,3 +12,5 @@ files:
       - migrations
 publish: null
 npmRebuild: false
+win:
+  signAndEditExecutable: false
