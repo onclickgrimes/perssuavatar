@@ -22,8 +22,8 @@ import http from 'http';
 // ========================================
 
 export interface FlowVideoConfig {
-  /** Mostrar o navegador (false = headless) */
-  headless?: boolean;
+  /** Modo headless: true ou 'new' (recomendado). false = visível */
+  headless?: boolean | 'new';
   /** Diretório de saída para vídeos baixados */
   outputDir?: string;
   /** Diretório de dados do Chrome para o Flow */
@@ -150,7 +150,7 @@ export class FlowVideoProvider {
 
   constructor(config: FlowVideoConfig = {}) {
     this.config = {
-      headless: config.headless ?? false,
+      headless: config.headless ?? 'new',
       generationTimeoutMs: config.generationTimeoutMs ?? 600000, // 10 min
       ...config,
     };
@@ -176,7 +176,7 @@ export class FlowVideoProvider {
   updateConfig(options?: Partial<FlowVideoConfig>): void {
     if (!options) return;
 
-    if (typeof options.headless === 'boolean') {
+    if (typeof options.headless === 'boolean' || options.headless === 'new') {
       this.config.headless = options.headless;
     }
     if (typeof options.geminiProviderId === 'string' || options.geminiProviderId === undefined) {

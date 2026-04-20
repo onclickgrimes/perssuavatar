@@ -1284,7 +1284,7 @@ Lembre-se:
       prompt: string;
       aspectRatio?: string;
       geminiProviderId?: string;
-      headless?: boolean;
+      headless?: boolean | 'new';
       model?: string;
       count?: number;
       referenceImagePath?: string;
@@ -1299,7 +1299,7 @@ Lembre-se:
 
       const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
       const flowProvider = getFlowVideoProvider({
-        headless: options.headless ?? false,
+        headless: options.headless ?? 'new',
         geminiProviderId: options.geminiProviderId,
       });
 
@@ -1359,7 +1359,7 @@ Lembre-se:
   registerVideoEditorGuardedHandle('video-project:get-vo3-credits', async () => {
     try {
       const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
-      const flowProvider = getFlowVideoProvider({ headless: false });
+      const flowProvider = getFlowVideoProvider({ headless: 'new' });
       
       // Inicializar browser se necessário
       if (!flowProvider.isBrowserAlive()) {
@@ -1507,7 +1507,7 @@ Lembre-se:
     model?: string;
     aspectRatio?: string;
     geminiProviderId?: string;
-    headless?: boolean;
+    headless?: boolean | 'new';
     ingredientImagePaths?: string[];
   }) => {
     try {
@@ -1536,7 +1536,7 @@ Lembre-se:
       } else {
         const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
         const flowProvider = getFlowVideoProvider({
-          headless: options.headless ?? false,
+          headless: options.headless ?? 'new',
           geminiProviderId: options.geminiProviderId,
         });
 
@@ -1649,7 +1649,7 @@ Lembre-se:
     prompt: string;
     aspectRatio?: string;
     geminiProviderId?: string;
-    headless?: boolean;
+    headless?: boolean | 'new';
     count?: number;
     referenceImagePath?: string;
     finalImagePath?: string;
@@ -1660,7 +1660,7 @@ Lembre-se:
 
       const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
       const flowProvider = getFlowVideoProvider({
-        headless: options.headless ?? false,
+        headless: options.headless ?? 'new',
         geminiProviderId: options.geminiProviderId,
       });
 
@@ -1779,6 +1779,35 @@ Lembre-se:
       return { success: true };
     } catch (err: any) {
       console.error('❌ [Flow] Erro ao cancelar fila:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  // Handler para consultar se o navegador do Flow está aberto
+  registerVideoEditorGuardedHandle('video-project:get-flow-browser-status', async () => {
+    try {
+      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
+      const flowProvider = getFlowVideoProvider();
+      const isOpen = flowProvider.isBrowserAlive();
+      return { success: true, isOpen };
+    } catch (err: any) {
+      console.error('❌ [Flow] Erro ao consultar status do navegador:', err.message);
+      return { success: false, isOpen: false, error: err.message };
+    }
+  });
+
+  // Handler para fechar/matar o navegador do Flow
+  registerVideoEditorGuardedHandle('video-project:close-flow-browser', async () => {
+    try {
+      const { getFlowVideoProvider, cancelFlowQueue } = require('../libs/FlowVideoProvider');
+      cancelFlowQueue();
+      const flowProvider = getFlowVideoProvider();
+      await flowProvider.close();
+      const isOpen = flowProvider.isBrowserAlive();
+      console.log('🔌 [Flow] Navegador fechado via ação manual do usuário.');
+      return { success: true, isOpen };
+    } catch (err: any) {
+      console.error('❌ [Flow] Erro ao fechar navegador:', err.message);
       return { success: false, error: err.message };
     }
   });

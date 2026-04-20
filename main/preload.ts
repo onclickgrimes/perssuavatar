@@ -595,6 +595,12 @@ const handler = {
     // Cancelar fila de geração do Flow (esvazia mutex e semaphore no backend)
     cancelFlowQueue: () => ipcRenderer.invoke('video-project:cancel-flow-queue'),
 
+    // Consultar status do navegador do Flow (aberto/fechado)
+    getFlowBrowserStatus: () => ipcRenderer.invoke('video-project:get-flow-browser-status'),
+
+    // Fechar/matar o navegador do Flow
+    closeFlowBrowser: () => ipcRenderer.invoke('video-project:close-flow-browser'),
+
     // Cancelar fila da Vertex Studio (pendentes + ativos)
     cancelVertexQueue: () => ipcRenderer.invoke('video-project:cancel-vertex-queue'),
     
@@ -1051,6 +1057,10 @@ const handler = {
     
     // Verificar status de login
     checkLogin: (id: string) => ipcRenderer.invoke('provider:check-login', id),
+
+    // Definir se o navegador do Gemini deve aparecer (headful) ou ficar oculto (headless)
+    setBrowserVisibility: (id: string, showBrowser: boolean) =>
+      ipcRenderer.invoke('provider:set-browser-visibility', id, showBrowser),
     
     // Fechar navegador de um provider
     close: (id: string) => ipcRenderer.invoke('provider:close', id),

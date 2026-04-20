@@ -315,6 +315,13 @@ export function ImagesStep({
   const [vo3Progress, setVo3Progress] = useState<Record<number, string>>({});
   const [vo3Credits, setVo3Credits] = useState<number | null>(null);
   const [isCheckingCredits, setIsCheckingCredits] = useState<boolean>(false);
+  // Controle visual do navegador do Flow (padrão: aparecer).
+  const [showFlowBrowser, setShowFlowBrowser] = useState<boolean>(true);
+  // Estado de execução do navegador do Flow (aberto/fechado) + ação manual de fechar.
+  const [isFlowBrowserOpen, setIsFlowBrowserOpen] = useState<boolean>(false);
+  const [isFlowBrowserStatusLoading, setIsFlowBrowserStatusLoading] = useState<boolean>(false);
+  const [isFlowBrowserClosing, setIsFlowBrowserClosing] = useState<boolean>(false);
+  const [isFlowBrowserCloseHover, setIsFlowBrowserCloseHover] = useState<boolean>(false);
   // Serviço de geração selecionado por segmento (padrão: usa assetType do segmento)
   const [selectedService, setSelectedService] = useState<Record<number, string>>({});
   // Dropdown aberto para qual segmento
@@ -815,6 +822,7 @@ export function ImagesStep({
         prompt: finalPrompt,
         count: 1,
         model: selectedImageModel,
+        headless: !showFlowBrowser,
         ingredientImagePaths: referenceImagePath ? [referenceImagePath] : undefined,
       });
 
@@ -1572,6 +1580,42 @@ export function ImagesStep({
     }, 150);
   }, []);
 
+  const refreshFlowBrowserStatus = useCallback(async (showLoading: boolean = false) => {
+    if (!window.electron?.videoProject?.getFlowBrowserStatus) return;
+    if (showLoading) setIsFlowBrowserStatusLoading(true);
+    try {
+      const result = await window.electron.videoProject.getFlowBrowserStatus();
+      if (result?.success) {
+        setIsFlowBrowserOpen(result.isOpen === true);
+      }
+    } catch (error) {
+      console.error('Erro ao consultar status do navegador Flow:', error);
+    } finally {
+      if (showLoading) setIsFlowBrowserStatusLoading(false);
+    }
+  }, []);
+
+  const handleCloseFlowBrowser = useCallback(async () => {
+    if (!isFlowBrowserOpen || isFlowBrowserClosing) return;
+    if (!window.electron?.videoProject?.closeFlowBrowser) return;
+
+    setIsFlowBrowserClosing(true);
+    try {
+      const result = await window.electron.videoProject.closeFlowBrowser();
+      if (result?.success) {
+        setIsFlowBrowserOpen(result.isOpen === true);
+      } else {
+        console.error('Falha ao fechar navegador Flow:', result?.error || 'erro desconhecido');
+      }
+    } catch (error) {
+      console.error('Erro ao fechar navegador Flow:', error);
+    } finally {
+      setIsFlowBrowserClosing(false);
+      setIsFlowBrowserCloseHover(false);
+      refreshFlowBrowserStatus(false);
+    }
+  }, [isFlowBrowserClosing, isFlowBrowserOpen, refreshFlowBrowserStatus]);
+
   useEffect(() => {
     generatingSegmentsRef.current = generatingSegments;
   }, [generatingSegments]);
@@ -1667,6 +1711,18 @@ export function ImagesStep({
     });
     return () => { cleanup?.(); };
   }, [queueProgressUpdate]);
+
+  // Atualiza status do navegador do Flow (aberto/fechado)
+  useEffect(() => {
+    refreshFlowBrowserStatus(true);
+    const intervalId = window.setInterval(() => {
+      refreshFlowBrowserStatus(false);
+    }, 4000);
+
+    return () => {
+      window.clearInterval(intervalId);
+    };
+  }, [refreshFlowBrowserStatus]);
 
   // Handler para upload de mídia (imagem ou vídeo) - salva no disco
   const handleMediaUpload = async (segmentId: number, file: File) => {
@@ -1896,6 +1952,7 @@ export function ImagesStep({
         const veo2FlowPromise = window.electron?.videoProject?.generateVo2Flow?.({
           prompt: targetGenerationPrompt,
           aspectRatio: aspectRatio,
+          headless: !showFlowBrowser,
           count,
           referenceImagePath,
           finalImagePath,
@@ -1970,6 +2027,7 @@ export function ImagesStep({
         const veo3Promise = window.electron?.videoProject?.generateVo3({
           prompt: targetGenerationPrompt,
           aspectRatio: aspectRatio,
+          headless: !showFlowBrowser,
           count,
           referenceImagePath: isIngredients ? undefined : referenceImagePath,
           finalImagePath: isIngredients ? undefined : finalImagePath,
@@ -2067,6 +2125,7 @@ export function ImagesStep({
           prompt: targetGenerationPrompt,
           count,
           aspectRatio,
+          headless: !showFlowBrowser,
           ingredientImagePaths: ingredientPaths.length > 0 ? ingredientPaths : undefined,
         });
 
@@ -2156,6 +2215,7 @@ export function ImagesStep({
           count,
           model: imageModel,
           aspectRatio,
+          headless: !showFlowBrowser,
           ingredientImagePaths: ingredientPaths.length > 0 ? ingredientPaths : undefined,
         });
 
@@ -2645,6 +2705,54 @@ export function ImagesStep({
             </select>
           </div>
         )}
+
+        <div className="flex items-center gap-2 border-l border-white/10 pl-4">
+          <span className="text-white/60 text-sm">Navegador Flow:</span>
+          <button
+            type="button"
+            onClick={() => setShowFlowBrowser(prev => !prev)}
+            className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+              showFlowBrowser ? 'bg-emerald-500/80' : 'bg-white/20'
+            }`}
+            title={showFlowBrowser ? 'Navegador do Flow visível' : 'Navegador do Flow oculto (headless)'}
+            aria-pressed={showFlowBrowser}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                showFlowBrowser ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+          <span className={`text-xs ${showFlowBrowser ? 'text-emerald-300' : 'text-white/50'}`}>
+            {showFlowBrowser ? 'Aparecer' : 'Oculto'}
+          </span>
+
+          <button
+            type="button"
+            onClick={handleCloseFlowBrowser}
+            onMouseEnter={() => {
+              if (isFlowBrowserOpen) setIsFlowBrowserCloseHover(true);
+            }}
+            onMouseLeave={() => setIsFlowBrowserCloseHover(false)}
+            disabled={!isFlowBrowserOpen || isFlowBrowserClosing || isFlowBrowserStatusLoading}
+            className={`px-3 py-1 rounded-lg text-xs font-semibold transition-colors ${
+              isFlowBrowserOpen
+                ? isFlowBrowserCloseHover
+                  ? 'bg-red-600 hover:bg-red-700 text-white'
+                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                : 'bg-red-700/80 text-white/90 cursor-default'
+            } ${isFlowBrowserClosing ? 'opacity-70 cursor-wait' : ''}`}
+            title={isFlowBrowserOpen ? 'Clique para fechar o navegador do Flow' : 'Navegador do Flow fechado'}
+          >
+            {isFlowBrowserClosing
+              ? '⟳'
+              : isFlowBrowserStatusLoading
+                ? '...'
+                : isFlowBrowserOpen
+                  ? (isFlowBrowserCloseHover ? 'Fechar' : 'Aberto')
+                  : 'Fechado'}
+          </button>
+        </div>
 
         {/* Mostra créditos do Veo 3 se existir algum segmento configurado */}
         {/* {hasVo3Segments && (

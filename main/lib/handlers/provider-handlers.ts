@@ -98,6 +98,17 @@ export function registerProviderHandlers(mainWindow: BrowserWindow | null): void
     }
   });
 
+  // Define visibilidade do navegador para providers Gemini
+  ipcMain.handle('provider:set-browser-visibility', async (_event, id: string, showBrowser: boolean) => {
+    try {
+      const provider = await manager.setGeminiBrowserVisibility(id, showBrowser);
+      return { success: true, data: provider };
+    } catch (error: any) {
+      console.error('❌ Erro ao definir visibilidade do navegador do provider:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Fecha todos os navegadores
   ipcMain.handle('provider:close-all', async () => {
     try {
@@ -180,6 +191,7 @@ export function unregisterProviderHandlers(): void {
     'provider:open-for-login',
     'provider:check-login',
     'provider:close',
+    'provider:set-browser-visibility',
     'provider:close-all',
     'provider:send-message',
     'provider:send-message-stream'

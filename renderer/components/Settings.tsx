@@ -29,6 +29,8 @@ interface ProviderConfig {
   createdAt: string;
   lastUsed?: string;
   isLoggedIn?: boolean;
+  showBrowser?: boolean;
+  isBrowserOpen?: boolean;
 }
 
 type ApiCredentialService =
@@ -167,6 +169,9 @@ export default function Settings({
   const [newProviderPlatform, setNewProviderPlatform] = useState<ProviderPlatform>('gemini');
   const [isCreatingProvider, setIsCreatingProvider] = useState(false);
   const [isOpeningProvider, setIsOpeningProvider] = useState<string | null>(null);
+  const [isUpdatingProviderVisibility, setIsUpdatingProviderVisibility] = useState<string | null>(null);
+  const [isClosingProvider, setIsClosingProvider] = useState<string | null>(null);
+  const [hoveredOpenProvider, setHoveredOpenProvider] = useState<string | null>(null);
   const [providerError, setProviderError] = useState<string | null>(null);
 
   // Account / identity settings
@@ -979,7 +984,15 @@ export default function Settings({
     try {
       const result = await window.electron.provider.list();
       if (result.success && result.data) {
-        setProviders(result.data);
+        const normalizedProviders = result.data.map((provider: ProviderConfig) => {
+          const normalizedProvider: ProviderConfig = { ...provider };
+          if (provider.platform === 'gemini') {
+            normalizedProvider.showBrowser = provider.showBrowser ?? true;
+          }
+          normalizedProvider.isBrowserOpen = provider.isBrowserOpen === true;
+          return normalizedProvider;
+        });
+        setProviders(normalizedProviders);
       }
     } catch (error) {
       console.error('❌ Erro ao carregar providers:', error);
@@ -999,7 +1012,12 @@ export default function Settings({
     try {
       const result = await window.electron.provider.create(newProviderName.trim(), newProviderPlatform);
       if (result.success && result.data) {
-        setProviders(prev => [...prev, result.data]);
+        const createdProvider: ProviderConfig = {
+          ...result.data,
+          showBrowser: result.data.platform === 'gemini' ? (result.data.showBrowser ?? true) : result.data.showBrowser,
+          isBrowserOpen: result.data.isBrowserOpen === true,
+        };
+        setProviders(prev => [...prev, createdProvider]);
         setNewProviderName('');
         console.log('✅ Provider criado:', result.data.name);
       } else {
@@ -1023,6 +1041,7 @@ export default function Settings({
       const result = await window.electron.provider.delete(id);
       if (result.success) {
         setProviders(prev => prev.filter(p => p.id !== id));
+        setHoveredOpenProvider(prev => (prev === id ? null : prev));
         console.log('🗑️ Provider removido:', id);
       }
     } catch (error) {
@@ -1040,7 +1059,9 @@ export default function Settings({
       if (result.success) {
         // Atualizar status de login
         setProviders(prev => prev.map(p => 
-          p.id === id ? { ...p, isLoggedIn: result.isLoggedIn, lastUsed: new Date().toISOString() } : p
+          p.id === id
+            ? { ...p, isLoggedIn: result.isLoggedIn, isBrowserOpen: true, lastUsed: new Date().toISOString() }
+            : p
         ));
         console.log('🌐 Provider aberto:', id, 'Logado:', result.isLoggedIn);
       } else {
@@ -1051,6 +1072,33 @@ export default function Settings({
       setProviderError(error.message || 'Erro ao abrir navegador');
     } finally {
       setIsOpeningProvider(null);
+    }
+  };
+
+  const handleToggleProviderBrowserVisibility = async (id: string, showBrowser: boolean) => {
+    setIsUpdatingProviderVisibility(id);
+    setProviderError(null);
+
+    try {
+      const result = await window.electron.provider.setBrowserVisibility(id, showBrowser);
+      if (result.success && result.data) {
+        setProviders(prev => prev.map(p => (
+          p.id === id
+            ? {
+                ...p,
+                showBrowser: result.data.showBrowser ?? showBrowser,
+                isBrowserOpen: result.data.isBrowserOpen === true,
+              }
+            : p
+        )));
+      } else {
+        setProviderError(result.error || 'Erro ao atualizar visibilidade do navegador');
+      }
+    } catch (error: any) {
+      console.error('❌ Erro ao atualizar visibilidade do navegador do provider:', error);
+      setProviderError(error.message || 'Erro ao atualizar visibilidade do navegador');
+    } finally {
+      setIsUpdatingProviderVisibility(null);
     }
   };
 
@@ -1070,11 +1118,26 @@ export default function Settings({
 
   // Fechar navegador de um provider
   const handleCloseProvider = async (id: string) => {
+    setIsClosingProvider(id);
+    setProviderError(null);
+
     try {
-      await window.electron.provider.close(id);
+      const result = await window.electron.provider.close(id);
+      if (!result?.success) {
+        setProviderError(result?.error || 'Erro ao fechar navegador');
+        return;
+      }
+
+      setProviders(prev => prev.map(p => (
+        p.id === id ? { ...p, isBrowserOpen: false } : p
+      )));
+      setHoveredOpenProvider(prev => (prev === id ? null : prev));
       console.log('🔌 Provider fechado:', id);
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ Erro ao fechar provider:', error);
+      setProviderError(error?.message || 'Erro ao fechar navegador');
+    } finally {
+      setIsClosingProvider(null);
     }
   };
 
@@ -2268,6 +2331,14 @@ export default function Settings({
                             ) : (
                                providers.map((provider) => {
                                   const config = getPlatformConfig(provider.platform);
+                                  const isGemini = provider.platform === 'gemini';
+                                  const showBrowser = provider.showBrowser !== false;
+                                  const isBrowserOpen = provider.isBrowserOpen === true;
+                                  const isVisibilityUpdating = isUpdatingProviderVisibility === provider.id;
+                                  const isClosingBrowser = isClosingProvider === provider.id;
+                                  const isCloseHover = hoveredOpenProvider === provider.id && isBrowserOpen;
+                                  const isProviderBusy = isOpeningProvider === provider.id || isVisibilityUpdating || isClosingBrowser;
+
                                   return (
                                      <div
                                         key={provider.id}
@@ -2288,8 +2359,68 @@ export default function Settings({
                                                  </p>
                                               </div>
                                            </div>
-                                           
+                                          
                                            <div className="flex items-center gap-2">
+                                              {isGemini && (
+                                                 <div className="flex items-center gap-2 mr-1">
+                                                    <span className="text-[11px] text-gray-400">Navegador</span>
+                                                    <button
+                                                       type="button"
+                                                       onClick={() => handleToggleProviderBrowserVisibility(provider.id, !showBrowser)}
+                                                       disabled={isVisibilityUpdating}
+                                                       className={`relative inline-flex h-5 w-10 items-center rounded-full transition-colors ${
+                                                          showBrowser ? 'bg-emerald-500/80' : 'bg-white/20'
+                                                       } ${isVisibilityUpdating ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                                       title={showBrowser ? 'Navegador do Gemini visível' : 'Navegador do Gemini oculto (headless)'}
+                                                       aria-pressed={showBrowser}
+                                                    >
+                                                       <span
+                                                          className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                                                             showBrowser ? 'translate-x-5' : 'translate-x-1'
+                                                          }`}
+                                                       />
+                                                    </button>
+                                                    <span className={`text-[11px] ${showBrowser ? 'text-emerald-300' : 'text-gray-400'}`}>
+                                                       {showBrowser ? 'Aparecer' : 'Oculto'}
+                                                    </span>
+                                                 </div>
+                                              )}
+
+                                              {/* Status do navegador (aberto/fechado) + ação de fechar */}
+                                              <button
+                                                 type="button"
+                                                 onClick={() => {
+                                                    if (isBrowserOpen && !isProviderBusy) {
+                                                       handleCloseProvider(provider.id);
+                                                    }
+                                                 }}
+                                                 onMouseEnter={() => {
+                                                    if (isBrowserOpen) {
+                                                       setHoveredOpenProvider(provider.id);
+                                                    }
+                                                 }}
+                                                 onMouseLeave={() => {
+                                                    setHoveredOpenProvider(prev => (prev === provider.id ? null : prev));
+                                                 }}
+                                                 disabled={!isBrowserOpen || isProviderBusy}
+                                                 className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${
+                                                    isBrowserOpen
+                                                       ? isCloseHover
+                                                          ? 'bg-red-600 hover:bg-red-700 text-white'
+                                                          : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                                       : 'bg-red-700/80 text-white/90 cursor-default'
+                                                 } ${isProviderBusy && isBrowserOpen ? 'opacity-70 cursor-wait' : ''}`}
+                                                 title={isBrowserOpen ? 'Clique para fechar o navegador deste provider' : 'Navegador fechado'}
+                                              >
+                                                 {isClosingBrowser ? (
+                                                    <span className="animate-spin">⟳</span>
+                                                 ) : isBrowserOpen ? (
+                                                    isCloseHover ? 'Fechar' : 'Aberto'
+                                                 ) : (
+                                                    'Fechado'
+                                                 )}
+                                              </button>
+
                                               {/* Status de login */}
                                               <span className={`px-2 py-1 rounded text-xs font-medium ${
                                                  provider.isLoggedIn 
@@ -2302,7 +2433,7 @@ export default function Settings({
                                               {/* Botão de abrir/login */}
                                               <button
                                                  onClick={() => handleOpenProvider(provider.id)}
-                                                 disabled={isOpeningProvider === provider.id}
+                                                 disabled={isProviderBusy}
                                                  className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors ${
                                                     provider.isLoggedIn
                                                        ? 'bg-white/10 hover:bg-white/20 text-white'
@@ -2321,7 +2452,8 @@ export default function Settings({
                                               {/* Botão de deletar */}
                                               <button
                                                  onClick={() => handleDeleteProvider(provider.id)}
-                                                 className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors"
+                                                 disabled={isProviderBusy}
+                                                 className="p-1.5 rounded-lg bg-red-500/10 hover:bg-red-500/20 text-red-400 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                                  title="Remover conta"
                                               >
                                                  🗑️

@@ -25,6 +25,10 @@ export interface ProviderConfig {
   createdAt: string;
   lastUsed?: string;
   isLoggedIn?: boolean;
+  /** Apenas para Gemini: true = navegador visível, false = headless */
+  showBrowser?: boolean;
+  /** Estado em runtime (não persistido): navegador aberto para este provider */
+  isBrowserOpen?: boolean;
 }
 
 interface StoredProviderData {
@@ -63,7 +67,13 @@ export class ProviderManager {
     try {
       const data = fs.readFileSync(this.providersFile, 'utf-8');
       const parsed: StoredProviderData = JSON.parse(data);
-      return parsed.providers || [];
+      const providers = (parsed.providers || []).map((provider: ProviderConfig) => {
+        if (provider.platform === 'gemini') {
+          return { ...provider, showBrowser: provider.showBrowser ?? true };
+        }
+        return provider;
+      });
+      return providers;
     } catch (error) {
       console.error('❌ Erro ao carregar providers:', error);
       return [];
@@ -85,7 +95,9 @@ export class ProviderManager {
   private createProviderInstance(config: ProviderConfig): ProviderInstance {
     switch (config.platform) {
       case 'gemini':
-        return createGeminiProvider(config.id, config.name);
+        return createGeminiProvider(config.id, config.name, {
+          headless: config.showBrowser === false,
+        });
       case 'openai':
         return createOpenAIProvider(config.id, config.name);
       case 'qwen':
@@ -99,14 +111,18 @@ export class ProviderManager {
    * Lista todos os providers salvos
    */
   listProviders(): ProviderConfig[] {
-    return this.loadProviders();
+    const providers = this.loadProviders();
+    return providers.map((provider) => ({
+      ...provider,
+      isBrowserOpen: this.activeProviders.has(provider.id),
+    }));
   }
 
   /**
    * Lista providers de uma plataforma específica
    */
   listProvidersByPlatform(platform: ProviderPlatform): ProviderConfig[] {
-    return this.loadProviders().filter(p => p.platform === platform);
+    return this.listProviders().filter(p => p.platform === platform);
   }
 
   /**
@@ -128,14 +144,15 @@ export class ProviderManager {
       name,
       platform,
       createdAt: new Date().toISOString(),
-      isLoggedIn: false
+      isLoggedIn: false,
+      ...(platform === 'gemini' ? { showBrowser: true } : {}),
     };
 
     providers.push(newProvider);
     this.saveProviders(providers);
 
     console.log(`✅ Provider criado: ${name} (${platform})`);
-    return newProvider;
+    return { ...newProvider, isBrowserOpen: false };
   }
 
   /**
@@ -275,6 +292,35 @@ export class ProviderManager {
       await provider.close();
       this.activeProviders.delete(id);
     }
+  }
+
+  /**
+   * Define se o navegador do provider Gemini deve aparecer (headful) ou ficar oculto (headless).
+   * Ao alterar, fecha a instância ativa para a configuração entrar em vigor na próxima abertura.
+   */
+  async setGeminiBrowserVisibility(id: string, showBrowser: boolean): Promise<ProviderConfig> {
+    const providers = this.loadProviders();
+    const config = providers.find(p => p.id === id);
+
+    if (!config) {
+      throw new Error(`Provider não encontrado: ${id}`);
+    }
+
+    if (config.platform !== 'gemini') {
+      throw new Error('A visibilidade do navegador só é suportada para providers Gemini.');
+    }
+
+    config.showBrowser = showBrowser;
+    this.saveProviders(providers);
+
+    // Se estiver ativo, fecha para aplicar a nova configuração na próxima abertura.
+    const activeProvider = this.activeProviders.get(id);
+    if (activeProvider) {
+      await activeProvider.close();
+      this.activeProviders.delete(id);
+    }
+
+    return { ...config, isBrowserOpen: this.activeProviders.has(id) };
   }
 
   /**
