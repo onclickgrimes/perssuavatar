@@ -432,8 +432,9 @@ export class FlowVideoProvider {
       }
       this.browser = await this.connectToRemoteChrome();
 
-      // Sempre usa aba dedicada para evitar reaproveitar abas antigas/ocultas.
-      this.page = await this.browser.newPage();
+      // Reaproveita a aba inicial do Chrome para poupar recursos.
+      const pages = await this.browser.pages();
+      this.page = pages[0] || await this.browser.newPage();
       await this.page.bringToFront().catch(() => { });
 
       console.log(`✅ [Flow] Navegador inicializado com perfil próprio`);
