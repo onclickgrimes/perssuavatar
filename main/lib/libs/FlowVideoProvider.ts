@@ -868,6 +868,178 @@ export class FlowVideoProvider {
   }
 
   /**
+   * Clique resiliente para evitar falhas "Node is either not clickable or not an Element"
+   * comuns em headless com overlays/animacao.
+   */
+  private async safeClickHandle(
+    handle: import('puppeteer').ElementHandle,
+    label: string
+  ): Promise<boolean> {
+    if (!this.page) return false;
+
+    try {
+      await handle.evaluate((el: any) => {
+        try {
+          el.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+        } catch { }
+      });
+    } catch { }
+
+    try {
+      await handle.click();
+      return true;
+    } catch { }
+
+    try {
+      const box = await handle.boundingBox();
+      if (box && box.width > 0 && box.height > 0) {
+        await this.page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+        return true;
+      }
+    } catch { }
+
+    try {
+      const clicked = await handle.evaluate((el: any) => {
+        function isVisible(node: any) {
+          if (!node || !node.getBoundingClientRect) return false;
+          const rect = node.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return false;
+          const style = window.getComputedStyle(node);
+          if (!style) return true;
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          const opacity = parseFloat(style.opacity || '1');
+          if (!isNaN(opacity) && opacity <= 0) return false;
+          return true;
+        }
+
+        function isClickable(node: any) {
+          if (!node || node.nodeType !== 1) return false;
+          const tag = (node.tagName || '').toLowerCase();
+          if (tag === 'button' || tag === 'a' || tag === 'label') return true;
+          const role = (node.getAttribute('role') || '').toLowerCase();
+          if (role === 'button' || role === 'link') return true;
+          if (node.hasAttribute('onclick')) return true;
+          const tabIndex = node.getAttribute('tabindex');
+          if (tabIndex !== null && tabIndex !== '-1') return true;
+          const style = window.getComputedStyle(node);
+          return !!style && style.cursor === 'pointer';
+        }
+
+        function findClickable(node: any) {
+          let current = node;
+          for (let depth = 0; depth < 6 && current; depth++) {
+            if (isVisible(current) && isClickable(current)) return current;
+            current = current.parentElement;
+          }
+          return null;
+        }
+
+        const target = findClickable(el) || el;
+        if (!target || !isVisible(target)) return false;
+
+        try { target.scrollIntoView({ block: 'center', inline: 'center' }); } catch { }
+        try { target.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, view: window })); } catch { }
+        try { target.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window })); } catch { }
+        try { target.click(); } catch { return false; }
+        try { target.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window })); } catch { }
+        return true;
+      });
+
+      if (clicked) return true;
+    } catch { }
+
+    console.warn(`⚠️ [Flow] safeClick falhou para: ${label}`);
+    return false;
+  }
+
+  /**
+   * Tenta clicar em "Novo projeto" apenas via DOM (mais robusto em headless).
+   */
+  private async tryClickNewProjectViaDom(): Promise<string | null> {
+    if (!this.page) return null;
+
+    try {
+      const clickedBy = (await this.page.evaluate(`(function() {
+        function normalize(text) {
+          return (text || '').toString().toLowerCase().replace(/\\s+/g, ' ').trim();
+        }
+
+        function isVisible(node) {
+          if (!node || !node.getBoundingClientRect) return false;
+          var rect = node.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return false;
+          var style = window.getComputedStyle(node);
+          if (!style) return true;
+          if (style.display === 'none' || style.visibility === 'hidden') return false;
+          var opacity = parseFloat(style.opacity || '1');
+          if (!isNaN(opacity) && opacity <= 0) return false;
+          return true;
+        }
+
+        function isClickable(node) {
+          if (!node || node.nodeType !== 1) return false;
+          var tag = (node.tagName || '').toLowerCase();
+          if (tag === 'button' || tag === 'a' || tag === 'label') return true;
+          var role = normalize(node.getAttribute('role') || '');
+          if (role === 'button' || role === 'link') return true;
+          if (node.hasAttribute('onclick')) return true;
+          var tabIndex = node.getAttribute('tabindex');
+          if (tabIndex !== null && tabIndex !== '-1') return true;
+          var style = window.getComputedStyle(node);
+          return !!style && style.cursor === 'pointer';
+        }
+
+        function findClickable(node) {
+          var current = node;
+          for (var depth = 0; depth < 7 && current; depth++) {
+            if (isVisible(current) && isClickable(current)) return current;
+            current = current.parentElement;
+          }
+          return null;
+        }
+
+        function clickNode(node) {
+          if (!node || !isVisible(node)) return false;
+          try { node.scrollIntoView({ block: 'center', inline: 'center' }); } catch (e0) { }
+          try { node.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, cancelable: true, view: window })); } catch (e1) { }
+          try { node.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window })); } catch (e2) { }
+          try { node.click(); } catch (e3) { return false; }
+          try { node.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window })); } catch (e4) { }
+          return true;
+        }
+
+        // 1) texto explícito
+        var txtCandidates = document.querySelectorAll('button, a, [role="button"], [role="link"]');
+        for (var i = 0; i < txtCandidates.length; i++) {
+          var node = txtCandidates[i];
+          if (!isVisible(node)) continue;
+          var text = normalize(node.textContent || '');
+          if (text.indexOf('novo projeto') === -1 && text.indexOf('new project') === -1) continue;
+          var clickable = findClickable(node) || node;
+          if (clickNode(clickable)) return 'text';
+        }
+
+        // 2) ícone add_2
+        var icons = document.querySelectorAll('i.google-symbols, i');
+        for (var k = 0; k < icons.length; k++) {
+          var icon = icons[k];
+          if (!isVisible(icon)) continue;
+          var iconText = normalize(icon.textContent || '');
+          if (iconText !== 'add_2') continue;
+          var clickable2 = findClickable(icon) || icon.parentElement || icon;
+          if (clickNode(clickable2)) return 'icon:add_2';
+        }
+
+        return null;
+      })()`)) as string | null;
+
+      return clickedBy || null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Lê os toasts de erro visíveis e retorna contagem por mensagem.
    * Útil para diferenciar erro antigo (stale) de erro novo da geração atual.
    */
@@ -1282,16 +1454,29 @@ export class FlowVideoProvider {
 
       let clicked = false;
 
+      // Estratégia 0 (preferencial em headless): clique via DOM puro
+      if (this.config.headless) {
+        const domClickMode = await this.tryClickNewProjectViaDom();
+        if (domClickMode) {
+          clicked = true;
+          console.log(`✅ [Flow] Botão novo projeto clicado via DOM (${domClickMode})`);
+        }
+      }
+
       // Estratégia 1: Buscar por texto do botão
-      const buttons = await this.page.$$('button');
-      for (const btn of buttons) {
-        const text = (await this.getTextContent(btn)).toLowerCase();
-        if (text.includes('novo projeto') || text.includes('new project')) {
-          if (await this.isVisible(btn)) {
-            await btn.click();
-            clicked = true;
-            console.log(`✅ [Flow] Botão encontrado pelo texto: "${text}"`);
-            break;
+      if (!clicked) {
+        const buttons = await this.page.$$('button');
+        for (const btn of buttons) {
+          const text = (await this.getTextContent(btn)).toLowerCase();
+          if (text.includes('novo projeto') || text.includes('new project')) {
+            if (await this.isVisible(btn)) {
+              const ok = await this.safeClickHandle(btn, `new-project-button:text:${text.substring(0, 40)}`);
+              if (ok) {
+                clicked = true;
+                console.log(`✅ [Flow] Botão encontrado pelo texto: "${text}"`);
+                break;
+              }
+            }
           }
         }
       }
@@ -1303,10 +1488,12 @@ export class FlowVideoProvider {
           const text = await this.getTextContent(icon);
           if (text === 'add_2') {
             if (await this.isVisible(icon)) {
-              await icon.click(); // Click bubbles up para o button pai
-              clicked = true;
-              console.log(`✅ [Flow] Botão encontrado pelo ícone add_2`);
-              break;
+              const ok = await this.safeClickHandle(icon, 'new-project-icon:add_2');
+              if (ok) {
+                clicked = true;
+                console.log(`✅ [Flow] Botão encontrado pelo ícone add_2`);
+                break;
+              }
             }
           }
         }
@@ -1319,10 +1506,12 @@ export class FlowVideoProvider {
           const text = (await this.getTextContent(link)).toLowerCase();
           if (text.includes('novo projeto') || text.includes('new project')) {
             if (await this.isVisible(link)) {
-              await link.click();
-              clicked = true;
-              console.log(`✅ [Flow] Link encontrado pelo texto: "${text}"`);
-              break;
+              const ok = await this.safeClickHandle(link, `new-project-link:text:${text.substring(0, 40)}`);
+              if (ok) {
+                clicked = true;
+                console.log(`✅ [Flow] Link encontrado pelo texto: "${text}"`);
+                break;
+              }
             }
           }
         }
@@ -2158,6 +2347,63 @@ export class FlowVideoProvider {
   }
 
   /**
+   * Tenta capturar um FileChooser já "armado" e aceitar o arquivo do ingrediente.
+   * Útil para layouts em que o clique no botão add_2 abre o seletor diretamente
+   * (comum em headless/new Flow).
+   */
+  private async tryAcceptIngredientFileChooser(
+    absPath: string,
+    armedChooserPromise?: Promise<import('puppeteer').FileChooser | null>,
+    waitMs: number = 1400
+  ): Promise<boolean> {
+    if (!this.page || !armedChooserPromise) return false;
+
+    try {
+      const fileChooser = await Promise.race([
+        armedChooserPromise,
+        new Promise<null>(resolve => setTimeout(() => resolve(null), waitMs)),
+      ]);
+
+      if (!fileChooser) return false;
+
+      console.log(`✅ [Flow] File Chooser de ingrediente detectado. Enviando arquivo...`);
+      await fileChooser.accept([absPath]);
+      await this.randomDelay(500, 900);
+      return true;
+    } catch (error: any) {
+      console.warn(`⚠️ [Flow] Falha ao aceitar FileChooser do ingrediente:`, error?.message || error);
+      return false;
+    }
+  }
+
+  /**
+   * Fallback para layouts que expõem input[type=file] sem emitir FileChooser.
+   */
+  private async tryUploadIngredientViaFileInput(absPath: string): Promise<boolean> {
+    if (!this.page) return false;
+
+    try {
+      const fileInputs = await this.page.$$('input[type="file"]');
+      if (!fileInputs.length) return false;
+
+      for (const input of fileInputs) {
+        try {
+          await input.uploadFile(absPath);
+          console.log(`✅ [Flow] Ingrediente enviado via input[type=file].`);
+          await this.randomDelay(500, 900);
+          return true;
+        } catch {
+          // tenta o próximo input
+        }
+      }
+    } catch (error: any) {
+      console.warn(`⚠️ [Flow] Erro no fallback input[type=file] do ingrediente:`, error?.message || error);
+    }
+
+    return false;
+  }
+
+  /**
    * Cola um ingrediente no campo de prompt (fallback quando a imagem não existe na galeria)
    * e aguarda o preview ficar totalmente carregado.
    */
@@ -2166,7 +2412,6 @@ export class FlowVideoProvider {
 
     try {
       const fsLocal = require('fs');
-      const { clipboard } = require('electron');
 
       if (!fsLocal.existsSync(absPath)) {
         console.warn(`⚠️ [Flow] Arquivo do ingrediente não encontrado para colagem: ${absPath}`);
@@ -2405,8 +2650,14 @@ export class FlowVideoProvider {
       absPath = pathModule.resolve(absPath);
 
       console.log(`🧪 [Flow] Caminho absoluto do ingrediente: ${absPath}`);
+      const isHeadlessMode = this.config.headless === true || this.config.headless === 'new';
 
       // 1. Encontrar e clicar no botão com ícone "add_2" (área de ingredients do Flow)
+      // Em modo headless/new, alguns layouts disparam file chooser direto no clique.
+      const armedFileChooser = isHeadlessMode
+        ? this.page.waitForFileChooser({ timeout: 9000 }).catch(() => null)
+        : undefined;
+
       // Buscar botão add_2 via Puppeteer (API nativa, sem page.evaluate com string)
       const allButtons = await this.page.$$('button');
       let clickedAdd = false;
@@ -2446,8 +2697,22 @@ export class FlowVideoProvider {
       }
 
       if (!clickedAdd) {
+        if (isHeadlessMode) {
+          // Última chance sem botão: alguns layouts headless deixam input file montado no DOM.
+          const uploadedViaInput = await this.tryUploadIngredientViaFileInput(absPath);
+          if (uploadedViaInput) return true;
+        }
+
         console.warn(`⚠️ [Flow] Nenhum botão de galeria de ingrediente encontrado. Tentando colar imagem direto no prompt...`);
         return await this.pasteIngredientImageIntoPrompt(absPath);
+      }
+
+      if (isHeadlessMode) {
+        // Se o clique no add_2 abriu seletor nativo, processa já aqui (somente headless).
+        const acceptedChooserEarly = await this.tryAcceptIngredientFileChooser(absPath, armedFileChooser, 2200);
+        if (acceptedChooserEarly) {
+          return true;
+        }
       }
 
       await this.randomDelay(800, 1200);
@@ -2637,6 +2902,15 @@ export class FlowVideoProvider {
         // Clica fora para fechar o popover (pode usar o botão X ou Escape)
         try { await this.page.keyboard.press('Escape'); } catch (e) { /* ignore */ }
         return true;
+      }
+
+      if (isHeadlessMode) {
+        // Se não houve galeria clicável, ainda pode existir chooser tardio/input file no DOM.
+        const acceptedChooserLate = await this.tryAcceptIngredientFileChooser(absPath, armedFileChooser, 1200);
+        if (acceptedChooserLate) return true;
+
+        const uploadedViaInput = await this.tryUploadIngredientViaFileInput(absPath);
+        if (uploadedViaInput) return true;
       }
 
       console.log(`🔎 [Flow] Imagem não encontrada na galeria (roots=${existingPick?.roots || 0}, visibleRoots=${existingPick?.visibleRoots || 0}, imgs=${existingPick?.totalImgs || 0}, matched=${existingPick?.matchedCount || 0}). sample=${existingPick?.sample || 'n/a'}. Fazendo fallback para colagem direta no prompt...`);
