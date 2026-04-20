@@ -1,9 +1,9 @@
 /**
- * Gemini Provider - Automação do Google Gemini via Puppeteer
+ * Gemini Provider - AutomaÃ§Ã£o do Google Gemini via Puppeteer
  * 
- * Biblioteca para automação do Google Gemini via navegador.
- * Gerencia login, sessões e interações com o chat.
- * Inclui interceptação de respostas via CDP (Chrome DevTools Protocol).
+ * Biblioteca para automaÃ§Ã£o do Google Gemini via navegador.
+ * Gerencia login, sessÃµes e interaÃ§Ãµes com o chat.
+ * Inclui interceptaÃ§Ã£o de respostas via CDP (Chrome DevTools Protocol).
  */
 
 import puppeteer, { Browser, Page, CDPSession } from 'puppeteer';
@@ -22,6 +22,7 @@ export interface GeminiProviderConfig {
   name: string;
   headless?: boolean;
   userDataDir?: string;
+  remoteDebuggingPort?: number;
   viewport?: { width: number; height: number };
 }
 
@@ -40,20 +41,20 @@ export type StreamCleanupFn = () => void;
 
 /**
  * Extrai o texto limpo dos pacotes brutos do Gemini.
- * O Gemini envia dados em chunks com formato específico:
- * - Cada chunk tem um número de tamanho na primeira linha
+ * O Gemini envia dados em chunks com formato especÃ­fico:
+ * - Cada chunk tem um nÃºmero de tamanho na primeira linha
  * - Seguido por um array JSON com estrutura [["wrb.fr", null, "payload"]]
- * - O texto está aninhado profundamente no payload
+ * - O texto estÃ¡ aninhado profundamente no payload
  * 
  * @param rawData - O corpo completo da resposta HTTP
  * @returns O texto acumulado ou null
  */
 function parseGeminiPacket(rawData: string): string | null {
   try {
-    // Remove o prefixo de segurança ")]}'" se existir
+    // Remove o prefixo de seguranÃ§a ")]}'" se existir
     let cleanData = rawData.replace(/^\)\]\}'/, '').trim();
 
-    // Divide em chunks (cada chunk começa com um número de tamanho)
+    // Divide em chunks (cada chunk comeÃ§a com um nÃºmero de tamanho)
     // Formato: "160\n[["wrb.fr",...]]]\n926\n[["wrb.fr",...]]"
     const chunks: string[] = [];
     const lines = cleanData.split('\n');
@@ -61,7 +62,7 @@ function parseGeminiPacket(rawData: string): string | null {
 
     for (const line of lines) {
       const trimmed = line.trim();
-      // Se a linha é apenas um número, é o início de um novo chunk
+      // Se a linha Ã© apenas um nÃºmero, Ã© o inÃ­cio de um novo chunk
       if (/^\d+$/.test(trimmed)) {
         if (currentChunk) {
           chunks.push(currentChunk);
@@ -86,7 +87,7 @@ function parseGeminiPacket(rawData: string): string | null {
         const envelope = JSON.parse(chunk);
         if (!Array.isArray(envelope) || !Array.isArray(envelope[0])) continue;
 
-        // Verifica se é um envelope wrb.fr
+        // Verifica se Ã© um envelope wrb.fr
         if (envelope[0][0] !== 'wrb.fr') continue;
 
         const payloadString = envelope[0][2];
@@ -94,9 +95,9 @@ function parseGeminiPacket(rawData: string): string | null {
 
         const data = JSON.parse(payloadString);
 
-        // Busca o texto em múltiplos caminhos possíveis
-        // IMPORTANTE: data[4][0][0] é o ID (rc_xxx), NÃO o texto!
-        // O texto está em data[4][0][1] ou data[4][0][33]
+        // Busca o texto em mÃºltiplos caminhos possÃ­veis
+        // IMPORTANTE: data[4][0][0] Ã© o ID (rc_xxx), NÃƒO o texto!
+        // O texto estÃ¡ em data[4][0][1] ou data[4][0][33]
         let textContent: string | null = null;
 
         // Caminho 1: data[4][0][1][0] - resposta principal (ex: ["Tudo"])
@@ -104,22 +105,22 @@ function parseGeminiPacket(rawData: string): string | null {
           const responseArray = data[4][0][1];
           if (Array.isArray(responseArray) && typeof responseArray[0] === 'string') {
             const candidate = responseArray[0];
-            // Ignora se for um ID (começa com rc_ ou é muito curto)
+            // Ignora se for um ID (comeÃ§a com rc_ ou Ã© muito curto)
             if (!candidate.startsWith('rc_') && candidate.length > 2) {
               textContent = candidate;
             }
           }
         }
 
-        // Caminho 2: data[4][0][33][0][0] - conteúdo expandido/thinking
+        // Caminho 2: data[4][0][33][0][0] - conteÃºdo expandido/thinking
         if (!textContent && data[4]?.[0]?.[33]) {
           const expanded = data[4][0][33];
           if (Array.isArray(expanded) && expanded[0]) {
-            // O texto principal está em expanded[0][0]
+            // O texto principal estÃ¡ em expanded[0][0]
             if (typeof expanded[0][0] === 'string' && expanded[0][0].length > 5) {
               textContent = expanded[0][0];
             } else if (Array.isArray(expanded[0]) && expanded[0][0]) {
-              // Às vezes está mais aninhado
+              // Ã€s vezes estÃ¡ mais aninhado
               const nested = expanded[0][0];
               if (Array.isArray(nested) && typeof nested[0] === 'string') {
                 textContent = nested[0];
@@ -130,10 +131,10 @@ function parseGeminiPacket(rawData: string): string | null {
           }
         }
 
-        // Caminho 3: data[4][0][0] - mas SÓ SE não for um ID
+        // Caminho 3: data[4][0][0] - mas SÃ“ SE nÃ£o for um ID
         if (!textContent && data[4]?.[0]?.[0]) {
           const candidate = data[4][0][0];
-          // Verifica se é texto real e não um ID
+          // Verifica se Ã© texto real e nÃ£o um ID
           if (typeof candidate === 'string' &&
             candidate.length > 10 &&
             !candidate.startsWith('rc_') &&
@@ -142,20 +143,20 @@ function parseGeminiPacket(rawData: string): string | null {
           }
         }
 
-        // Se encontrou texto válido, processa
+        // Se encontrou texto vÃ¡lido, processa
         if (textContent && textContent.length > 5) {
           // Ignora se for apenas um ID de resposta
           if (textContent.match(/^rc_[a-f0-9]+$/)) {
             continue;
           }
 
-          // Mantém o texto bruto para não quebrar respostas JSON (escapes são relevantes)
+          // MantÃ©m o texto bruto para nÃ£o quebrar respostas JSON (escapes sÃ£o relevantes)
           if (!foundText || textContent.length > foundText.length) {
             foundText = textContent;
           }
         }
       } catch (innerErr) {
-        // Ignora chunks inválidos
+        // Ignora chunks invÃ¡lidos
         continue;
       }
     }
@@ -177,6 +178,7 @@ export class GeminiProvider {
   private cdpClient: CDPSession | null = null;
   private config: GeminiProviderConfig;
   private userDataDir: string;
+  private remoteDebuggingPort: number;
   private isConnected: boolean = false;
   private _isLoggedIn: boolean = false;
   private _userInfo: GeminiUserInfo | null = null;
@@ -189,27 +191,30 @@ export class GeminiProvider {
   private static readonly GEMINI_URL = 'https://gemini.google.com/';
   private static readonly LOGIN_URL = 'https://accounts.google.com/';
   private static readonly INPUT_SELECTOR = 'div[contenteditable="true"], textarea[placeholder*="message"], input[type="text"]';
-  private static readonly REMOTE_DEBUGGING_PORT = 9222;
+  private static readonly BASE_REMOTE_DEBUGGING_PORT = 9222;
+  private static readonly REMOTE_DEBUGGING_PORT_RANGE = 200;
 
   /** Processo do Chrome iniciado por este provider */
   private ownedChromeProcess: ChildProcess | null = null;
 
   constructor(config: GeminiProviderConfig) {
     this.config = {
-      headless: config.headless ?? false, // Modo headless por padrão
+      headless: config.headless ?? false, // Modo headless por padrÃ£o
       viewport: config.viewport ?? { width: 1366, height: 768 },
       ...config
     };
 
-    // Define diretório de dados do usuário (mesmo padrão do TikTok/Instagram)
+    // Define diretÃ³rio de dados do usuÃ¡rio (mesmo padrÃ£o do TikTok/Instagram)
     this.userDataDir = this.config.userDataDir ||
       path.join(app.getPath('userData'), 'provider-cookies', 'profiles', this.config.id);
+    this.remoteDebuggingPort = this.config.remoteDebuggingPort ??
+      this.computeRemoteDebuggingPort(this.config.id);
 
     this.ensureDirectoriesExist();
   }
 
   // ========================================
-  // MÉTODOS PRIVADOS - SETUP
+  // MÃ‰TODOS PRIVADOS - SETUP
   // ========================================
 
   private debugDir: string | null = null;
@@ -219,7 +224,7 @@ export class GeminiProvider {
       fs.mkdirSync(this.userDataDir, { recursive: true });
     }
 
-    // Diretório para screenshots de debug
+    // DiretÃ³rio para screenshots de debug
     this.debugDir = path.join(this.userDataDir, 'debug-screenshots');
     if (!fs.existsSync(this.debugDir)) {
       fs.mkdirSync(this.debugDir, { recursive: true });
@@ -238,9 +243,9 @@ export class GeminiProvider {
       const filepath = path.join(this.debugDir, filename);
 
       await this.page.screenshot({ path: filepath, fullPage: false });
-      console.log(`📸 [Gemini Debug] Screenshot: ${stepName} -> ${filename}`);
+      console.log(`ðŸ“¸ [Gemini Debug] Screenshot: ${stepName} -> ${filename}`);
     } catch (err) {
-      console.warn(`⚠️ [Gemini Debug] Erro ao tirar screenshot:`, err);
+      console.warn(`âš ï¸ [Gemini Debug] Erro ao tirar screenshot:`, err);
     }
   }
 
@@ -264,6 +269,14 @@ export class GeminiProvider {
     return undefined;
   }
 
+  private computeRemoteDebuggingPort(providerId: string): number {
+    let hash = 0;
+    for (let i = 0; i < providerId.length; i++) {
+      hash = ((hash * 31) + providerId.charCodeAt(i)) >>> 0;
+    }
+    return GeminiProvider.BASE_REMOTE_DEBUGGING_PORT + (hash % GeminiProvider.REMOTE_DEBUGGING_PORT_RANGE);
+  }
+
   private getChromeExecutablePath(chromePath?: string): string {
     if (chromePath) return chromePath;
 
@@ -273,7 +286,7 @@ export class GeminiProvider {
     }
 
     throw new Error(
-      'Chrome/Chromium não encontrado para iniciar em modo remoto. Instale o Google Chrome ou garanta o Chromium do Puppeteer.'
+      'Chrome/Chromium nÃ£o encontrado para iniciar em modo remoto. Instale o Google Chrome ou garanta o Chromium do Puppeteer.'
     );
   }
 
@@ -315,7 +328,7 @@ export class GeminiProvider {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       if (spawnedProcess && spawnedProcess.exitCode !== null) {
-        throw new Error(`Chrome remoto finalizou antes da conexão DevTools (exitCode=${spawnedProcess.exitCode})`);
+        throw new Error(`Chrome remoto finalizou antes da conexÃ£o DevTools (exitCode=${spawnedProcess.exitCode})`);
       }
 
       if (await this.isRemoteDebugEndpointReady(port)) {
@@ -325,13 +338,13 @@ export class GeminiProvider {
       await new Promise(resolve => setTimeout(resolve, 250));
     }
 
-    throw new Error(`Timeout aguardando endpoint de depuração remota na porta ${port}`);
+    throw new Error(`Timeout aguardando endpoint de depuraÃ§Ã£o remota na porta ${port}`);
   }
 
   private async launchChromeWithRemoteDebugging(userDataDir: string, chromePath?: string): Promise<void> {
     const executablePath = this.getChromeExecutablePath(chromePath);
     const args = [
-      `--remote-debugging-port=${GeminiProvider.REMOTE_DEBUGGING_PORT}`,
+      `--remote-debugging-port=${this.remoteDebuggingPort}`,
       `--user-data-dir=${userDataDir}`,
       '--window-size=1366,768',
       '--disable-dev-shm-usage',
@@ -360,12 +373,12 @@ export class GeminiProvider {
     });
 
     this.ownedChromeProcess = child;
-    await this.waitForRemoteDebugEndpoint(GeminiProvider.REMOTE_DEBUGGING_PORT, 20000, child);
+    await this.waitForRemoteDebugEndpoint(this.remoteDebuggingPort, 20000, child);
   }
 
   private async connectToRemoteChrome(): Promise<Browser> {
     const browser = await puppeteer.connect({
-      browserURL: `http://127.0.0.1:${GeminiProvider.REMOTE_DEBUGGING_PORT}`,
+      browserURL: `http://127.0.0.1:${this.remoteDebuggingPort}`,
       defaultViewport: null,
     });
     return browser;
@@ -377,18 +390,76 @@ export class GeminiProvider {
   }
 
   /**
-   * Preenche o campo de prompt via colagem (rápido), com fallback por injeção no DOM.
+   * Foca o primeiro campo de prompt visÃ­vel/editÃ¡vel no Gemini.
+   */
+  private async focusVisiblePromptInput(): Promise<boolean> {
+    if (!this.page) return false;
+
+    return await this.page.evaluate((selector) => {
+      const isVisible = (el: Element): el is HTMLElement => {
+        if (!(el instanceof HTMLElement)) return false;
+        const style = window.getComputedStyle(el);
+        const rect = el.getBoundingClientRect();
+        if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
+        if (rect.width <= 0 || rect.height <= 0) return false;
+        if (el.getAttribute('aria-hidden') === 'true') return false;
+        return true;
+      };
+
+      const candidates = Array.from(document.querySelectorAll(selector));
+      for (const candidate of candidates) {
+        if (!isVisible(candidate)) continue;
+
+        if (candidate instanceof HTMLInputElement || candidate instanceof HTMLTextAreaElement) {
+          if (candidate.disabled || candidate.readOnly) continue;
+          candidate.focus();
+          candidate.select?.();
+          return true;
+        }
+
+        if (candidate.isContentEditable) {
+          candidate.focus();
+          const selection = window.getSelection();
+          if (selection) {
+            selection.removeAllRanges();
+            const range = document.createRange();
+            range.selectNodeContents(candidate);
+            selection.addRange(range);
+          }
+          return true;
+        }
+      }
+
+      return false;
+    }, GeminiProvider.INPUT_SELECTOR);
+  }
+
+  /**
+   * Preenche o campo de prompt via colagem (rÃ¡pido), com fallback por injeÃ§Ã£o no DOM.
    */
   private async fillPromptInput(message: string): Promise<void> {
     if (!this.page) {
-      throw new Error('Página não inicializada');
+      throw new Error('PÃ¡gina nÃ£o inicializada');
     }
 
-    await this.page.waitForSelector(GeminiProvider.INPUT_SELECTOR, { timeout: 10000 });
-    await this.page.click(GeminiProvider.INPUT_SELECTOR);
+    await this.page.waitForFunction((selector) => {
+      const nodes = Array.from(document.querySelectorAll(selector));
+      return nodes.some((node) => {
+        if (!(node instanceof HTMLElement)) return false;
+        const style = window.getComputedStyle(node);
+        const rect = node.getBoundingClientRect();
+        if (!style || style.display === 'none' || style.visibility === 'hidden') return false;
+        return rect.width > 0 && rect.height > 0;
+      });
+    }, { timeout: 15000 }, GeminiProvider.INPUT_SELECTOR);
+
+    const focused = await this.focusVisiblePromptInput();
+    if (!focused) {
+      throw new Error('Campo de prompt do Gemini nÃ£o encontrado/visÃ­vel');
+    }
     await this.randomDelay(120, 220);
 
-    // Limpa o conteúdo atual rapidamente
+    // Limpa o conteÃºdo atual rapidamente
     await this.page.keyboard.down('Control');
     await this.page.keyboard.press('KeyA');
     await this.page.keyboard.up('Control');
@@ -404,7 +475,7 @@ export class GeminiProvider {
       await this.page.keyboard.up('Control');
       pasted = true;
     } catch (err) {
-      console.warn('⚠️ [Gemini] Falha ao colar via clipboard, usando fallback por DOM');
+      console.warn('âš ï¸ [Gemini] Falha ao colar via clipboard, usando fallback por DOM');
     }
 
     if (!pasted) {
@@ -430,7 +501,7 @@ export class GeminiProvider {
   }
 
   // ========================================
-  // MÉTODOS PÚBLICOS - CONEXÃO
+  // MÃ‰TODOS PÃšBLICOS - CONEXÃƒO
   // ========================================
 
   isBrowserConnected(): boolean {
@@ -458,36 +529,38 @@ export class GeminiProvider {
    */
   async init(): Promise<void> {
     if (this.browser) {
-      console.log(`⚠️ [Gemini] Browser já inicializado para ${this.config.name}`);
+      console.log(`âš ï¸ [Gemini] Browser jÃ¡ inicializado para ${this.config.name}`);
       return;
     }
 
     try {
-      console.log(`🚀 [Gemini] Inicializando navegador para ${this.config.name}...`);
+      console.log(`ðŸš€ [Gemini] Inicializando navegador para ${this.config.name}...`);
 
       const chromePath = this.findChromePath();
-      console.log(`🔍 [Gemini] Chrome path: ${chromePath || 'using bundled Chromium'}`);
-      console.log(`📁 [Gemini] User data dir: ${this.userDataDir}`);
-      console.log(`🧭 [Gemini] Modo navegador: ${this.config.headless ? 'headless' : 'visível'}`);
+      console.log(`ðŸ” [Gemini] Chrome path: ${chromePath || 'using bundled Chromium'}`);
+      console.log(`ðŸ“ [Gemini] User data dir: ${this.userDataDir}`);
+      console.log(`ðŸ”Œ [Gemini] Remote debugging port: ${this.remoteDebuggingPort}`);
+      console.log(`ðŸ§­ [Gemini] Modo navegador: ${this.config.headless ? 'headless' : 'visÃ­vel'}`);
 
-      // Se existir processo próprio antigo, encerra antes de subir outro na mesma porta
+      // Se existir processo prÃ³prio antigo, encerra antes de subir outro na mesma porta
       if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
         try { this.ownedChromeProcess.kill(); } catch { }
       }
       this.ownedChromeProcess = null;
 
-      // Se já há um Chrome rodando na porta 9222, apenas conecta
-      if (await this.isRemoteDebugEndpointReady(GeminiProvider.REMOTE_DEBUGGING_PORT)) {
-        console.log(`🔗 [Gemini] Chrome já rodando na porta ${GeminiProvider.REMOTE_DEBUGGING_PORT}, conectando...`);
+      // Se jÃ¡ hÃ¡ um Chrome rodando na porta do provider, apenas conecta
+      if (await this.isRemoteDebugEndpointReady(this.remoteDebuggingPort)) {
+        console.log(`ðŸ”— [Gemini] Chrome jÃ¡ rodando na porta ${this.remoteDebuggingPort}, conectando...`);
       } else {
         await this.launchChromeWithRemoteDebugging(this.userDataDir, chromePath);
       }
       this.browser = await this.connectToRemoteChrome();
 
-      const pages = await this.browser.pages();
-      this.page = pages[0] || await this.browser.newPage();
+      // Sempre usa uma aba dedicada deste provider para evitar interagir com abas antigas/ocultas.
+      this.page = await this.browser.newPage();
+      await this.page.bringToFront().catch(() => { });
 
-      // Inicializa sessão CDP para interceptação de rede
+      // Inicializa sessÃ£o CDP para interceptaÃ§Ã£o de rede
       this.cdpClient = await this.page.target().createCDPSession();
       await this.cdpClient.send('Network.enable');
 
@@ -498,10 +571,10 @@ export class GeminiProvider {
         ]
       });
 
-      console.log(`📡 [Gemini] CDP Session iniciada (Network + Fetch)`);
+      console.log(`ðŸ“¡ [Gemini] CDP Session iniciada (Network + Fetch)`);
 
       this.isConnected = true;
-      console.log(`✅ [Gemini] Navegador inicializado para ${this.config.name}`);
+      console.log(`âœ… [Gemini] Navegador inicializado para ${this.config.name}`);
 
     } catch (error) {
       if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
@@ -511,7 +584,7 @@ export class GeminiProvider {
       this.browser = null;
       this.page = null;
       this.isConnected = false;
-      console.error(`❌ [Gemini] Erro ao inicializar navegador:`, error);
+      console.error(`âŒ [Gemini] Erro ao inicializar navegador:`, error);
       throw error;
     }
   }
@@ -521,18 +594,20 @@ export class GeminiProvider {
    */
   async goToGemini(): Promise<boolean> {
     if (!this.page) {
-      throw new Error('Navegador não inicializado. Chame init() primeiro.');
+      throw new Error('Navegador nÃ£o inicializado. Chame init() primeiro.');
     }
 
     try {
-      console.log(`🌐 [Gemini] Navegando para ${GeminiProvider.GEMINI_URL}...`);
+      console.log(`ðŸŒ [Gemini] Navegando para ${GeminiProvider.GEMINI_URL}...`);
+      await this.page.bringToFront().catch(() => { });
 
       await this.page.goto(GeminiProvider.GEMINI_URL, {
-        waitUntil: 'networkidle2',
+        waitUntil: 'domcontentloaded',
         timeout: 30000
       });
 
       await this.randomDelay(2000, 3000);
+      console.log(`ðŸ“ [Gemini] URL atual apÃ³s navegaÃ§Ã£o: ${this.page.url()}`);
 
       this._isLoggedIn = await this.checkLoginStatus();
 
@@ -542,7 +617,7 @@ export class GeminiProvider {
 
       return this._isLoggedIn;
     } catch (error) {
-      console.error(`❌ [Gemini] Erro ao navegar:`, error);
+      console.error(`âŒ [Gemini] Erro ao navegar:`, error);
       return false;
     }
   }
@@ -559,7 +634,13 @@ export class GeminiProvider {
 
       // Se redirecionou para login do Google
       if (currentUrl.includes('accounts.google.com')) {
-        console.log(`⚠️ [Gemini] Usuário não está logado (redirecionado para login)`);
+        console.log(`âš ï¸ [Gemini] UsuÃ¡rio nÃ£o estÃ¡ logado (redirecionado para login)`);
+        this._isLoggedIn = false;
+        return false;
+      }
+
+      if (!currentUrl.includes('gemini.google.com')) {
+        console.log(`âš ï¸ [Gemini] URL fora do Gemini: ${currentUrl}`);
         this._isLoggedIn = false;
         return false;
       }
@@ -572,28 +653,28 @@ export class GeminiProvider {
         currentUrl.includes('gemini.google.com/app');
 
       this._isLoggedIn = isLoggedIn;
-      console.log(`${isLoggedIn ? '✅' : '⚠️'} [Gemini] Status de login: ${isLoggedIn ? 'logado' : 'não logado'}`);
+      console.log(`${isLoggedIn ? 'âœ…' : 'âš ï¸'} [Gemini] Status de login: ${isLoggedIn ? 'logado' : 'nÃ£o logado'}`);
       return isLoggedIn;
 
     } catch (error) {
-      console.error(`❌ [Gemini] Erro ao verificar login:`, error);
+      console.error(`âŒ [Gemini] Erro ao verificar login:`, error);
       this._isLoggedIn = false;
       return false;
     }
   }
 
   /**
-   * Extrai informações do usuário
+   * Extrai informaÃ§Ãµes do usuÃ¡rio
    */
   async extractUserInfo(): Promise<GeminiUserInfo | null> {
     if (!this.page) return null;
 
     try {
-      console.log(`📍 [Gemini] Extraindo informações do usuário...`);
+      console.log(`ðŸ“ [Gemini] Extraindo informaÃ§Ãµes do usuÃ¡rio...`);
 
       await this.randomDelay(1000, 2000);
 
-      // Tenta extrair informações do usuário do DOM
+      // Tenta extrair informaÃ§Ãµes do usuÃ¡rio do DOM
       const userInfo = await this.page.evaluate(() => {
         // Procura por elementos com email ou nome
         const emailElement = document.querySelector('[data-email]');
@@ -609,26 +690,26 @@ export class GeminiProvider {
 
       if (userInfo.email || userInfo.name) {
         this._userInfo = userInfo;
-        console.log(`✅ [Gemini] User info extraído:`, this._userInfo);
+        console.log(`âœ… [Gemini] User info extraÃ­do:`, this._userInfo);
         return this._userInfo;
       }
 
-      console.warn(`⚠️ [Gemini] Não foi possível extrair informações do usuário`);
+      console.warn(`âš ï¸ [Gemini] NÃ£o foi possÃ­vel extrair informaÃ§Ãµes do usuÃ¡rio`);
       return null;
 
     } catch (error) {
-      console.error(`❌ [Gemini] Erro ao extrair user info:`, error);
+      console.error(`âŒ [Gemini] Erro ao extrair user info:`, error);
       return null;
     }
   }
 
   /**
-   * Aguarda o usuário fazer login manualmente
+   * Aguarda o usuÃ¡rio fazer login manualmente
    */
   async waitForLogin(timeoutMs: number = 300000): Promise<boolean> {
     if (!this.page) return false;
 
-    console.log(`⏳ [Gemini] Aguardando login manual para ${this.config.name}...`);
+    console.log(`â³ [Gemini] Aguardando login manual para ${this.config.name}...`);
 
     const startTime = Date.now();
     const checkInterval = 3000;
@@ -639,7 +720,7 @@ export class GeminiProvider {
       if (currentUrl.includes('gemini.google.com') && !currentUrl.includes('accounts.google.com')) {
         const isLoggedIn = await this.checkLoginStatus();
         if (isLoggedIn) {
-          console.log(`✅ [Gemini] Login detectado para ${this.config.name}!`);
+          console.log(`âœ… [Gemini] Login detectado para ${this.config.name}!`);
           this._isLoggedIn = true;
           await this.extractUserInfo();
           return true;
@@ -649,12 +730,12 @@ export class GeminiProvider {
       await new Promise(resolve => setTimeout(resolve, checkInterval));
     }
 
-    console.log(`⚠️ [Gemini] Timeout aguardando login para ${this.config.name}`);
+    console.log(`âš ï¸ [Gemini] Timeout aguardando login para ${this.config.name}`);
     return false;
   }
 
   // ========================================
-  // MÉTODOS DE INTERCEPTAÇÃO - CDP
+  // MÃ‰TODOS DE INTERCEPTAÃ‡ÃƒO - CDP
   // ========================================
 
   // Map para rastrear requestIds do StreamGenerate
@@ -663,13 +744,13 @@ export class GeminiProvider {
 
   /**
    * Inicia o streaming de respostas do Gemini usando CDP.
-   * Intercepta requisições para StreamGenerate e captura chunks de resposta.
-   * @param onChunk - Callback chamado a cada novo pedaço de texto.
-   * @returns Função para parar de ouvir (cleanup).
+   * Intercepta requisiÃ§Ãµes para StreamGenerate e captura chunks de resposta.
+   * @param onChunk - Callback chamado a cada novo pedaÃ§o de texto.
+   * @returns FunÃ§Ã£o para parar de ouvir (cleanup).
    */
   startResponseStream(onChunk: OnChunkCallback): StreamCleanupFn {
     if (!this.cdpClient) {
-      throw new Error('CDP Client não inicializado. Chame init() primeiro.');
+      throw new Error('CDP Client nÃ£o inicializado. Chame init() primeiro.');
     }
 
     // Limpa qualquer stream anterior
@@ -682,11 +763,11 @@ export class GeminiProvider {
     this.streamRequestIds.clear();
     this.responseBuffer.clear();
 
-    // Listener para novas requisições - identifica StreamGenerate
+    // Listener para novas requisiÃ§Ãµes - identifica StreamGenerate
     const requestListener = (params: any) => {
       if (params.request?.url?.includes('StreamGenerate')) {
         this.streamRequestIds.add(params.requestId);
-        console.log(`📡 [Gemini] StreamGenerate detectado: ${params.requestId}`);
+        console.log(`ðŸ“¡ [Gemini] StreamGenerate detectado: ${params.requestId}`);
       }
     };
 
@@ -695,7 +776,7 @@ export class GeminiProvider {
       if (!this.streamRequestIds.has(params.requestId)) return;
 
       try {
-        // Obtém o corpo da resposta até agora
+        // ObtÃ©m o corpo da resposta atÃ© agora
         const { body } = await this.cdpClient!.send('Network.getResponseBody', {
           requestId: params.requestId
         });
@@ -710,11 +791,11 @@ export class GeminiProvider {
           }
         }
       } catch (err) {
-        // Resposta ainda não está completa - isso é esperado para streaming
+        // Resposta ainda nÃ£o estÃ¡ completa - isso Ã© esperado para streaming
       }
     };
 
-    // Listener para quando a resposta é completada
+    // Listener para quando a resposta Ã© completada
     const loadingFinishedListener = async (params: any) => {
       if (!this.streamRequestIds.has(params.requestId)) return;
 
@@ -735,7 +816,7 @@ export class GeminiProvider {
 
         this.streamRequestIds.delete(params.requestId);
       } catch (err: any) {
-        // Erro esperado quando resposta ainda não está disponível
+        // Erro esperado quando resposta ainda nÃ£o estÃ¡ disponÃ­vel
       }
     };
 
@@ -746,9 +827,9 @@ export class GeminiProvider {
     // @ts-ignore - CDP event typing
     this.cdpClient.on('Network.loadingFinished', loadingFinishedListener);
 
-    console.log(`📡 [Gemini] Stream de respostas iniciado (CDP)`);
+    console.log(`ðŸ“¡ [Gemini] Stream de respostas iniciado (CDP)`);
 
-    // Função de cleanup
+    // FunÃ§Ã£o de cleanup
     this.streamCleanup = () => {
       if (this.cdpClient) {
         // @ts-ignore - CDP event typing
@@ -760,7 +841,7 @@ export class GeminiProvider {
       }
       this.lastStreamText = '';
       this.streamRequestIds.clear();
-      console.log(`🛑 [Gemini] Stream de respostas parado`);
+      console.log(`ðŸ›‘ [Gemini] Stream de respostas parado`);
     };
 
     return this.streamCleanup;
@@ -769,13 +850,13 @@ export class GeminiProvider {
   /**
    * Espera a resposta completa do Gemini e retorna o texto final.
    * Usa CDP para monitorar quando o StreamGenerate termina.
-   * @param silenceTimeoutMs - Quanto tempo de silêncio na rede define o "fim" (padrão 3000ms).
-   * @param maxTimeoutMs - Timeout máximo total (padrão 60s).
+   * @param silenceTimeoutMs - Quanto tempo de silÃªncio na rede define o "fim" (padrÃ£o 3000ms).
+   * @param maxTimeoutMs - Timeout mÃ¡ximo total (padrÃ£o 60s).
    * @returns O texto completo da resposta.
    */
   async waitForCompleteResponse(silenceTimeoutMs: number = 3000, maxTimeoutMs: number = 60000): Promise<string> {
     if (!this.cdpClient) {
-      throw new Error('CDP Client não inicializado. Chame init() primeiro.');
+      throw new Error('CDP Client nÃ£o inicializado. Chame init() primeiro.');
     }
 
     return new Promise((resolve, reject) => {
@@ -784,14 +865,14 @@ export class GeminiProvider {
       let hasStarted = false;
       let activeRequestId: string | null = null;
 
-      // Função para resetar o timer de "fim da resposta"
+      // FunÃ§Ã£o para resetar o timer de "fim da resposta"
       const resetTimer = () => {
         if (silenceTimer) clearTimeout(silenceTimer);
 
         silenceTimer = setTimeout(() => {
           if (hasStarted && finalResponse) {
             cleanup();
-            console.log(`✅ [Gemini] Resposta completa (silence timeout): ${finalResponse.length} chars`);
+            console.log(`âœ… [Gemini] Resposta completa (silence timeout): ${finalResponse.length} chars`);
             resolve(finalResponse);
           }
         }, silenceTimeoutMs);
@@ -801,7 +882,7 @@ export class GeminiProvider {
         if (params.request?.url?.includes('StreamGenerate')) {
           activeRequestId = params.requestId;
           hasStarted = true;
-          console.log(`📡 [Gemini] Aguardando resposta de: ${params.requestId}`);
+          console.log(`ðŸ“¡ [Gemini] Aguardando resposta de: ${params.requestId}`);
           resetTimer();
         }
       };
@@ -842,10 +923,10 @@ export class GeminiProvider {
           }
 
           cleanup();
-          console.log(`✅ [Gemini] Resposta completa (loading finished): ${finalResponse.length} chars`);
+          console.log(`âœ… [Gemini] Resposta completa (loading finished): ${finalResponse.length} chars`);
           resolve(finalResponse);
         } catch (err) {
-          console.error(`❌ [Gemini] Erro ao obter resposta:`, err);
+          console.error(`âŒ [Gemini] Erro ao obter resposta:`, err);
           // Tenta resolver com o que temos
           if (finalResponse) {
             cleanup();
@@ -873,58 +954,58 @@ export class GeminiProvider {
       // @ts-ignore - CDP event typing
       this.cdpClient.on('Network.loadingFinished', loadingFinishedListener);
 
-      // Timer de segurança (timeout máximo)
+      // Timer de seguranÃ§a (timeout mÃ¡ximo)
       setTimeout(() => {
         cleanup();
         if (finalResponse) {
-          console.log(`⚠️ [Gemini] Timeout máximo, retornando resposta parcial: ${finalResponse.length} chars`);
+          console.log(`âš ï¸ [Gemini] Timeout mÃ¡ximo, retornando resposta parcial: ${finalResponse.length} chars`);
           resolve(finalResponse);
         } else if (!hasStarted) {
-          reject(new Error(`Timeout: Gemini não respondeu em ${maxTimeoutMs / 1000}s.`));
+          reject(new Error(`Timeout: Gemini nÃ£o respondeu em ${maxTimeoutMs / 1000}s.`));
         } else {
-          reject(new Error(`Timeout: Resposta não completada em ${maxTimeoutMs / 1000}s.`));
+          reject(new Error(`Timeout: Resposta nÃ£o completada em ${maxTimeoutMs / 1000}s.`));
         }
       }, maxTimeoutMs);
     });
   }
 
   // ========================================
-  // MÉTODOS PÚBLICOS - INTERAÇÃO COM CHAT
+  // MÃ‰TODOS PÃšBLICOS - INTERAÃ‡ÃƒO COM CHAT
   // ========================================
 
   /**
-   * Envia uma mensagem para o Gemini (sem interceptação)
+   * Envia uma mensagem para o Gemini (sem interceptaÃ§Ã£o)
    */
   async sendMessage(message: string): Promise<string | null> {
     if (!this._isLoggedIn || !this.page) {
-      throw new Error('Usuário não está logado no Gemini');
+      throw new Error('UsuÃ¡rio nÃ£o estÃ¡ logado no Gemini');
     }
 
     try {
-      console.log(`💬 [Gemini] Enviando mensagem...`);
+      console.log(`ðŸ’¬ [Gemini] Enviando mensagem...`);
 
-      // Preenche por colagem direta (mais rápido que digitar caractere a caractere)
+      // Preenche por colagem direta (mais rÃ¡pido que digitar caractere a caractere)
       await this.fillPromptInput(message);
 
-      // Envia a mensagem (Enter ou botão de enviar)
+      // Envia a mensagem (Enter ou botÃ£o de enviar)
       await this.page.keyboard.press('Enter');
 
       // Aguarda a resposta usando o extrator do DOM (fallback)
-      console.log(`⏳ [Gemini] Aguardando resposta...`);
+      console.log(`â³ [Gemini] Aguardando resposta...`);
       await this.randomDelay(3000, 5000);
 
-      // Tenta capturar a última resposta
+      // Tenta capturar a Ãºltima resposta
       const response = await this.page.evaluate(() => {
         const responses = document.querySelectorAll('[data-content-type="response"], .model-response, .response-content');
         const lastResponse = responses[responses.length - 1];
         return lastResponse?.textContent || null;
       });
 
-      console.log(`✅ [Gemini] Resposta recebida`);
+      console.log(`âœ… [Gemini] Resposta recebida`);
       return response;
 
     } catch (error) {
-      console.error(`❌ [Gemini] Erro ao enviar mensagem:`, error);
+      console.error(`âŒ [Gemini] Erro ao enviar mensagem:`, error);
       throw error;
     }
   }
@@ -937,11 +1018,11 @@ export class GeminiProvider {
    * @returns A resposta completa.
    */
   async sendMessageWithStream(message: string, onChunk?: OnChunkCallback): Promise<string> {
-    // Verifica se o navegador ainda está conectado
+    // Verifica se o navegador ainda estÃ¡ conectado
     if (!this.isBrowserConnected()) {
-      console.log(`⚠️ [Gemini] Navegador desconectado, reinicializando...`);
+      console.log(`âš ï¸ [Gemini] Navegador desconectado, reinicializando...`);
 
-      // Limpa referências antigas
+      // Limpa referÃªncias antigas
       this.browser = null;
       this.page = null;
       this.cdpClient = null;
@@ -952,17 +1033,17 @@ export class GeminiProvider {
       await this.goToGemini();
 
       if (!this._isLoggedIn) {
-        throw new Error('Não foi possível reconectar ao Gemini. Faça login novamente.');
+        throw new Error('NÃ£o foi possÃ­vel reconectar ao Gemini. FaÃ§a login novamente.');
       }
     }
 
     if (!this._isLoggedIn || !this.page || !this.cdpClient) {
-      throw new Error('Usuário não está logado no Gemini ou CDP não inicializado');
+      throw new Error('UsuÃ¡rio nÃ£o estÃ¡ logado no Gemini ou CDP nÃ£o inicializado');
     }
 
     return new Promise(async (resolve, reject) => {
       try {
-        console.log(`💬 [Gemini] Enviando mensagem com streaming...`);
+        console.log(`ðŸ’¬ [Gemini] Enviando mensagem com streaming...`);
 
         let lastText = '';
         let finalResponse = '';
@@ -979,7 +1060,7 @@ export class GeminiProvider {
         let lastParseAt = 0;
         let settled = false;
 
-        // Função de cleanup
+        // FunÃ§Ã£o de cleanup
         const cleanup = () => {
           if (this.cdpClient) {
             // @ts-ignore
@@ -994,7 +1075,7 @@ export class GeminiProvider {
           if (settled) return;
           settled = true;
           cleanup();
-          console.log(`✅ [Gemini] Resposta completa (${reason}): ${response.length} chars`);
+          console.log(`âœ… [Gemini] Resposta completa (${reason}): ${response.length} chars`);
           resolve(response);
         };
 
@@ -1032,7 +1113,7 @@ export class GeminiProvider {
           if (fullText && fullText.length > lastText.length) {
             const newChunk = fullText.slice(lastText.length);
             if (verboseStreamLogs) {
-              console.log(`📦 [Stream] Chunk (+${newChunk.length} chars)`);
+              console.log(`ðŸ“¦ [Stream] Chunk (+${newChunk.length} chars)`);
             }
 
             onChunk?.(newChunk);
@@ -1043,7 +1124,7 @@ export class GeminiProvider {
           touchInactivity();
         };
 
-        // Lê o stream usando IO.read e repassa para a página ao final
+        // LÃª o stream usando IO.read e repassa para a pÃ¡gina ao final
         const readStream = async (handle: string, fetchRequestId: string, responseStatusCode: number, responseHeaders: any[]) => {
           if (!this.cdpClient || isReading) return;
           isReading = true;
@@ -1060,7 +1141,7 @@ export class GeminiProvider {
               });
 
               if (result.data) {
-                // Decodifica base64 se necessário
+                // Decodifica base64 se necessÃ¡rio
                 const chunk = result.base64Encoded
                   ? Buffer.from(result.data, 'base64').toString('utf-8')
                   : result.data;
@@ -1083,10 +1164,10 @@ export class GeminiProvider {
 
               if (result.eof) {
                 const rawBody = rawChunks.join('');
-                console.log(`📡 [Stream] EOF alcançado, repassando ${rawBodyLength} bytes para a página`);
+                console.log(`ðŸ“¡ [Stream] EOF alcanÃ§ado, repassando ${rawBodyLength} bytes para a pÃ¡gina`);
                 await this.cdpClient.send('IO.close', { handle });
 
-                // Repassa os dados para a página usando fulfillRequest
+                // Repassa os dados para a pÃ¡gina usando fulfillRequest
                 try {
                   await this.cdpClient.send('Fetch.fulfillRequest', {
                     requestId: fetchRequestId,
@@ -1094,9 +1175,9 @@ export class GeminiProvider {
                     responseHeaders: responseHeaders || [],
                     body: Buffer.from(rawBody).toString('base64')
                   });
-                  console.log(`📡 [Stream] Dados repassados para a página`);
+                  console.log(`ðŸ“¡ [Stream] Dados repassados para a pÃ¡gina`);
                 } catch (fulfillErr: any) {
-                  console.error(`❌ [Stream] Erro ao repassar dados:`, fulfillErr.message);
+                  console.error(`âŒ [Stream] Erro ao repassar dados:`, fulfillErr.message);
                 }
 
                 // Parse final sempre no EOF para garantir resposta completa.
@@ -1117,44 +1198,44 @@ export class GeminiProvider {
               }
             }
           } catch (err: any) {
-            console.error(`❌ [Stream] Erro na leitura:`, err.message);
+            console.error(`âŒ [Stream] Erro na leitura:`, err.message);
           }
 
           isReading = false;
         };
 
-        // Listener para requisições interceptadas pelo Fetch
+        // Listener para requisiÃ§Ãµes interceptadas pelo Fetch
         const fetchListener = async (params: any) => {
           const { requestId, request, responseStatusCode, responseHeaders } = params;
 
           if (request?.url?.includes('StreamGenerate')) {
-            console.log(`📡 [Fetch] StreamGenerate interceptado`);
+            console.log(`ðŸ“¡ [Fetch] StreamGenerate interceptado`);
             touchInactivity();
 
             try {
-              // Obtém o stream handle para ler os dados progressivamente
+              // ObtÃ©m o stream handle para ler os dados progressivamente
               const streamResult = await this.cdpClient!.send('Fetch.takeResponseBodyAsStream', {
                 requestId
               });
 
               streamHandle = streamResult.stream;
-              console.log(`📡 [Fetch] Stream handle obtido: ${streamHandle}`);
+              console.log(`ðŸ“¡ [Fetch] Stream handle obtido: ${streamHandle}`);
 
               // Inicia a leitura do stream (passa requestId e headers para fulfillRequest)
               readStream(streamHandle, requestId, responseStatusCode, responseHeaders);
 
             } catch (err: any) {
-              console.error(`❌ [Fetch] Erro ao obter stream:`, err.message);
+              console.error(`âŒ [Fetch] Erro ao obter stream:`, err.message);
 
-              // Fallback: continua a requisição normalmente
+              // Fallback: continua a requisiÃ§Ã£o normalmente
               try {
                 await this.cdpClient!.send('Fetch.continueRequest', { requestId });
               } catch (e) {
-                // Ignora se já foi tratado
+                // Ignora se jÃ¡ foi tratado
               }
             }
           } else {
-            // Continua outras requisições normalmente
+            // Continua outras requisiÃ§Ãµes normalmente
             try {
               await this.cdpClient!.send('Fetch.continueRequest', { requestId });
             } catch (e) {
@@ -1166,30 +1247,30 @@ export class GeminiProvider {
         // Registra listener do Fetch
         // @ts-ignore
         this.cdpClient.on('Fetch.requestPaused', fetchListener);
-        console.log(`📡 [Gemini] Fetch listener registrado`);
+        console.log(`ðŸ“¡ [Gemini] Fetch listener registrado`);
 
-        // Timer máximo de segurança
+        // Timer mÃ¡ximo de seguranÃ§a
         maxTimer = setTimeout(() => {
           if (settled) return;
-          settleError(new Error(`Timeout máximo: resposta não concluiu (EOF) em ${Math.round(maxTimeoutMs / 1000)}s.`));
+          settleError(new Error(`Timeout mÃ¡ximo: resposta nÃ£o concluiu (EOF) em ${Math.round(maxTimeoutMs / 1000)}s.`));
         }, maxTimeoutMs);
 
-        // Preenche por colagem direta (mais rápido que digitar caractere a caractere)
+        // Preenche por colagem direta (mais rÃ¡pido que digitar caractere a caractere)
         await this.fillPromptInput(message);
 
         // Envia a mensagem
         await this.page!.keyboard.press('Enter');
-        console.log(`📤 [Gemini] Mensagem enviada, aguardando resposta...`);
+        console.log(`ðŸ“¤ [Gemini] Mensagem enviada, aguardando resposta...`);
 
       } catch (error: any) {
-        console.error(`❌ [Gemini] Erro ao enviar mensagem:`, error.message);
+        console.error(`âŒ [Gemini] Erro ao enviar mensagem:`, error.message);
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
   }
 
   // ========================================
-  // MÉTODOS PÚBLICOS - CLEANUP
+  // MÃ‰TODOS PÃšBLICOS - CLEANUP
   // ========================================
 
   async close(): Promise<void> {
@@ -1206,7 +1287,7 @@ export class GeminiProvider {
         this.cdpClient = null;
       }
 
-      // Desconecta o Puppeteer (não fecha o browser, só desconecta o WebSocket)
+      // Desconecta o Puppeteer (nÃ£o fecha o browser, sÃ³ desconecta o WebSocket)
       try {
         if (this.browser && this.browser.isConnected()) {
           await this.browser.disconnect();
@@ -1224,10 +1305,10 @@ export class GeminiProvider {
       this.isConnected = false;
       this._isLoggedIn = false;
       this._userInfo = null;
-      console.log(`🔌 [Gemini] Navegador fechado para ${this.config.name}`);
+      console.log(`ðŸ”Œ [Gemini] Navegador fechado para ${this.config.name}`);
     } catch (error) {
-      console.error(`❌ [Gemini] Erro ao fechar navegador:`, error);
-      // Garante que o estado é resetado mesmo em caso de erro
+      console.error(`âŒ [Gemini] Erro ao fechar navegador:`, error);
+      // Garante que o estado Ã© resetado mesmo em caso de erro
       if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
         try { this.ownedChromeProcess.kill(); } catch { }
       }
@@ -1265,5 +1346,5 @@ export function createGeminiProvider(id: string, name: string, options?: Partial
   });
 }
 
-// Export do parser para uso externo se necessário
+// Export do parser para uso externo se necessÃ¡rio
 export { parseGeminiPacket };

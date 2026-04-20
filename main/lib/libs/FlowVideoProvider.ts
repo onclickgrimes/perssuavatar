@@ -1,21 +1,11 @@
-/**
+﻿/**
  * Flow Video Provider - Automação do Google Flow (Veo 3) via Puppeteer
  * 
  * Gerencia a geração de vídeos usando o Google Flow (labs.google/fx/pt/tools/flow).
  * 
- * ESTRATÉGIA DE COOKIES:
- * 1. Tenta reaproveitar o browser já aberto de um GeminiProvider logado
- *    (abre nova aba no mesmo browser = cookies compartilhados automaticamente)
- * 2. Se não houver browser ativo, abre um novo browser usando o mesmo
- *    userDataDir do provider Gemini (compartilha cookies por diretório)
- * 3. Busca automaticamente o primeiro provider Gemini logado via ProviderManager
- * 
- * Fluxo:
- * 1. Encontra provider Gemini logado → pega cookies/browser
- * 2. Navega para o Flow (text-to-video)
- * 3. Insere o prompt
- * 4. Aguarda a geração (polling por vídeo pronto)
- * 5. Baixa o vídeo gerado
+ * ISOLAMENTO DE SESSÃO:
+ * - Usa browser e profile (userDataDir) próprios do Flow
+ * - Não reaproveita browser/cookies de outros providers
  */
 
 import puppeteer, { Browser, Page } from 'puppeteer';
@@ -36,9 +26,11 @@ export interface FlowVideoConfig {
   headless?: boolean;
   /** Diretório de saída para vídeos baixados */
   outputDir?: string;
+  /** Diretório de dados do Chrome para o Flow */
+  userDataDir?: string;
   /** Timeout máximo para geração (ms) - padrão 10 min */
   generationTimeoutMs?: number;
-  /** ID do provider Gemini a usar (se não informado, busca automaticamente) */
+  /** @deprecated Mantido apenas por compatibilidade; Flow usa sessão própria. */
   geminiProviderId?: string;
 }
 
@@ -74,14 +66,13 @@ export class FlowVideoProvider {
   private page: Page | null = null;
   private config: FlowVideoConfig;
   private outputDir: string;
-  /** Se true, o browser veio do GeminiProvider e NÃO deve ser fechado por nós */
-  private usingSharedBrowser: boolean = false;
-  /** Processo do Chrome iniciado por este provider (quando não compartilhado) */
+  private userDataDir: string;
+  /** Processo do Chrome iniciado por este provider */
   private ownedChromeProcess: ChildProcess | null = null;
 
   // URLs do Flow
   private static readonly FLOW_URL = 'https://labs.google/fx/pt/tools/flow';
-  private static readonly REMOTE_DEBUGGING_PORT = 9222;
+  private static readonly REMOTE_DEBUGGING_PORT = 9332;
 
   // ── Controle de concorrência ──────────────────────────────────────────────
   // O browser tem uma única página (this.page). As operações de navegação e
@@ -167,9 +158,14 @@ export class FlowVideoProvider {
     // Diretório de saída na pasta de projetos de vídeo
     this.outputDir = this.config.outputDir ||
       path.join(app.getPath('userData'), 'video-projects', 'flow-videos');
+    this.userDataDir = this.config.userDataDir ||
+      path.join(app.getPath('userData'), 'provider-cookies', 'profiles', 'flow-video');
 
     if (!fs.existsSync(this.outputDir)) {
       fs.mkdirSync(this.outputDir, { recursive: true });
+    }
+    if (!fs.existsSync(this.userDataDir)) {
+      fs.mkdirSync(this.userDataDir, { recursive: true });
     }
   }
 
@@ -193,6 +189,12 @@ export class FlowVideoProvider {
       this.outputDir = options.outputDir;
       if (!fs.existsSync(this.outputDir)) {
         fs.mkdirSync(this.outputDir, { recursive: true });
+      }
+    }
+    if (typeof options.userDataDir === 'string' && options.userDataDir.trim()) {
+      this.userDataDir = options.userDataDir;
+      if (!fs.existsSync(this.userDataDir)) {
+        fs.mkdirSync(this.userDataDir, { recursive: true });
       }
     }
   }
@@ -345,7 +347,6 @@ export class FlowVideoProvider {
         console.log('⚠️ [Flow] Browser desconectado, resetando estado...');
         this.browser = null;
         this.page = null;
-        this.usingSharedBrowser = false;
         return false;
       }
 
@@ -354,10 +355,6 @@ export class FlowVideoProvider {
       if (this.page.isClosed()) {
         console.log('⚠️ [Flow] Page fechada, resetando estado...');
         this.page = null;
-        // Se era browser compartilhado, não tenta fechar
-        if (!this.usingSharedBrowser) {
-          // browser ainda conectado mas page morreu — pode recriar page
-        }
         return false;
       }
 
@@ -366,94 +363,6 @@ export class FlowVideoProvider {
       console.warn('⚠️ [Flow] Erro ao verificar browser:', err);
       this.browser = null;
       this.page = null;
-      this.usingSharedBrowser = false;
-      return false;
-    }
-  }
-
-  /**
-   * Encontra o userDataDir de um provider Gemini logado via ProviderManager.
-   * Retorna o caminho do userDataDir ou null se nenhum provider Gemini existir.
-   */
-  private findGeminiUserDataDir(): { userDataDir: string; providerId: string } | null {
-    try {
-      const { getProviderManager } = require('./PuppeteerProvider');
-      const manager = getProviderManager();
-
-      const geminiProviders = manager.listProvidersByPlatform('gemini');
-
-      if (geminiProviders.length === 0) {
-        console.log('⚠️ [Flow] Nenhum provider Gemini encontrado no ProviderManager');
-        return null;
-      }
-
-      // Prioriza: primeiro o ID específico (se configurado), depois o logado mais recente
-      let targetProvider = geminiProviders[0];
-
-      if (this.config.geminiProviderId) {
-        const specific = geminiProviders.find((p: any) => p.id === this.config.geminiProviderId);
-        if (specific) {
-          targetProvider = specific;
-        } else {
-          console.warn(`⚠️ [Flow] Provider Gemini "${this.config.geminiProviderId}" não encontrado, usando "${targetProvider.id}"`);
-        }
-      } else {
-        // Busca o que está logado (prioridade) ou o mais recente
-        const loggedIn = geminiProviders.find((p: any) => p.isLoggedIn);
-        if (loggedIn) {
-          targetProvider = loggedIn;
-        }
-      }
-
-      const userDataDir = path.join(
-        app.getPath('userData'),
-        'provider-cookies',
-        'profiles',
-        targetProvider.id
-      );
-
-      console.log(`🔑 [Flow] Usando cookies do provider Gemini: "${targetProvider.name}" (${targetProvider.id})`);
-      console.log(`📁 [Flow] UserDataDir: ${userDataDir}`);
-
-      return { userDataDir, providerId: targetProvider.id };
-    } catch (err: any) {
-      console.error('❌ [Flow] Erro ao buscar provider Gemini:', err.message);
-      return null;
-    }
-  }
-
-  /**
-   * Tenta reaproveitar o browser já aberto de um GeminiProvider ativo.
-   * Se conseguir, abre uma nova aba no mesmo browser (cookies compartilhados).
-   * Retorna true se conseguiu reaproveitar.
-   */
-  private tryReuseGeminiBrowser(): boolean {
-    try {
-      const { getProviderManager } = require('./PuppeteerProvider');
-      const manager = getProviderManager();
-
-      const geminiProviders = manager.listProvidersByPlatform('gemini');
-
-      // Procura um provider Gemini ativo (com browser aberto)
-      for (const config of geminiProviders) {
-        const providerId = this.config.geminiProviderId || config.id;
-        const activeProvider = manager.getGeminiProvider(providerId);
-
-        if (activeProvider) {
-          const existingBrowser = activeProvider.getBrowser?.();
-
-          if (existingBrowser && existingBrowser.isConnected()) {
-            this.browser = existingBrowser;
-            this.usingSharedBrowser = true;
-            console.log(`🔗 [Flow] Reutilizando browser do GeminiProvider "${config.name}" (${config.id})`);
-            return true;
-          }
-        }
-      }
-
-      return false;
-    } catch (err: any) {
-      console.warn('⚠️ [Flow] Erro ao tentar reutilizar browser:', err.message);
       return false;
     }
   }
@@ -467,7 +376,7 @@ export class FlowVideoProvider {
     if (this.isBrowserAlive()) {
       // Se a configuração atual pedir interface visível, mas o browser atual estiver headless,
       // reinicia o browser próprio para permitir acompanhar a automação em tempo real.
-      if (!this.config.headless && !this.usingSharedBrowser && this.browser) {
+      if (!this.config.headless && this.browser) {
         try {
           const version = await this.browser.version();
           if (version.toLowerCase().includes('headless')) {
@@ -497,35 +406,13 @@ export class FlowVideoProvider {
     // Garante que o estado está limpo
     this.browser = null;
     this.page = null;
-    this.usingSharedBrowser = false;
 
     try {
       console.log(`🚀 [Flow] Inicializando navegador...`);
 
-      // ESTRATÉGIA 1: Reutilizar browser do GeminiProvider ativo
-      if (!this.browser) {
-        const reused = this.tryReuseGeminiBrowser();
-
-        if (reused && this.browser) {
-          // Abre nova aba no browser existente
-          this.page = await this.browser.newPage();
-          console.log(`✅ [Flow] Nova aba aberta no browser do Gemini (cookies compartilhados)`);
-          return;
-        }
-      }
-
-      // ESTRATÉGIA 2: Abrir novo browser com o mesmo userDataDir do provider Gemini
-      const geminiData = this.findGeminiUserDataDir();
-
-      if (!geminiData) {
-        throw new Error(
-          'Nenhum provider Gemini encontrado. Crie um provider Gemini e faça login na conta Google primeiro.'
-        );
-      }
-
       const chromePath = this.findChromePath();
       console.log(`🔍 [Flow] Chrome path: ${chromePath || 'using bundled Chromium'}`);
-      console.log(`📁 [Flow] User data dir: ${geminiData.userDataDir}`);
+      console.log(`📁 [Flow] User data dir: ${this.userDataDir}`);
       console.log(`🧭 [Flow] Modo navegador: ${this.config.headless ? 'headless' : 'visível'}`);
 
       // Se existir processo próprio antigo, encerra antes de subir outro na mesma porta
@@ -534,14 +421,22 @@ export class FlowVideoProvider {
       }
       this.ownedChromeProcess = null;
 
-      await this.launchChromeWithRemoteDebugging(geminiData?.userDataDir, chromePath);
+      if (!fs.existsSync(this.userDataDir)) {
+        fs.mkdirSync(this.userDataDir, { recursive: true });
+      }
+
+      if (await this.isRemoteDebugEndpointReady(FlowVideoProvider.REMOTE_DEBUGGING_PORT)) {
+        console.log(`🔗 [Flow] Chrome já rodando na porta ${FlowVideoProvider.REMOTE_DEBUGGING_PORT}, conectando...`);
+      } else {
+        await this.launchChromeWithRemoteDebugging(this.userDataDir, chromePath);
+      }
       this.browser = await this.connectToRemoteChrome();
-      this.usingSharedBrowser = false;
 
-      const pages = await this.browser.pages();
-      this.page = pages[0] || await this.browser.newPage();
+      // Sempre usa aba dedicada para evitar reaproveitar abas antigas/ocultas.
+      this.page = await this.browser.newPage();
+      await this.page.bringToFront().catch(() => { });
 
-      console.log(`✅ [Flow] Navegador inicializado com cookies do Gemini (provider: ${geminiData.providerId})`);
+      console.log(`✅ [Flow] Navegador inicializado com perfil próprio`);
     } catch (error) {
       if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
         try { this.ownedChromeProcess.kill(); } catch { }
@@ -549,7 +444,6 @@ export class FlowVideoProvider {
       this.ownedChromeProcess = null;
       this.browser = null;
       this.page = null;
-      this.usingSharedBrowser = false;
       console.error(`❌ [Flow] Erro ao inicializar navegador:`, error);
       throw error;
     }
@@ -702,7 +596,7 @@ export class FlowVideoProvider {
     try {
       // 1. Inicializar navegador se necessário (verifica se está vivo)
       if (!this.isBrowserAlive()) {
-        emitProgress('opening', 'Abrindo navegador com cookies do Gemini...');
+        emitProgress('opening', 'Abrindo navegador do Flow...');
         await this.init();
       }
 
@@ -740,13 +634,14 @@ export class FlowVideoProvider {
         });
 
         await this.randomDelay(2000, 4000);
+        console.log(`📍 [Flow] URL atual após navegação: ${this.page.url()}`);
 
         // Verificar se está logado
         const urlAfterNav = this.page.url();
         if (urlAfterNav.includes('accounts.google.com')) {
           throw new Error(
-            'Usuário não está logado na conta Google. Faça login pelo GeminiProvider primeiro ' +
-            '(Configurações → Providers → Criar Gemini → Login).'
+            'Usuário não está logado na conta Google para o Flow. ' +
+            'Faça login no navegador deste provider e tente novamente.'
           );
         }
 
@@ -3214,37 +3109,24 @@ export class FlowVideoProvider {
   // ========================================
 
   /**
-   * Fecha a aba do Flow.
-   * Se estiver usando browser compartilhado do Gemini, NÃO fecha o browser inteiro.
+   * Fecha o navegador do Flow.
    */
   async close(): Promise<void> {
     try {
-      if (this.usingSharedBrowser) {
-        // Só fecha a aba, não o browser (pertence ao GeminiProvider)
-        if (this.page && !this.page.isClosed()) {
-          await this.page.close();
-          console.log(`🔌 [Flow] Aba fechada (browser compartilhado mantido)`);
+      try {
+        if (this.browser && this.browser.isConnected()) {
+          await this.browser.close();
         }
-        this.page = null;
-        this.browser = null;
-        this.usingSharedBrowser = false;
-      } else {
-        // Browser próprio - fecha tudo
-        try {
-          if (this.browser && this.browser.isConnected()) {
-            await this.browser.close();
-          }
-        } catch { }
+      } catch { }
 
-        if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
-          try { this.ownedChromeProcess.kill(); } catch { }
-        }
-
-        this.ownedChromeProcess = null;
-        this.browser = null;
-        this.page = null;
-        console.log(`🔌 [Flow] Navegador fechado`);
+      if (this.ownedChromeProcess && this.ownedChromeProcess.exitCode === null) {
+        try { this.ownedChromeProcess.kill(); } catch { }
       }
+
+      this.ownedChromeProcess = null;
+      this.browser = null;
+      this.page = null;
+      console.log(`🔌 [Flow] Navegador fechado`);
     } catch (error) {
       console.error(`❌ [Flow] Erro ao fechar:`, error);
       // Garante que o estado é resetado mesmo em caso de erro
@@ -3254,7 +3136,6 @@ export class FlowVideoProvider {
       this.ownedChromeProcess = null;
       this.browser = null;
       this.page = null;
-      this.usingSharedBrowser = false;
     }
   }
 
@@ -3339,9 +3220,10 @@ export class FlowVideoProvider {
         emit('navigating', 'Navegando para o Google Flow...');
         await this.page.goto(FlowVideoProvider.FLOW_URL, { waitUntil: 'networkidle2', timeout: 30000 });
         await this.randomDelay(2000, 4000);
+        console.log(`📍 [Flow/Img] URL atual após navegação: ${this.page.url()}`);
 
         if (this.page.url().includes('accounts.google.com')) {
-          throw new Error('Usuário não está logado. Faça login pelo GeminiProvider primeiro.');
+          throw new Error('Usuário não está logado. Faça login no navegador do Flow e tente novamente.');
         }
 
         emit('navigating', 'Abrindo novo projeto...');
@@ -3802,7 +3684,7 @@ let flowProviderInstance: FlowVideoProvider | null = null;
 
 /**
  * Cria ou retorna instância do FlowVideoProvider.
- * Usa automaticamente os cookies do provider Gemini logado via ProviderManager.
+ * Usa sessão de navegador própria (perfil dedicado do Flow).
  */
 export function getFlowVideoProvider(options?: Partial<FlowVideoConfig>): FlowVideoProvider {
   if (!flowProviderInstance) {
