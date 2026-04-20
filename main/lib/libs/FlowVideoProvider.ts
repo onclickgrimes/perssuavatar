@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Flow Video Provider - Automação do Google Flow (Veo 3) via Puppeteer
  * 
  * Gerencia a geração de vídeos usando o Google Flow (labs.google/fx/pt/tools/flow).
@@ -1549,31 +1549,47 @@ export class FlowVideoProvider {
 
       console.log(`✅ [Flow] Campo de prompt encontrado: ${usedSelector}`);
 
-      // Colocar prompt no clipboard e colar via Ctrl+V (mais rápido que keyboard.type)
-      const { clipboard } = require('electron');
-      clipboard.writeText(prompt);
-
-      await inputElement.click();
-      await inputElement.evaluate((el: Element) => {
-        const node = el as HTMLElement;
+      // Bypass Slate.js / React Fiber (Mesma artimanha da Extensão)
+      const textInjected = await this.page.evaluate((qs, text) => {
+        const el = document.querySelector(qs) || document.activeElement;
+        if (!el) return false;
+        
         try {
-          node.scrollIntoView({ block: 'center', inline: 'nearest' });
-        } catch { }
-        try { node.click(); } catch { }
-        try { node.focus(); } catch { }
-      });
-      await this.randomDelay(300, 500);
-      // Selecionar tudo e substituir pelo conteúdo do clipboard
-      await this.page.keyboard.down('Control');
-      await this.page.keyboard.press('A');
-      await this.page.keyboard.up('Control');
-      await this.randomDelay(100, 200);
-      await this.page.keyboard.down('Control');
-      await this.page.keyboard.press('V');
-      await this.page.keyboard.up('Control');
+          (el as HTMLElement).focus();
+        } catch(e) {}
+        
+        // 1. Apaga tudo que existe primeiro simulando comandos nativos do documento
+        document.execCommand('selectAll', false, null);
+        const selection = window.getSelection();
+        if (selection && selection.toString().length > 0) {
+          document.execCommand('delete', false, null);
+        }
+        
+        // 2. O Segredo (Bypass Slate.js) -> disparar beforeinput com insertText
+        el.dispatchEvent(new InputEvent('beforeinput', {
+          bubbles: true,
+          cancelable: true,
+          inputType: 'insertText',
+          data: text
+        }));
+        
+        // 3. Fallback clássico caso a página mude pro antigo
+        setTimeout(() => {
+          if (!el.textContent || el.textContent.trim().length === 0) {
+             document.execCommand('insertText', false, text);
+          }
+        }, 50);
+
+        return true;
+      }, usedSelector, prompt);
+
+      if (!textInjected) {
+        throw new Error('Falha ao injetar texto no editor Slate.js usando event binding.');
+      }
+      
       await this.randomDelay(500, 800);
 
-      console.log(`📝 [Flow] Prompt digitado: "${prompt.substring(0, 80)}..."`);
+      console.log(`📝 [Flow] Prompt injetado via bypass Slate.js: "${prompt.substring(0, 80)}..."`);
 
       // Polling inteligente para o botão de submit (aguardar que seja liberado)
       let submitClicked = false;
