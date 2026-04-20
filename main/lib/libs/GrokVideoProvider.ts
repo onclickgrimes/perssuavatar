@@ -36,6 +36,7 @@ export class GrokVideoProvider {
   private static readonly GROK_URL = 'https://grok.com/imagine';
   private static readonly MAX_CONCURRENT = 1;
   private static readonly REMOTE_DEBUGGING_PORT = 9222;
+  private static readonly ALLOWED_DURATION_SECONDS = [6, 10] as const;
 
   /** Processo do Chrome iniciado por este provider */
   private ownedChromeProcess: ChildProcess | null = null;
@@ -209,6 +210,88 @@ export class GrokVideoProvider {
     await new Promise(resolve => setTimeout(resolve, delay));
   }
 
+  private resolveDurationSeconds(rawDuration?: number): 6 | 10 {
+    const target = Number.isFinite(Number(rawDuration)) ? Number(rawDuration) : 6;
+    const nearest = [...GrokVideoProvider.ALLOWED_DURATION_SECONDS]
+      .sort((a, b) => {
+        const diffA = Math.abs(a - target);
+        const diffB = Math.abs(b - target);
+        if (diffA !== diffB) return diffA - diffB;
+        return b - a;
+      })[0] ?? 6;
+    return nearest as 6 | 10;
+  }
+
+  private async trySetDuration(page: Page, durationSeconds: 6 | 10): Promise<boolean> {
+    try {
+      const selected = await page.evaluate(`(function(targetSeconds) {
+        function normalizeText(value) {
+          return String(value || '')
+            .toLowerCase()
+            .replace(/\\s+/g, ' ')
+            .trim();
+        }
+        function isVisible(el) {
+          if (!el) return false;
+          var rect = el.getBoundingClientRect();
+          if (!rect || rect.width <= 0 || rect.height <= 0) return false;
+          var style = window.getComputedStyle(el);
+          if (!style) return true;
+          return style.visibility !== 'hidden' && style.display !== 'none' && style.opacity !== '0';
+        }
+        function getScore(el, target) {
+          var text = normalizeText((el.textContent || '') + ' ' + (el.getAttribute('aria-label') || ''));
+          if (!text) return -1;
+          var exactUnits = new RegExp('(^|\\\\b)' + target + '\\\\s*(s|sec|secs|seg|segs|segundo|segundos)(\\\\b|$)');
+          if (exactUnits.test(text)) return 4;
+          var compact = new RegExp('(^|\\\\b)' + target + 's(\\\\b|$)');
+          if (compact.test(text)) return 3;
+          if (text === String(target)) return 2;
+          if (text.indexOf(String(target)) !== -1) return 1;
+          return -1;
+        }
+
+        var selectors = [
+          'button[role="radio"]',
+          'button',
+          '[role="menuitemradio"]',
+          '[role="option"]',
+          '[role="menuitem"]'
+        ];
+
+        var best = null;
+        var bestScore = -1;
+
+        for (var s = 0; s < selectors.length; s++) {
+          var nodes = document.querySelectorAll(selectors[s]);
+          for (var i = 0; i < nodes.length; i++) {
+            var el = nodes[i];
+            if (!isVisible(el)) continue;
+            var score = getScore(el, targetSeconds);
+            if (score > bestScore) {
+              best = el;
+              bestScore = score;
+            }
+          }
+        }
+
+        if (!best || bestScore < 0) return false;
+
+        try { best.click(); } catch (e) {}
+        try { best.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true })); } catch (e) {}
+        try { best.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true })); } catch (e) {}
+        try { best.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true })); } catch (e) {}
+
+        return true;
+      })(${durationSeconds})`) as boolean;
+
+      return !!selected;
+    } catch (error: any) {
+      console.warn(`⚠️ [Grok] Erro ao configurar duração ${durationSeconds}s:`, error?.message || error);
+      return false;
+    }
+  }
+
   public isBrowserAlive(): boolean {
     if (!GrokVideoProvider.sharedBrowser) return false;
     return GrokVideoProvider.sharedBrowser.isConnected();
@@ -321,9 +404,11 @@ export class GrokVideoProvider {
   async generateVideo(
     prompt: string,
     onProgress?: GrokProgressCallback,
-    referenceImagePaths?: string[]
+    referenceImagePaths?: string[],
+    durationSeconds?: number
   ): Promise<GrokGenerationResult> {
     const startTime = Date.now();
+    const selectedDurationSeconds = this.resolveDurationSeconds(durationSeconds);
 
     const emitProgress = (stage: any, message: string, percent?: number) => {
       console.log(`🎬 [Grok] ${message}`);
@@ -382,6 +467,14 @@ export class GrokVideoProvider {
         }
       })()`);
       await this.randomDelay(1000, 1500);
+
+      emitProgress('submitting', `Configurando duração (${selectedDurationSeconds}s)...`);
+      const durationConfigured = await this.trySetDuration(page, selectedDurationSeconds);
+      if (!durationConfigured) {
+        console.warn(`⚠️ [Grok] Controle de duração ${selectedDurationSeconds}s não encontrado. Prosseguindo com padrão da interface.`);
+      } else {
+        await this.randomDelay(700, 1100);
+      }
 
       // Upload Image (Only 1 allowed by Grok)
       if (referenceImagePaths && referenceImagePaths.length > 0) {

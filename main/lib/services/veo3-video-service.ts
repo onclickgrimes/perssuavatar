@@ -29,6 +29,8 @@ export interface Veo3GenerationResult {
   durationMs?: number;
 }
 
+const VEO3_ALLOWED_DURATION_SECONDS = [4, 6, 8] as const;
+
 export class Veo3VideoService {
   private outputDir: string;
   
@@ -277,6 +279,20 @@ export class Veo3VideoService {
     return `https://storage.googleapis.com/${bucket}/${encodeURI(objectPath)}`;
   }
 
+  private resolveDurationSeconds(rawDuration: number, hasIngredients: boolean): number {
+    if (hasIngredients) {
+      return 8;
+    }
+    const target = Number.isFinite(rawDuration) ? rawDuration : 8;
+    return [...VEO3_ALLOWED_DURATION_SECONDS]
+      .sort((a, b) => {
+        const diffA = Math.abs(a - target);
+        const diffB = Math.abs(b - target);
+        if (diffA !== diffB) return diffA - diffB;
+        return b - a;
+      })[0] ?? 8;
+  }
+
   async generateVideo(options: Veo3GenerationOptions): Promise<Veo3GenerationResult> {
     const {
       prompt,
@@ -378,6 +394,9 @@ export class Veo3VideoService {
         }
       }
 
+      const resolvedDurationSeconds = this.resolveDurationSeconds(durationSeconds, hasIngredients);
+      console.log(`[Veo3 API] duração solicitada=${durationSeconds}s | aplicada=${resolvedDurationSeconds}s${hasIngredients ? ' (ingredients forçado para 8s)' : ''}`);
+
       // Define a permissão correta baseada na presença de imagem de referência
       // Veo 3.1 exige 'allow_adult' para imagem-para-vídeo e 'allow_all' para texto-para-vídeo
       const hasAnyImage = !!imageInput || !!referenceImages;
@@ -394,7 +413,7 @@ export class Veo3VideoService {
           ...(!hasReferenceImages ? { negativePrompt: "Watermark, text, logo, bad quality, low quality" } : {}),
           ...(hasAnyImage ? {} : { resolution: '1080p' }),
           personGeneration: personGen,
-          durationSeconds: Math.min(durationSeconds, 8),
+          durationSeconds: resolvedDurationSeconds,
           ...(referenceImages ? { referenceImages } : {}),
         },
       } as any);

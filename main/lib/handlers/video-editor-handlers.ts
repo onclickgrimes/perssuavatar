@@ -1402,7 +1402,7 @@ Lembre-se:
       const result = await veo2Service.generateVideo({
         prompt: options.prompt,
         aspectRatio: (options.aspectRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16',
-        durationSeconds: options.durationSeconds || 8,
+        durationSeconds: options.durationSeconds ?? 8,
         referenceImagePath: options.referenceImagePath,
         finalImagePath: options.finalImagePath,
         onProgress: (percent: number, message: string) => {
@@ -1464,7 +1464,7 @@ Lembre-se:
         prompt: options.prompt,
         model: options.model,
         aspectRatio: (options.aspectRatio === '9:16' ? '9:16' : '16:9') as '16:9' | '9:16',
-        durationSeconds: options.durationSeconds || 8,
+        durationSeconds: options.durationSeconds ?? 8,
         referenceImagePath: options.referenceImagePath,
         ingredientImagePaths: options.ingredientImagePaths,
         onProgress: (percent: number, message: string) => {
@@ -1715,6 +1715,7 @@ Lembre-se:
   registerVideoEditorGuardedHandle('video-project:generate-grok-video', async (event, options: {
     prompt: string;
     referenceImagePaths?: string[];
+    durationSeconds?: number;
   }) => {
     try {
       console.log(`✖️ [Grok] Generating video with prompt: "${options.prompt.substring(0, 80)}..."`);
@@ -1733,7 +1734,8 @@ Lembre-se:
             window.webContents.send('video-project:vo3-progress', progress);
           }
         },
-        options.referenceImagePaths
+        options.referenceImagePaths,
+        options.durationSeconds
       );
 
       if (!result.success) {

@@ -5,7 +5,7 @@
  *  - Usa a API REST oficial, sem necessidade de automação de browser
  *  - NÃO gera áudio (apenas vídeo visual)
  *  - Modelo: veo-2.0-generate-001
- *  - Duração: até 8 segundos por clipe
+ *  - Duração: 5s, 6s ou 8s por clipe
  *  - Aspect ratios suportados: '16:9', '9:16'
  *
  * Dependência: @google/genai (já instalada no projeto via gemini-voice-service)
@@ -31,7 +31,7 @@ export interface Veo2GenerationOptions {
   prompt: string;
   /** Proporção: '16:9' (paisagem) | '9:16' (retrato) */
   aspectRatio?: '16:9' | '9:16';
-  /** Duração em segundos (padrão 8, máx 8) */
+  /** Duração em segundos (permitidos: 5, 6 ou 8; padrão 8) */
   durationSeconds?: number;
   /** Chave Google GenAI (Gemini API ou Vertex API key) */
   apiKey?: string;
@@ -48,6 +48,8 @@ export interface Veo2GenerationResult {
   error?: string;
   durationMs?: number;
 }
+
+const VEO2_ALLOWED_DURATION_SECONDS = [5, 6, 8] as const;
 
 // ========================================
 // SERVICE
@@ -207,6 +209,17 @@ export class Veo2VideoService {
     return `https://storage.googleapis.com/${bucket}/${encodeURI(objectPath)}`;
   }
 
+  private resolveDurationSeconds(rawDuration: number): number {
+    const target = Number.isFinite(rawDuration) ? rawDuration : 8;
+    return [...VEO2_ALLOWED_DURATION_SECONDS]
+      .sort((a, b) => {
+        const diffA = Math.abs(a - target);
+        const diffB = Math.abs(b - target);
+        if (diffA !== diffB) return diffA - diffB;
+        return b - a;
+      })[0] ?? 8;
+  }
+
   /**
    * Gera um vídeo usando o modelo Veo 2 da Google.
    */
@@ -285,6 +298,7 @@ export class Veo2VideoService {
       // NOTA: personGeneration 'dont_allow' bloqueia silenciosamente quando há pessoas
       // na imagem de referência → usar 'allow_adult' para image-to-video
       const personGen = imageInput ? 'allow_adult' : 'dont_allow';
+      const resolvedDurationSeconds = this.resolveDurationSeconds(durationSeconds);
 
       // Log completo do que está sendo enviado para a API
       console.log('[Veo2] ======= PAYLOAD DA REQUISIÇÃO =======');
@@ -298,7 +312,7 @@ export class Veo2VideoService {
       console.log(`[Veo2] aspectRatio  : ${aspectRatio}`);
       console.log(`[Veo2] personGen    : ${personGen}`);
       console.log(`[Veo2] resolution   : ${imageInput ? '(omitida no image-to-video)' : '720p'}`);
-      console.log(`[Veo2] duration     : ${Math.min(durationSeconds, 8)}s`);
+      console.log(`[Veo2] duration     : solicitada=${durationSeconds}s | aplicada=${resolvedDurationSeconds}s`);
       console.log('[Veo2] ==========================================');
 
       let operation = await ai.models.generateVideos({
@@ -311,7 +325,7 @@ export class Veo2VideoService {
           negativePrompt: "Watermark, text, logo, bad quality, low quality",
           ...(imageInput ? {} : { resolution: '720p' }), // resolution pode conflitar com image-to-video
           personGeneration: personGen,
-          durationSeconds: Math.min(durationSeconds, 8),
+          durationSeconds: resolvedDurationSeconds,
         },
       });
 

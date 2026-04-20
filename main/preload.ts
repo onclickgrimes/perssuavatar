@@ -576,6 +576,7 @@ const handler = {
     generateGrokVideo: (options: {
       prompt: string;
       referenceImagePaths?: string[];
+      durationSeconds?: number;
     }) => ipcRenderer.invoke('video-project:generate-grok-video', options),
 
     // Listener para progresso da geração de imagem via Flow

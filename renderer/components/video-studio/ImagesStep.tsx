@@ -104,9 +104,36 @@ const FLOW_EXTENSION_RESULT_SCHEMA = 'flow-extension-result.v1';
 const IMAGE_REFERENCE_LIMIT = 10;
 const DEFAULT_INGREDIENT_LIMIT = 3;
 const IMAGE_SERVICE_IDS = new Set(['flow-image', 'vertex-image', 'flow-image-api', 'flow-image-pro']);
+const VEO3_API_ALLOWED_SECONDS = [4, 6, 8] as const;
+const VEO2_API_ALLOWED_SECONDS = [5, 6, 8] as const;
+const GROK_ALLOWED_SECONDS = [6, 10] as const;
 
 const getIngredientLimitByService = (serviceId: string): number => {
   return IMAGE_SERVICE_IDS.has(serviceId) ? IMAGE_REFERENCE_LIMIT : DEFAULT_INGREDIENT_LIMIT;
+};
+
+const getSceneDurationInfo = (segment: Pick<TranscriptionSegment, 'start' | 'end'>): { rawSeconds: number; roundedSeconds: number } => {
+  const start = Number(segment.start);
+  const end = Number(segment.end);
+  if (!Number.isFinite(start) || !Number.isFinite(end)) {
+    return { rawSeconds: 0, roundedSeconds: 1 };
+  }
+  const rawSeconds = Math.max(0, end - start);
+  return {
+    rawSeconds,
+    roundedSeconds: Math.max(1, Math.round(rawSeconds)),
+  };
+};
+
+const pickNearestAllowedDuration = (targetSeconds: number, allowedSeconds: readonly number[]): number => {
+  const safeTarget = Number.isFinite(targetSeconds) ? targetSeconds : allowedSeconds[0];
+  return [...allowedSeconds]
+    .sort((a, b) => {
+      const diffA = Math.abs(a - safeTarget);
+      const diffB = Math.abs(b - safeTarget);
+      if (diffA !== diffB) return diffA - diffB;
+      return b - a;
+    })[0] ?? allowedSeconds[0];
 };
 
 type FlowExportService = 'veo3' | 'veo3-lite-flow' | 'veo2-flow' | 'flow-image';
@@ -1932,6 +1959,7 @@ export function ImagesStep({
         ? segment.animateFrame.trim()
         : '';
       const basePrompt = extractPromptString(segment.imagePrompt) || `Cinematic scene: ${segment.text}`;
+      const sceneDurationInfo = getSceneDurationInfo(segment);
 
       const targetGenerationPrompt = IMAGE_SERVICES.has(service)
         ? (normalizedFirstFrame || normalizedAnimateFrame || basePrompt)
@@ -2051,6 +2079,10 @@ export function ImagesStep({
 
       // ── GROK (Vídeo via Grok) ──
       } else if (service === 'grok') {
+        const grokDurationSeconds = pickNearestAllowedDuration(
+          sceneDurationInfo.roundedSeconds,
+          GROK_ALLOWED_SECONDS
+        );
         const isFlowRunning = () => Object.values(activeServicesRef.current).some(s => FLOW_SERVICES.has(s));
         if (isFlowRunning()) {
           console.log(`✖️ [Grok] Aguardando processos do Flow concluirem para segmento ${segmentId}...`);
@@ -2074,15 +2106,16 @@ export function ImagesStep({
         );
 
         if (grokImagePaths.length > 0) {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com Grok (${grokImagePaths.length} ref(s))...` }));
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com Grok (${grokImagePaths.length} ref(s), ${grokDurationSeconds}s)...` }));
         } else {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: 'Iniciando geração Grok...' }));
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Iniciando geração Grok (${grokDurationSeconds}s)...` }));
         }
 
         const grokTimeoutMs = 12 * 60 * 1000;
         const grokPromise = window.electron?.videoProject?.generateGrokVideo?.({
           prompt: targetGenerationPrompt,
           referenceImagePaths: grokImagePaths.length > 0 ? grokImagePaths : undefined,
+          durationSeconds: grokDurationSeconds,
         });
 
         const timeoutPromise = new Promise<never>((_, reject) =>
@@ -2268,24 +2301,29 @@ export function ImagesStep({
           isIngredientsExplicit
           || (shouldAutoUseIngredients && ingredientPaths.length > 0)
         );
+        const hasIngredientsPayload = isIngredients && ingredientPaths.length > 0;
+        const veo3ApiDurationSeconds = hasIngredientsPayload
+          ? 8
+          : pickNearestAllowedDuration(sceneDurationInfo.roundedSeconds, VEO3_API_ALLOWED_SECONDS);
 
         if (isLiteApi && isIngredientsExplicit) {
           setVo3Progress(prev => ({ ...prev, [segmentId]: 'Veo 3.1 Lite (API) não suporta Ingredients. Usando Frames...' }));
         }
 
-        if (isIngredients && ingredientPaths.length > 0) {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com ${ingredientPaths.length} referência(s) via Veo 3.1${serviceLabel}...` }));
+        if (hasIngredientsPayload) {
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando com ${ingredientPaths.length} referência(s) via Veo 3.1${serviceLabel} (${veo3ApiDurationSeconds}s)...` }));
         } else if (referenceImagePath) {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: `Animando imagem com Veo 3.1${serviceLabel}...` }));
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Animando imagem com Veo 3.1${serviceLabel} (${veo3ApiDurationSeconds}s)...` }));
         } else {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando vídeo com Veo 3.1${serviceLabel}...` }));
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando vídeo com Veo 3.1${serviceLabel} (${veo3ApiDurationSeconds}s)...` }));
         }
 
         const result = await window.electron?.videoProject?.generateVeo3Api({
           prompt: targetGenerationPrompt,
           aspectRatio: aspectRatio,
-          referenceImagePath: isIngredients ? undefined : referenceImagePath,
-          ingredientImagePaths: isIngredients && ingredientPaths.length > 0 ? ingredientPaths : undefined,
+          durationSeconds: veo3ApiDurationSeconds,
+          referenceImagePath: hasIngredientsPayload ? undefined : referenceImagePath,
+          ingredientImagePaths: hasIngredientsPayload ? ingredientPaths : undefined,
           model: modelName
         });
         
@@ -2308,18 +2346,23 @@ export function ImagesStep({
       // ── VEO 2 (API oficial) ──
       } else {
         console.log(`🌊 [Veo2] Gerando vídeo para segmento ${segmentId}...`);
+        const veo2ApiDurationSeconds = pickNearestAllowedDuration(
+          sceneDurationInfo.roundedSeconds,
+          VEO2_API_ALLOWED_SECONDS
+        );
 
         // Usa a imagem de referência (calculada no início do bloco try)
 
         if (referenceImagePath) {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: 'Animando imagem com Veo 2...' }));
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Animando imagem com Veo 2 (${veo2ApiDurationSeconds}s)...` }));
         } else {
-          setVo3Progress(prev => ({ ...prev, [segmentId]: 'Gerando vídeo com Veo 2...' }));
+          setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando vídeo com Veo 2 (${veo2ApiDurationSeconds}s)...` }));
         }
 
         const result = await window.electron?.videoProject?.generateVeo2({
           prompt: targetGenerationPrompt,
           aspectRatio: aspectRatio,
+          durationSeconds: veo2ApiDurationSeconds,
           referenceImagePath,
           finalImagePath,
         });
@@ -2978,6 +3021,30 @@ export function ImagesStep({
           const hasImage = !!segment.imageUrl;
           const isBatchActive = batchProcessing && batchProgress.currentSceneId === segment.id;
           const effectiveService = getEffectiveService(segment);
+          const sceneDurationInfo = getSceneDurationInfo(segment);
+          const veo3ApiDurationPreview = ingredientMode[segment.id] === 'ingredients'
+            ? 8
+            : pickNearestAllowedDuration(sceneDurationInfo.roundedSeconds, VEO3_API_ALLOWED_SECONDS);
+          const veo2ApiDurationPreview = pickNearestAllowedDuration(
+            sceneDurationInfo.roundedSeconds,
+            VEO2_API_ALLOWED_SECONDS
+          );
+          const grokDurationPreview = pickNearestAllowedDuration(
+            sceneDurationInfo.roundedSeconds,
+            GROK_ALLOWED_SECONDS
+          );
+          const apiDurationPreviewLabel = (() => {
+            if (effectiveService === 'veo3-api' || effectiveService === 'veo3-fast-api' || effectiveService === 'veo3-lite-api') {
+              return `Veo 3 API: ${veo3ApiDurationPreview}s`;
+            }
+            if (effectiveService === 'veo2') {
+              return `Veo 2 API: ${veo2ApiDurationPreview}s`;
+            }
+            if (effectiveService === 'grok') {
+              return `Grok: ${grokDurationPreview}s`;
+            }
+            return null;
+          })();
           const assetInfo = getAssetTypeInfo(segment.assetType || 'image_flux');
           const cameraLabel = segment.cameraMovement
             ? CAMERA_MOVEMENTS[segment.cameraMovement as CameraMovement]?.label || segment.cameraMovement
@@ -3354,6 +3421,12 @@ export function ImagesStep({
                   </span>
                   <span className="px-2 py-0.5 bg-white/10 text-white/60 rounded text-xs">
                     {segment.emotion}
+                  </span>
+                  <span
+                    className="px-2 py-0.5 bg-white/10 text-white/60 rounded text-xs"
+                    title={`Tempo exato: ${sceneDurationInfo.rawSeconds.toFixed(2)}s`}
+                  >
+                    {sceneDurationInfo.roundedSeconds}s
                   </span>
 
                   <div className="relative group">
