@@ -1595,7 +1595,13 @@ export class FlowVideoProvider {
 
     try {
       const promptSelectors = [
+        'div[contenteditable="true"][data-slate-editor="true"]',
+        '[data-slate-editor="true"]',
+        '#PINHOLE_TEXT_AREA_ELEMENT_ID',
+        'textarea#PINHOLE_TEXT_AREA_ELEMENT_ID',
         'div[contenteditable="true"][role="textbox"]',
+        'div[contenteditable="true"][aria-label*="prompt"]',
+        'div[contenteditable="true"][aria-label*="Prompt"]',
         'textarea[placeholder*="Describe"]',
         'textarea[placeholder*="describe"]',
         'textarea[placeholder*="prompt"]',
@@ -1603,8 +1609,6 @@ export class FlowVideoProvider {
         'textarea[aria-label*="prompt"]',
         'textarea[aria-label*="Prompt"]',
         'textarea[aria-label*="video"]',
-        'div[contenteditable="true"][aria-label*="prompt"]',
-        'div[contenteditable="true"][aria-label*="Prompt"]',
         'textarea',
         'input[type="text"][placeholder*="Describe"]',
         'input[type="text"][placeholder*="prompt"]',
@@ -1634,47 +1638,108 @@ export class FlowVideoProvider {
 
       console.log(`✅ [Flow] Campo de prompt encontrado: ${usedSelector}`);
 
-      // Bypass Slate.js / React Fiber (Mesma artimanha da Extensão)
-      const textInjected = await this.page.evaluate((qs, text) => {
-        const el = document.querySelector(qs) || document.activeElement;
-        if (!el) return false;
-        
-        try {
-          (el as HTMLElement).focus();
-        } catch(e) {}
-        
-        // 1. Apaga tudo que existe primeiro simulando comandos nativos do documento
-        document.execCommand('selectAll', false, null);
-        const selection = window.getSelection();
-        if (selection && selection.toString().length > 0) {
-          document.execCommand('delete', false, null);
+      const injectionResult = await inputElement.evaluate(async (el, text) => {
+        const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+        const target = el as HTMLElement;
+        if (!target) {
+          return { success: false, mode: 'none', reason: 'no-element' };
         }
-        
-        // 2. O Segredo (Bypass Slate.js) -> disparar beforeinput com insertText
-        el.dispatchEvent(new InputEvent('beforeinput', {
-          bubbles: true,
-          cancelable: true,
-          inputType: 'insertText',
-          data: text
-        }));
-        
-        // 3. Fallback clássico caso a página mude pro antigo
-        setTimeout(() => {
-          if (!el.textContent || el.textContent.trim().length === 0) {
-             document.execCommand('insertText', false, text);
+
+        const isSlateEditor =
+          target.getAttribute('data-slate-editor') === 'true' ||
+          target.getAttribute('contenteditable') === 'true' ||
+          target.isContentEditable ||
+          target.getAttribute('role') === 'textbox';
+
+        if (isSlateEditor) {
+          try { target.focus(); } catch { }
+          await sleep(100);
+
+          // Limpa conteúdo atual como o usuário faria (Ctrl+A + Delete).
+          document.execCommand('selectAll', false, null);
+          await sleep(50);
+          const selection = window.getSelection();
+          if (selection && selection.toString().length > 0) {
+            document.execCommand('delete', false, null);
+            await sleep(50);
           }
-        }, 50);
 
-        return true;
-      }, usedSelector, prompt);
+          // Método preferido para Slate/Radix: beforeinput insertText.
+          target.dispatchEvent(new InputEvent('beforeinput', {
+            bubbles: true,
+            cancelable: true,
+            inputType: 'insertText',
+            data: text,
+          }));
+          await sleep(200);
 
-      if (!textInjected) {
-        throw new Error('Falha ao injetar texto no editor Slate.js usando event binding.');
+          const slateText = (target.textContent || '').trim();
+          if (slateText.length > 0) {
+            return { success: true, mode: 'slate-beforeinput', insertedLength: slateText.length };
+          }
+
+          // Fallback para mudanças de implementação da UI.
+          try { target.focus(); } catch { }
+          await sleep(50);
+          document.execCommand('selectAll', false, null);
+          await sleep(50);
+          document.execCommand('insertText', false, text);
+          await sleep(100);
+
+          const fallbackText = (target.textContent || '').trim();
+          return {
+            success: fallbackText.length > 0,
+            mode: 'slate-execCommand',
+            insertedLength: fallbackText.length,
+            reason: fallbackText.length > 0 ? undefined : 'empty-after-fallback',
+          };
+        }
+
+        const tag = (target.tagName || '').toLowerCase();
+        if (tag === 'textarea' || tag === 'input') {
+          try { target.focus(); } catch { }
+          await sleep(50);
+
+          const proto = tag === 'textarea'
+            ? window.HTMLTextAreaElement?.prototype
+            : window.HTMLInputElement?.prototype;
+          const setter = proto ? Object.getOwnPropertyDescriptor(proto, 'value')?.set : undefined;
+
+          if (setter) {
+            setter.call(target, text);
+          } else {
+            (target as HTMLTextAreaElement | HTMLInputElement).value = text;
+          }
+
+          target.dispatchEvent(new Event('input', { bubbles: true }));
+          target.dispatchEvent(new Event('change', { bubbles: true }));
+          await sleep(50);
+          try { target.blur(); } catch { }
+          await sleep(50);
+
+          const value = ((target as HTMLTextAreaElement | HTMLInputElement).value || '').trim();
+          return {
+            success: value.length > 0,
+            mode: tag + '-value-setter',
+            insertedLength: value.length,
+            reason: value.length > 0 ? undefined : 'empty-after-input-setter',
+          };
+        }
+
+        return {
+          success: false,
+          mode: 'unsupported',
+          reason: 'unsupported-tag:' + ((target.tagName || '').toLowerCase() || 'unknown'),
+        };
+      }, prompt) as { success: boolean; mode: string; insertedLength?: number; reason?: string };
+
+      if (!injectionResult?.success) {
+        throw new Error(`Falha ao injetar texto no prompt (${injectionResult?.mode || 'unknown'}${injectionResult?.reason ? `: ${injectionResult.reason}` : ''}).`);
       }
-      
-      await this.randomDelay(500, 800);
 
-      console.log(`📝 [Flow] Prompt injetado via bypass Slate.js: "${prompt.substring(0, 80)}..."`);
+      await this.randomDelay(350, 650);
+
+      console.log(`📝 [Flow] Prompt injetado (${injectionResult.mode}, ${injectionResult.insertedLength || 0} chars): "${prompt.substring(0, 80)}..."`);
 
       // Polling inteligente para o botão de submit (aguardar que seja liberado)
       let submitClicked = false;
