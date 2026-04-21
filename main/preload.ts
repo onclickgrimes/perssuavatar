@@ -401,6 +401,14 @@ const handler = {
     // Transcrever arquivo de áudio
     transcribe: (audioPath: string) => 
       ipcRenderer.invoke('video-project:transcribe', audioPath),
+
+    // Sincronizar transcrição Deepgram com roteiro original via IA
+    syncTranscriptionWithScript: (
+      segments: any[],
+      originalScript: string,
+      options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string, maxChunkWords?: number }
+    ) =>
+      ipcRenderer.invoke('video-project:sync-transcription-with-script', segments, originalScript, options),
     
     // Analisar segmentos com IA (aceita projeto completo ou array de segments)
     analyze: (projectOrSegments: any, options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', nichePrompt?: string, model?: string }) => 

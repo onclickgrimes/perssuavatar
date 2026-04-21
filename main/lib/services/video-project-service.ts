@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Video Project Service
  * 
  * Orquestrador do fluxo de criação de vídeos.
@@ -192,6 +192,26 @@ export interface AnalysisResult {
     success: boolean;
     error?: string;
     segments: VideoProjectSegment[];
+}
+
+type ScriptSyncWordTiming = NonNullable<VideoProjectSegment['words']>[number];
+
+interface ScriptSyncFlatWord {
+    segmentIndex: number;
+    segmentId: number;
+    wordIndex: number;
+    word: ScriptSyncWordTiming;
+}
+
+interface ScriptSyncChunkRange {
+    start: number;
+    end: number;
+}
+
+interface ScriptSyncAlignmentStep {
+    op: 'match' | 'delete' | 'insert';
+    originalIndex?: number;
+    correctedIndex?: number;
 }
 
 export interface StoryCharacterReference {
@@ -654,7 +674,490 @@ export class VideoProjectService extends EventEmitter {
     }
 
     /**
-     * Inicia servidor HTTP local para servir imagens durante renderização
+     * Helpers de sincronizacao de transcricao com roteiro via IA
+     */
+    private normalizeScriptSyncWord(value: string): string {
+        return String(value || '')
+            .toLowerCase()
+            .normalize('NFD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^a-z0-9]+/gi, '');
+    }
+
+    private levenshteinDistanceForScriptSync(source: string, target: string): number {
+        if (!source.length) return target.length;
+        if (!target.length) return source.length;
+
+        const matrix: number[][] = Array(target.length + 1)
+            .fill(0)
+            .map(() => Array(source.length + 1).fill(0));
+
+        for (let i = 0; i <= target.length; i++) matrix[i][0] = i;
+        for (let j = 0; j <= source.length; j++) matrix[0][j] = j;
+
+        for (let i = 1; i <= target.length; i++) {
+            for (let j = 1; j <= source.length; j++) {
+                if (target.charAt(i - 1) === source.charAt(j - 1)) {
+                    matrix[i][j] = matrix[i - 1][j - 1];
+                } else {
+                    matrix[i][j] = Math.min(
+                        matrix[i - 1][j - 1] + 1,
+                        matrix[i][j - 1] + 1,
+                        matrix[i - 1][j] + 1
+                    );
+                }
+            }
+        }
+
+        return matrix[target.length][source.length];
+    }
+
+    private splitScriptSyncWords(text: string): string[] {
+        return String(text || '')
+            .trim()
+            .split(/\s+/)
+            .map((part) => part.trim())
+            .filter(Boolean);
+    }
+
+    private flattenWordsForScriptSync(segments: VideoProjectSegment[]): ScriptSyncFlatWord[] {
+        const flatWords: ScriptSyncFlatWord[] = [];
+
+        segments.forEach((segment, segmentIndex) => {
+            const words = Array.isArray(segment.words) ? segment.words : [];
+            words.forEach((word, wordIndex) => {
+                flatWords.push({
+                    segmentIndex,
+                    segmentId: Number(segment.id || 0),
+                    wordIndex,
+                    word: {
+                        word: String(word.word || ''),
+                        start: Number(word.start || 0),
+                        end: Number(word.end || 0),
+                        confidence: Number(word.confidence || 0),
+                        speaker: Number(word.speaker || 0),
+                        punctuatedWord: String(word.punctuatedWord || word.word || ''),
+                    },
+                });
+            });
+        });
+
+        return flatWords;
+    }
+
+    private buildScriptSyncChunks(totalWords: number, maxChunkWords: number): ScriptSyncChunkRange[] {
+        if (totalWords <= 0) return [];
+
+        const safeChunkSize = Math.max(80, Math.min(320, Math.floor(maxChunkWords || 180)));
+        const chunks: ScriptSyncChunkRange[] = [];
+
+        for (let start = 0; start < totalWords; start += safeChunkSize) {
+            chunks.push({
+                start,
+                end: Math.min(totalWords, start + safeChunkSize),
+            });
+        }
+
+        return chunks;
+    }
+
+    private buildScriptSnippetForChunk(
+        scriptWords: string[],
+        chunk: ScriptSyncChunkRange,
+        totalTranscriptionWords: number
+    ): string {
+        if (!scriptWords.length) return '';
+        if (totalTranscriptionWords <= 0) {
+            return scriptWords.slice(0, Math.min(scriptWords.length, 220)).join(' ');
+        }
+
+        const chunkSize = Math.max(1, chunk.end - chunk.start);
+        const ratioStart = chunk.start / totalTranscriptionWords;
+        const ratioEnd = chunk.end / totalTranscriptionWords;
+        const approxStart = Math.floor(ratioStart * scriptWords.length);
+        const approxEnd = Math.ceil(ratioEnd * scriptWords.length);
+        const desiredWindow = Math.max(120, Math.min(360, Math.ceil(chunkSize * 1.8)));
+        const estimatedSpan = Math.max(1, approxEnd - approxStart);
+        const margin = Math.max(40, Math.ceil((desiredWindow - estimatedSpan) / 2));
+        const start = Math.max(0, approxStart - margin);
+        const end = Math.min(scriptWords.length, Math.max(start + 80, approxEnd + margin));
+
+        return scriptWords.slice(start, end).join(' ');
+    }
+
+    private buildScriptSyncPrompt(
+        transcriptionChunk: string,
+        scriptSnippet: string,
+        chunkIndex: number,
+        totalChunks: number
+    ): string {
+        return [
+            'Tarefa: corrigir um trecho de transcricao ASR usando o roteiro oficial como referencia.',
+            `Trecho ${chunkIndex}/${totalChunks}.`,
+            '',
+            'REGRAS OBRIGATORIAS:',
+            '- Corrija erros de reconhecimento de fala (ASR).',
+            '- Pode inserir palavras faltantes e remover palavras extras.',
+            '- Nao reescreva estilo ou significado da fala.',
+            '- Mantenha o texto final no mesmo idioma do roteiro.',
+            '- Responda somente JSON valido, sem markdown.',
+            '',
+            'Formato de saida:',
+            '{',
+            '  "correctedText": "texto corrigido do trecho"',
+            '}',
+            '',
+            'ROTEIRO (trecho relevante):',
+            scriptSnippet,
+            '',
+            'TRANSCRICAO (trecho original):',
+            transcriptionChunk,
+        ].join('\n');
+    }
+
+    private extractScriptSyncCorrectedText(response: any, fallbackText: string): string {
+        const fallback = String(fallbackText || '').trim();
+
+        if (typeof response === 'string') {
+            const direct = response.trim();
+            return direct || fallback;
+        }
+
+        if (Array.isArray(response)) {
+            const joined = response
+                .map((item) => {
+                    if (typeof item === 'string') return item.trim();
+                    if (item && typeof item === 'object') {
+                        const value = (item as any).correctedText ?? (item as any).text;
+                        return value == null ? '' : String(value).trim();
+                    }
+                    return '';
+                })
+                .filter(Boolean)
+                .join(' ');
+            return joined || fallback;
+        }
+
+        if (response && typeof response === 'object') {
+            const directCandidates = [
+                (response as any).correctedText,
+                (response as any).corrected_text,
+                (response as any).text,
+                (response as any).transcript,
+                (response as any).result,
+                (response as any).output,
+            ];
+
+            for (const candidate of directCandidates) {
+                if (candidate == null) continue;
+                const normalized = String(candidate).trim();
+                if (normalized) return normalized;
+            }
+
+            const nestedSegments = (response as any).segments;
+            if (Array.isArray(nestedSegments)) {
+                const joined = nestedSegments
+                    .map((segment: any) => String(segment?.text || segment?.correctedText || '').trim())
+                    .filter(Boolean)
+                    .join(' ');
+                if (joined) return joined;
+            }
+        }
+
+        return fallback;
+    }
+
+    private buildScriptSyncAlignment(
+        originalWords: string[],
+        correctedWords: string[]
+    ): ScriptSyncAlignmentStep[] {
+        const normalizedOriginal = originalWords.map((word) => this.normalizeScriptSyncWord(word));
+        const normalizedCorrected = correctedWords.map((word) => this.normalizeScriptSyncWord(word));
+        const originalLength = normalizedOriginal.length;
+        const correctedLength = normalizedCorrected.length;
+
+        const dp: number[][] = Array(originalLength + 1)
+            .fill(0)
+            .map(() => Array(correctedLength + 1).fill(0));
+        const pointer: ('m' | 'd' | 'i')[][] = Array(originalLength + 1)
+            .fill(0)
+            .map(() => Array(correctedLength + 1).fill('m'));
+
+        for (let i = 1; i <= originalLength; i++) {
+            dp[i][0] = i;
+            pointer[i][0] = 'd';
+        }
+        for (let j = 1; j <= correctedLength; j++) {
+            dp[0][j] = j;
+            pointer[0][j] = 'i';
+        }
+
+        for (let i = 1; i <= originalLength; i++) {
+            for (let j = 1; j <= correctedLength; j++) {
+                const sourceWord = normalizedOriginal[i - 1];
+                const targetWord = normalizedCorrected[j - 1];
+                const denominator = Math.max(sourceWord.length, targetWord.length, 1);
+                const replaceCost = this.levenshteinDistanceForScriptSync(sourceWord, targetWord) / denominator;
+                const matchScore = dp[i - 1][j - 1] + replaceCost;
+                const deleteScore = dp[i - 1][j] + 1;
+                const insertScore = dp[i][j - 1] + 1;
+
+                if (matchScore <= deleteScore && matchScore <= insertScore) {
+                    dp[i][j] = matchScore;
+                    pointer[i][j] = 'm';
+                } else if (deleteScore <= insertScore) {
+                    dp[i][j] = deleteScore;
+                    pointer[i][j] = 'd';
+                } else {
+                    dp[i][j] = insertScore;
+                    pointer[i][j] = 'i';
+                }
+            }
+        }
+
+        const alignment: ScriptSyncAlignmentStep[] = [];
+        let i = originalLength;
+        let j = correctedLength;
+
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && pointer[i][j] === 'm') {
+                alignment.push({ op: 'match', originalIndex: i - 1, correctedIndex: j - 1 });
+                i--;
+                j--;
+                continue;
+            }
+
+            if (i > 0 && (j === 0 || pointer[i][j] === 'd')) {
+                alignment.push({ op: 'delete', originalIndex: i - 1 });
+                i--;
+                continue;
+            }
+
+            if (j > 0) {
+                alignment.push({ op: 'insert', correctedIndex: j - 1 });
+                j--;
+            }
+        }
+
+        alignment.reverse();
+        return alignment;
+    }
+
+    private createInsertedWordsForScriptSync(
+        tokens: string[],
+        previousWord?: ScriptSyncFlatWord,
+        nextWord?: ScriptSyncFlatWord
+    ): ScriptSyncFlatWord[] {
+        if (!tokens.length) return [];
+
+        const minDuration = 0.035;
+        const totalDuration = minDuration * tokens.length;
+        let rangeStart = 0;
+        let rangeEnd = totalDuration;
+
+        if (previousWord && nextWord) {
+            const naturalGap = nextWord.word.start - previousWord.word.end;
+            if (naturalGap >= totalDuration) {
+                rangeStart = previousWord.word.end;
+                rangeEnd = nextWord.word.start;
+            } else {
+                const nextDuration = Math.max(0, nextWord.word.end - nextWord.word.start);
+                const previousDuration = Math.max(0, previousWord.word.end - previousWord.word.start);
+                if (nextDuration >= previousDuration && nextDuration > 0) {
+                    const span = Math.max(totalDuration, Math.min(nextDuration * 0.6, nextDuration));
+                    rangeStart = nextWord.word.start;
+                    rangeEnd = nextWord.word.start + span;
+                } else if (previousDuration > 0) {
+                    const span = Math.max(totalDuration, Math.min(previousDuration * 0.6, previousDuration));
+                    rangeEnd = previousWord.word.end;
+                    rangeStart = previousWord.word.end - span;
+                } else {
+                    rangeStart = previousWord.word.end;
+                    rangeEnd = previousWord.word.end + totalDuration;
+                }
+            }
+        } else if (previousWord) {
+            const previousDuration = Math.max(0, previousWord.word.end - previousWord.word.start);
+            const span = Math.max(totalDuration, Math.max(previousDuration * 0.35, minDuration));
+            rangeStart = previousWord.word.end;
+            rangeEnd = previousWord.word.end + span;
+        } else if (nextWord) {
+            const nextDuration = Math.max(0, nextWord.word.end - nextWord.word.start);
+            const span = Math.max(totalDuration, Math.max(nextDuration * 0.35, minDuration));
+            rangeEnd = nextWord.word.start;
+            rangeStart = nextWord.word.start - span;
+        }
+
+        if (!Number.isFinite(rangeStart)) rangeStart = 0;
+        if (!Number.isFinite(rangeEnd) || rangeEnd <= rangeStart) {
+            rangeEnd = rangeStart + totalDuration;
+        }
+
+        const step = (rangeEnd - rangeStart) / tokens.length;
+        const segmentIndex = nextWord?.segmentIndex ?? previousWord?.segmentIndex ?? 0;
+        const segmentId = nextWord?.segmentId ?? previousWord?.segmentId ?? 0;
+        const speaker = nextWord?.word.speaker ?? previousWord?.word.speaker ?? 0;
+
+        return tokens.map((token, index) => {
+            const start = rangeStart + step * index;
+            const end = index === tokens.length - 1 ? rangeEnd : rangeStart + step * (index + 1);
+            const safeStart = Math.max(0, Number.isFinite(start) ? start : 0);
+            const safeEnd = Number.isFinite(end) && end > safeStart ? end : safeStart + minDuration;
+            const normalized = this.normalizeScriptSyncWord(token);
+
+            return {
+                segmentIndex,
+                segmentId,
+                wordIndex: -1,
+                word: {
+                    word: normalized || String(token || '').toLowerCase(),
+                    punctuatedWord: String(token || ''),
+                    start: safeStart,
+                    end: safeEnd,
+                    confidence: 0,
+                    speaker,
+                },
+            };
+        });
+    }
+
+    private rebuildChunkWordsWithScriptSync(
+        originalChunk: ScriptSyncFlatWord[],
+        correctedTokens: string[]
+    ): ScriptSyncFlatWord[] {
+        if (!originalChunk.length) return [];
+        if (!correctedTokens.length) {
+            return originalChunk.map((item) => ({
+                ...item,
+                word: { ...item.word },
+            }));
+        }
+
+        const originalTokens = originalChunk.map((item) => item.word.punctuatedWord || item.word.word);
+        const alignment = this.buildScriptSyncAlignment(originalTokens, correctedTokens);
+        const rebuilt: ScriptSyncFlatWord[] = [];
+        let alignmentCursor = 0;
+        let originalCursor = 0;
+
+        while (alignmentCursor < alignment.length) {
+            const step = alignment[alignmentCursor];
+
+            if (step.op === 'insert') {
+                const insertedTokens: string[] = [];
+                while (alignmentCursor < alignment.length && alignment[alignmentCursor].op === 'insert') {
+                    const correctedIndex = alignment[alignmentCursor].correctedIndex;
+                    if (typeof correctedIndex === 'number' && correctedIndex >= 0) {
+                        const token = String(correctedTokens[correctedIndex] || '').trim();
+                        if (token) insertedTokens.push(token);
+                    }
+                    alignmentCursor++;
+                }
+
+                if (insertedTokens.length) {
+                    const previousWord = originalCursor > 0 ? originalChunk[originalCursor - 1] : undefined;
+                    const nextWord = originalCursor < originalChunk.length ? originalChunk[originalCursor] : undefined;
+                    rebuilt.push(...this.createInsertedWordsForScriptSync(insertedTokens, previousWord, nextWord));
+                }
+                continue;
+            }
+
+            if (step.op === 'delete') {
+                const sourceIndex = typeof step.originalIndex === 'number' ? step.originalIndex : originalCursor;
+                originalCursor = Math.max(originalCursor, sourceIndex + 1);
+                alignmentCursor++;
+                continue;
+            }
+
+            const sourceIndex = typeof step.originalIndex === 'number' ? step.originalIndex : originalCursor;
+            const targetIndex = step.correctedIndex;
+            const sourceWord = originalChunk[sourceIndex];
+            if (sourceWord) {
+                const correctedToken =
+                    typeof targetIndex === 'number' && targetIndex >= 0
+                        ? String(correctedTokens[targetIndex] || '').trim()
+                        : '';
+                const punctuatedWord = correctedToken || sourceWord.word.punctuatedWord || sourceWord.word.word;
+                const normalizedWord = this.normalizeScriptSyncWord(punctuatedWord);
+
+                rebuilt.push({
+                    segmentIndex: sourceWord.segmentIndex,
+                    segmentId: sourceWord.segmentId,
+                    wordIndex: sourceWord.wordIndex,
+                    word: {
+                        ...sourceWord.word,
+                        punctuatedWord,
+                        word: normalizedWord || String(punctuatedWord).toLowerCase(),
+                    },
+                });
+            }
+
+            originalCursor = Math.max(originalCursor, sourceIndex + 1);
+            alignmentCursor++;
+        }
+
+        if (!rebuilt.length) {
+            return originalChunk.map((item) => ({
+                ...item,
+                word: { ...item.word },
+            }));
+        }
+
+        return rebuilt;
+    }
+
+    private applyScriptSyncFlatWordsToSegments(
+        originalSegments: VideoProjectSegment[],
+        flatWords: ScriptSyncFlatWord[]
+    ): VideoProjectSegment[] {
+        const updatedSegments = JSON.parse(JSON.stringify(originalSegments)) as VideoProjectSegment[];
+
+        updatedSegments.forEach((segment) => {
+            if (Array.isArray(segment.words)) {
+                segment.words = [];
+            }
+        });
+
+        flatWords.forEach((entry) => {
+            const segment = updatedSegments[entry.segmentIndex];
+            if (!segment) return;
+
+            if (!Array.isArray(segment.words)) {
+                segment.words = [];
+            }
+
+            segment.words.push({
+                word: String(entry.word.word || ''),
+                punctuatedWord: String(entry.word.punctuatedWord || ''),
+                start: Number(entry.word.start || 0),
+                end: Number(entry.word.end || 0),
+                confidence: Number(entry.word.confidence || 0),
+                speaker: Number(entry.word.speaker || 0),
+            });
+        });
+
+        updatedSegments.forEach((segment) => {
+            if (!Array.isArray(segment.words)) return;
+            const cleanWords = segment.words
+                .map((word) => ({
+                    ...word,
+                    punctuatedWord: String(word.punctuatedWord || word.word || '').trim(),
+                    word: String(word.word || '').trim(),
+                }))
+                .filter((word) => !!word.punctuatedWord || !!word.word);
+
+            segment.words = cleanWords;
+            segment.text = cleanWords
+                .map((word) => word.punctuatedWord || word.word)
+                .filter(Boolean)
+                .join(' ')
+                .trim();
+        });
+
+        return updatedSegments;
+    }
+
+    /**
+     * Inicia servidor HTTP local para servir imagens durante renderizacao
      */
     private async startImageServer(): Promise<void> {
         if (this.imageServer) {
@@ -1134,6 +1637,148 @@ export class VideoProjectService extends EventEmitter {
     // ========================================
     // AI ANALYSIS
     // ========================================
+
+    public async syncTranscriptionWithOriginalScript(
+        segments: VideoProjectSegment[],
+        originalScript: string,
+        options?: {
+            provider?: AIProvider;
+            model?: string;
+            maxChunkWords?: number;
+        }
+    ): Promise<AnalysisResult> {
+        const safeSegments = Array.isArray(segments) ? segments : [];
+        const normalizedScript = String(originalScript || '')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+        if (!safeSegments.length) {
+            return {
+                success: false,
+                error: 'Nenhum segmento disponivel para sincronizacao.',
+                segments: safeSegments,
+            };
+        }
+
+        if (!normalizedScript) {
+            return {
+                success: false,
+                error: 'Roteiro original vazio.',
+                segments: safeSegments,
+            };
+        }
+
+        const flatWords = this.flattenWordsForScriptSync(safeSegments);
+        if (!flatWords.length) {
+            return {
+                success: false,
+                error: 'Os segmentos nao possuem palavras com timing para sincronizar.',
+                segments: safeSegments,
+            };
+        }
+
+        const scriptWords = this.splitScriptSyncWords(normalizedScript);
+        if (!scriptWords.length) {
+            return {
+                success: false,
+                error: 'Nao foi possivel extrair palavras do roteiro original.',
+                segments: safeSegments,
+            };
+        }
+
+        const provider = options?.provider || 'gemini';
+        const maxChunkWords = Math.max(80, Math.min(320, Math.floor(options?.maxChunkWords || 180)));
+        const chunks = this.buildScriptSyncChunks(flatWords.length, maxChunkWords);
+        const rebuiltFlatWords: ScriptSyncFlatWord[] = [];
+
+        this.emit('status', {
+            stage: 'analyzing',
+            message: `Sincronizando roteiro com ${provider}...`,
+        });
+
+        try {
+            for (let chunkIndex = 0; chunkIndex < chunks.length; chunkIndex++) {
+                const chunk = chunks[chunkIndex];
+                const chunkWords = flatWords.slice(chunk.start, chunk.end);
+                if (!chunkWords.length) continue;
+
+                this.emit('status', {
+                    stage: 'analyzing',
+                    message: `Sincronizando roteiro com IA (${chunkIndex + 1}/${chunks.length})...`,
+                });
+
+                const chunkText = chunkWords
+                    .map((entry) => entry.word.punctuatedWord || entry.word.word)
+                    .filter(Boolean)
+                    .join(' ')
+                    .trim();
+
+                if (!chunkText) {
+                    rebuiltFlatWords.push(...chunkWords.map((entry) => ({
+                        ...entry,
+                        word: { ...entry.word },
+                    })));
+                    continue;
+                }
+
+                const scriptSnippet = this.buildScriptSnippetForChunk(
+                    scriptWords,
+                    chunk,
+                    flatWords.length
+                );
+
+                const prompt = this.buildScriptSyncPrompt(
+                    chunkText,
+                    scriptSnippet,
+                    chunkIndex + 1,
+                    chunks.length
+                );
+
+                const requestPayload: any[] = [
+                    {
+                        role: 'system',
+                        content: 'You are an ASR transcript correction engine. Return only valid JSON.',
+                    },
+                    {
+                        role: 'user',
+                        content: prompt,
+                    },
+                ];
+
+                const aiResponse = await this.requestJsonWithProvider(provider, requestPayload, options?.model);
+                const correctedText = this.extractScriptSyncCorrectedText(aiResponse, chunkText);
+                const correctedTokens = this.splitScriptSyncWords(correctedText);
+                const rebuiltChunk = this.rebuildChunkWordsWithScriptSync(chunkWords, correctedTokens);
+
+                rebuiltFlatWords.push(...rebuiltChunk);
+            }
+
+            const finalFlatWords = rebuiltFlatWords.length
+                ? rebuiltFlatWords
+                : flatWords.map((entry) => ({
+                    ...entry,
+                    word: { ...entry.word },
+                }));
+            const updatedSegments = this.applyScriptSyncFlatWordsToSegments(safeSegments, finalFlatWords);
+
+            this.emit('status', {
+                stage: 'analyzed',
+                message: 'Sincronizacao do roteiro concluida.',
+            });
+
+            return {
+                success: true,
+                segments: updatedSegments,
+            };
+        } catch (error: any) {
+            console.error('❌ Script sync error:', error);
+            return {
+                success: false,
+                error: error?.message || String(error),
+                segments: safeSegments,
+            };
+        }
+    }
 
     /**
      * Analisa segmentos com IA para sugerir emoções e prompts de imagem

@@ -2,142 +2,6 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
 import { ChannelNiche } from './NicheModal';
 
-function normalizeWord(w: string) {
-  return w.toLowerCase().replace(/[.,!?;:()\[\]{}"'\-—]/g, '');
-}
-
-function levenshteinDistance(s1: string, s2: string): number {
-  if (s1.length === 0) return s2.length;
-  if (s2.length === 0) return s1.length;
-  const matrix = [];
-  for (let i = 0; i <= s2.length; i++) {
-    matrix[i] = [i];
-  }
-  for (let j = 0; j <= s1.length; j++) {
-    matrix[0][j] = j;
-  }
-  for (let i = 1; i <= s2.length; i++) {
-    for (let j = 1; j <= s1.length; j++) {
-      if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
-        matrix[i][j] = matrix[i - 1][j - 1];
-      } else {
-        matrix[i][j] = Math.min(
-          matrix[i - 1][j - 1] + 1,
-          Math.min(matrix[i][j - 1] + 1, matrix[i - 1][j] + 1)
-        );
-      }
-    }
-  }
-  return matrix[s2.length][s1.length];
-}
-
-function syncTextWithLevenshtein(deepgramSegments: TranscriptionSegment[], originalScript: string): TranscriptionSegment[] {
-  const originalWords = originalScript.trim().split(/\s+/).filter(w => w.length > 0);
-  if (originalWords.length === 0) return deepgramSegments;
-
-  const dWords: {text: string, segIdx: number, wordIdx: number}[] = [];
-  deepgramSegments.forEach((seg, sIdx) => {
-    if (seg.words) {
-      seg.words.forEach((w, wIdx) => {
-        dWords.push({ text: normalizeWord(w.punctuatedWord || w.word), segIdx: sIdx, wordIdx: wIdx });
-      });
-    }
-  });
-
-  if (dWords.length === 0) return deepgramSegments;
-
-  const oWords = originalWords.map(w => ({ original: w, normalized: normalizeWord(w) }));
-  const N = dWords.length;
-  const M = oWords.length;
-
-  const dp: number[][] = Array(N + 1).fill(0).map(() => Array(M + 1).fill(0));
-  const ptr: number[][] = Array(N + 1).fill(0).map(() => Array(M + 1).fill(0));
-
-  for (let i = 1; i <= N; i++) {
-    dp[i][0] = dp[i - 1][0] + 1; 
-    ptr[i][0] = 1; // 1 = D deletado
-  }
-  for (let j = 1; j <= M; j++) {
-    dp[0][j] = dp[0][j - 1] + 1;
-    ptr[0][j] = 2; // 2 = O inserido
-  }
-
-  for (let i = 1; i <= N; i++) {
-    for (let j = 1; j <= M; j++) {
-      const dWord = dWords[i - 1].text;
-      const oWord = oWords[j - 1].normalized;
-      
-      const limit = Math.max(dWord.length, oWord.length, 1);
-      const normalizedDist = levenshteinDistance(dWord, oWord) / limit;
-      
-      const matchCost = dp[i - 1][j - 1] + normalizedDist;
-      const delCost = dp[i - 1][j] + 1; 
-      const insCost = dp[i][j - 1] + 1; 
-
-      if (matchCost <= delCost && matchCost <= insCost) {
-        dp[i][j] = matchCost;
-        ptr[i][j] = 0;
-      } else if (delCost <= insCost) {
-        dp[i][j] = delCost;
-        ptr[i][j] = 1;
-      } else {
-        dp[i][j] = insCost;
-        ptr[i][j] = 2;
-      }
-    }
-  }
-
-  let i = N;
-  let j = M;
-  const alignment = Array(N).fill(0).map(() => [] as string[]);
-
-  while (i > 0 || j > 0) {
-    if (i === 0) {
-      alignment[0].unshift(oWords[j - 1].original);
-      j--;
-    } else if (j === 0) {
-      i--;
-    } else {
-      const dir = ptr[i][j];
-      if (dir === 0) {
-        alignment[i - 1].unshift(oWords[j - 1].original);
-        i--;
-        j--;
-      } else if (dir === 1) {
-        i--;
-      } else if (dir === 2) {
-        alignment[i - 1].unshift(oWords[j - 1].original);
-        j--;
-      }
-    }
-  }
-
-  const newSegments = JSON.parse(JSON.stringify(deepgramSegments)) as TranscriptionSegment[];
-  
-  for (let k = 0; k < N; k++) {
-    const oWordsMapped = alignment[k];
-    const targetInfo = dWords[k];
-    const wordObj = newSegments[targetInfo.segIdx].words![targetInfo.wordIdx];
-    
-    if (oWordsMapped.length > 0) {
-      const merged = oWordsMapped.join(' ');
-      wordObj.punctuatedWord = merged;
-      wordObj.word = normalizeWord(merged);
-    } else {
-      wordObj.punctuatedWord = "";
-      wordObj.word = "";
-    }
-  }
-  
-  for (const seg of newSegments) {
-    if (seg.words) {
-      seg.text = seg.words.map(w => w.punctuatedWord).filter(w => w).join(' ') || "";
-    }
-  }
-
-  return newSegments;
-}
-
 interface KeyframesStepProps {
   segments: TranscriptionSegment[];
   onUpdateEmotion: (id: number, emotion: string) => void;
@@ -170,21 +34,36 @@ export function KeyframesStep({
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false);
   const [originalScriptText, setOriginalScriptText] = useState('');
   const [isSyncing, setIsSyncing] = useState(false);
+  const [syncError, setSyncError] = useState<string | null>(null);
 
   const handleSyncOriginalText = async () => {
     if (!originalScriptText.trim() || !onSegmentsUpdate) return;
     
     setIsSyncing(true);
+    setSyncError(null);
     // Timeout para permitir que a UI mostre o estado "Sincronizando..."
     await new Promise(resolve => setTimeout(resolve, 50));
 
     try {
-      const newSegments = syncTextWithLevenshtein(segments, originalScriptText);
-      onSegmentsUpdate(newSegments);
+      if (!window.electron?.videoProject?.syncTranscriptionWithScript) {
+        throw new Error('A API de sincronização por IA não está disponível.');
+      }
+
+      const result = await window.electron.videoProject.syncTranscriptionWithScript(
+        segments,
+        originalScriptText
+      );
+
+      if (!result?.success || !Array.isArray(result.segments)) {
+        throw new Error(result?.error || 'Falha ao sincronizar roteiro com IA.');
+      }
+
+      onSegmentsUpdate(result.segments);
       setIsSyncModalOpen(false);
       setOriginalScriptText('');
     } catch (e) {
       console.error('Erro ao sincronizar texto:', e);
+      setSyncError(e instanceof Error ? e.message : 'Erro inesperado ao sincronizar.');
     } finally {
       setIsSyncing(false);
     }
@@ -462,7 +341,10 @@ export function KeyframesStep({
             
             {onSegmentsUpdate && (
               <button
-                onClick={() => setIsSyncModalOpen(true)}
+                onClick={() => {
+                  setSyncError(null);
+                  setIsSyncModalOpen(true);
+                }}
                 className="px-4 py-2 bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 border border-blue-500/50 rounded-lg transition-all flex items-center gap-2 group relative overflow-hidden"
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-blue-500/0 via-blue-400/10 to-blue-500/0 translate-x-[-100%] group-hover:animate-[shimmer_1.5s_infinite]" />
@@ -757,20 +639,29 @@ export function KeyframesStep({
               Sincronizar Roteiro Original
             </h3>
             <p className="text-white/60 mb-6 text-sm">
-              Cole o roteiro oficial abaixo. O algoritmo usará Distância de Levenshtein para reparar palavras erradas pelo Deepgram sem perder nenhum dos timestamps de áudio que já foram calculados.
+              Cole o roteiro oficial abaixo. A IA vai analisar a transcrição do Deepgram em blocos e ajustar as palavras preservando os timings de áudio já calculados.
             </p>
 
             <textarea
-              className="w-full h-[250px] bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-blue-500 focus:outline-none resize-none mb-6 font-mono leading-relaxed"
+              className="w-full h-[250px] bg-black/50 border border-white/10 rounded-xl p-4 text-white text-sm focus:border-blue-500 focus:outline-none resize-none mb-3 font-mono leading-relaxed"
               placeholder="Cole o texto original aqui..."
               value={originalScriptText}
               onChange={e => setOriginalScriptText(e.target.value)}
               disabled={isSyncing}
             />
 
+            {syncError && (
+              <p className="text-red-300 text-sm bg-red-500/10 border border-red-500/30 rounded-lg px-3 py-2 mb-4">
+                {syncError}
+              </p>
+            )}
+
             <div className="flex justify-end gap-3">
               <button
-                onClick={() => setIsSyncModalOpen(false)}
+                onClick={() => {
+                  setSyncError(null);
+                  setIsSyncModalOpen(false);
+                }}
                 disabled={isSyncing}
                 className="px-5 py-2.5 bg-white/5 hover:bg-white/10 text-white rounded-lg transition-all disabled:opacity-50"
               >
@@ -787,7 +678,7 @@ export function KeyframesStep({
                       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                     </svg>
-                    Sincronizando Mágica...
+                    Sincronizando com IA...
                   </>
                 ) : 'Sincronizar Agora'}
               </button>
@@ -798,3 +689,4 @@ export function KeyframesStep({
     </div>
   );
 }
+

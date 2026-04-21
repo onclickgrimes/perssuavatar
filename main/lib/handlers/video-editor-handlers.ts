@@ -156,6 +156,32 @@ export function registerVideoEditorHandlers(): void {
   });
 
   // Handler para analisar segmentos com IA
+  registerVideoEditorGuardedHandle('video-project:sync-transcription-with-script', async (
+    event,
+    segments: VideoProjectSegment[],
+    originalScript: string,
+    options?: {
+      provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+      model?: string;
+      maxChunkWords?: number;
+    }
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      console.log(`📝 [VideoProject] Syncing transcription with original script (${segments?.length || 0} segments)...`);
+      const result = await videoProjectService.syncTranscriptionWithOriginalScript(
+        segments || [],
+        originalScript || '',
+        options
+      );
+      return result;
+    } catch (error: any) {
+      console.error('❌ [VideoProject] Script sync error:', error);
+      return { success: false, error: error.message, segments: Array.isArray(segments) ? segments : [] };
+    }
+  });
+
+  // Handler para analisar segmentos com IA
   registerVideoEditorGuardedHandle('video-project:analyze', async (
     event, 
     projectOrSegments: VideoProjectData | VideoProjectSegment[], 
