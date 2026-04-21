@@ -429,6 +429,15 @@ const handler = {
     // Resumir prompts de cena em uma descrição curta (português)
     summarizeScenePrompts: (segments: any[], options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string }) =>
       ipcRenderer.invoke('video-project:summarize-scene-prompts', segments, options),
+
+    // Traduzir prompt de cena (original <-> tradução)
+    translateScenePrompt: (input: {
+      text?: string;
+      sourceVariant: 'original' | 'translated';
+      field?: 'imagePrompt' | 'firstFrame' | 'animateFrame';
+      fields?: Partial<Record<'imagePrompt' | 'firstFrame' | 'animateFrame', string>>;
+    }) =>
+      ipcRenderer.invoke('video-project:translate-scene-prompt', input),
     
     // Converter projeto para formato Remotion
     convertToRemotion: (project: any) => 

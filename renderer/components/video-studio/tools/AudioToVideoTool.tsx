@@ -693,6 +693,42 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           const hasAnimateFrame = editedSegment?.animateFrame != null;
           if (!hasFirstFrame && !hasAnimateFrame) return;
 
+          const nextFirstFrame = hasFirstFrame
+            ? (typeof editedSegment.firstFrame === 'string'
+              ? editedSegment.firstFrame
+              : String(editedSegment.firstFrame))
+            : String(targetSegment.firstFrame || '');
+          const nextAnimateFrame = hasAnimateFrame
+            ? (typeof editedSegment.animateFrame === 'string'
+              ? editedSegment.animateFrame
+              : String(editedSegment.animateFrame))
+            : String(targetSegment.animateFrame || '');
+
+          let translatedFirstFrameOriginal: string | undefined;
+          let translatedAnimateFrameOriginal: string | undefined;
+          if (window.electron?.videoProject?.translateScenePrompt) {
+            try {
+              const translationResult = await window.electron.videoProject.translateScenePrompt({
+                sourceVariant: 'translated',
+                fields: {
+                  firstFrame: nextFirstFrame,
+                  animateFrame: nextAnimateFrame,
+                },
+              });
+
+              if (translationResult?.success && translationResult?.translatedFields) {
+                if (typeof translationResult.translatedFields.firstFrame === 'string') {
+                  translatedFirstFrameOriginal = translationResult.translatedFields.firstFrame;
+                }
+                if (typeof translationResult.translatedFields.animateFrame === 'string') {
+                  translatedAnimateFrameOriginal = translationResult.translatedFields.animateFrame;
+                }
+              }
+            } catch (translationError) {
+              console.error('Immediate translation error (video_frame_animate):', translationError);
+            }
+          }
+
           setProject(prev => ({
             ...prev,
             segments: prev.segments.map(seg =>
@@ -701,17 +737,19 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
                     ...seg,
                     ...(hasFirstFrame
                       ? {
-                          firstFrame: typeof editedSegment.firstFrame === 'string'
-                            ? editedSegment.firstFrame
-                            : String(editedSegment.firstFrame),
+                          firstFrame: nextFirstFrame,
                         }
                       : {}),
                     ...(hasAnimateFrame
                       ? {
-                          animateFrame: typeof editedSegment.animateFrame === 'string'
-                            ? editedSegment.animateFrame
-                            : String(editedSegment.animateFrame),
+                          animateFrame: nextAnimateFrame,
                         }
+                      : {}),
+                    ...(translatedFirstFrameOriginal !== undefined
+                      ? { firstFrameOriginal: translatedFirstFrameOriginal }
+                      : {}),
+                    ...(translatedAnimateFrameOriginal !== undefined
+                      ? { animateFrameOriginal: translatedAnimateFrameOriginal }
                       : {}),
                   }
                 : seg
@@ -725,6 +763,24 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         const hasLocation = editedSegment?.IdOfTheLocationInTheScene !== undefined;
         if (updatedPrompt == null && !hasCharacters && !hasLocation) return;
 
+        const normalizedUpdatedPrompt = normalizePromptForSummary(updatedPrompt);
+        let translatedImagePromptOriginal: string | undefined;
+        if (normalizedUpdatedPrompt && window.electron?.videoProject?.translateScenePrompt) {
+          try {
+            const translationResult = await window.electron.videoProject.translateScenePrompt({
+              text: normalizedUpdatedPrompt,
+              sourceVariant: 'translated',
+              field: 'imagePrompt',
+            });
+
+            if (translationResult?.success && typeof translationResult?.translatedText === 'string') {
+              translatedImagePromptOriginal = translationResult.translatedText;
+            }
+          } catch (translationError) {
+            console.error('Immediate translation error (imagePrompt):', translationError);
+          }
+        }
+
         setProject(prev => ({
           ...prev,
           segments: prev.segments.map(seg =>
@@ -732,6 +788,9 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
               ? {
                   ...seg,
                   ...(updatedPrompt != null ? { imagePrompt: updatedPrompt } : {}),
+                  ...(translatedImagePromptOriginal !== undefined
+                    ? { imagePromptOriginal: translatedImagePromptOriginal }
+                    : {}),
                   ...(hasCharacters ? { IdOfTheCharactersInTheScene: editedSegment.IdOfTheCharactersInTheScene } : {}),
                   ...(hasLocation ? { IdOfTheLocationInTheScene: editedSegment.IdOfTheLocationInTheScene } : {}),
                 }
@@ -748,7 +807,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     } finally {
       setIsProcessing(false);
     }
-  }, [project.segments, selectedProvider, selectedModel, summarizeScenePrompts]);
+  }, [normalizePromptForSummary, project.segments, selectedProvider, selectedModel, summarizeScenePrompts]);
 
   // Handler explícito para gerar Apenas First Frame na UI
   const handleGenerateFirstFrameOnly = useCallback(async () => {

@@ -281,6 +281,26 @@ export function registerVideoEditorHandlers(): void {
     }
   });
 
+  // Handler para traduzir prompt de cena (original <-> tradução)
+  registerVideoEditorGuardedHandle('video-project:translate-scene-prompt', async (
+    event,
+    input: {
+      text?: string;
+      sourceVariant: 'original' | 'translated';
+      field?: 'imagePrompt' | 'firstFrame' | 'animateFrame';
+      fields?: Partial<Record<'imagePrompt' | 'firstFrame' | 'animateFrame', string>>;
+    }
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      const result = await videoProjectService.translateScenePromptText(input);
+      return result;
+    } catch (error: any) {
+      console.error('❌ [VideoProject] Scene prompt translation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Handler para converter projeto para formato Remotion
   registerVideoEditorGuardedHandle('video-project:convert-to-remotion', async (event, project: VideoProjectData) => {
     try {

@@ -8,6 +8,7 @@ import { EventEmitter } from 'events';
 import { app } from 'electron';
 import * as fs from 'fs';
 import * as path from 'path';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
 import {
     getAudioTranscriptionService,
     TranscriptionResult,
@@ -33,6 +34,24 @@ import {
 } from '../../../remotion/utils/silence-compaction';
 
 export type AIProvider = 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+type ScenePromptTranslationField = 'imagePrompt' | 'firstFrame' | 'animateFrame';
+type ScenePromptTranslationInput = {
+    text?: string;
+    sourceVariant: 'original' | 'translated';
+    field?: ScenePromptTranslationField;
+    fields?: Partial<Record<ScenePromptTranslationField, string>>;
+};
+type ScenePromptTranslationResult = {
+    success: boolean;
+    translatedText?: string;
+    translatedFields?: Partial<Record<ScenePromptTranslationField, string>>;
+    error?: string;
+};
+
+const GEMMA_TRANSLATION_MODEL = 'gemma-4-31b-it';
+// TODO: substituir pela chave real do projeto enquanto estiver hardcoded.
+const GEMMA_TRANSLATION_API_KEY = 'AIzaSyAIBgEAU6H-K-r6jcl7jUvvCgqE8vV9a_s';
+const GEMMA_TRANSLATION_API_KEY_PLACEHOLDER = 'HARDCODED_GOOGLE_API_KEY';
 
 // ========================================
 // TYPES
@@ -114,6 +133,9 @@ export interface VideoProjectSegment {
     };
     firstFrame?: string;
     animateFrame?: string;
+    imagePromptOriginal?: string;
+    firstFrameOriginal?: string;
+    animateFrameOriginal?: string;
 }
 
 
@@ -362,6 +384,178 @@ export class VideoProjectService extends EventEmitter {
                 return JSON.parse(objectMatch[0]);
             }
             throw new Error(`Falha ao parsear JSON da resposta de IA. Trecho recebido: ${withoutFences.substring(0, 220)}...`);
+        }
+    }
+
+    private normalizeScenePromptTranslationText(text: unknown): string {
+        return String(text || '')
+            .replace(/^```(?:text|markdown|json)?\s*/i, '')
+            .replace(/\s*```$/i, '')
+            .trim();
+    }
+
+    private buildScenePromptTranslationInstruction(
+        text: string,
+        sourceVariant: 'original' | 'translated',
+        field?: ScenePromptTranslationField
+    ): string {
+        const targetLanguage = sourceVariant === 'original' ? 'English' : 'Brazilian Portuguese';
+        const sourceLanguageHint = sourceVariant === 'original' ? 'Brazilian Portuguese' : 'English';
+        const fieldLabel = field || 'imagePrompt';
+
+        if (sourceVariant === 'original') {
+            return [
+                'You are a professional translation engine for AI video/image prompts.',
+                `Task: translate the ${fieldLabel} from ${sourceLanguageHint} to ${targetLanguage}.`,
+                'Keep technical details, camera directions, visual style, and structure intact.',
+                'Do not summarize, do not explain, do not add commentary.',
+                'Return only the translated text.',
+                '',
+                'SOURCE TEXT:',
+                text,
+            ].join('\n');
+        }
+
+        return [
+            'You are a professional translation engine for AI video/image prompts.',
+            `Task: translate the ${fieldLabel} from ${sourceLanguageHint} to ${targetLanguage}.`,
+            'Preserve the same level of detail and line breaks.',
+            'Do not summarize, do not explain, do not add commentary.',
+            'Return only the translated text.',
+            '',
+            'SOURCE TEXT:',
+            text,
+        ].join('\n');
+    }
+
+    private buildScenePromptBatchTranslationInstruction(
+        fields: Partial<Record<ScenePromptTranslationField, string>>,
+        sourceVariant: 'original' | 'translated'
+    ): string {
+        const targetLanguage = sourceVariant === 'original' ? 'English' : 'Brazilian Portuguese';
+        const sourceLanguageHint = sourceVariant === 'original' ? 'Brazilian Portuguese' : 'English';
+
+        return [
+            'You are a professional translation engine for AI video/image prompts.',
+            `Task: translate all provided fields from ${sourceLanguageHint} to ${targetLanguage}.`,
+            'Keep technical details, camera directions, visual style, and structure intact.',
+            'Do not summarize, do not explain, do not add commentary.',
+            'Return ONLY a valid JSON object with the same keys you received.',
+            'Do not add or remove keys. Do not wrap in markdown or code fences.',
+            '',
+            'SOURCE FIELDS JSON:',
+            JSON.stringify(fields, null, 2),
+        ].join('\n');
+    }
+
+    private buildScenePromptTranslationConfig(): any {
+        return {
+            temperature: 0.1,
+            topP: 0.8,
+            thinkingConfig: {
+                thinkingLevel: ((ThinkingLevel as any).MINIMAL ?? 'MINIMAL') as any,
+            },
+        };
+    }
+
+    public async translateScenePromptText(input: ScenePromptTranslationInput): Promise<ScenePromptTranslationResult> {
+        const sourceText = String(input?.text || '');
+        const sourceVariant = input?.sourceVariant === 'original' ? 'original' : 'translated';
+        const field = input?.field as ScenePromptTranslationField | undefined;
+        const candidateFields = input?.fields || {};
+        const allowedFields: ScenePromptTranslationField[] = ['imagePrompt', 'firstFrame', 'animateFrame'];
+        const requestedFieldEntries = allowedFields
+            .filter((key) => Object.prototype.hasOwnProperty.call(candidateFields, key))
+            .map((key) => [key, String((candidateFields as any)[key] || '')] as [ScenePromptTranslationField, string]);
+        const requestedFields = Object.fromEntries(requestedFieldEntries) as Partial<Record<ScenePromptTranslationField, string>>;
+        const isBatchRequest = requestedFieldEntries.length > 0;
+        const resolvedApiKey = String(GEMMA_TRANSLATION_API_KEY || '').trim();
+
+        if (isBatchRequest) {
+            const hasAnySource = requestedFieldEntries.some(([, value]) => value.trim().length > 0);
+            if (!hasAnySource) {
+                return {
+                    success: true,
+                    translatedFields: requestedFields,
+                };
+            }
+        } else if (!sourceText.trim()) {
+            return { success: true, translatedText: '' };
+        }
+
+        if (
+            !resolvedApiKey
+            || resolvedApiKey === GEMMA_TRANSLATION_API_KEY_PLACEHOLDER
+        ) {
+            return {
+                success: false,
+                error: 'Configure a constante GEMMA_TRANSLATION_API_KEY em video-project-service.ts.',
+            };
+        }
+
+        try {
+            const ai = new GoogleGenAI({ apiKey: resolvedApiKey });
+            if (isBatchRequest) {
+                const prompt = this.buildScenePromptBatchTranslationInstruction(requestedFields, sourceVariant);
+                const response = await ai.models.generateContent({
+                    model: GEMMA_TRANSLATION_MODEL,
+                    contents: [
+                        {
+                            role: 'user',
+                            parts: [{ text: prompt }],
+                        },
+                    ],
+                    config: this.buildScenePromptTranslationConfig(),
+                } as any);
+
+                const rawText = this.normalizeScenePromptTranslationText(response?.text || '');
+                if (!rawText) {
+                    throw new Error(`Resposta vazia do ${GEMMA_TRANSLATION_MODEL}.`);
+                }
+
+                const parsed = this.parseJsonResponseText(rawText);
+                if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+                    throw new Error('Resposta de tradução em lote inválida.');
+                }
+
+                const translatedFields: Partial<Record<ScenePromptTranslationField, string>> = {};
+                for (const [key] of requestedFieldEntries) {
+                    const rawValue = (parsed as any)[key];
+                    if (rawValue == null) {
+                        throw new Error(`Campo "${key}" ausente na resposta de tradução em lote.`);
+                    }
+                    translatedFields[key] = this.normalizeScenePromptTranslationText(rawValue);
+                }
+
+                return { success: true, translatedFields };
+            }
+
+            const prompt = this.buildScenePromptTranslationInstruction(sourceText, sourceVariant, field);
+
+            const response = await ai.models.generateContent({
+                model: GEMMA_TRANSLATION_MODEL,
+                contents: [
+                    {
+                        role: 'user',
+                        parts: [{ text: prompt }],
+                    },
+                ],
+                config: this.buildScenePromptTranslationConfig(),
+            } as any);
+
+            const translatedText = this.normalizeScenePromptTranslationText(response?.text || '');
+
+            if (!translatedText) {
+                throw new Error(`Resposta vazia do ${GEMMA_TRANSLATION_MODEL}.`);
+            }
+
+            return { success: true, translatedText };
+        } catch (error: any) {
+            console.error('❌ [ScenePromptTranslation] Erro ao traduzir prompt:', error);
+            return {
+                success: false,
+                error: error?.message || 'Falha ao traduzir prompt.',
+            };
         }
     }
 
@@ -2748,6 +2942,9 @@ Responda APENAS com um objeto JSON válido no formato:
                 audio: segment.audio,
                 firstFrame: segment.firstFrame,
                 animateFrame: segment.animateFrame,
+                imagePromptOriginal: segment.imagePromptOriginal,
+                firstFrameOriginal: segment.firstFrameOriginal,
+                animateFrameOriginal: segment.animateFrameOriginal,
                 words: segment.words, // Words fica por último
             })),
         };

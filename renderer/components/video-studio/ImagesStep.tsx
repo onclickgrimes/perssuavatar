@@ -98,6 +98,10 @@ interface SceneReferencePickerState {
 
 type StoryReferenceKind = 'character' | 'location';
 type StoryReferenceImageProvider = 'flow-image' | 'flow-image-api' | 'flow-image-pro';
+type ScenePromptField = 'imagePrompt' | 'firstFrame' | 'animateFrame';
+type VideoFramePromptField = 'firstFrame' | 'animateFrame';
+type ScenePromptOriginalField = 'imagePromptOriginal' | 'firstFrameOriginal' | 'animateFrameOriginal';
+type PromptLanguageView = 'translated' | 'original';
 
 const FLOW_EXTENSION_JOB_SCHEMA = 'flow-extension-job.v1';
 const FLOW_EXTENSION_RESULT_SCHEMA = 'flow-extension-result.v1';
@@ -107,6 +111,14 @@ const IMAGE_SERVICE_IDS = new Set(['flow-image', 'vertex-image', 'flow-image-api
 const VEO3_API_ALLOWED_SECONDS = [4, 6, 8] as const;
 const VEO2_API_ALLOWED_SECONDS = [5, 6, 8] as const;
 const GROK_ALLOWED_SECONDS = [6, 10] as const;
+const TRANSLATION_DEBOUNCE_MS = 3000;
+
+const PROMPT_FIELD_TO_ORIGINAL_KEY: Record<ScenePromptField, ScenePromptOriginalField> = {
+  imagePrompt: 'imagePromptOriginal',
+  firstFrame: 'firstFrameOriginal',
+  animateFrame: 'animateFrameOriginal',
+};
+const VIDEO_FRAME_PROMPT_FIELDS: VideoFramePromptField[] = ['firstFrame', 'animateFrame'];
 
 const getIngredientLimitByService = (serviceId: string): number => {
   return IMAGE_SERVICE_IDS.has(serviceId) ? IMAGE_REFERENCE_LIMIT : DEFAULT_INGREDIENT_LIMIT;
@@ -134,6 +146,15 @@ const pickNearestAllowedDuration = (targetSeconds: number, allowedSeconds: reado
       if (diffA !== diffB) return diffA - diffB;
       return b - a;
     })[0] ?? allowedSeconds[0];
+};
+
+const extractPromptString = (imagePrompt: unknown): string => {
+  if (!imagePrompt) return '';
+  if (typeof imagePrompt === 'string') return imagePrompt;
+  if (typeof imagePrompt === 'object' && imagePrompt !== null) {
+    return JSON.stringify(imagePrompt);
+  }
+  return String(imagePrompt);
 };
 
 type FlowExportService = 'veo3' | 'veo3-lite-flow' | 'veo2-flow' | 'flow-image';
@@ -394,6 +415,19 @@ export function ImagesStep({
   const flowResultInputRef = useRef<HTMLInputElement | null>(null);
   const hoverPreviewTimerRef = useRef<number | null>(null);
   const hoverPreviewRequestKeyRef = useRef<string | null>(null);
+  const segmentsRef = useRef<TranscriptionSegment[]>(segments);
+  const [promptViewModes, setPromptViewModes] = useState<Record<string, PromptLanguageView>>({});
+  const [translatingPromptFields, setTranslatingPromptFields] = useState<Record<string, boolean>>({});
+  const promptTranslationTimeoutRef = useRef<Record<string, number>>({});
+  const promptTranslationRequestVersionRef = useRef<Record<string, number>>({});
+  const promptTranslationSourceSnapshotRef = useRef<Record<string, string>>({});
+  const promptPairTranslationTimeoutRef = useRef<Record<string, number>>({});
+  const promptPairTranslationRequestVersionRef = useRef<Record<string, number>>({});
+  const promptPairTranslationSourceSnapshotRef = useRef<Record<string, Record<VideoFramePromptField, string>>>({});
+
+  useEffect(() => {
+    segmentsRef.current = segments;
+  }, [segments]);
 
   const showHoverImagePreview = (
     event: React.MouseEvent<HTMLElement>,
@@ -460,6 +494,502 @@ export function ImagesStep({
         window.clearTimeout(hoverPreviewTimerRef.current);
         hoverPreviewTimerRef.current = null;
       }
+    };
+  }, []);
+
+  const getPromptFieldKey = useCallback((segmentId: number, field: ScenePromptField): string => {
+    return `${segmentId}:${field}`;
+  }, []);
+
+  const getPromptViewMode = useCallback((segmentId: number, field: ScenePromptField): PromptLanguageView => {
+    const key = getPromptFieldKey(segmentId, field);
+    return promptViewModes[key] || 'translated';
+  }, [getPromptFieldKey, promptViewModes]);
+
+  const getStoredPromptFieldValue = useCallback((
+    segment: TranscriptionSegment,
+    field: ScenePromptField,
+    viewMode: PromptLanguageView
+  ): string => {
+    if (viewMode === 'translated') {
+      if (field === 'imagePrompt') {
+        return extractPromptString(segment.imagePrompt);
+      }
+      return String(segment[field] || '');
+    }
+
+    const originalKey = PROMPT_FIELD_TO_ORIGINAL_KEY[field];
+    return String((segment as any)[originalKey] || '');
+  }, []);
+
+  const patchSegment = useCallback((segmentId: number, patch: Partial<TranscriptionSegment>) => {
+    if (!onSegmentsUpdate) return;
+
+    const nextSegments = segmentsRef.current.map(item =>
+      item.id === segmentId
+        ? { ...item, ...patch }
+        : item
+    );
+    onSegmentsUpdate(nextSegments);
+  }, [onSegmentsUpdate]);
+
+  const clearScheduledPromptTranslation = useCallback((promptFieldKey: string) => {
+    const timeoutId = promptTranslationTimeoutRef.current[promptFieldKey];
+    if (typeof timeoutId === 'number') {
+      window.clearTimeout(timeoutId);
+      delete promptTranslationTimeoutRef.current[promptFieldKey];
+    }
+  }, []);
+
+  const isVideoFramePromptField = useCallback((field: ScenePromptField): field is VideoFramePromptField => {
+    return field === 'firstFrame' || field === 'animateFrame';
+  }, []);
+
+  const getVideoFramePairTranslationKey = useCallback((segmentId: number, sourceVariant: PromptLanguageView): string => {
+    return `video-frame-pair:${segmentId}:${sourceVariant}`;
+  }, []);
+
+  const clearScheduledPromptPairTranslation = useCallback((pairKey: string) => {
+    const timeoutId = promptPairTranslationTimeoutRef.current[pairKey];
+    if (typeof timeoutId === 'number') {
+      window.clearTimeout(timeoutId);
+      delete promptPairTranslationTimeoutRef.current[pairKey];
+    }
+  }, []);
+
+  const setPromptTranslating = useCallback((promptFieldKey: string, isTranslating: boolean) => {
+    setTranslatingPromptFields(prev => {
+      if (isTranslating) {
+        if (prev[promptFieldKey]) return prev;
+        return {
+          ...prev,
+          [promptFieldKey]: true,
+        };
+      }
+
+      if (!prev[promptFieldKey]) return prev;
+      const next = { ...prev };
+      delete next[promptFieldKey];
+      return next;
+    });
+  }, []);
+
+  const setTranslatedPromptValue = useCallback((segmentId: number, field: ScenePromptField, value: string) => {
+    if (field === 'imagePrompt') {
+      onUpdatePrompt(segmentId, value);
+      return;
+    }
+
+    patchSegment(segmentId, { [field]: value } as Partial<TranscriptionSegment>);
+  }, [onUpdatePrompt, patchSegment]);
+
+  const setOriginalPromptValue = useCallback((segmentId: number, field: ScenePromptField, value: string) => {
+    const originalKey = PROMPT_FIELD_TO_ORIGINAL_KEY[field];
+    patchSegment(segmentId, { [originalKey]: value } as Partial<TranscriptionSegment>);
+  }, [patchSegment]);
+
+  const getVideoFramePairSourceValues = useCallback((
+    segmentId: number,
+    sourceVariant: PromptLanguageView,
+    overrides?: Partial<Record<VideoFramePromptField, string>>
+  ): Record<VideoFramePromptField, string> | null => {
+    const currentSegment = segmentsRef.current.find(item => item.id === segmentId);
+    if (!currentSegment) return null;
+
+    const nextFirstFrame = overrides?.firstFrame ?? getStoredPromptFieldValue(currentSegment, 'firstFrame', sourceVariant);
+    const nextAnimateFrame = overrides?.animateFrame ?? getStoredPromptFieldValue(currentSegment, 'animateFrame', sourceVariant);
+
+    return {
+      firstFrame: nextFirstFrame,
+      animateFrame: nextAnimateFrame,
+    };
+  }, [getStoredPromptFieldValue]);
+
+  const setVideoFramePairTranslating = useCallback((segmentId: number, isTranslating: boolean) => {
+    VIDEO_FRAME_PROMPT_FIELDS.forEach((videoField) => {
+      const promptFieldKey = getPromptFieldKey(segmentId, videoField);
+      setPromptTranslating(promptFieldKey, isTranslating);
+    });
+  }, [getPromptFieldKey, setPromptTranslating]);
+
+  const setVideoFramePairPromptValue = useCallback((
+    segmentId: number,
+    targetVariant: PromptLanguageView,
+    values: Partial<Record<VideoFramePromptField, string>>
+  ) => {
+    if (targetVariant === 'translated') {
+      const translatedPatch: Partial<TranscriptionSegment> = {};
+      if (typeof values.firstFrame === 'string') translatedPatch.firstFrame = values.firstFrame;
+      if (typeof values.animateFrame === 'string') translatedPatch.animateFrame = values.animateFrame;
+      if (Object.keys(translatedPatch).length > 0) {
+        patchSegment(segmentId, translatedPatch);
+      }
+      return;
+    }
+
+    const originalPatch: Partial<TranscriptionSegment> = {};
+    if (typeof values.firstFrame === 'string') originalPatch.firstFrameOriginal = values.firstFrame;
+    if (typeof values.animateFrame === 'string') originalPatch.animateFrameOriginal = values.animateFrame;
+    if (Object.keys(originalPatch).length > 0) {
+      patchSegment(segmentId, originalPatch);
+    }
+  }, [patchSegment]);
+
+  const runVideoFramePairTranslation = useCallback(async (
+    segmentId: number,
+    sourceVariant: PromptLanguageView,
+    sourceValues: Record<VideoFramePromptField, string>
+  ) => {
+    const pairKey = getVideoFramePairTranslationKey(segmentId, sourceVariant);
+    const requestVersion = (promptPairTranslationRequestVersionRef.current[pairKey] || 0) + 1;
+    promptPairTranslationRequestVersionRef.current[pairKey] = requestVersion;
+    promptPairTranslationSourceSnapshotRef.current[pairKey] = { ...sourceValues };
+
+    const targetVariant: PromptLanguageView = sourceVariant === 'translated' ? 'original' : 'translated';
+    const hasAnySource = VIDEO_FRAME_PROMPT_FIELDS.some((videoField) => sourceValues[videoField].trim().length > 0);
+    if (!hasAnySource) {
+      setVideoFramePairPromptValue(segmentId, targetVariant, {
+        firstFrame: '',
+        animateFrame: '',
+      });
+      return;
+    }
+
+    setVideoFramePairTranslating(segmentId, true);
+    try {
+      const translate = window.electron?.videoProject?.translateScenePrompt;
+      if (!translate) {
+        throw new Error('translateScenePrompt API not available');
+      }
+
+      const result = await translate({
+        sourceVariant,
+        fields: {
+          firstFrame: sourceValues.firstFrame,
+          animateFrame: sourceValues.animateFrame,
+        },
+      });
+
+      if (!result?.success || !result.translatedFields) {
+        throw new Error(result?.error || 'Falha ao traduzir prompts de video_frame_animate');
+      }
+
+      if (promptPairTranslationRequestVersionRef.current[pairKey] !== requestVersion) {
+        return;
+      }
+
+      const currentSegment = segmentsRef.current.find(item => item.id === segmentId);
+      if (!currentSegment) return;
+
+      const expectedSourceValues = promptPairTranslationSourceSnapshotRef.current[pairKey];
+      if (!expectedSourceValues) return;
+
+      const currentFirstSource = getStoredPromptFieldValue(currentSegment, 'firstFrame', sourceVariant);
+      const currentAnimateSource = getStoredPromptFieldValue(currentSegment, 'animateFrame', sourceVariant);
+      if (
+        currentFirstSource !== expectedSourceValues.firstFrame
+        || currentAnimateSource !== expectedSourceValues.animateFrame
+      ) {
+        return;
+      }
+
+      const translatedFirstFrame = typeof result.translatedFields.firstFrame === 'string'
+        ? result.translatedFields.firstFrame
+        : '';
+      const translatedAnimateFrame = typeof result.translatedFields.animateFrame === 'string'
+        ? result.translatedFields.animateFrame
+        : '';
+
+      const currentFirstTarget = getStoredPromptFieldValue(currentSegment, 'firstFrame', targetVariant);
+      const currentAnimateTarget = getStoredPromptFieldValue(currentSegment, 'animateFrame', targetVariant);
+      if (
+        translatedFirstFrame === currentFirstTarget
+        && translatedAnimateFrame === currentAnimateTarget
+      ) {
+        return;
+      }
+
+      setVideoFramePairPromptValue(segmentId, targetVariant, {
+        firstFrame: translatedFirstFrame,
+        animateFrame: translatedAnimateFrame,
+      });
+    } catch (error) {
+      console.error('Erro ao traduzir prompts de video_frame_animate:', error);
+    } finally {
+      if (promptPairTranslationRequestVersionRef.current[pairKey] === requestVersion) {
+        setVideoFramePairTranslating(segmentId, false);
+      }
+    }
+  }, [
+    getStoredPromptFieldValue,
+    getVideoFramePairTranslationKey,
+    setVideoFramePairPromptValue,
+    setVideoFramePairTranslating,
+  ]);
+
+  const runPromptTranslation = useCallback(async (
+    segmentId: number,
+    field: ScenePromptField,
+    sourceVariant: PromptLanguageView,
+    sourceText: string
+  ) => {
+    const promptFieldKey = getPromptFieldKey(segmentId, field);
+    const requestVersion = (promptTranslationRequestVersionRef.current[promptFieldKey] || 0) + 1;
+    promptTranslationRequestVersionRef.current[promptFieldKey] = requestVersion;
+    promptTranslationSourceSnapshotRef.current[promptFieldKey] = sourceText;
+
+    const targetVariant: PromptLanguageView = sourceVariant === 'translated' ? 'original' : 'translated';
+    const normalizedSource = sourceText.trim();
+    if (!normalizedSource) {
+      if (targetVariant === 'translated') {
+        setTranslatedPromptValue(segmentId, field, '');
+      } else {
+        setOriginalPromptValue(segmentId, field, '');
+      }
+      return;
+    }
+
+    setPromptTranslating(promptFieldKey, true);
+    try {
+      const translate = window.electron?.videoProject?.translateScenePrompt;
+      if (!translate) {
+        throw new Error('translateScenePrompt API not available');
+      }
+
+      const result = await translate({
+        text: sourceText,
+        sourceVariant,
+        field,
+      });
+
+      if (!result?.success || typeof result.translatedText !== 'string') {
+        throw new Error(result?.error || 'Falha ao traduzir prompt');
+      }
+
+      if (promptTranslationRequestVersionRef.current[promptFieldKey] !== requestVersion) {
+        return;
+      }
+
+      const currentSegment = segmentsRef.current.find(item => item.id === segmentId);
+      if (!currentSegment) return;
+
+      const currentSourceText = getStoredPromptFieldValue(currentSegment, field, sourceVariant);
+      const expectedSourceText = promptTranslationSourceSnapshotRef.current[promptFieldKey];
+      if (currentSourceText !== expectedSourceText) {
+        return;
+      }
+
+      const translatedText = result.translatedText;
+      const currentTargetText = getStoredPromptFieldValue(currentSegment, field, targetVariant);
+      if (translatedText === currentTargetText) {
+        return;
+      }
+
+      if (targetVariant === 'translated') {
+        setTranslatedPromptValue(segmentId, field, translatedText);
+      } else {
+        setOriginalPromptValue(segmentId, field, translatedText);
+      }
+    } catch (error) {
+      console.error('Erro ao traduzir campo da cena:', error);
+    } finally {
+      if (promptTranslationRequestVersionRef.current[promptFieldKey] === requestVersion) {
+        setPromptTranslating(promptFieldKey, false);
+      }
+    }
+  }, [
+    getPromptFieldKey,
+    getStoredPromptFieldValue,
+    setOriginalPromptValue,
+    setPromptTranslating,
+    setTranslatedPromptValue,
+  ]);
+
+  const schedulePromptTranslation = useCallback((
+    segmentId: number,
+    field: ScenePromptField,
+    sourceVariant: PromptLanguageView,
+    sourceText: string
+  ) => {
+    const promptFieldKey = getPromptFieldKey(segmentId, field);
+    clearScheduledPromptTranslation(promptFieldKey);
+    setPromptTranslating(promptFieldKey, false);
+
+    promptTranslationSourceSnapshotRef.current[promptFieldKey] = sourceText;
+
+    if (!sourceText.trim()) {
+      const targetVariant: PromptLanguageView = sourceVariant === 'translated' ? 'original' : 'translated';
+      if (targetVariant === 'translated') {
+        setTranslatedPromptValue(segmentId, field, '');
+      } else {
+        setOriginalPromptValue(segmentId, field, '');
+      }
+      return;
+    }
+
+    promptTranslationTimeoutRef.current[promptFieldKey] = window.setTimeout(() => {
+      delete promptTranslationTimeoutRef.current[promptFieldKey];
+      runPromptTranslation(segmentId, field, sourceVariant, sourceText).catch(() => {});
+    }, TRANSLATION_DEBOUNCE_MS);
+  }, [
+    clearScheduledPromptTranslation,
+    getPromptFieldKey,
+    runPromptTranslation,
+    setOriginalPromptValue,
+    setPromptTranslating,
+    setTranslatedPromptValue,
+  ]);
+
+  const scheduleVideoFramePairTranslation = useCallback((
+    segmentId: number,
+    sourceVariant: PromptLanguageView,
+    sourceValues: Record<VideoFramePromptField, string>
+  ) => {
+    const pairKey = getVideoFramePairTranslationKey(segmentId, sourceVariant);
+    clearScheduledPromptPairTranslation(pairKey);
+    clearScheduledPromptTranslation(getPromptFieldKey(segmentId, 'firstFrame'));
+    clearScheduledPromptTranslation(getPromptFieldKey(segmentId, 'animateFrame'));
+    setVideoFramePairTranslating(segmentId, false);
+    promptPairTranslationSourceSnapshotRef.current[pairKey] = { ...sourceValues };
+
+    const targetVariant: PromptLanguageView = sourceVariant === 'translated' ? 'original' : 'translated';
+    const hasAnySource = VIDEO_FRAME_PROMPT_FIELDS.some((videoField) => sourceValues[videoField].trim().length > 0);
+    if (!hasAnySource) {
+      setVideoFramePairPromptValue(segmentId, targetVariant, {
+        firstFrame: '',
+        animateFrame: '',
+      });
+      return;
+    }
+
+    promptPairTranslationTimeoutRef.current[pairKey] = window.setTimeout(() => {
+      delete promptPairTranslationTimeoutRef.current[pairKey];
+      runVideoFramePairTranslation(segmentId, sourceVariant, sourceValues).catch(() => {});
+    }, TRANSLATION_DEBOUNCE_MS);
+  }, [
+    clearScheduledPromptPairTranslation,
+    clearScheduledPromptTranslation,
+    getPromptFieldKey,
+    getVideoFramePairTranslationKey,
+    runVideoFramePairTranslation,
+    setVideoFramePairPromptValue,
+    setVideoFramePairTranslating,
+  ]);
+
+  const handleScenePromptFieldChange = useCallback((
+    segmentId: number,
+    field: ScenePromptField,
+    value: string
+  ) => {
+    const viewMode = getPromptViewMode(segmentId, field);
+    if (isVideoFramePromptField(field)) {
+      const sourceVariant: PromptLanguageView = viewMode === 'translated' ? 'translated' : 'original';
+      if (sourceVariant === 'translated') {
+        setTranslatedPromptValue(segmentId, field, value);
+      } else {
+        setOriginalPromptValue(segmentId, field, value);
+      }
+
+      const sourceValues = getVideoFramePairSourceValues(segmentId, sourceVariant, { [field]: value });
+      if (!sourceValues) return;
+      scheduleVideoFramePairTranslation(segmentId, sourceVariant, sourceValues);
+      return;
+    }
+
+    if (viewMode === 'translated') {
+      setTranslatedPromptValue(segmentId, field, value);
+      schedulePromptTranslation(segmentId, field, 'translated', value);
+      return;
+    }
+
+    setOriginalPromptValue(segmentId, field, value);
+    schedulePromptTranslation(segmentId, field, 'original', value);
+  }, [
+    getVideoFramePairSourceValues,
+    getPromptViewMode,
+    isVideoFramePromptField,
+    scheduleVideoFramePairTranslation,
+    schedulePromptTranslation,
+    setOriginalPromptValue,
+    setTranslatedPromptValue,
+  ]);
+
+  const toggleScenePromptView = useCallback((segment: TranscriptionSegment, field: ScenePromptField) => {
+    const promptFieldKey = getPromptFieldKey(segment.id, field);
+    const firstFrameKey = getPromptFieldKey(segment.id, 'firstFrame');
+    const animateFrameKey = getPromptFieldKey(segment.id, 'animateFrame');
+    const currentMode = isVideoFramePromptField(field)
+      ? (promptViewModes[firstFrameKey] || promptViewModes[animateFrameKey] || 'translated')
+      : (promptViewModes[promptFieldKey] || 'translated');
+    const nextMode: PromptLanguageView = currentMode === 'translated' ? 'original' : 'translated';
+
+    if (isVideoFramePromptField(field)) {
+      setPromptViewModes(prev => ({
+        ...prev,
+        [firstFrameKey]: nextMode,
+        [animateFrameKey]: nextMode,
+      }));
+
+      const pairKey = getVideoFramePairTranslationKey(segment.id, currentMode);
+      const sourceValues: Record<VideoFramePromptField, string> = {
+        firstFrame: getStoredPromptFieldValue(segment, 'firstFrame', currentMode),
+        animateFrame: getStoredPromptFieldValue(segment, 'animateFrame', currentMode),
+      };
+      const hasAnySource = VIDEO_FRAME_PROMPT_FIELDS.some((videoField) => sourceValues[videoField].trim().length > 0);
+      if (!hasAnySource) return;
+
+      const hasAllTargets = VIDEO_FRAME_PROMPT_FIELDS.every((videoField) => {
+        const targetValue = getStoredPromptFieldValue(segment, videoField, nextMode);
+        return targetValue.trim().length > 0;
+      });
+      if (hasAllTargets) return;
+
+      clearScheduledPromptPairTranslation(pairKey);
+      clearScheduledPromptTranslation(getPromptFieldKey(segment.id, 'firstFrame'));
+      clearScheduledPromptTranslation(getPromptFieldKey(segment.id, 'animateFrame'));
+      runVideoFramePairTranslation(segment.id, currentMode, sourceValues).catch(() => {});
+      return;
+    }
+
+    setPromptViewModes(prev => ({
+      ...prev,
+      [promptFieldKey]: nextMode,
+    }));
+
+    const currentModeText = getStoredPromptFieldValue(segment, field, currentMode).trim();
+    const nextModeText = getStoredPromptFieldValue(segment, field, nextMode).trim();
+    if (!currentModeText || nextModeText) {
+      return;
+    }
+
+    clearScheduledPromptTranslation(promptFieldKey);
+    runPromptTranslation(segment.id, field, currentMode, currentModeText).catch(() => {});
+  }, [
+    clearScheduledPromptPairTranslation,
+    clearScheduledPromptTranslation,
+    getPromptFieldKey,
+    getStoredPromptFieldValue,
+    getVideoFramePairTranslationKey,
+    isVideoFramePromptField,
+    promptViewModes,
+    runPromptTranslation,
+    runVideoFramePairTranslation,
+  ]);
+
+  const toggleVideoFramePairPromptView = useCallback((segment: TranscriptionSegment) => {
+    toggleScenePromptView(segment, 'firstFrame');
+  }, [toggleScenePromptView]);
+
+  useEffect(() => {
+    return () => {
+      Object.values(promptTranslationTimeoutRef.current).forEach(timeoutId => {
+        window.clearTimeout(timeoutId);
+      });
+      promptTranslationTimeoutRef.current = {};
+      Object.values(promptPairTranslationTimeoutRef.current).forEach(timeoutId => {
+        window.clearTimeout(timeoutId);
+      });
+      promptPairTranslationTimeoutRef.current = {};
     };
   }, []);
 
@@ -1868,17 +2398,6 @@ export function ImagesStep({
     });
   };
 
-  // Helper para extrair o prompt como string (suporta objeto JSON estruturado do video_veo2)
-  const extractPromptString = (imagePrompt: unknown): string => {
-    if (!imagePrompt) return '';
-    if (typeof imagePrompt === 'string') return imagePrompt;
-    if (typeof imagePrompt === 'object' && imagePrompt !== null) {
-      // Retornar o JSON inteiro conforme solicitado
-      return JSON.stringify(imagePrompt);
-    }
-    return String(imagePrompt);
-  };
-
   // Serviços disponíveis para geração
   const GENERATION_SERVICES = [
     { id: 'veo3',           label: 'Veo 3.1 (Flow)',     icon: '🌊', description: 'Google Veo 3.1 via Google Flow' },
@@ -3083,6 +3602,38 @@ export function ImagesStep({
           const isReferencesDisabled = !onSegmentsUpdate || isGenerating || isUploading;
           const isLocationPickerOpen = sceneReferencePicker?.segmentId === segment.id
             && sceneReferencePicker.kind === 'location';
+          const imagePromptViewMode = getPromptViewMode(segment.id, 'imagePrompt');
+          const firstFrameViewMode = getPromptViewMode(segment.id, 'firstFrame');
+          const animateFrameViewMode = getPromptViewMode(segment.id, 'animateFrame');
+          const videoFramePairViewMode: PromptLanguageView =
+            firstFrameViewMode === animateFrameViewMode
+              ? firstFrameViewMode
+              : firstFrameViewMode;
+          const imagePromptFieldKey = getPromptFieldKey(segment.id, 'imagePrompt');
+          const firstFrameFieldKey = getPromptFieldKey(segment.id, 'firstFrame');
+          const animateFrameFieldKey = getPromptFieldKey(segment.id, 'animateFrame');
+          const isImagePromptTranslating = Boolean(translatingPromptFields[imagePromptFieldKey]);
+          const isFirstFrameTranslating = Boolean(translatingPromptFields[firstFrameFieldKey]);
+          const isAnimateFrameTranslating = Boolean(translatingPromptFields[animateFrameFieldKey]);
+          const isVideoFramePairTranslating = isFirstFrameTranslating || isAnimateFrameTranslating;
+          const imagePromptValue = (() => {
+            const rawPrompt = getStoredPromptFieldValue(segment, 'imagePrompt', imagePromptViewMode);
+            if (imagePromptViewMode === 'translated' && !rawPrompt) {
+              return `${segment.emotion} scene depicting: ${segment.text}`;
+            }
+            return rawPrompt;
+          })();
+          const firstFrameValue = getStoredPromptFieldValue(segment, 'firstFrame', firstFrameViewMode);
+          const animateFrameValue = getStoredPromptFieldValue(segment, 'animateFrame', animateFrameViewMode);
+          const imagePromptPlaceholder = imagePromptViewMode === 'original'
+            ? 'Prompt original da cena...'
+            : 'Descreva a cena visual em detalhes...';
+          const firstFramePlaceholder = firstFrameViewMode === 'original'
+            ? 'Prompt original para o firstFrame...'
+            : 'Prompt detalhado em inglês para o primeiro frame...';
+          const animateFramePlaceholder = animateFrameViewMode === 'original'
+            ? 'Prompt original para o animateFrame...'
+            : 'Prompt em inglês para animar o vídeo a partir do firstFrame...';
 
           return (
             <div
@@ -3823,19 +4374,35 @@ export function ImagesStep({
                 {segment.assetType === 'video_frame_animate' ? (
                   <div className="space-y-3">
                     <div>
-                      <p className="text-xs text-white/60 mb-1">firstFrame</p>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="text-xs text-white/60">firstFrame</p>
+                        <div className="flex items-center gap-2">
+                          {isVideoFramePairTranslating && (
+                            <div className="px-2 py-0.5 rounded-md bg-cyan-500/20 border border-cyan-400/40 text-cyan-100 text-[10px]">
+                              Traduzindo...
+                            </div>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => toggleVideoFramePairPromptView(segment)}
+                            disabled={!onSegmentsUpdate}
+                            className={`px-2 py-0.5 rounded-md text-[10px] border transition-all ${
+                              !onSegmentsUpdate
+                                ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                                : 'bg-black/70 border-white/20 text-white/70 hover:border-pink-400/70 hover:text-white'
+                            }`}
+                            title="Alternar tradução/original para firstFrame e animateFrame"
+                          >
+                            {videoFramePairViewMode === 'translated' ? 'Tradução' : 'Original'}
+                          </button>
+                        </div>
+                      </div>
                       <textarea
-                        value={segment.firstFrame || ''}
-                        onChange={(e) => {
-                          if (!onSegmentsUpdate) return;
-                          const newSegments = segments.map(s =>
-                            s.id === segment.id ? { ...s, firstFrame: e.target.value } : s
-                          );
-                          onSegmentsUpdate(newSegments);
-                        }}
+                        value={firstFrameValue}
+                        onChange={(e) => handleScenePromptFieldChange(segment.id, 'firstFrame', e.target.value)}
                         rows={4}
                         className="w-full min-h-[7rem] bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-y p-4 custom-scrollbar"
-                        placeholder="Prompt detalhado em inglês para o primeiro frame..."
+                        placeholder={firstFramePlaceholder}
                         disabled={!onSegmentsUpdate}
                       />
                     </div>
@@ -3843,34 +4410,45 @@ export function ImagesStep({
                     <div>
                       <p className="text-xs text-white/60 mb-1">animateFrame</p>
                       <textarea
-                        value={segment.animateFrame || ''}
-                        onChange={(e) => {
-                          if (!onSegmentsUpdate) return;
-                          const newSegments = segments.map(s =>
-                            s.id === segment.id ? { ...s, animateFrame: e.target.value } : s
-                          );
-                          onSegmentsUpdate(newSegments);
-                        }}
+                        value={animateFrameValue}
+                        onChange={(e) => handleScenePromptFieldChange(segment.id, 'animateFrame', e.target.value)}
                         rows={4}
                         className="w-full min-h-[7rem] bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-y p-4 custom-scrollbar"
-                        placeholder="Prompt em inglês para animar o vídeo a partir do firstFrame..."
+                        placeholder={animateFramePlaceholder}
                         disabled={!onSegmentsUpdate}
                       />
                     </div>
                   </div>
                 ) : (
-                  <textarea
-                    value={(() => {
-                      const prompt = segment.imagePrompt;
-                      if (!prompt) return `${segment.emotion} scene depicting: ${segment.text}`;
-                      if (typeof prompt === 'string') return prompt;
-                      return JSON.stringify(prompt, null, 2);
-                    })()}
-                    onChange={(e) => onUpdatePrompt(segment.id, e.target.value)}
-                    rows={6}
-                    className="w-full min-h-[9.5rem] bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-y p-4 custom-scrollbar"
-                    placeholder="Descreva a cena visual em detalhes..."
-                  />
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-end gap-2">
+                      {isImagePromptTranslating && (
+                        <div className="px-2 py-0.5 rounded-md bg-cyan-500/20 border border-cyan-400/40 text-cyan-100 text-[10px]">
+                          Traduzindo...
+                        </div>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => toggleScenePromptView(segment, 'imagePrompt')}
+                        disabled={!onSegmentsUpdate}
+                        className={`px-2 py-0.5 rounded-md text-[10px] border transition-all ${
+                          !onSegmentsUpdate
+                            ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                            : 'bg-black/70 border-white/20 text-white/70 hover:border-pink-400/70 hover:text-white'
+                        }`}
+                        title="Alternar entre tradução e original"
+                      >
+                        {imagePromptViewMode === 'translated' ? 'Tradução' : 'Original'}
+                      </button>
+                    </div>
+                    <textarea
+                      value={imagePromptValue}
+                      onChange={(e) => handleScenePromptFieldChange(segment.id, 'imagePrompt', e.target.value)}
+                      rows={6}
+                      className="w-full min-h-[9.5rem] bg-black/30 border border-white/10 rounded-lg text-white placeholder-white/30 focus:border-pink-500 focus:outline-none resize-y p-4 custom-scrollbar"
+                      placeholder={imagePromptPlaceholder}
+                    />
+                  </div>
                 )}
 
                 <p className="text-xs text-white/70">
@@ -4712,4 +5290,3 @@ export function ImagesStep({
     </div>
   );
 }
-

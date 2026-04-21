@@ -145,6 +145,9 @@ export interface VideoSegment {
   audio?: AudioConfig;
   firstFrame?: string;
   animateFrame?: string;
+  imagePromptOriginal?: string;
+  firstFrameOriginal?: string;
+  animateFrameOriginal?: string;
 }
 
 /**
@@ -190,6 +193,9 @@ const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio',
   'firstFrame',
   'animateFrame',
+  'imagePromptOriginal',
+  'firstFrameOriginal',
+  'animateFrameOriginal',
 ];
 
 const PROJECT_PROPERTIES: (keyof VideoProject)[] = [
