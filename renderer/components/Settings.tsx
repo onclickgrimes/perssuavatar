@@ -18,6 +18,7 @@ type TabId = 'account' | 'api' | 'audio' | 'avatar' | 'features' | 'shortcuts' |
 type GenAIBackend = 'vertex' | 'gemini';
 
 const DEFAULT_GOOGLE_CLOUD_LOCATION = 'global';
+const DEFAULT_SCENE_PROMPT_TRANSLATION_MODEL = 'gemma-4-31b-it';
 
 // Tipos para Providers
 type ProviderPlatform = 'gemini' | 'openai' | 'qwen';
@@ -39,6 +40,7 @@ type ApiCredentialService =
   | 'openai'
   | 'deepseek'
   | 'gemini'
+  | 'gemini_translation'
   | 'vertex'
   | 'aws_polly'
   | 'pexels';
@@ -76,6 +78,7 @@ const API_SERVICE_META: Record<ApiCredentialService, {
   openai: { label: 'OpenAI', icon: '🤖', multi: true },
   deepseek: { label: 'DeepSeek', icon: '🧠', multi: true },
   gemini: { label: 'Google Gemini', icon: '⚡', multi: true },
+  gemini_translation: { label: 'Gemini Translation', icon: '🌐', multi: false },
   vertex: { label: 'Google Vertex AI', icon: '☁️', multi: true },
   aws_polly: { label: 'AWS Polly', icon: '☁️', multi: false },
   pexels: { label: 'Pexels', icon: '📷', multi: false },
@@ -87,6 +90,7 @@ const API_SERVICE_ORDER: ApiCredentialService[] = [
   'openai',
   'deepseek',
   'gemini',
+  'gemini_translation',
   'vertex',
   'aws_polly',
   'pexels',
@@ -151,6 +155,7 @@ export default function Settings({
   const [isSavingGenAIConfig, setIsSavingGenAIConfig] = useState(false);
   const [genaiConfigMessage, setGenaiConfigMessage] = useState<string | null>(null);
   const [genaiConfigError, setGenaiConfigError] = useState<string | null>(null);
+  const [scenePromptTranslationModel, setScenePromptTranslationModel] = useState(DEFAULT_SCENE_PROMPT_TRANSLATION_MODEL);
   const [voiceModel, setVoiceModel] = useState<'polly' | 'elevenlabs'>('polly'); // Modelo de voz para modo classic
   const [continuousRecordingEnabled, setContinuousRecordingEnabled] = useState(true); // Gravação contínua ativada
   const [dbStats, setDbStats] = useState<any>(null);
@@ -323,6 +328,9 @@ export default function Settings({
           }
           if (typeof settings.vertexCredentialsPath === 'string') {
             setVertexCredentialsPath(settings.vertexCredentialsPath.trim());
+          }
+          if (typeof settings.scenePromptTranslationModel === 'string' && settings.scenePromptTranslationModel.trim()) {
+            setScenePromptTranslationModel(settings.scenePromptTranslationModel.trim());
           }
 
           // Carregar configurações de embedding
@@ -713,10 +721,16 @@ export default function Settings({
   const handleSaveApiCredential = async (service: ApiCredentialService) => {
     const form = apiCredentialForms[service];
     const editingId = editingApiCredentialByService[service];
+    const serviceCredentials = apiCredentialsByService[service] || [];
+    const existingSingleCredential = serviceCredentials[0];
+    const effectiveEditingId =
+      editingId || (service === 'gemini_translation' && existingSingleCredential ? existingSingleCredential.id : null);
     const busyId = `save:${service}`;
     const sanitizedVertexProject = vertexProject.trim();
     const sanitizedCloudLocation = googleCloudLocation.trim() || DEFAULT_GOOGLE_CLOUD_LOCATION;
     const sanitizedCredentialsPath = vertexCredentialsPath.trim().replace(/^"|"$/g, '');
+    const sanitizedScenePromptTranslationModel =
+      scenePromptTranslationModel.trim() || DEFAULT_SCENE_PROMPT_TRANSLATION_MODEL;
 
     setApiCredentialMessage(null);
     setApiCredentialError(null);
@@ -753,7 +767,7 @@ export default function Settings({
         setApiCredentialError('AWS Polly requer Access Key ID e Secret Access Key.');
         return;
       }
-    } else if (!form.apiKey.trim()) {
+    } else if (!form.apiKey.trim() && !effectiveEditingId) {
       setApiCredentialError(`A chave de API de ${API_SERVICE_META[service].label} é obrigatória.`);
       return;
     }
@@ -767,7 +781,9 @@ export default function Settings({
       payload.secretAccessKey = form.secretAccessKey.trim();
       payload.region = form.region.trim() || 'sa-east-1';
     } else {
-      payload.apiKey = form.apiKey.trim();
+      if (form.apiKey.trim()) {
+        payload.apiKey = form.apiKey.trim();
+      }
       if (service === 'elevenlabs') {
         payload.voiceId = form.voiceId.trim() || undefined;
       }
@@ -776,8 +792,15 @@ export default function Settings({
     setApiCredentialBusyAction(busyId);
 
     try {
-      if (editingId) {
-        await window.electron.db.updateApiCredential(editingId, payload);
+      if (service === 'gemini_translation') {
+        await window.electron.db.setUserSettings({
+          scenePromptTranslationModel: sanitizedScenePromptTranslationModel,
+        });
+        setScenePromptTranslationModel(sanitizedScenePromptTranslationModel);
+      }
+
+      if (effectiveEditingId) {
+        await window.electron.db.updateApiCredential(effectiveEditingId, payload);
         setApiCredentialMessage(`${API_SERVICE_META[service].label} atualizado com sucesso.`);
       } else {
         await window.electron.db.createApiCredential({
@@ -1550,7 +1573,12 @@ export default function Settings({
                               const serviceCredentials = apiCredentialsByService[service] || [];
                               const form = apiCredentialForms[service];
                               const editingId = editingApiCredentialByService[service];
-                              const showForm = service === 'vertex' || meta.multi || serviceCredentials.length === 0 || Boolean(editingId);
+                              const showForm =
+                                service === 'vertex'
+                                || service === 'gemini_translation'
+                                || meta.multi
+                                || serviceCredentials.length === 0
+                                || Boolean(editingId);
 
                               return (
                                  <div key={service} className="bg-[#111] border border-[#222] rounded-xl p-4">
@@ -1575,7 +1603,9 @@ export default function Settings({
                                         <span className="text-xs text-gray-500">
                                           {service === 'vertex'
                                             ? `Projeto: ${vertexProject || 'não configurado'} • Região: ${googleCloudLocation || DEFAULT_GOOGLE_CLOUD_LOCATION} • Auth: ${vertexCredentialsPath ? 'Arquivo JSON' : 'ADC'}`
-                                            : `${serviceCredentials.length} ${serviceCredentials.length === 1 ? 'credencial' : 'credenciais'}`}
+                                            : service === 'gemini_translation'
+                                              ? `Modelo: ${scenePromptTranslationModel || DEFAULT_SCENE_PROMPT_TRANSLATION_MODEL} - ${serviceCredentials.length} ${serviceCredentials.length === 1 ? 'credencial' : 'credenciais'}`
+                                              : `${serviceCredentials.length} ${serviceCredentials.length === 1 ? 'credencial' : 'credenciais'}`}
                                          </span>
                                       </div>
 
@@ -1660,6 +1690,16 @@ export default function Settings({
                                               onChange={(e) => handleApiCredentialFieldChange(service, 'apiKey', e.target.value)}
                                               placeholder="API Key"
                                               className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none"
+                                            />
+                                          )}
+
+                                          {service === 'gemini_translation' && (
+                                            <input
+                                              type="text"
+                                              value={scenePromptTranslationModel}
+                                              onChange={(e) => setScenePromptTranslationModel(e.target.value)}
+                                              placeholder={`Modelo de traducao (padrao: ${DEFAULT_SCENE_PROMPT_TRANSLATION_MODEL})`}
+                                              className="bg-[#0a0a0a] text-white rounded-lg p-2.5 border border-[#333] text-sm focus:ring-1 focus:ring-blue-500 outline-none md:col-span-2"
                                             />
                                           )}
 

@@ -144,10 +144,10 @@ const handler = {
       ipcRenderer.invoke('db:set-assistant-mode', mode),
 
     // API Credentials
-    getApiCredentials: (service?: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'vertex' | 'aws_polly' | 'pexels') =>
+    getApiCredentials: (service?: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'gemini_translation' | 'vertex' | 'aws_polly' | 'pexels') =>
       ipcRenderer.invoke('db:get-api-credentials', service),
     createApiCredential: (input: {
-      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'vertex' | 'aws_polly' | 'pexels';
+      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'gemini_translation' | 'vertex' | 'aws_polly' | 'pexels';
       label?: string;
       apiKey?: string;
       accessKeyId?: string;
@@ -168,7 +168,7 @@ const handler = {
     deleteApiCredential: (credentialId: string) =>
       ipcRenderer.invoke('db:delete-api-credential', credentialId),
     setActiveApiCredential: (
-      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'vertex' | 'aws_polly' | 'pexels',
+      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'gemini_translation' | 'vertex' | 'aws_polly' | 'pexels',
       credentialId: string
     ) => ipcRenderer.invoke('db:set-active-api-credential', service, credentialId),
     

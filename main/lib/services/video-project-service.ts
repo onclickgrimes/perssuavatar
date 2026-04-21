@@ -19,7 +19,8 @@ import { OpenAIService } from './openai-service';
 import { DeepSeekService } from './deepseek-service';
 import { getVideoSearchService } from './video-search-service';
 import { getPexelsService } from '../assets';
-import { hasCredential } from '../credentials';
+import { getPrimaryApiKey, hasCredential } from '../credentials';
+import { getUserSettings } from '../database';
 import { createVideoGenAIClient } from './genai-video-client';
 import {
     CAMERA_MOVEMENTS,
@@ -48,10 +49,7 @@ type ScenePromptTranslationResult = {
     error?: string;
 };
 
-const GEMMA_TRANSLATION_MODEL = 'gemma-4-31b-it';
-// TODO: substituir pela chave real do projeto enquanto estiver hardcoded.
-const GEMMA_TRANSLATION_API_KEY = 'AIzaSyAIBgEAU6H-K-r6jcl7jUvvCgqE8vV9a_s';
-const GEMMA_TRANSLATION_API_KEY_PLACEHOLDER = 'HARDCODED_GOOGLE_API_KEY';
+const DEFAULT_SCENE_PROMPT_TRANSLATION_MODEL = 'gemma-4-31b-it';
 
 // ========================================
 // TYPES
@@ -133,6 +131,10 @@ export interface VideoProjectSegment {
     };
     firstFrame?: string;
     animateFrame?: string;
+    imagePromptTraduzido?: string;
+    firstFrameTraduzido?: string;
+    animateFrameTraduzido?: string;
+    // Compatibilidade com projetos antigos (legado)
     imagePromptOriginal?: string;
     firstFrameOriginal?: string;
     animateFrameOriginal?: string;
@@ -399,8 +401,8 @@ export class VideoProjectService extends EventEmitter {
         sourceVariant: 'original' | 'translated',
         field?: ScenePromptTranslationField
     ): string {
-        const targetLanguage = sourceVariant === 'original' ? 'English' : 'Brazilian Portuguese';
-        const sourceLanguageHint = sourceVariant === 'original' ? 'Brazilian Portuguese' : 'English';
+        const targetLanguage = sourceVariant === 'original' ? 'Brazilian Portuguese' : 'English';
+        const sourceLanguageHint = sourceVariant === 'original' ? 'English' : 'Brazilian Portuguese';
         const fieldLabel = field || 'imagePrompt';
 
         if (sourceVariant === 'original') {
@@ -432,8 +434,8 @@ export class VideoProjectService extends EventEmitter {
         fields: Partial<Record<ScenePromptTranslationField, string>>,
         sourceVariant: 'original' | 'translated'
     ): string {
-        const targetLanguage = sourceVariant === 'original' ? 'English' : 'Brazilian Portuguese';
-        const sourceLanguageHint = sourceVariant === 'original' ? 'Brazilian Portuguese' : 'English';
+        const targetLanguage = sourceVariant === 'original' ? 'Brazilian Portuguese' : 'English';
+        const sourceLanguageHint = sourceVariant === 'original' ? 'English' : 'Brazilian Portuguese';
 
         return [
             'You are a professional translation engine for AI video/image prompts.',
@@ -458,9 +460,23 @@ export class VideoProjectService extends EventEmitter {
         };
     }
 
+    private resolveScenePromptTranslationModel(): string {
+        const settings = (getUserSettings() || {}) as Record<string, unknown>;
+        const configuredModel = String(settings.scenePromptTranslationModel || '').trim();
+        return configuredModel || DEFAULT_SCENE_PROMPT_TRANSLATION_MODEL;
+    }
+
+    private resolveScenePromptTranslationApiKey(): string {
+        return String(
+            getPrimaryApiKey('gemini_translation')
+            || process.env.GEMINI_TRANSLATION_API_KEY
+            || ''
+        ).trim();
+    }
+
     public async translateScenePromptText(input: ScenePromptTranslationInput): Promise<ScenePromptTranslationResult> {
         const sourceText = String(input?.text || '');
-        const sourceVariant = input?.sourceVariant === 'original' ? 'original' : 'translated';
+        const sourceVariant = input?.sourceVariant === 'translated' ? 'translated' : 'original';
         const field = input?.field as ScenePromptTranslationField | undefined;
         const candidateFields = input?.fields || {};
         const allowedFields: ScenePromptTranslationField[] = ['imagePrompt', 'firstFrame', 'animateFrame'];
@@ -469,7 +485,8 @@ export class VideoProjectService extends EventEmitter {
             .map((key) => [key, String((candidateFields as any)[key] || '')] as [ScenePromptTranslationField, string]);
         const requestedFields = Object.fromEntries(requestedFieldEntries) as Partial<Record<ScenePromptTranslationField, string>>;
         const isBatchRequest = requestedFieldEntries.length > 0;
-        const resolvedApiKey = String(GEMMA_TRANSLATION_API_KEY || '').trim();
+        const resolvedApiKey = this.resolveScenePromptTranslationApiKey();
+        const translationModel = this.resolveScenePromptTranslationModel();
 
         if (isBatchRequest) {
             const hasAnySource = requestedFieldEntries.some(([, value]) => value.trim().length > 0);
@@ -483,13 +500,10 @@ export class VideoProjectService extends EventEmitter {
             return { success: true, translatedText: '' };
         }
 
-        if (
-            !resolvedApiKey
-            || resolvedApiKey === GEMMA_TRANSLATION_API_KEY_PLACEHOLDER
-        ) {
+        if (!resolvedApiKey) {
             return {
                 success: false,
-                error: 'Configure a constante GEMMA_TRANSLATION_API_KEY em video-project-service.ts.',
+                error: 'Configure a credencial "Gemini Translation" em Configuracoes > API e Modelos.',
             };
         }
 
@@ -498,7 +512,7 @@ export class VideoProjectService extends EventEmitter {
             if (isBatchRequest) {
                 const prompt = this.buildScenePromptBatchTranslationInstruction(requestedFields, sourceVariant);
                 const response = await ai.models.generateContent({
-                    model: GEMMA_TRANSLATION_MODEL,
+                    model: translationModel,
                     contents: [
                         {
                             role: 'user',
@@ -510,7 +524,7 @@ export class VideoProjectService extends EventEmitter {
 
                 const rawText = this.normalizeScenePromptTranslationText(response?.text || '');
                 if (!rawText) {
-                    throw new Error(`Resposta vazia do ${GEMMA_TRANSLATION_MODEL}.`);
+                    throw new Error(`Resposta vazia do ${translationModel}.`);
                 }
 
                 const parsed = this.parseJsonResponseText(rawText);
@@ -533,7 +547,7 @@ export class VideoProjectService extends EventEmitter {
             const prompt = this.buildScenePromptTranslationInstruction(sourceText, sourceVariant, field);
 
             const response = await ai.models.generateContent({
-                model: GEMMA_TRANSLATION_MODEL,
+                model: translationModel,
                 contents: [
                     {
                         role: 'user',
@@ -546,7 +560,7 @@ export class VideoProjectService extends EventEmitter {
             const translatedText = this.normalizeScenePromptTranslationText(response?.text || '');
 
             if (!translatedText) {
-                throw new Error(`Resposta vazia do ${GEMMA_TRANSLATION_MODEL}.`);
+                throw new Error(`Resposta vazia do ${translationModel}.`);
             }
 
             return { success: true, translatedText };
@@ -2942,9 +2956,9 @@ Responda APENAS com um objeto JSON válido no formato:
                 audio: segment.audio,
                 firstFrame: segment.firstFrame,
                 animateFrame: segment.animateFrame,
-                imagePromptOriginal: segment.imagePromptOriginal,
-                firstFrameOriginal: segment.firstFrameOriginal,
-                animateFrameOriginal: segment.animateFrameOriginal,
+                imagePromptTraduzido: segment.imagePromptTraduzido,
+                firstFrameTraduzido: segment.firstFrameTraduzido,
+                animateFrameTraduzido: segment.animateFrameTraduzido,
                 words: segment.words, // Words fica por último
             })),
         };
@@ -2963,9 +2977,28 @@ Responda APENAS com um objeto JSON válido no formato:
             const content = fs.readFileSync(filePath, 'utf-8');
             const project = JSON.parse(content) as VideoProjectData;
 
-            project.segments = (project.segments || []).map(segment =>
-                this.normalizeSegmentCharacters(segment)
-            );
+            project.segments = (project.segments || []).map(segment => {
+                const normalized = this.normalizeSegmentCharacters(segment);
+                if (
+                    normalized.imagePromptTraduzido == null
+                    && normalized.imagePromptOriginal != null
+                ) {
+                    normalized.imagePromptTraduzido = normalized.imagePromptOriginal;
+                }
+                if (
+                    normalized.firstFrameTraduzido == null
+                    && normalized.firstFrameOriginal != null
+                ) {
+                    normalized.firstFrameTraduzido = normalized.firstFrameOriginal;
+                }
+                if (
+                    normalized.animateFrameTraduzido == null
+                    && normalized.animateFrameOriginal != null
+                ) {
+                    normalized.animateFrameTraduzido = normalized.animateFrameOriginal;
+                }
+                return normalized;
+            });
 
             // Adicionar config padrão se não existir (compatibilidade com projetos antigos)
             if (!project.config) {

@@ -145,6 +145,10 @@ export interface VideoSegment {
   audio?: AudioConfig;
   firstFrame?: string;
   animateFrame?: string;
+  imagePromptTraduzido?: string;
+  firstFrameTraduzido?: string;
+  animateFrameTraduzido?: string;
+  // Compatibilidade com projetos antigos (legado)
   imagePromptOriginal?: string;
   firstFrameOriginal?: string;
   animateFrameOriginal?: string;
@@ -193,9 +197,9 @@ const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio',
   'firstFrame',
   'animateFrame',
-  'imagePromptOriginal',
-  'firstFrameOriginal',
-  'animateFrameOriginal',
+  'imagePromptTraduzido',
+  'firstFrameTraduzido',
+  'animateFrameTraduzido',
 ];
 
 const PROJECT_PROPERTIES: (keyof VideoProject)[] = [
@@ -216,6 +220,18 @@ export function mapSegment(source: any): VideoSegment {
       (segment as any)[prop] = source[prop];
     }
   }
+
+  // Migração: projetos antigos usavam ...Original para armazenar tradução
+  if (segment.imagePromptTraduzido == null && source.imagePromptOriginal != null) {
+    segment.imagePromptTraduzido = source.imagePromptOriginal;
+  }
+  if (segment.firstFrameTraduzido == null && source.firstFrameOriginal != null) {
+    segment.firstFrameTraduzido = source.firstFrameOriginal;
+  }
+  if (segment.animateFrameTraduzido == null && source.animateFrameOriginal != null) {
+    segment.animateFrameTraduzido = source.animateFrameOriginal;
+  }
+
   return segment as VideoSegment;
 }
 

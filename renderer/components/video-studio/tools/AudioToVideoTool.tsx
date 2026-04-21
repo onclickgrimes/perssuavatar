@@ -704,12 +704,12 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
               : String(editedSegment.animateFrame))
             : String(targetSegment.animateFrame || '');
 
-          let translatedFirstFrameOriginal: string | undefined;
-          let translatedAnimateFrameOriginal: string | undefined;
+          let translatedFirstFrame: string | undefined;
+          let translatedAnimateFrame: string | undefined;
           if (window.electron?.videoProject?.translateScenePrompt) {
             try {
               const translationResult = await window.electron.videoProject.translateScenePrompt({
-                sourceVariant: 'translated',
+                sourceVariant: 'original',
                 fields: {
                   firstFrame: nextFirstFrame,
                   animateFrame: nextAnimateFrame,
@@ -718,10 +718,10 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
 
               if (translationResult?.success && translationResult?.translatedFields) {
                 if (typeof translationResult.translatedFields.firstFrame === 'string') {
-                  translatedFirstFrameOriginal = translationResult.translatedFields.firstFrame;
+                  translatedFirstFrame = translationResult.translatedFields.firstFrame;
                 }
                 if (typeof translationResult.translatedFields.animateFrame === 'string') {
-                  translatedAnimateFrameOriginal = translationResult.translatedFields.animateFrame;
+                  translatedAnimateFrame = translationResult.translatedFields.animateFrame;
                 }
               }
             } catch (translationError) {
@@ -745,11 +745,11 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
                           animateFrame: nextAnimateFrame,
                         }
                       : {}),
-                    ...(translatedFirstFrameOriginal !== undefined
-                      ? { firstFrameOriginal: translatedFirstFrameOriginal }
+                    ...(translatedFirstFrame !== undefined
+                      ? { firstFrameTraduzido: translatedFirstFrame }
                       : {}),
-                    ...(translatedAnimateFrameOriginal !== undefined
-                      ? { animateFrameOriginal: translatedAnimateFrameOriginal }
+                    ...(translatedAnimateFrame !== undefined
+                      ? { animateFrameTraduzido: translatedAnimateFrame }
                       : {}),
                   }
                 : seg
@@ -764,17 +764,17 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         if (updatedPrompt == null && !hasCharacters && !hasLocation) return;
 
         const normalizedUpdatedPrompt = normalizePromptForSummary(updatedPrompt);
-        let translatedImagePromptOriginal: string | undefined;
+        let translatedImagePrompt: string | undefined;
         if (normalizedUpdatedPrompt && window.electron?.videoProject?.translateScenePrompt) {
           try {
             const translationResult = await window.electron.videoProject.translateScenePrompt({
               text: normalizedUpdatedPrompt,
-              sourceVariant: 'translated',
+              sourceVariant: 'original',
               field: 'imagePrompt',
             });
 
             if (translationResult?.success && typeof translationResult?.translatedText === 'string') {
-              translatedImagePromptOriginal = translationResult.translatedText;
+              translatedImagePrompt = translationResult.translatedText;
             }
           } catch (translationError) {
             console.error('Immediate translation error (imagePrompt):', translationError);
@@ -788,8 +788,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
               ? {
                   ...seg,
                   ...(updatedPrompt != null ? { imagePrompt: updatedPrompt } : {}),
-                  ...(translatedImagePromptOriginal !== undefined
-                    ? { imagePromptOriginal: translatedImagePromptOriginal }
+                  ...(translatedImagePrompt !== undefined
+                    ? { imagePromptTraduzido: translatedImagePrompt }
                     : {}),
                   ...(hasCharacters ? { IdOfTheCharactersInTheScene: editedSegment.IdOfTheCharactersInTheScene } : {}),
                   ...(hasLocation ? { IdOfTheLocationInTheScene: editedSegment.IdOfTheLocationInTheScene } : {}),

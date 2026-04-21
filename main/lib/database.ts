@@ -9,6 +9,7 @@ export type ApiCredentialService =
   | 'openai'
   | 'deepseek'
   | 'gemini'
+  | 'gemini_translation'
   | 'vertex'
   | 'aws_polly'
   | 'pexels';
@@ -48,6 +49,7 @@ const MULTI_KEY_SERVICES = new Set<ApiCredentialService>([
 ]);
 
 const SINGLE_KEY_SERVICES = new Set<ApiCredentialService>([
+  'gemini_translation',
   'aws_polly',
   'pexels',
 ]);
@@ -67,6 +69,7 @@ interface DatabaseSchema {
     vertexProject?: string;
     googleCloudLocation?: string;
     vertexCredentialsPath?: string;
+    scenePromptTranslationModel?: string;
     voiceModel?: 'polly' | 'elevenlabs';
     continuousRecordingEnabled?: boolean;
     // Configurações de Embedding para Base de Conhecimento
@@ -158,6 +161,7 @@ const defaults: DatabaseSchema = {
     selectedAssistant: 'general', // Assistente padrão
     genaiBackend: 'vertex',
     googleCloudLocation: DEFAULT_GOOGLE_CLOUD_LOCATION,
+    scenePromptTranslationModel: 'gemma-4-31b-it',
   },
   conversationHistory: [],
   windowState: {
@@ -413,6 +417,7 @@ export function initializeDatabase(): Store<DatabaseSchema> {
             vertexProject: { type: 'string' },
             googleCloudLocation: { type: 'string' },
             vertexCredentialsPath: { type: 'string' },
+            scenePromptTranslationModel: { type: 'string' },
             supabaseUrl: { type: 'string' },
             supabasePublishKey: { type: 'string' },
             billingAuthToken: { type: 'string' },
@@ -473,6 +478,9 @@ export function initializeDatabase(): Store<DatabaseSchema> {
     if (!persistedUserSettings.googleCloudLocation) {
       persistedUserSettings.googleCloudLocation = DEFAULT_GOOGLE_CLOUD_LOCATION;
     }
+    if (!persistedUserSettings.scenePromptTranslationModel) {
+      persistedUserSettings.scenePromptTranslationModel = 'gemma-4-31b-it';
+    }
     storeInstance.set('userSettings', persistedUserSettings as any);
 
     console.log('✅ Database initialized at:', storeInstance.path);
@@ -527,6 +535,7 @@ function normalizeLabel(service: ApiCredentialService, label?: string): string {
     openai: 'OpenAI',
     deepseek: 'DeepSeek',
     gemini: 'Google Gemini',
+    gemini_translation: 'Gemini Translation',
     vertex: 'Google Vertex AI',
     aws_polly: 'AWS Polly',
     pexels: 'Pexels',

@@ -100,7 +100,7 @@ type StoryReferenceKind = 'character' | 'location';
 type StoryReferenceImageProvider = 'flow-image' | 'flow-image-api' | 'flow-image-pro';
 type ScenePromptField = 'imagePrompt' | 'firstFrame' | 'animateFrame';
 type VideoFramePromptField = 'firstFrame' | 'animateFrame';
-type ScenePromptOriginalField = 'imagePromptOriginal' | 'firstFrameOriginal' | 'animateFrameOriginal';
+type ScenePromptTranslatedField = 'imagePromptTraduzido' | 'firstFrameTraduzido' | 'animateFrameTraduzido';
 type PromptLanguageView = 'translated' | 'original';
 
 const FLOW_EXTENSION_JOB_SCHEMA = 'flow-extension-job.v1';
@@ -113,10 +113,10 @@ const VEO2_API_ALLOWED_SECONDS = [5, 6, 8] as const;
 const GROK_ALLOWED_SECONDS = [6, 10] as const;
 const TRANSLATION_DEBOUNCE_MS = 3000;
 
-const PROMPT_FIELD_TO_ORIGINAL_KEY: Record<ScenePromptField, ScenePromptOriginalField> = {
-  imagePrompt: 'imagePromptOriginal',
-  firstFrame: 'firstFrameOriginal',
-  animateFrame: 'animateFrameOriginal',
+const PROMPT_FIELD_TO_TRANSLATED_KEY: Record<ScenePromptField, ScenePromptTranslatedField> = {
+  imagePrompt: 'imagePromptTraduzido',
+  firstFrame: 'firstFrameTraduzido',
+  animateFrame: 'animateFrameTraduzido',
 };
 const VIDEO_FRAME_PROMPT_FIELDS: VideoFramePromptField[] = ['firstFrame', 'animateFrame'];
 
@@ -503,7 +503,7 @@ export function ImagesStep({
 
   const getPromptViewMode = useCallback((segmentId: number, field: ScenePromptField): PromptLanguageView => {
     const key = getPromptFieldKey(segmentId, field);
-    return promptViewModes[key] || 'translated';
+    return promptViewModes[key] || 'original';
   }, [getPromptFieldKey, promptViewModes]);
 
   const getStoredPromptFieldValue = useCallback((
@@ -511,15 +511,29 @@ export function ImagesStep({
     field: ScenePromptField,
     viewMode: PromptLanguageView
   ): string => {
-    if (viewMode === 'translated') {
+    if (viewMode === 'original') {
       if (field === 'imagePrompt') {
         return extractPromptString(segment.imagePrompt);
       }
       return String(segment[field] || '');
     }
 
-    const originalKey = PROMPT_FIELD_TO_ORIGINAL_KEY[field];
-    return String((segment as any)[originalKey] || '');
+    const translatedKey = PROMPT_FIELD_TO_TRANSLATED_KEY[field];
+    const translatedValue = (segment as any)[translatedKey];
+    if (translatedValue != null) return String(translatedValue);
+
+    // Compatibilidade com projetos antigos que salvaram tradução em ...Original
+    if (field === 'imagePrompt' && (segment as any).imagePromptOriginal != null) {
+      return String((segment as any).imagePromptOriginal);
+    }
+    if (field === 'firstFrame' && (segment as any).firstFrameOriginal != null) {
+      return String((segment as any).firstFrameOriginal);
+    }
+    if (field === 'animateFrame' && (segment as any).animateFrameOriginal != null) {
+      return String((segment as any).animateFrameOriginal);
+    }
+
+    return '';
   }, []);
 
   const patchSegment = useCallback((segmentId: number, patch: Partial<TranscriptionSegment>) => {
@@ -575,6 +589,11 @@ export function ImagesStep({
   }, []);
 
   const setTranslatedPromptValue = useCallback((segmentId: number, field: ScenePromptField, value: string) => {
+    const translatedKey = PROMPT_FIELD_TO_TRANSLATED_KEY[field];
+    patchSegment(segmentId, { [translatedKey]: value } as Partial<TranscriptionSegment>);
+  }, [patchSegment]);
+
+  const setOriginalPromptValue = useCallback((segmentId: number, field: ScenePromptField, value: string) => {
     if (field === 'imagePrompt') {
       onUpdatePrompt(segmentId, value);
       return;
@@ -582,11 +601,6 @@ export function ImagesStep({
 
     patchSegment(segmentId, { [field]: value } as Partial<TranscriptionSegment>);
   }, [onUpdatePrompt, patchSegment]);
-
-  const setOriginalPromptValue = useCallback((segmentId: number, field: ScenePromptField, value: string) => {
-    const originalKey = PROMPT_FIELD_TO_ORIGINAL_KEY[field];
-    patchSegment(segmentId, { [originalKey]: value } as Partial<TranscriptionSegment>);
-  }, [patchSegment]);
 
   const getVideoFramePairSourceValues = useCallback((
     segmentId: number,
@@ -617,21 +631,21 @@ export function ImagesStep({
     targetVariant: PromptLanguageView,
     values: Partial<Record<VideoFramePromptField, string>>
   ) => {
-    if (targetVariant === 'translated') {
-      const translatedPatch: Partial<TranscriptionSegment> = {};
-      if (typeof values.firstFrame === 'string') translatedPatch.firstFrame = values.firstFrame;
-      if (typeof values.animateFrame === 'string') translatedPatch.animateFrame = values.animateFrame;
-      if (Object.keys(translatedPatch).length > 0) {
-        patchSegment(segmentId, translatedPatch);
+    if (targetVariant === 'original') {
+      const originalPatch: Partial<TranscriptionSegment> = {};
+      if (typeof values.firstFrame === 'string') originalPatch.firstFrame = values.firstFrame;
+      if (typeof values.animateFrame === 'string') originalPatch.animateFrame = values.animateFrame;
+      if (Object.keys(originalPatch).length > 0) {
+        patchSegment(segmentId, originalPatch);
       }
       return;
     }
 
-    const originalPatch: Partial<TranscriptionSegment> = {};
-    if (typeof values.firstFrame === 'string') originalPatch.firstFrameOriginal = values.firstFrame;
-    if (typeof values.animateFrame === 'string') originalPatch.animateFrameOriginal = values.animateFrame;
-    if (Object.keys(originalPatch).length > 0) {
-      patchSegment(segmentId, originalPatch);
+    const translatedPatch: Partial<TranscriptionSegment> = {};
+    if (typeof values.firstFrame === 'string') translatedPatch.firstFrameTraduzido = values.firstFrame;
+    if (typeof values.animateFrame === 'string') translatedPatch.animateFrameTraduzido = values.animateFrame;
+    if (Object.keys(translatedPatch).length > 0) {
+      patchSegment(segmentId, translatedPatch);
     }
   }, [patchSegment]);
 
@@ -919,8 +933,8 @@ export function ImagesStep({
     const firstFrameKey = getPromptFieldKey(segment.id, 'firstFrame');
     const animateFrameKey = getPromptFieldKey(segment.id, 'animateFrame');
     const currentMode = isVideoFramePromptField(field)
-      ? (promptViewModes[firstFrameKey] || promptViewModes[animateFrameKey] || 'translated')
-      : (promptViewModes[promptFieldKey] || 'translated');
+      ? (promptViewModes[firstFrameKey] || promptViewModes[animateFrameKey] || 'original')
+      : (promptViewModes[promptFieldKey] || 'original');
     const nextMode: PromptLanguageView = currentMode === 'translated' ? 'original' : 'translated';
 
     if (isVideoFramePromptField(field)) {
@@ -3618,7 +3632,7 @@ export function ImagesStep({
           const isVideoFramePairTranslating = isFirstFrameTranslating || isAnimateFrameTranslating;
           const imagePromptValue = (() => {
             const rawPrompt = getStoredPromptFieldValue(segment, 'imagePrompt', imagePromptViewMode);
-            if (imagePromptViewMode === 'translated' && !rawPrompt) {
+            if (imagePromptViewMode === 'original' && !rawPrompt) {
               return `${segment.emotion} scene depicting: ${segment.text}`;
             }
             return rawPrompt;
@@ -3626,14 +3640,14 @@ export function ImagesStep({
           const firstFrameValue = getStoredPromptFieldValue(segment, 'firstFrame', firstFrameViewMode);
           const animateFrameValue = getStoredPromptFieldValue(segment, 'animateFrame', animateFrameViewMode);
           const imagePromptPlaceholder = imagePromptViewMode === 'original'
-            ? 'Prompt original da cena...'
-            : 'Descreva a cena visual em detalhes...';
+            ? 'Prompt original em inglês da cena...'
+            : 'Prompt traduzido para PT-BR da cena...';
           const firstFramePlaceholder = firstFrameViewMode === 'original'
-            ? 'Prompt original para o firstFrame...'
-            : 'Prompt detalhado em inglês para o primeiro frame...';
+            ? 'Prompt original em inglês para o firstFrame...'
+            : 'Prompt traduzido para PT-BR do firstFrame...';
           const animateFramePlaceholder = animateFrameViewMode === 'original'
-            ? 'Prompt original para o animateFrame...'
-            : 'Prompt em inglês para animar o vídeo a partir do firstFrame...';
+            ? 'Prompt original em inglês para o animateFrame...'
+            : 'Prompt traduzido para PT-BR do animateFrame...';
 
           return (
             <div
