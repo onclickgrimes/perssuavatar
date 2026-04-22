@@ -633,6 +633,9 @@ export class VideoProjectService extends EventEmitter {
             config: {
                 systemInstruction,
                 responseMimeType: 'application/json',
+                thinkingConfig: {
+                    thinkingLevel: ThinkingLevel.HIGH,
+                },
             } as any,
         } as any);
 
@@ -3026,10 +3029,10 @@ export class VideoProjectService extends EventEmitter {
         const promptRules: string[] = [];
 
         if (hasFrameAnimate && hasRegularSegments) {
-            promptRules.push('- Para segmentos com assetType = "video_frame_animate", retorne "firstFrame" e "animateFrame" (NÃO retorne imagePrompt).');
+            promptRules.push('- Para segmentos com assetType = "video_frame_animate", retorne "firstFrame" e "animateFrame".');
             promptRules.push('- Para os demais segmentos, retorne "imagePrompt".');
         } else if (hasFrameAnimate) {
-            promptRules.push('- Para TODOS os segmentos, retorne "firstFrame" e "animateFrame" (NÃO retorne imagePrompt).');
+            promptRules.push('- Para TODOS os segmentos, retorne "firstFrame" e "animateFrame".');
         } else {
             promptRules.push('- Para TODOS os segmentos, retorne "imagePrompt".');
         }
