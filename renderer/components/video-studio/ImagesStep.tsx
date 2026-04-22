@@ -14,6 +14,8 @@ import {
 } from './prompt-utils';
 import type { StoryReferencesState as PersistedStoryReferencesState } from '../../shared/utils/project-converter';
 
+type AnalysisProvider = 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+
 interface ImagesStepProps {
   segments: TranscriptionSegment[];
   projectTitle?: string;
@@ -23,10 +25,14 @@ interface ImagesStepProps {
   onUpdateImage: (id: number, imageUrl: string, durationVideoSec?: number) => void;
   onContinue: () => void;
   onBack: () => void;
-  provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
-  onProviderChange?: (p: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek') => void;
+  provider?: AnalysisProvider;
+  onProviderChange?: (p: AnalysisProvider) => void;
   providerModel?: string;
   onProviderModelChange?: (m: string) => void;
+  onOpenProject?: () => void;
+  onSaveProject?: () => void | Promise<void>;
+  canSaveProject?: boolean;
+  isSavingProject?: boolean;
   onAnalyze?: (instruction?: string, context?: AnalysisReferenceContext) => void | Promise<void>;
   onAnalyzeScene?: (segmentId: number, instruction: string) => void | Promise<void>;
   isProcessing?: boolean;
@@ -94,6 +100,11 @@ interface SceneReferencePickerState {
   segmentId: number;
   kind: 'character' | 'location';
   characterIndex?: number;
+}
+
+interface ToolbarSelectOption {
+  value: string;
+  label: string;
 }
 
 type StoryReferenceKind = 'character' | 'location';
@@ -329,6 +340,10 @@ export function ImagesStep({
   onProviderChange,
   providerModel,
   onProviderModelChange,
+  onOpenProject,
+  onSaveProject,
+  canSaveProject,
+  isSavingProject,
   onAnalyze,
   onAnalyzeScene,
   isProcessing,
@@ -1111,6 +1126,30 @@ export function ImagesStep({
     s => s.assetType === 'video_frame_animate' && (!!s.firstFrame || !!s.animateFrame)
   );
   const hasPrompts = hasImagePrompts || hasFrameAnimatePrompts;
+  const providerModelOptions = useMemo<ToolbarSelectOption[]>(() => {
+    if (provider === 'gemini') {
+      return [
+        { value: 'gemini-3.1-flash-lite-preview', label: 'Gemini 3.1 Flash Lite ($0.25 inputs / $1.50 outputs)' },
+        { value: 'gemini-3-flash-preview', label: 'Gemini 3 Flash ($0.50 inputs / $3 outputs)' },
+        { value: 'gemini-3.1-pro-preview', label: 'Gemini 3.1 Pro ($2 inputs / $12 outputs)' },
+      ];
+    }
+    if (provider === 'gemini_scraping') {
+      return [
+        { value: 'gemini-web-auto', label: 'Gemini Web (usa modelo ativo da conta)' },
+      ];
+    }
+    if (provider === 'openai') {
+      return [
+        { value: 'gpt-5.4-mini', label: 'GPT 5.4 Mini ($0.75 inputs / $4.50 outputs)' },
+        { value: 'gpt-5.4', label: 'GPT 5.4 ($2.50 inputs / $15.00 outputs)' },
+      ];
+    }
+    return [
+      { value: 'deepseek-chat', label: 'DeepSeek Chat V3' },
+      { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner R1' },
+    ];
+  }, [provider]);
 
   const handleCharacterImageUpload = async (charId: number, file: File) => {
     if (!isImageFile(file)) {
@@ -2119,12 +2158,132 @@ export function ImagesStep({
     [segments]
   );
   const canContinue = hasPrompts || segmentsWithMediaCount > 0;
+  const titlebarAnalyzeLabel = isAiBusy
+    ? 'Gerando...'
+    : hasPrompts
+      ? (hasGlobalInstruction ? '✏️ Editar com IA' : '🔄 Regerar com IA')
+      : '✨ Gerar Prompts com IA';
   const batchStats = useMemo(() => {
     const values = Object.values(batchResults);
     const success = values.filter(v => v === 'success').length;
     const error = values.filter(v => v === 'error').length;
     return { success, error };
   }, [batchResults]);
+  const canSaveFromToolbar = Boolean(canSaveProject && onSaveProject);
+  const toolbarBackRef = useRef<() => void>(() => {});
+  const toolbarContinueRef = useRef<() => void>(() => {});
+  const toolbarAnalyzeRef = useRef<(() => void | Promise<void>) | undefined>(undefined);
+  const toolbarOpenProjectRef = useRef<(() => void) | undefined>(undefined);
+  const toolbarSaveProjectRef = useRef<(() => void | Promise<void>) | undefined>(undefined);
+  const toolbarProviderChangeRef = useRef<((nextProvider: AnalysisProvider) => void) | undefined>(undefined);
+  const toolbarProviderModelChangeRef = useRef<((nextModel: string) => void) | undefined>(undefined);
+
+  useEffect(() => {
+    toolbarBackRef.current = onBack;
+    toolbarContinueRef.current = onContinue;
+    toolbarAnalyzeRef.current = onAnalyze ? handleAnalyzeWithOptionalInstruction : undefined;
+    toolbarOpenProjectRef.current = onOpenProject;
+    toolbarSaveProjectRef.current = onSaveProject;
+    toolbarProviderChangeRef.current = onProviderChange;
+    toolbarProviderModelChangeRef.current = onProviderModelChange;
+  }, [
+    handleAnalyzeWithOptionalInstruction,
+    onAnalyze,
+    onBack,
+    onContinue,
+    onOpenProject,
+    onProviderChange,
+    onProviderModelChange,
+    onSaveProject,
+  ]);
+
+  const stableToolbarBack = useCallback(() => {
+    toolbarBackRef.current();
+  }, []);
+
+  const stableToolbarContinue = useCallback(() => {
+    toolbarContinueRef.current();
+  }, []);
+
+  const stableToolbarAnalyze = useCallback(() => {
+    return toolbarAnalyzeRef.current?.();
+  }, []);
+
+  const stableToolbarOpenProject = useCallback(() => {
+    toolbarOpenProjectRef.current?.();
+  }, []);
+
+  const stableToolbarSaveProject = useCallback(() => {
+    return toolbarSaveProjectRef.current?.();
+  }, []);
+
+  const stableToolbarProviderChange = useCallback((nextProvider: AnalysisProvider) => {
+    toolbarProviderChangeRef.current?.(nextProvider);
+  }, []);
+
+  const stableToolbarProviderModelChange = useCallback((nextModel: string) => {
+    toolbarProviderModelChangeRef.current?.(nextModel);
+  }, []);
+
+  const stableToolbarOpenCharactersLocations = useCallback(() => {
+    setShowCharactersModal(true);
+  }, []);
+
+  useEffect(() => {
+    window.dispatchEvent(
+      new CustomEvent('video-studio:images-toolbar', {
+        detail: {
+          provider,
+          onProviderChange: onProviderChange ? stableToolbarProviderChange : undefined,
+          providerModel: providerModel || '',
+          onProviderModelChange: onProviderModelChange ? stableToolbarProviderModelChange : undefined,
+          providerModelOptions,
+          onOpenProject: onOpenProject ? stableToolbarOpenProject : undefined,
+          onSaveProject: canSaveFromToolbar ? stableToolbarSaveProject : undefined,
+          canSaveProject: canSaveFromToolbar,
+          isSavingProject: Boolean(isSavingProject),
+          onBack: stableToolbarBack,
+          onAnalyze: onAnalyze ? stableToolbarAnalyze : undefined,
+          hasPrompts,
+          isAiBusy,
+          analyzeLabel: titlebarAnalyzeLabel,
+          onOpenCharactersLocations: stableToolbarOpenCharactersLocations,
+          onContinue: stableToolbarContinue,
+          canContinue,
+        },
+      })
+    );
+
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent('video-studio:images-toolbar', {
+          detail: null,
+        })
+      );
+    };
+  }, [
+    canContinue,
+    canSaveFromToolbar,
+    hasPrompts,
+    isAiBusy,
+    isSavingProject,
+    onAnalyze,
+    onOpenProject,
+    onProviderChange,
+    onProviderModelChange,
+    provider,
+    providerModel,
+    providerModelOptions,
+    stableToolbarAnalyze,
+    stableToolbarBack,
+    stableToolbarContinue,
+    stableToolbarOpenCharactersLocations,
+    stableToolbarOpenProject,
+    stableToolbarProviderChange,
+    stableToolbarProviderModelChange,
+    stableToolbarSaveProject,
+    titlebarAnalyzeLabel,
+  ]);
 
   const queueProgressUpdate = useCallback((message: string) => {
     pendingProgressMessageRef.current = message || 'Gerando...';
@@ -3090,7 +3249,7 @@ export function ImagesStep({
           <h2 className="text-2xl font-bold text-white">Prompts, Imagens e Vídeos das Cenas</h2>
           <p className="text-white/60">Revise prompts e assets, depois gere ou faça upload da mídia de cada cena</p>
 
-          {onProviderChange && (
+          {false && onProviderChange && (
             <div className="flex items-center gap-3 mt-6 flex-wrap">
               <span className="text-white/60 text-sm">IA de Análise:</span>
               <select
@@ -3142,7 +3301,7 @@ export function ImagesStep({
             </div>
           )}
         </div>
-        <div className="flex flex-col items-end gap-3">
+        <div className="hidden">
           <div className="flex gap-3 items-center flex-wrap justify-end">
             <button
               onClick={onBack}
@@ -3249,6 +3408,60 @@ export function ImagesStep({
         </div>
       </div>
 
+      <div className="space-y-3">
+        {onAnalyze && (
+          <div className="w-full max-w-[720px]">
+            <input
+              type="text"
+              value={globalInstruction}
+              onChange={(e) => setGlobalInstruction(e.target.value)}
+              placeholder="Instrução global para edição dos prompts"
+              className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-pink-500 focus:outline-none"
+              disabled={isAiBusy}
+            />
+          </div>
+        )}
+
+        <div className="flex gap-3 items-center flex-wrap">
+          {onGenerateFirstFrame && hasImagePrompts && (
+            <button
+              onClick={onGenerateFirstFrame}
+              disabled={isAiBusy}
+              className={`px-4 py-2 border border-white/20 rounded-lg transition-all flex items-center gap-2 bg-white/5 hover:bg-white/10 text-white ${isAiBusy ? 'opacity-70 cursor-not-allowed' : ''}`}
+              title="Gera apenas os prompts de primeiro frame mantendo os prompts atuais"
+            >
+              🖼️ Gerar First Frames
+            </button>
+          )}
+
+          <button
+            onClick={handleExportFlowExtensionJson}
+            disabled={flowExportableCount === 0}
+            className={`px-4 py-2 border rounded-lg transition-all ${
+              flowExportableCount === 0
+                ? 'bg-white/5 text-white/30 border-white/10 cursor-not-allowed'
+                : 'bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-200 border-cyan-500/30'
+            }`}
+            title="Exporta JSON para automação na extensão do Chrome"
+          >
+            📤 Exportar Flow JSON ({flowExportableCount})
+          </button>
+
+          <button
+            onClick={() => flowResultInputRef.current?.click()}
+            disabled={isImportingFlowResult}
+            className={`px-4 py-2 border rounded-lg transition-all ${
+              isImportingFlowResult
+                ? 'bg-white/5 text-white/30 border-white/10 cursor-not-allowed'
+                : 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-200 border-emerald-500/30'
+            }`}
+            title="Importa o JSON com mídias geradas pela extensão"
+          >
+            {isImportingFlowResult ? '⏳ Importando...' : '📥 Importar Resultado Flow'}
+          </button>
+        </div>
+      </div>
+
       {hasVideoStockWithoutUrl && (
         <div className="p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg">
           <p className="text-yellow-300 text-sm">
@@ -3259,7 +3472,7 @@ export function ImagesStep({
       )}
 
       {/* Status */}
-      <div className="flex flex-wrap items-center gap-4 p-4 bg-white/5 rounded-xl border border-white/10">
+      <div className="sticky top-0 z-40 flex flex-wrap items-center gap-4 p-4 bg-black/60 backdrop-blur-xl rounded-xl border border-white/10 shadow-lg">
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500"></div>
           <span className="text-white/60 text-sm">

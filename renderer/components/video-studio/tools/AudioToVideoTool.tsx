@@ -1135,6 +1135,12 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             }}
             providerModel={selectedModel}
             onProviderModelChange={(m: string) => setSelectedModel(m)}
+            onOpenProject={() => {
+              loadProjectsList();
+              setShowProjectsModal(true);
+            }}
+            onSaveProject={handleSaveProject}
+            canSaveProject={project.segments.length > 0}
             onAnalyze={handleAnalyzeWithAI}
             onAnalyzeScene={handleAnalyzeSingleSceneWithAI}
             isProcessing={isProcessing}
@@ -1276,25 +1282,27 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
               </div>
               
               {/* Botões de Ação */}
-              <div className="flex gap-2 ml-4">
-                <button
-                  onClick={() => {
-                     loadProjectsList();
-                     setShowProjectsModal(true);
-                  }}
-                  className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-sm rounded-lg transition-all flex items-center gap-2"
-                >
-                  📂 Abrir
-                </button>
-                {project.segments.length > 0 && (
+              {currentStep !== 'images' && (
+                <div className="flex gap-2 ml-4">
                   <button
-                    onClick={handleSaveProject}
+                    onClick={() => {
+                      loadProjectsList();
+                      setShowProjectsModal(true);
+                    }}
                     className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-sm rounded-lg transition-all flex items-center gap-2"
                   >
-                    💾 Salvar
+                    📂 Abrir
                   </button>
-                )}
-              </div>
+                  {project.segments.length > 0 && (
+                    <button
+                      onClick={handleSaveProject}
+                      className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white text-sm rounded-lg transition-all flex items-center gap-2"
+                    >
+                      💾 Salvar
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
             
             {/* Progress Steps */}

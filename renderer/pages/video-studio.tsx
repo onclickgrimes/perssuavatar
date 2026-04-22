@@ -18,6 +18,33 @@ interface PreviewWindowToolbar {
   isSaving: boolean;
 }
 
+type AnalysisProvider = 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+
+interface ToolbarSelectOption {
+  value: string;
+  label: string;
+}
+
+interface ImagesWindowToolbar {
+  provider: AnalysisProvider;
+  onProviderChange?: (provider: AnalysisProvider) => void;
+  providerModel?: string;
+  onProviderModelChange?: (model: string) => void;
+  providerModelOptions: ToolbarSelectOption[];
+  onOpenProject?: () => void;
+  onSaveProject?: () => void | Promise<void>;
+  canSaveProject: boolean;
+  isSavingProject: boolean;
+  onBack: () => void;
+  onAnalyze?: () => void | Promise<void>;
+  hasPrompts: boolean;
+  isAiBusy: boolean;
+  analyzeLabel: string;
+  onOpenCharactersLocations: () => void;
+  onContinue: () => void;
+  canContinue: boolean;
+}
+
 // Definição das ferramentas disponíveis
 interface VideoTool {
   id: string;
@@ -191,6 +218,7 @@ export default function VideoStudioPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [isMaximized, setIsMaximized] = useState(false);
   const [previewToolbar, setPreviewToolbar] = useState<PreviewWindowToolbar | null>(null);
+  const [imagesToolbar, setImagesToolbar] = useState<ImagesWindowToolbar | null>(null);
 
   const syncWindowState = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -253,8 +281,58 @@ export default function VideoStudioPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    const handleImagesToolbar = (event: Event) => {
+      const customEvent = event as CustomEvent<ImagesWindowToolbar | null>;
+      const next = customEvent.detail ?? null;
+      setImagesToolbar(prev => {
+        if (prev === next) return prev;
+        if (!prev || !next) return next;
+
+        const isSameModelOptions =
+          prev.providerModelOptions.length === next.providerModelOptions.length
+          && prev.providerModelOptions.every((option, index) => {
+            const nextOption = next.providerModelOptions[index];
+            return Boolean(nextOption)
+              && option.value === nextOption.value
+              && option.label === nextOption.label;
+          });
+
+        const isSame =
+          prev.provider === next.provider &&
+          prev.onProviderChange === next.onProviderChange &&
+          prev.providerModel === next.providerModel &&
+          prev.onProviderModelChange === next.onProviderModelChange &&
+          isSameModelOptions &&
+          prev.onOpenProject === next.onOpenProject &&
+          prev.onSaveProject === next.onSaveProject &&
+          prev.canSaveProject === next.canSaveProject &&
+          prev.isSavingProject === next.isSavingProject &&
+          prev.onBack === next.onBack &&
+          prev.onAnalyze === next.onAnalyze &&
+          prev.hasPrompts === next.hasPrompts &&
+          prev.isAiBusy === next.isAiBusy &&
+          prev.analyzeLabel === next.analyzeLabel &&
+          prev.onOpenCharactersLocations === next.onOpenCharactersLocations &&
+          prev.onContinue === next.onContinue &&
+          prev.canContinue === next.canContinue;
+
+        return isSame ? prev : next;
+      });
+    };
+
+    window.addEventListener('video-studio:images-toolbar', handleImagesToolbar as EventListener);
+    return () => {
+      window.removeEventListener('video-studio:images-toolbar', handleImagesToolbar as EventListener);
+      setImagesToolbar(null);
+    };
+  }, []);
+
+  useEffect(() => {
     if (activeTool !== 'audio-to-video') {
       setPreviewToolbar(prev => (prev ? null : prev));
+      setImagesToolbar(prev => (prev ? null : prev));
     }
   }, [activeTool]);
 
@@ -307,6 +385,8 @@ export default function VideoStudioPage() {
         return null;
     }
   })();
+  const showPreviewToolbar = Boolean(previewToolbar);
+  const showImagesToolbar = Boolean(imagesToolbar) && !showPreviewToolbar;
 
   return (
     <>
@@ -320,18 +400,116 @@ export default function VideoStudioPage() {
           onDoubleClick={handleToggleMaximize}
         >
           <div className="h-full px-3 flex items-center justify-between">
-            <div className="flex items-center gap-2 text-white/70 text-sm">
-              <div className="w-5 h-5 rounded-md bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                  <path d="m22 8-6 4 6 4V8Z" />
-                  <rect width="14" height="12" x="2" y="6" rx="2" ry="2" />
-                </svg>
+            <div className="flex items-center gap-2 min-w-0">
+              <div className="flex items-center gap-2 text-white/70 text-sm">
+                <div className="w-5 h-5 rounded-md bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                    <path d="m22 8-6 4 6 4V8Z" />
+                    <rect width="14" height="12" x="2" y="6" rx="2" ry="2" />
+                  </svg>
+                </div>
+                <span className="font-medium tracking-wide">Video Studio</span>
               </div>
-              <span className="font-medium tracking-wide">Video Studio</span>
+
+              {showImagesToolbar && imagesToolbar && (
+                <div
+                  className="no-drag flex items-center gap-2 ml-2 pl-3 border-l border-white/10 min-w-0"
+                  style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+                >
+                  <select
+                    value={imagesToolbar.provider}
+                    onChange={(e) => imagesToolbar.onProviderChange?.(e.target.value as AnalysisProvider)}
+                    className="h-8 bg-black/40 border border-white/15 rounded-md px-2 text-[12px] text-white focus:border-pink-500 focus:outline-none"
+                  >
+                    <option value="gemini">Google Gemini</option>
+                    <option value="gemini_scraping">Gemini (Scraping)</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="deepseek">DeepSeek V3</option>
+                  </select>
+
+                  {imagesToolbar.onProviderModelChange && imagesToolbar.providerModelOptions.length > 0 && (
+                    <>
+                      <select
+                        value={imagesToolbar.providerModel || ''}
+                        onChange={(e) => imagesToolbar.onProviderModelChange?.(e.target.value)}
+                        className="h-8 max-w-[230px] bg-black/40 border border-white/15 rounded-md px-2 text-[12px] text-white focus:border-pink-500 focus:outline-none"
+                      >
+                        {imagesToolbar.providerModelOptions.map(option => (
+                          <option key={`${imagesToolbar.provider}-${option.value}`} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </>
+                  )}
+
+                  {imagesToolbar.onOpenProject && (
+                    <button
+                      onClick={imagesToolbar.onOpenProject}
+                      className="h-8 px-3 rounded-md text-[12px] font-medium bg-white/10 hover:bg-white/20 text-white transition-colors whitespace-nowrap"
+                      title="Abrir projeto"
+                    >
+                      📂 Abrir
+                    </button>
+                  )}
+
+                  {imagesToolbar.canSaveProject && imagesToolbar.onSaveProject && (
+                    <button
+                      onClick={imagesToolbar.onSaveProject}
+                      disabled={imagesToolbar.isSavingProject}
+                      className="h-8 px-3 rounded-md text-[12px] font-medium bg-white/10 hover:bg-white/20 disabled:opacity-60 disabled:cursor-not-allowed text-white transition-colors whitespace-nowrap"
+                      title="Salvar projeto"
+                    >
+                      {imagesToolbar.isSavingProject ? 'Salvando...' : '💾 Salvar'}
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
-            <div className="no-drag flex items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-              {previewToolbar && (
+            <div className="no-drag flex items-center gap-2 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+              {showImagesToolbar && imagesToolbar && (
+                <div className="flex items-center gap-2 pr-2 border-r border-white/10">
+                  <button
+                    onClick={imagesToolbar.onBack}
+                    className="h-8 px-3 rounded-md text-[12px] font-medium bg-white/10 hover:bg-white/20 text-white transition-colors whitespace-nowrap"
+                  >
+                    Voltar
+                  </button>
+                  {imagesToolbar.onAnalyze && (
+                    <button
+                      onClick={imagesToolbar.onAnalyze}
+                      disabled={imagesToolbar.isAiBusy}
+                      className={`h-8 px-3 rounded-md text-[12px] font-medium border transition-colors whitespace-nowrap ${
+                        imagesToolbar.hasPrompts
+                          ? 'bg-white/5 hover:bg-white/10 text-white border-white/20'
+                          : 'bg-blue-600 hover:bg-blue-500 text-white border-blue-500'
+                      } ${imagesToolbar.isAiBusy ? 'opacity-70 cursor-not-allowed' : ''}`}
+                    >
+                      {imagesToolbar.analyzeLabel}
+                    </button>
+                  )}
+                  <button
+                    onClick={imagesToolbar.onOpenCharactersLocations}
+                    className="h-8 px-3 rounded-md text-[12px] font-medium bg-yellow-500/10 hover:bg-yellow-500/20 text-yellow-300 border border-yellow-500/30 transition-colors whitespace-nowrap"
+                  >
+                    📸 Personagens e Lugares
+                  </button>
+                  <button
+                    onClick={imagesToolbar.onContinue}
+                    disabled={!imagesToolbar.canContinue}
+                    className={`h-8 px-3 rounded-md text-[12px] font-semibold transition-colors whitespace-nowrap ${
+                      !imagesToolbar.canContinue
+                        ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                        : 'bg-gradient-to-r from-pink-500 to-purple-500 hover:from-pink-600 hover:to-purple-600 text-white'
+                    }`}
+                  >
+                    Preview →
+                  </button>
+                </div>
+              )}
+
+              {showPreviewToolbar && previewToolbar && (
                 <div className="flex items-center gap-2 pr-2 border-r border-white/10">
                   <button
                     onClick={previewToolbar.onBack}
@@ -403,9 +581,9 @@ export default function VideoStudioPage() {
           </div>
         </div>
 
-        <div className={previewToolbar ? 'flex-1 overflow-hidden' : 'video-studio-scrollbar flex-1 overflow-y-auto'}>
+        <div className={showPreviewToolbar ? 'flex-1 overflow-hidden' : 'video-studio-scrollbar flex-1 overflow-y-auto'}>
           {activeToolContent ? (
-            <div className={previewToolbar ? 'h-full' : 'min-h-full'}>
+            <div className={showPreviewToolbar ? 'h-full' : 'min-h-full'}>
               {activeToolContent}
             </div>
           ) : (
