@@ -123,6 +123,63 @@ const VEO3_API_ALLOWED_SECONDS = [4, 6, 8] as const;
 const VEO2_API_ALLOWED_SECONDS = [5, 6, 8] as const;
 const GROK_ALLOWED_SECONDS = [6, 10] as const;
 const TRANSLATION_DEBOUNCE_MS = 3000;
+const VEO3_API_AUTO_REWRITE_MAX_RETRIES = 3;
+const VEO3_API_SUPPORT_CODE_CATEGORY: Record<string, string> = {
+  '58061214': 'Filho',
+  '17301594': 'Filho',
+  '29310472': 'Celebridade',
+  '15236754': 'Celebridade',
+  '64151117': 'Violação de segurança de vídeo',
+  '42237218': 'Violação de segurança de vídeo',
+  '62263041': 'Conteúdo perigoso',
+  '57734940': 'Incita o ódio',
+  '22137204': 'Incita o ódio',
+  '74803281': 'Outro',
+  '29578790': 'Outro',
+  '42876398': 'Outro',
+  '89371032': 'Conteúdo proibido',
+  '49114662': 'Conteúdo proibido',
+  '63429089': 'Conteúdo proibido',
+  '72817394': 'Conteúdo proibido',
+  '60599140': 'Conteúdo proibido',
+  '35561574': 'Conteúdo de terceiros',
+  '35561575': 'Conteúdo de terceiros',
+  '90789179': 'Conteúdo sexual',
+  '43188360': 'Conteúdo sexual',
+  '78610348': 'Tóxico',
+  '61493863': 'Violência',
+  '56562880': 'Violência',
+  '32635315': 'Vulgar',
+};
+
+const parseVeo3ApiSafetyError = (
+  rawError: unknown
+): { message: string; supportCodes: string[]; categories: string[]; isSafetyError: boolean } => {
+  const message = String(rawError || '').trim();
+  const lowerMessage = message.toLowerCase();
+  const numberMatches = message.match(/\b\d{8}\b/g) || [];
+  const supportCodes = Array.from(new Set(
+    numberMatches.filter(code => Object.prototype.hasOwnProperty.call(VEO3_API_SUPPORT_CODE_CATEGORY, code))
+  ));
+  const categories = Array.from(new Set(
+    supportCodes
+      .map(code => VEO3_API_SUPPORT_CODE_CATEGORY[code])
+      .filter((category): category is string => Boolean(category))
+  ));
+  const hasSafetyKeyword = lowerMessage.includes('support code')
+    || lowerMessage.includes('responsible ai')
+    || lowerMessage.includes('sensitive words')
+    || lowerMessage.includes('raimediafiltered')
+    || lowerMessage.includes('mediafiltered')
+    || lowerMessage.includes('safety');
+
+  return {
+    message,
+    supportCodes,
+    categories,
+    isSafetyError: supportCodes.length > 0 || hasSafetyKeyword,
+  };
+};
 
 const PROMPT_FIELD_TO_TRANSLATED_KEY: Record<ScenePromptField, ScenePromptTranslatedField> = {
   imagePrompt: 'imagePromptTraduzido',
@@ -3152,29 +3209,82 @@ export function ImagesStep({
           setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando vídeo com Veo 3.1${serviceLabel} (${veo3ApiDurationSeconds}s)...` }));
         }
 
-        const result = await window.electron?.videoProject?.generateVeo3Api({
-          prompt: targetGenerationPrompt,
-          aspectRatio: aspectRatio,
-          durationSeconds: veo3ApiDurationSeconds,
-          referenceImagePath: hasIngredientsPayload ? undefined : referenceImagePath,
-          ingredientImagePaths: hasIngredientsPayload ? ingredientPaths : undefined,
-          model: modelName
-        });
-        
-        if (result?.success && (result.httpUrl || result.videoPath)) {
-          const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
-          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
-          success = true;
-        } else {
-          console.error(`❌ [Veo3 API] Falha:`, result?.error);
-          
-          if (result?.error?.includes('Limite diário')) {
-             alert(`🛑 ALERTA: ${result.error}\nA geração em lote será interrompida.`);
-             batchCancelledRef.current = true;
-             return false;
+        let generationPrompt = targetGenerationPrompt;
+        let rewriteAttempt = 0;
+        let lastError = '';
+
+        while (rewriteAttempt <= VEO3_API_AUTO_REWRITE_MAX_RETRIES) {
+          const result = await window.electron?.videoProject?.generateVeo3Api({
+            prompt: generationPrompt,
+            aspectRatio: aspectRatio,
+            durationSeconds: veo3ApiDurationSeconds,
+            referenceImagePath: hasIngredientsPayload ? undefined : referenceImagePath,
+            ingredientImagePaths: hasIngredientsPayload ? ingredientPaths : undefined,
+            model: modelName
+          });
+
+          if (result?.success && (result.httpUrl || result.videoPath)) {
+            const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
+            onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
+            success = true;
+            break;
           }
-          
-          if (!silent) alert(`Falha na geração Veo 3.1: ${result?.error}`);
+
+          const parsedFailure = parseVeo3ApiSafetyError(result?.error);
+          lastError = parsedFailure.message || String(result?.error || 'erro desconhecido');
+          const failureLabel = parsedFailure.supportCodes.length > 0
+            ? `codes=${parsedFailure.supportCodes.join(',')} | categorias=${parsedFailure.categories.join(',') || 'n/a'}`
+            : 'sem support code mapeado';
+          console.error(`❌ [Veo3 API] Falha: ${failureLabel} | ${lastError}`);
+
+          if (lastError.includes('Limite diário')) {
+            alert(`🛑 ALERTA: ${lastError}\nA geração em lote será interrompida.`);
+            batchCancelledRef.current = true;
+            return false;
+          }
+
+          const canRewriteAndRetry = parsedFailure.isSafetyError
+            && rewriteAttempt < VEO3_API_AUTO_REWRITE_MAX_RETRIES;
+          if (!canRewriteAndRetry) {
+            if (!silent) alert(`Falha na geração Veo 3.1: ${lastError}`);
+            break;
+          }
+
+          const latestSegment = segmentsRef.current.find(s => s.id === segmentId) || segment;
+          const firstFrameImagePathForRewrite = getSegmentFirstFrameImagePath(latestSegment);
+          if (!firstFrameImagePathForRewrite) {
+            console.warn(`⚠️ [Veo3 API] Cena ${segmentId}: falha de segurança detectada, mas não há firstFrame para regenerar animateFrame.`);
+            if (!silent) alert(`Falha na geração Veo 3.1: ${lastError}`);
+            break;
+          }
+
+          rewriteAttempt++;
+          setVo3Progress(prev => ({
+            ...prev,
+            [segmentId]: `Falha de segurança (${failureLabel}). Reescrevendo prompt (${rewriteAttempt}/${VEO3_API_AUTO_REWRITE_MAX_RETRIES})...`,
+          }));
+
+          const regenerated = await handleRegenerateAnimateFramePrompt(latestSegment, { silent: true });
+          if (!regenerated) {
+            console.warn(`⚠️ [Veo3 API] Cena ${segmentId}: não foi possível regenerar animateFrame para retry automático.`);
+            if (!silent) alert(`Falha na geração Veo 3.1: ${lastError}`);
+            break;
+          }
+
+          const refreshedSegment = segmentsRef.current.find(s => s.id === segmentId) || latestSegment;
+          const refreshedAnimateFrame = typeof refreshedSegment.animateFrame === 'string'
+            ? refreshedSegment.animateFrame.trim()
+            : '';
+          const refreshedFallbackPrompt = extractPromptString(refreshedSegment.imagePrompt) || `Cinematic scene: ${refreshedSegment.text}`;
+          generationPrompt = refreshedAnimateFrame || refreshedFallbackPrompt;
+
+          console.warn(
+            `⚠️ [Veo3 API] Cena ${segmentId}: prompt reescrito e reenfileirado (${rewriteAttempt}/${VEO3_API_AUTO_REWRITE_MAX_RETRIES}).`
+          );
+          setVo3Progress(prev => ({
+            ...prev,
+            [segmentId]: `Prompt reescrito. Reenfileirando geração (${rewriteAttempt}/${VEO3_API_AUTO_REWRITE_MAX_RETRIES})...`,
+          }));
         }
 
       // ── VEO 2 (API oficial) ──
