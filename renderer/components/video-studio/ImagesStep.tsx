@@ -375,6 +375,8 @@ export function ImagesStep({
   
   const [generatingSegments, setGeneratingSegments] = useState<Set<number>>(new Set());
   const [uploadingSegments, setUploadingSegments] = useState<Set<number>>(new Set());
+  const [regeneratingAnimateFrameSegments, setRegeneratingAnimateFrameSegments] = useState<Set<number>>(new Set());
+  const [batchRegeneratingAnimateFrame, setBatchRegeneratingAnimateFrame] = useState(false);
   const [vo3Progress, setVo3Progress] = useState<Record<number, string>>({});
   const [vo3Credits, setVo3Credits] = useState<number | null>(null);
   const [isCheckingCredits, setIsCheckingCredits] = useState<boolean>(false);
@@ -1622,6 +1624,124 @@ export function ImagesStep({
     }
   };
 
+  const getSegmentFirstFrameImagePath = (segment: TranscriptionSegment): string | undefined => {
+    const isCurrentImageVideo = isVideo(segment.imageUrl);
+    const preservedSourceImage = (segment.sourceImageUrl && !isVideo(segment.sourceImageUrl))
+      ? segment.sourceImageUrl
+      : undefined;
+    return (segment.imageUrl && !isCurrentImageVideo)
+      ? segment.imageUrl
+      : preservedSourceImage;
+  };
+
+  const handleRegenerateAnimateFramePrompt = async (
+    segment: TranscriptionSegment,
+    options?: { silent?: boolean }
+  ): Promise<boolean> => {
+    const silent = Boolean(options?.silent);
+    if (!onSegmentsUpdate) return false;
+
+    const regenerateAnimateFrame = window.electron?.videoProject?.regenerateAnimateFrame;
+    if (!regenerateAnimateFrame) {
+      if (!silent) {
+        alert('API de regeneração do animateFrame não está disponível.');
+      }
+      return false;
+    }
+
+    const firstFrameImagePath = getSegmentFirstFrameImagePath(segment);
+
+    if (!firstFrameImagePath) {
+      if (!silent) {
+        alert('Gere ou envie a imagem do firstFrame da cena antes de regenerar o animateFrame.');
+      }
+      return false;
+    }
+
+    const animateFrameFieldKey = getPromptFieldKey(segment.id, 'animateFrame');
+    const pairKeyOriginal = getVideoFramePairTranslationKey(segment.id, 'original');
+    const pairKeyTranslated = getVideoFramePairTranslationKey(segment.id, 'translated');
+    clearScheduledPromptTranslation(animateFrameFieldKey);
+    clearScheduledPromptPairTranslation(pairKeyOriginal);
+    clearScheduledPromptPairTranslation(pairKeyTranslated);
+
+    setRegeneratingAnimateFrameSegments(prev => {
+      const next = new Set(prev);
+      next.add(segment.id);
+      return next;
+    });
+
+    try {
+      const result = await regenerateAnimateFrame(
+        {
+          segment: {
+            id: segment.id,
+            assetType: segment.assetType,
+            text: segment.text,
+            sceneDescription: segment.sceneDescription,
+            imagePrompt: segment.imagePrompt,
+            firstFrame: segment.firstFrame,
+            animateFrame: segment.animateFrame,
+          },
+          firstFrameImagePath,
+        },
+        {
+          provider,
+          model: providerModel,
+        }
+      );
+
+      const regeneratedAnimateFrame = typeof result?.animateFrame === 'string'
+        ? result.animateFrame.trim()
+        : '';
+
+      if (!result?.success || !regeneratedAnimateFrame) {
+        throw new Error(result?.error || 'A IA não retornou um animateFrame válido.');
+      }
+
+      patchSegment(segment.id, { animateFrame: regeneratedAnimateFrame });
+
+      const translate = window.electron?.videoProject?.translateScenePrompt;
+      if (translate) {
+        try {
+          const translationResult = await translate({
+            sourceVariant: 'original',
+            fields: {
+              firstFrame: String(segment.firstFrame || ''),
+              animateFrame: regeneratedAnimateFrame,
+            },
+          });
+
+          if (translationResult?.success && translationResult.translatedFields) {
+            const translatedPatch: Partial<TranscriptionSegment> = {};
+            if (typeof translationResult.translatedFields.animateFrame === 'string') {
+              translatedPatch.animateFrameTraduzido = translationResult.translatedFields.animateFrame;
+            }
+            if (Object.keys(translatedPatch).length > 0) {
+              patchSegment(segment.id, translatedPatch);
+            }
+          }
+        } catch (translationError) {
+          console.error('Erro ao traduzir animateFrame regenerado:', translationError);
+        }
+      }
+      return true;
+    } catch (error: any) {
+      console.error('Erro ao regenerar animateFrame:', error);
+      if (!silent) {
+        alert(`Falha ao regenerar animateFrame: ${error?.message || 'erro desconhecido'}`);
+      }
+      return false;
+    } finally {
+      setPromptTranslating(animateFrameFieldKey, false);
+      setRegeneratingAnimateFrameSegments(prev => {
+        const next = new Set(prev);
+        next.delete(segment.id);
+        return next;
+      });
+    }
+  };
+
   const parseSceneReferenceIds = (raw: unknown): number[] => {
     const normalized = normalizeCharactersField(raw);
     if (!normalized) return [];
@@ -2144,6 +2264,7 @@ export function ImagesStep({
     current: 0, total: 0, currentSceneId: null,
   });
   const [batchResults, setBatchResults] = useState<Record<number, 'success' | 'error' | 'skipped'>>({});
+  const [currentErrorHighlightIndex, setCurrentErrorHighlightIndex] = useState(0);
   const batchCancelledRef = useRef(false);
   const activeServicesRef = useRef<Record<number, string>>({});
   const generatingSegmentsRef = useRef<Set<number>>(new Set());
@@ -2157,6 +2278,10 @@ export function ImagesStep({
     () => segments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
     [segments]
   );
+  const selectedVideoFrameAnimateCount = useMemo(
+    () => segments.filter(seg => selectedScenes.has(seg.id) && seg.assetType === 'video_frame_animate').length,
+    [segments, selectedScenes]
+  );
   const canContinue = hasPrompts || segmentsWithMediaCount > 0;
   const titlebarAnalyzeLabel = isAiBusy
     ? 'Gerando...'
@@ -2169,7 +2294,16 @@ export function ImagesStep({
     const error = values.filter(v => v === 'error').length;
     return { success, error };
   }, [batchResults]);
+  const erroredBatchSegmentIds = useMemo(() => {
+    return segments
+      .filter(segment => batchResults[segment.id] === 'error')
+      .map(segment => segment.id);
+  }, [segments, batchResults]);
   const canSaveFromToolbar = Boolean(canSaveProject && onSaveProject);
+  const hasAnalyzeAction = Boolean(onAnalyze);
+  const hasOpenProjectAction = Boolean(onOpenProject);
+  const hasProviderChangeAction = Boolean(onProviderChange);
+  const hasProviderModelChangeAction = Boolean(onProviderModelChange);
   const toolbarBackRef = useRef<() => void>(() => {});
   const toolbarContinueRef = useRef<() => void>(() => {});
   const toolbarAnalyzeRef = useRef<(() => void | Promise<void>) | undefined>(undefined);
@@ -2230,20 +2364,26 @@ export function ImagesStep({
   }, []);
 
   useEffect(() => {
+    if (erroredBatchSegmentIds.length > 0 && currentErrorHighlightIndex >= erroredBatchSegmentIds.length) {
+      setCurrentErrorHighlightIndex(0);
+    }
+  }, [erroredBatchSegmentIds.length, currentErrorHighlightIndex]);
+
+  useEffect(() => {
     window.dispatchEvent(
       new CustomEvent('video-studio:images-toolbar', {
         detail: {
           provider,
-          onProviderChange: onProviderChange ? stableToolbarProviderChange : undefined,
+          onProviderChange: hasProviderChangeAction ? stableToolbarProviderChange : undefined,
           providerModel: providerModel || '',
-          onProviderModelChange: onProviderModelChange ? stableToolbarProviderModelChange : undefined,
+          onProviderModelChange: hasProviderModelChangeAction ? stableToolbarProviderModelChange : undefined,
           providerModelOptions,
-          onOpenProject: onOpenProject ? stableToolbarOpenProject : undefined,
+          onOpenProject: hasOpenProjectAction ? stableToolbarOpenProject : undefined,
           onSaveProject: canSaveFromToolbar ? stableToolbarSaveProject : undefined,
           canSaveProject: canSaveFromToolbar,
           isSavingProject: Boolean(isSavingProject),
           onBack: stableToolbarBack,
-          onAnalyze: onAnalyze ? stableToolbarAnalyze : undefined,
+          onAnalyze: hasAnalyzeAction ? stableToolbarAnalyze : undefined,
           hasPrompts,
           isAiBusy,
           analyzeLabel: titlebarAnalyzeLabel,
@@ -2253,24 +2393,16 @@ export function ImagesStep({
         },
       })
     );
-
-    return () => {
-      window.dispatchEvent(
-        new CustomEvent('video-studio:images-toolbar', {
-          detail: null,
-        })
-      );
-    };
   }, [
     canContinue,
     canSaveFromToolbar,
+    hasAnalyzeAction,
+    hasOpenProjectAction,
+    hasProviderChangeAction,
+    hasProviderModelChangeAction,
     hasPrompts,
     isAiBusy,
     isSavingProject,
-    onAnalyze,
-    onOpenProject,
-    onProviderChange,
-    onProviderModelChange,
     provider,
     providerModel,
     providerModelOptions,
@@ -2284,6 +2416,16 @@ export function ImagesStep({
     stableToolbarSaveProject,
     titlebarAnalyzeLabel,
   ]);
+
+  useEffect(() => {
+    return () => {
+      window.dispatchEvent(
+        new CustomEvent('video-studio:images-toolbar', {
+          detail: null,
+        })
+      );
+    };
+  }, []);
 
   const queueProgressUpdate = useCallback((message: string) => {
     pendingProgressMessageRef.current = message || 'Gerando...';
@@ -3197,6 +3339,69 @@ export function ImagesStep({
     window.electron?.videoProject?.cancelVertexQueue?.().catch?.(() => {});
   }, []);
 
+  const handleBatchRegenerateAnimateFrames = async () => {
+    if (batchProcessing || batchRegeneratingAnimateFrame) return;
+
+    if (selectedScenes.size === 0) {
+      alert('Nenhuma cena selecionada.');
+      return;
+    }
+
+    const targetSegments = segments.filter(
+      segment => selectedScenes.has(segment.id) && segment.assetType === 'video_frame_animate'
+    );
+
+    if (targetSegments.length === 0) {
+      alert('As cenas selecionadas não possuem assetType "video_frame_animate".');
+      return;
+    }
+
+    setBatchRegeneratingAnimateFrame(true);
+    setBatchResults({});
+    setCurrentErrorHighlightIndex(0);
+
+    const maxAttempts = 3;
+    let successCount = 0;
+    let failedCount = 0;
+    let skippedNoImageCount = 0;
+
+    try {
+      for (const segment of targetSegments) {
+        const firstFrameImagePath = getSegmentFirstFrameImagePath(segment);
+        if (!firstFrameImagePath) {
+          skippedNoImageCount++;
+          setBatchResults(prev => ({ ...prev, [segment.id]: 'skipped' }));
+          continue;
+        }
+
+        let ok = false;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          ok = await handleRegenerateAnimateFramePrompt(segment, { silent: true });
+          if (ok) break;
+        }
+
+        if (ok) {
+          successCount++;
+          setBatchResults(prev => ({ ...prev, [segment.id]: 'success' }));
+        } else {
+          failedCount++;
+          setBatchResults(prev => ({ ...prev, [segment.id]: 'error' }));
+        }
+      }
+    } finally {
+      setBatchRegeneratingAnimateFrame(false);
+    }
+
+    alert([
+      'Regeneração de animateFrame concluída.',
+      `Cenas alvo: ${targetSegments.length}`,
+      `Tentativas por cena: ${maxAttempts}`,
+      `Sucesso: ${successCount}`,
+      `Falhas: ${failedCount}`,
+      `Sem imagem do firstFrame: ${skippedNoImageCount}`,
+    ].join('\n'));
+  };
+
   // Helper para label do botão principal
   const getGenerateLabel = (
     segment: TranscriptionSegment,
@@ -3555,6 +3760,29 @@ export function ImagesStep({
 
         {/* ── Processamento em Lote ── */}
         <div className="ml-auto flex items-center gap-3 relative">
+
+          <button
+            onClick={handleBatchRegenerateAnimateFrames}
+            disabled={
+              batchProcessing
+              || batchRegeneratingAnimateFrame
+              || selectedScenes.size === 0
+              || selectedVideoFrameAnimateCount === 0
+            }
+            className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all shadow-lg ${
+              batchProcessing
+              || batchRegeneratingAnimateFrame
+              || selectedScenes.size === 0
+              || selectedVideoFrameAnimateCount === 0
+                ? 'bg-white/10 border-white/10 text-white/30 cursor-not-allowed'
+                : 'bg-emerald-500/25 hover:bg-emerald-500/35 border-emerald-500/40 text-emerald-100'
+            }`}
+            title={selectedVideoFrameAnimateCount === 0
+              ? 'Selecione ao menos uma cena com assetType video_frame_animate'
+              : `Regenerar animateFrame de ${selectedVideoFrameAnimateCount} cena(s) selecionada(s)`}
+          >
+            {batchRegeneratingAnimateFrame ? '⟳' : '🔁'}
+          </button>
           
           {/* Botão de Configurações em Lote */}
           <div className="relative flex items-center">
@@ -3748,7 +3976,10 @@ export function ImagesStep({
                 <span className="text-red-400 text-xs">❌{batchStats.error}</span>
               )}
               <button
-                onClick={() => setBatchResults({})}
+                onClick={() => {
+                  setBatchResults({});
+                  setCurrentErrorHighlightIndex(0);
+                }}
                 className="text-white/30 hover:text-white/60 text-xs transition-all"
                 title="Limpar resultados"
               >
@@ -3761,11 +3992,44 @@ export function ImagesStep({
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        {erroredBatchSegmentIds.length > 0 && (
+          <div className="fixed right-2 top-1/2 -translate-y-1/2 flex flex-col items-center bg-black/80 border border-red-500/30 p-1.5 rounded-full shadow-[0_0_10px_rgba(239,68,68,0.3)] z-50">
+            <span className="text-[9px] text-red-400 font-bold mb-1 mt-1 leading-none drop-shadow-sm">
+              {currentErrorHighlightIndex + 1}/{erroredBatchSegmentIds.length}
+            </span>
+            <button
+              onClick={() => {
+                const prevIdx = (currentErrorHighlightIndex - 1 + erroredBatchSegmentIds.length) % erroredBatchSegmentIds.length;
+                setCurrentErrorHighlightIndex(prevIdx);
+                document.getElementById(`segment-${erroredBatchSegmentIds[prevIdx]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }}
+              className="p-1 text-white hover:text-red-400 hover:bg-white/10 rounded-full transition-colors"
+              title="Erro anterior"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+            </button>
+            <div className="w-5 h-[1px] bg-red-500/20 my-0.5" />
+            <button
+              onClick={() => {
+                const nextIdx = (currentErrorHighlightIndex + 1) % erroredBatchSegmentIds.length;
+                setCurrentErrorHighlightIndex(nextIdx);
+                document.getElementById(`segment-${erroredBatchSegmentIds[nextIdx]}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              }}
+              className="p-1 text-white hover:text-red-400 hover:bg-white/10 rounded-full transition-colors"
+              title="Próximo erro"
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </div>
+        )}
         {segments.map((segment) => {
           const isGenerating = generatingSegments.has(segment.id);
           const isUploading = uploadingSegments.has(segment.id);
           const hasImage = !!segment.imageUrl;
           const isBatchActive = batchProcessing && batchProgress.currentSceneId === segment.id;
+          const isBatchError = batchResults[segment.id] === 'error';
+          const isCurrentBatchError = erroredBatchSegmentIds.length > 0
+            && erroredBatchSegmentIds[currentErrorHighlightIndex] === segment.id;
           const effectiveService = getEffectiveService(segment);
           const sceneDurationInfo = getSceneDurationInfo(segment);
           const veo3ApiDurationPreview = ingredientMode[segment.id] === 'ingredients'
@@ -3861,12 +4125,23 @@ export function ImagesStep({
           const animateFramePlaceholder = animateFrameViewMode === 'original'
             ? 'Prompt original em inglês para o animateFrame...'
             : 'Prompt traduzido para PT-BR do animateFrame...';
+          const isRegeneratingAnimateFrame = regeneratingAnimateFrameSegments.has(segment.id);
+          const segmentFirstFrameImagePath = getSegmentFirstFrameImagePath(segment);
+          const canRegenerateAnimateFramePrompt = Boolean(onSegmentsUpdate)
+            && Boolean(segmentFirstFrameImagePath)
+            && !isRegeneratingAnimateFrame
+            && !isAiBusy;
 
           return (
             <div
               key={segment.id}
+              id={`segment-${segment.id}`}
               className={`bg-white/5 border rounded-xl transition-all ${
-                isBatchActive
+                isCurrentBatchError
+                  ? 'border-red-500 ring-2 ring-red-500/30 shadow-lg shadow-red-500/15 bg-red-500/5'
+                  : isBatchError
+                    ? 'border-red-500/50 bg-red-500/5'
+                    : isBatchActive
                   ? 'border-cyan-400 ring-2 ring-cyan-400/30 shadow-lg shadow-cyan-500/10'
                   : 'border-white/10'
               }`}
@@ -4635,7 +4910,24 @@ export function ImagesStep({
                     </div>
 
                     <div>
-                      <p className="text-xs text-white/60 mb-1">animateFrame</p>
+                      <div className="flex items-center justify-between gap-2 mb-1">
+                        <p className="text-xs text-white/60">animateFrame</p>
+                        <button
+                          type="button"
+                          onClick={() => handleRegenerateAnimateFramePrompt(segment)}
+                          disabled={!canRegenerateAnimateFramePrompt}
+                          className={`px-2 py-0.5 rounded-md text-[10px] border transition-all ${
+                            !canRegenerateAnimateFramePrompt
+                              ? 'bg-white/5 border-white/10 text-white/30 cursor-not-allowed'
+                              : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-100 hover:bg-emerald-500/25'
+                          }`}
+                          title={segmentFirstFrameImagePath
+                            ? 'Regenerar animateFrame usando a imagem do firstFrame'
+                            : 'Gere ou envie a imagem do firstFrame para habilitar'}
+                        >
+                          {isRegeneratingAnimateFrame ? 'Regenerando...' : '↻ Regerar com firstFrame'}
+                        </button>
+                      </div>
                       <textarea
                         value={animateFrameValue}
                         onChange={(e) => handleScenePromptFieldChange(segment.id, 'animateFrame', e.target.value)}

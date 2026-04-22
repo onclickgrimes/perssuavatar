@@ -49,6 +49,18 @@ type ScenePromptTranslationResult = {
     error?: string;
 };
 
+type AnimateFrameRegenerationInput = {
+    segment?: VideoProjectSegment;
+    firstFrameImagePath?: string;
+    userInstruction?: string;
+};
+
+type AnimateFrameRegenerationResult = {
+    success: boolean;
+    animateFrame?: string;
+    error?: string;
+};
+
 const DEFAULT_SCENE_PROMPT_TRANSLATION_MODEL = 'gemma-4-31b-it';
 
 // ========================================
@@ -314,6 +326,7 @@ export interface RemotionProject {
 // ========================================
 
 import * as http from 'http';
+import * as https from 'https';
 
 export class VideoProjectService extends EventEmitter {
     private transcriptionService = getAudioTranscriptionService();
@@ -414,6 +427,155 @@ export class VideoProjectService extends EventEmitter {
             .replace(/^```(?:text|markdown|json)?\s*/i, '')
             .replace(/\s*```$/i, '')
             .trim();
+    }
+
+    private isHttpUrl(value: string): boolean {
+        const normalized = String(value || '').trim().toLowerCase();
+        return normalized.startsWith('http://') || normalized.startsWith('https://');
+    }
+
+    private guessImageMimeType(source: string, headerMimeType?: string): string {
+        const fromHeader = String(headerMimeType || '').toLowerCase();
+        if (fromHeader.startsWith('image/')) {
+            return fromHeader;
+        }
+
+        const cleanSource = String(source || '').split('?')[0];
+        const extension = path.extname(cleanSource).toLowerCase();
+        const byExtension: Record<string, string> = {
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.webp': 'image/webp',
+            '.gif': 'image/gif',
+            '.bmp': 'image/bmp',
+        };
+
+        return byExtension[extension] || 'image/jpeg';
+    }
+
+    private async downloadBuffer(
+        url: string,
+        redirectDepth: number = 0
+    ): Promise<{ buffer: Buffer; mimeType?: string }> {
+        if (redirectDepth > 5) {
+            throw new Error('Muitos redirecionamentos ao baixar imagem de referência.');
+        }
+
+        return new Promise((resolve, reject) => {
+            const protocol = url.startsWith('https://') ? https : http;
+            const request = protocol.get(url, (response) => {
+                const statusCode = response.statusCode || 0;
+
+                if (
+                    statusCode >= 300
+                    && statusCode < 400
+                    && response.headers.location
+                ) {
+                    const redirectedUrl = new URL(response.headers.location, url).toString();
+                    response.resume();
+                    this.downloadBuffer(redirectedUrl, redirectDepth + 1)
+                        .then(resolve)
+                        .catch(reject);
+                    return;
+                }
+
+                if (statusCode >= 400) {
+                    response.resume();
+                    reject(new Error(`Falha HTTP ${statusCode} ao baixar imagem de referência: ${url}`));
+                    return;
+                }
+
+                const chunks: Buffer[] = [];
+                response.on('data', (chunk) => {
+                    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+                });
+                response.on('end', () => {
+                    const contentType = typeof response.headers['content-type'] === 'string'
+                        ? response.headers['content-type']
+                        : undefined;
+                    resolve({
+                        buffer: Buffer.concat(chunks),
+                        mimeType: contentType,
+                    });
+                });
+                response.on('error', reject);
+            });
+
+            request.setTimeout(30000, () => {
+                request.destroy(new Error('Timeout ao baixar imagem de referência.'));
+            });
+            request.on('error', reject);
+        });
+    }
+
+    private async loadImageAsInlineData(imagePath: string): Promise<{ data: string; mimeType: string }> {
+        const normalizedImagePath = String(imagePath || '').trim();
+        if (!normalizedImagePath) {
+            throw new Error('Imagem do firstFrame não informada.');
+        }
+
+        const localPathFromUrl = this.toLocalFsPath(normalizedImagePath);
+        if (localPathFromUrl && fs.existsSync(localPathFromUrl)) {
+            const buffer = fs.readFileSync(localPathFromUrl);
+            return {
+                data: buffer.toString('base64'),
+                mimeType: this.guessImageMimeType(localPathFromUrl),
+            };
+        }
+
+        if (this.isHttpUrl(normalizedImagePath)) {
+            const downloaded = await this.downloadBuffer(normalizedImagePath);
+            return {
+                data: downloaded.buffer.toString('base64'),
+                mimeType: this.guessImageMimeType(normalizedImagePath, downloaded.mimeType),
+            };
+        }
+
+        if (fs.existsSync(normalizedImagePath)) {
+            const buffer = fs.readFileSync(normalizedImagePath);
+            return {
+                data: buffer.toString('base64'),
+                mimeType: this.guessImageMimeType(normalizedImagePath),
+            };
+        }
+
+        throw new Error(`Imagem do firstFrame não encontrada: ${normalizedImagePath}`);
+    }
+
+    private buildAnimateFrameRegenerationPrompt(
+        segment: VideoProjectSegment,
+        userInstruction?: string
+    ): string {
+        const normalizedInstruction = String(userInstruction || '').trim();
+        const segmentPrompt = this.stringifyPromptForEdition(segment.imagePrompt).trim();
+        const firstFramePrompt = this.stringifyPromptForEdition(segment.firstFrame).trim();
+        const currentAnimateFrame = this.stringifyPromptForEdition(segment.animateFrame).trim();
+
+        return [
+            'You are an expert text-to-video prompt engineer.',
+            'Task: regenerate ONLY the "animateFrame" prompt in English.',
+            'Use the attached image as the visual truth for the first frame.',
+            'Maintain strict visual continuity.',
+            'Describe simple motion, simple camera movement, and simple scene evolution as one cohesive cinematic shot.',
+            'Respect the order in which things should happen. For example, if something is closed in the image, you should make it clear that it must be opened before use.',
+            'Never insert or mention elements that are not in the image.',
+            'Do not mention editing instructions or meta commentary.',
+            'Return valid JSON only with this shape:',
+            '{"animateFrame":"..."}',
+            '',
+            'Scene context:',
+            `- id: ${segment.id}`,
+            `- transcript: ${String(segment.text || '').trim()}`,
+            `- current animateFrame: ${currentAnimateFrame}`,
+            normalizedInstruction
+                ? `- user instruction: ${normalizedInstruction}`
+                : '',
+            '',
+            'Make it clear in every prompt that no character dialogue, music or soundtrack should be generated in the scene animation. Only realistic Foley sounds should be generated.'
+        ]
+            .filter(Boolean)
+            .join('\n');
     }
 
     private buildScenePromptTranslationInstruction(
@@ -2190,6 +2352,128 @@ export class VideoProjectService extends EventEmitter {
                 success: false,
                 error: error.message || String(error),
                 segments,
+            };
+        }
+    }
+
+    public async regenerateAnimateFrameWithFirstFrame(
+        input: AnimateFrameRegenerationInput,
+        options?: {
+            provider?: AIProvider;
+            model?: string;
+        }
+    ): Promise<AnimateFrameRegenerationResult> {
+        const segment = input?.segment;
+        const firstFrameImagePath = String(input?.firstFrameImagePath || '').trim();
+
+        if (!segment || !Number.isFinite(Number(segment.id))) {
+            return {
+                success: false,
+                error: 'Segmento inválido para regenerar animateFrame.',
+            };
+        }
+
+        if (!firstFrameImagePath) {
+            return {
+                success: false,
+                error: 'Imagem do firstFrame não informada.',
+            };
+        }
+
+        try {
+            const inlineImage = await this.loadImageAsInlineData(firstFrameImagePath);
+            const prompt = this.buildAnimateFrameRegenerationPrompt(segment, input?.userInstruction);
+            const requestedProvider = options?.provider || 'gemini';
+            const requestedModel = String(options?.model || '').trim();
+
+            if (requestedProvider !== 'gemini') {
+                console.log(
+                    `ℹ️ [AnimateFrame] Provider "${requestedProvider}" não suporta entrada multimodal neste fluxo; usando Gemini API para visão.`
+                );
+            }
+
+            const modelForVision = requestedProvider === 'gemini' && requestedModel.toLowerCase().startsWith('gemini')
+                ? requestedModel
+                : undefined;
+            const resolvedModel = this.resolveGenAIModel(modelForVision);
+            const {
+                ai,
+                backend,
+                project,
+                location,
+            } = createVideoGenAIClient(null, 'next');
+
+            if (
+                backend === 'vertex'
+                && resolvedModel.toLowerCase().startsWith('gemini-3.1-pro-preview')
+                && String(location || '').toLowerCase() !== 'global'
+            ) {
+                throw new Error(
+                    `O modelo ${resolvedModel} no Vertex AI só está disponível em location=global. Atualize Configurações > API e Modelos > Google Cloud Location para "global".`
+                );
+            }
+
+            console.log(
+                `🎬 [AnimateFrame] Regenerando animateFrame para cena ${segment.id} via Google GenAI (${backend}${backend === 'vertex' ? ` ${project}/${location}` : ''}) model=${resolvedModel}...`
+            );
+
+            const response = await ai.models.generateContent({
+                model: resolvedModel,
+                contents: [
+                    {
+                        role: 'user',
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    data: inlineImage.data,
+                                    mimeType: inlineImage.mimeType,
+                                },
+                            },
+                        ],
+                    },
+                ],
+                config: {
+                    responseMimeType: 'application/json',
+                    thinkingConfig: {
+                        thinkingLevel: ThinkingLevel.HIGH,
+                    },
+                } as any,
+            } as any);
+
+            const rawText = String(response?.text || '').trim();
+            if (!rawText) {
+                throw new Error('Resposta vazia ao regenerar animateFrame.');
+            }
+
+            const parsed = this.parseJsonResponseText(rawText);
+            let animateFrameValue = '';
+
+            if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+                if ((parsed as any).animateFrame != null) {
+                    animateFrameValue = this.stringifyPromptForEdition((parsed as any).animateFrame).trim();
+                } else if (Array.isArray((parsed as any).segments)) {
+                    const foundSegment = (parsed as any).segments.find((item: any) => Number(item?.id) === Number(segment.id))
+                        || (parsed as any).segments[0];
+                    if (foundSegment?.animateFrame != null) {
+                        animateFrameValue = this.stringifyPromptForEdition(foundSegment.animateFrame).trim();
+                    }
+                }
+            }
+
+            if (!animateFrameValue) {
+                throw new Error('A IA não retornou um campo animateFrame válido.');
+            }
+
+            return {
+                success: true,
+                animateFrame: animateFrameValue,
+            };
+        } catch (error: any) {
+            console.error('❌ [AnimateFrame] Regeneration error:', error);
+            return {
+                success: false,
+                error: error?.message || 'Falha ao regenerar animateFrame.',
             };
         }
     }

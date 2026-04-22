@@ -235,6 +235,31 @@ export function registerVideoEditorHandlers(): void {
     }
   });
 
+  // Handler para regenerar apenas o campo animateFrame usando a imagem do firstFrame
+  registerVideoEditorGuardedHandle('video-project:regenerate-animate-frame', async (
+    event,
+    input: {
+      segment?: VideoProjectSegment;
+      firstFrameImagePath?: string;
+      userInstruction?: string;
+    },
+    options?: {
+      provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+      model?: string;
+    }
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      const segmentId = Number(input?.segment?.id || 0);
+      console.log(`🎬 [VideoProject] Regenerating animateFrame for segment ${segmentId}...`);
+      const result = await videoProjectService.regenerateAnimateFrameWithFirstFrame(input || {}, options);
+      return result;
+    } catch (error: any) {
+      console.error('❌ [VideoProject] AnimateFrame regeneration error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Handler independente para extrair personagens e lugares da transcrição
   registerVideoEditorGuardedHandle('video-project:extract-story-assets', async (
     event,

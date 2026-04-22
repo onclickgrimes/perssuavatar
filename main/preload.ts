@@ -418,6 +418,19 @@ const handler = {
     editPrompts: (segments: any[], options?: { provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek', model?: string, userInstruction?: string }) =>
       ipcRenderer.invoke('video-project:edit-prompts', segments, options),
 
+    // Regenerar apenas animateFrame com base na imagem do firstFrame da cena
+    regenerateAnimateFrame: (
+      input: {
+        segment?: any;
+        firstFrameImagePath?: string;
+        userInstruction?: string;
+      },
+      options?: {
+        provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+        model?: string;
+      }
+    ) => ipcRenderer.invoke('video-project:regenerate-animate-frame', input, options),
+
     // Extração independente de personagens e lugares a partir da transcrição
     extractStoryAssets: (
       input: { transcription?: string; segments?: any[] },
