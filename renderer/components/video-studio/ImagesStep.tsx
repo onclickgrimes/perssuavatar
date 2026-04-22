@@ -22,7 +22,7 @@ interface ImagesStepProps {
   storyReferences?: PersistedStoryReferencesState;
   onStoryReferencesChange: React.Dispatch<React.SetStateAction<PersistedStoryReferencesState>>;
   onUpdatePrompt: (id: number, prompt: string) => void;
-  onUpdateImage: (id: number, imageUrl: string, durationVideoSec?: number) => void;
+  onUpdateImage: (id: number, imageUrl: string, durationVideoSec?: number, generationService?: string | null) => void;
   onContinue: () => void;
   onBack: () => void;
   provider?: AnalysisProvider;
@@ -271,6 +271,7 @@ interface FlowExtensionImportItem {
   taskId?: string;
   segmentId?: number;
   mediaType?: 'image' | 'video';
+  service?: string;
   status?: string;
   selectedMediaUrl?: string;
   media: FlowExtensionImportMedia[];
@@ -451,7 +452,7 @@ export function ImagesStep({
   // Quantidade de imagens a gerar por segmento (relevante para serviços de imagem)
   const [imageCount, setImageCount] = useState<Record<number, number>>({});
   // Fila de seleções pendentes quando o Flow gera múltiplas imagens
-  const [pickerQueue, setPickerQueue] = useState<{ segmentId: number; httpUrls: string[] }[]>([]);
+  const [pickerQueue, setPickerQueue] = useState<{ segmentId: number; httpUrls: string[]; generationService: string }[]>([]);
   const [pickerSelectedIdx, setPickerSelectedIdx] = useState<number>(0);
 
   const [finalImages, setFinalImages] = useState<Record<number, string>>({});
@@ -2080,6 +2081,12 @@ export function ImagesStep({
     return undefined;
   };
 
+  const normalizeGenerationService = (rawService: unknown): string | undefined => {
+    if (typeof rawService !== 'string') return undefined;
+    const normalized = rawService.trim();
+    return normalized.length > 0 ? normalized : undefined;
+  };
+
   const extractSegmentIdFromTaskId = (taskId: unknown): number | undefined => {
     if (typeof taskId !== 'string') return undefined;
     const match = taskId.match(/(\d+)/);
@@ -2127,6 +2134,7 @@ export function ImagesStep({
         taskId: typeof item?.taskId === 'string' ? item.taskId : undefined,
         segmentId,
         mediaType: normalizeMediaKind(item?.mediaType),
+        service: normalizeGenerationService(item?.service ?? item?.generationService),
         status: typeof item?.status === 'string' ? item.status.toLowerCase() : undefined,
         selectedMediaUrl: typeof item?.selectedMediaUrl === 'string' ? item.selectedMediaUrl : undefined,
         media,
@@ -2280,7 +2288,7 @@ export function ImagesStep({
           warnings.push(`Cena ${segmentId}: usando URL remota (${reason}).`);
         }
 
-        onUpdateImage(segmentId, finalUrl, durationSec);
+        onUpdateImage(segmentId, finalUrl, durationSec, item.service);
         importedCount++;
       }
 
@@ -2663,7 +2671,7 @@ export function ImagesStep({
         console.error('saveImage API not available');
         // Fallback: usar blob URL (não funcionará na renderização)
         const mediaUrl = URL.createObjectURL(file);
-        onUpdateImage(segmentId, mediaUrl);
+        onUpdateImage(segmentId, mediaUrl, undefined, null);
       } else {
         // Converter File para ArrayBuffer
         const arrayBuffer = await file.arrayBuffer();
@@ -2675,13 +2683,13 @@ export function ImagesStep({
           // Usar a URL HTTP para preview E renderização
           // O servidor HTTP estará rodando durante ambos
           const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
-          onUpdateImage(segmentId, result.httpUrl, duration);
+          onUpdateImage(segmentId, result.httpUrl, duration, null);
           console.log(`✅ Media saved for segment ${segmentId}:`, result.httpUrl);
         } else {
           console.error('Failed to save media:', result.error);
           // Fallback: usar blob URL
           const mediaUrl = URL.createObjectURL(file);
-          onUpdateImage(segmentId, mediaUrl);
+          onUpdateImage(segmentId, mediaUrl, undefined, null);
         }
       }
     } catch (error) {
@@ -2803,6 +2811,9 @@ export function ImagesStep({
   const getEffectiveService = (segment: TranscriptionSegment): string => {
     // Se o usuário escolheu explicitamente um serviço, respeitar
     if (selectedService[segment.id]) return selectedService[segment.id];
+    if (typeof segment.generationService === 'string' && segment.generationService.trim().length > 0) {
+      return segment.generationService.trim();
+    }
     // Se modo Ingredients está ativo (e não trocou serviço), forçar veo3
     if (ingredientMode[segment.id] === 'ingredients') return 'veo3';
     if (segment.assetType === 'video_vo3') return 'veo3';
@@ -2883,7 +2894,7 @@ export function ImagesStep({
 
         if (result?.success && (result.httpUrl || result.videoPath)) {
           const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
-          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration, service);
           success = true;
         } else {
           console.error(`❌ [Veo2Flow] Falha:`, result?.error);
@@ -2960,7 +2971,7 @@ export function ImagesStep({
 
         if (result?.success && (result.httpUrl || result.videoPath)) {
           const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
-          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration, service);
           if (result.credits !== undefined) setVo3Credits(result.credits);
           success = true;
         } else {
@@ -3016,7 +3027,7 @@ export function ImagesStep({
 
         if (result?.success && (result.httpUrl || result.videoPath)) {
           const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
-          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration, service);
           success = true;
         } else {
           console.error(`❌ [Grok] Falha:`, result?.error);
@@ -3056,10 +3067,10 @@ export function ImagesStep({
         if (result?.success && result.httpUrls?.length > 0) {
           const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
           // Usar a primeira imagem imediatamente
-          onUpdateImage(segmentId, result.httpUrls[0], duration);
+          onUpdateImage(segmentId, result.httpUrls[0], duration, service);
           // Se há múltiplas opções, empilhar na fila para o usuário escolher depois
           if (count > 1 && result.httpUrls.length > 1) {
-            setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls }]);
+            setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls, generationService: service }]);
           }
           success = true;
         } else {
@@ -3100,9 +3111,9 @@ export function ImagesStep({
 
         if (result?.success && result.httpUrls?.length > 0) {
           const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
-          onUpdateImage(segmentId, result.httpUrls[0], duration);
+          onUpdateImage(segmentId, result.httpUrls[0], duration, service);
           if (count > 1 && result.httpUrls.length > 1) {
-            setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls }]);
+            setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls, generationService: service }]);
           }
           success = true;
         } else {
@@ -3146,10 +3157,10 @@ export function ImagesStep({
         if (result?.success && result.httpUrls?.length > 0) {
           const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
           // Usar a primeira imagem imediatamente
-          onUpdateImage(segmentId, result.httpUrls[0], duration);
+          onUpdateImage(segmentId, result.httpUrls[0], duration, service);
           // Se há múltiplas opções, empilhar na fila para o usuário escolher depois
           if (count > 1 && result.httpUrls.length > 1) {
-            setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls }]);
+            setPickerQueue(prev => [...prev, { segmentId, httpUrls: result.httpUrls, generationService: service }]);
           }
           success = true;
         } else {
@@ -3225,7 +3236,7 @@ export function ImagesStep({
 
           if (result?.success && (result.httpUrl || result.videoPath)) {
             const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
-            onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
+            onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration, service);
             success = true;
             break;
           }
@@ -3312,7 +3323,7 @@ export function ImagesStep({
         });
         if (result?.success && (result.httpUrl || result.videoPath)) {
           const duration = result.durationMs ? Number((result.durationMs / 1000).toFixed(2)) : undefined;
-          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration);
+          onUpdateImage(segmentId, result.httpUrl || result.videoPath, duration, service);
           success = true;
         } else {
           console.error(`❌ [Veo2] Falha:`, result?.error);
@@ -3339,7 +3350,7 @@ export function ImagesStep({
 
   // Handler para remover imagem
   const handleRemoveImage = (segmentId: number) => {
-    onUpdateImage(segmentId, '');
+    onUpdateImage(segmentId, '', undefined, null);
   };
 
   // ── Funções de seleção de cenas ──
@@ -4480,7 +4491,7 @@ export function ImagesStep({
                         <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 z-10">
                           {hasReusableSource && (
                             <button
-                              onClick={() => onUpdateImage(segment.id, segment.sourceImageUrl!)}
+                              onClick={() => onUpdateImage(segment.id, segment.sourceImageUrl!, undefined, null)}
                               className="px-3 py-2 bg-cyan-500/80 hover:bg-cyan-500 text-white rounded-lg text-sm transition-all"
                             >
                               🖼️ Reusar imagem
@@ -5301,7 +5312,7 @@ export function ImagesStep({
               <div className="flex gap-3">
                 <button
                   onClick={() => {
-                    onUpdateImage(current.segmentId, current.httpUrls[pickerSelectedIdx]);
+                    onUpdateImage(current.segmentId, current.httpUrls[pickerSelectedIdx], undefined, current.generationService);
                     setPickerQueue(prev => prev.slice(1));
                     setPickerSelectedIdx(0);
                   }}

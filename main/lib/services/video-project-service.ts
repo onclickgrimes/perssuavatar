@@ -83,6 +83,7 @@ export interface VideoProjectSegment {
     sceneDescription?: string;
     imageUrl?: string;
     sourceImageUrl?: string;
+    generationService?: string | null;
     assetType?: string;
     cameraMovement?: string;
     transition?: string;
@@ -3875,6 +3876,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 sceneDescription: segment.sceneDescription,
                 imageUrl: segment.imageUrl,
                 sourceImageUrl: segment.sourceImageUrl,
+                generationService: segment.generationService,
                 asset_url: segment.asset_url,
                 chroma_key: segment.chroma_key,
                 background: segment.background,

@@ -938,7 +938,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   }, []);
 
   // Handler para atualizar imagem de um segmento (upload manual ou gerada)
-  const handleUpdateImage = useCallback((segmentId: number, imageUrl: string, duration?: number) => {
+  const handleUpdateImage = useCallback((segmentId: number, imageUrl: string, duration?: number, generationService?: string | null) => {
     setProject(prev => ({
       ...prev,
       segments: prev.segments.map(seg => {
@@ -949,6 +949,9 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           .some(ext => imageUrl.toLowerCase().endsWith(ext));
         
         const newSeg: any = { ...seg, imageUrl };
+        if (generationService !== undefined) {
+          newSeg.generationService = generationService;
+        }
 
         // Preserva a imagem-base quando o segmento vira vídeo para permitir reutilização
         if (!imageUrl) {
