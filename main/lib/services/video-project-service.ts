@@ -560,6 +560,7 @@ export class VideoProjectService extends EventEmitter {
             'Describe simple motion, simple camera movement, and simple scene evolution as one cohesive cinematic shot.',
             'Respect the order in which things should happen. For example, if something is closed in the image, you should make it clear that it must be opened before use.',
             'Never insert or mention elements that are not in the image.',
+            'Never include smoke, flickering lights, flashing lights, lightning, dust, particles, etc. in the scene... Place them in the negative prompt.',
             'Do not mention editing instructions or meta commentary.',
             'Return valid JSON only with this shape:',
             '{"animateFrame":"..."}',
