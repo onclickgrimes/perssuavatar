@@ -225,6 +225,22 @@ const extractPromptString = (imagePrompt: unknown): string => {
   return String(imagePrompt);
 };
 
+const getGenerationServiceLabel = (serviceId: string): string => {
+  if (serviceId === 'veo3') return 'Veo 3.1 (Flow)';
+  if (serviceId === 'veo3-lite-flow') return 'Veo 3.1 Lite (Flow)';
+  if (serviceId === 'veo3-api') return 'Veo 3.1 (API)';
+  if (serviceId === 'veo3-fast-api') return 'Veo 3.1 Fast (API)';
+  if (serviceId === 'veo3-lite-api') return 'Veo 3.1 Lite (API)';
+  if (serviceId === 'grok') return 'Grok';
+  if (serviceId === 'veo2-flow') return 'Veo 2 (Flow)';
+  if (serviceId === 'veo2') return 'Veo 2 (API)';
+  if (serviceId === 'flow-image') return 'Imagem (Flow)';
+  if (serviceId === 'vertex-image') return 'Imagem (Vertex)';
+  if (serviceId === 'flow-image-api') return 'Nano Banana 2';
+  if (serviceId === 'flow-image-pro') return 'Nano Banana Pro';
+  return serviceId;
+};
+
 type FlowExportService = 'veo3' | 'veo3-lite-flow' | 'veo2-flow' | 'flow-image';
 type FlowExportMediaType = 'image' | 'video';
 
@@ -425,11 +441,11 @@ export function ImagesStep({
   };
   
   // Helper para detectar se é vídeo
-  const isVideo = (url: string | undefined): boolean => {
+  const isVideo = useCallback((url: string | undefined): boolean => {
     if (!url) return false;
     const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
     return videoExtensions.some(ext => url.toLowerCase().endsWith(ext));
-  };
+  }, []);
   
   const [generatingSegments, setGeneratingSegments] = useState<Set<number>>(new Set());
   const [uploadingSegments, setUploadingSegments] = useState<Set<number>>(new Set());
@@ -2321,8 +2337,17 @@ export function ImagesStep({
   // ── Batch Processing (Processamento em lote) ──
   // Por padrão, todas as cenas estão selecionadas
   const [selectedScenes, setSelectedScenes] = useState<Set<number>>(() => new Set(segments.map(s => s.id)));
+  const [sceneMediaChecks, setSceneMediaChecks] = useState<{ noMedia: boolean; image: boolean; video: boolean }>({
+    noMedia: true,
+    image: true,
+    video: true,
+  });
+  const [includeManualGenerationService, setIncludeManualGenerationService] = useState<boolean>(true);
+  const [sceneGenerationServiceChecks, setSceneGenerationServiceChecks] = useState<Record<string, boolean>>({});
+  const [sceneDurationMinFilter, setSceneDurationMinFilter] = useState<number>(0);
   const [showBatchDropdown, setShowBatchDropdown] = useState(false);
   const [showBatchSettings, setShowBatchSettings] = useState(false);
+  const [showSceneFilterDropdown, setShowSceneFilterDropdown] = useState(false);
   const lastClickedSceneRef = useRef<number | null>(null);
   const [batchProcessing, setBatchProcessing] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number; currentSceneId: number | null }>({
@@ -2339,14 +2364,101 @@ export function ImagesStep({
   //   () => segments.some(s => s.assetType === 'video_vo3' || s.assetType === 'video_veo2' || s.assetType === 'image_static'),
   //   [segments]
   // );
+  const maxSceneDurationSeconds = useMemo(() => {
+    const maxDuration = segments.reduce((currentMax, segment) => {
+      const segmentDuration = getSceneDurationInfo(segment).rawSeconds;
+      return Math.max(currentMax, segmentDuration);
+    }, 0);
+    return Math.max(1, Math.ceil(maxDuration));
+  }, [segments]);
+  const [sceneDurationMaxFilter, setSceneDurationMaxFilter] = useState<number>(() => maxSceneDurationSeconds);
+  const previousMaxSceneDurationRef = useRef<number>(maxSceneDurationSeconds);
+  const generationServiceFilterOptions = useMemo(() => {
+    const services = Array.from(
+      new Set(
+        segments
+          .map(segment => (typeof segment.generationService === 'string' ? segment.generationService.trim() : ''))
+          .filter((serviceId): serviceId is string => serviceId.length > 0)
+      )
+    ).sort((left, right) => left.localeCompare(right));
+
+    return services.map(serviceId => ({
+      value: serviceId,
+      label: getGenerationServiceLabel(serviceId),
+    }));
+  }, [segments]);
+  const filteredSegments = useMemo(() => {
+    return segments.filter(segment => {
+      const hasMedia = Boolean(segment.imageUrl);
+      const isVideoMedia = isVideo(segment.imageUrl);
+      const sceneDurationSeconds = getSceneDurationInfo(segment).rawSeconds;
+      const generationService = typeof segment.generationService === 'string'
+        ? segment.generationService.trim()
+        : '';
+
+      if (sceneDurationSeconds < sceneDurationMinFilter || sceneDurationSeconds > sceneDurationMaxFilter) {
+        return false;
+      }
+
+      if (!hasMedia && !sceneMediaChecks.noMedia) return false;
+      if (hasMedia && !isVideoMedia && !sceneMediaChecks.image) return false;
+      if (hasMedia && isVideoMedia && !sceneMediaChecks.video) return false;
+
+      if (generationService.length === 0) {
+        return includeManualGenerationService;
+      }
+
+      if (sceneGenerationServiceChecks[generationService] === false) {
+        return false;
+      }
+
+      return true;
+    });
+  }, [
+    segments,
+    isVideo,
+    sceneDurationMinFilter,
+    sceneDurationMaxFilter,
+    sceneMediaChecks,
+    includeManualGenerationService,
+    sceneGenerationServiceChecks,
+  ]);
+  const filteredSceneIds = useMemo(() => filteredSegments.map(segment => segment.id), [filteredSegments]);
+  const selectedFilteredScenesCount = useMemo(
+    () => filteredSceneIds.reduce((count, sceneId) => count + (selectedScenes.has(sceneId) ? 1 : 0), 0),
+    [filteredSceneIds, selectedScenes]
+  );
+  const hasFilteredScenes = filteredSceneIds.length > 0;
   const segmentsWithMediaCount = useMemo(
     () => segments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
     [segments]
   );
-  const selectedVideoFrameAnimateCount = useMemo(
-    () => segments.filter(seg => selectedScenes.has(seg.id) && seg.assetType === 'video_frame_animate').length,
-    [segments, selectedScenes]
+  const filteredSegmentsWithMediaCount = useMemo(
+    () => filteredSegments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
+    [filteredSegments]
   );
+  const selectedFilteredVideoFrameAnimateCount = useMemo(
+    () => filteredSegments.filter(seg => selectedScenes.has(seg.id) && seg.assetType === 'video_frame_animate').length,
+    [filteredSegments, selectedScenes]
+  );
+  const hasActiveSceneFilters = useMemo(() => {
+    const hasMediaFilter = !sceneMediaChecks.noMedia || !sceneMediaChecks.image || !sceneMediaChecks.video;
+    const hasGenerationServiceFilter = !includeManualGenerationService
+      || generationServiceFilterOptions.some(option => sceneGenerationServiceChecks[option.value] === false);
+
+    return hasMediaFilter
+      || hasGenerationServiceFilter
+      || sceneDurationMinFilter > 0
+      || sceneDurationMaxFilter < maxSceneDurationSeconds;
+  }, [
+    sceneMediaChecks,
+    includeManualGenerationService,
+    sceneGenerationServiceChecks,
+    generationServiceFilterOptions,
+    sceneDurationMinFilter,
+    sceneDurationMaxFilter,
+    maxSceneDurationSeconds,
+  ]);
   const canContinue = hasPrompts || segmentsWithMediaCount > 0;
   const titlebarAnalyzeLabel = isAiBusy
     ? 'Gerando...'
@@ -2360,10 +2472,10 @@ export function ImagesStep({
     return { success, error };
   }, [batchResults]);
   const erroredBatchSegmentIds = useMemo(() => {
-    return segments
+    return filteredSegments
       .filter(segment => batchResults[segment.id] === 'error')
       .map(segment => segment.id);
-  }, [segments, batchResults]);
+  }, [filteredSegments, batchResults]);
   const canSaveFromToolbar = Boolean(canSaveProject && onSaveProject);
   const hasAnalyzeAction = Boolean(onAnalyze);
   const hasOpenProjectAction = Boolean(onOpenProject);
@@ -2376,6 +2488,28 @@ export function ImagesStep({
   const toolbarSaveProjectRef = useRef<(() => void | Promise<void>) | undefined>(undefined);
   const toolbarProviderChangeRef = useRef<((nextProvider: AnalysisProvider) => void) | undefined>(undefined);
   const toolbarProviderModelChangeRef = useRef<((nextModel: string) => void) | undefined>(undefined);
+
+  useEffect(() => {
+    const previousMaxDuration = previousMaxSceneDurationRef.current;
+    previousMaxSceneDurationRef.current = maxSceneDurationSeconds;
+
+    setSceneDurationMinFilter(previousMin => Math.min(previousMin, maxSceneDurationSeconds));
+    setSceneDurationMaxFilter(previousMax => {
+      const wasAtPreviousMax = Math.abs(previousMax - previousMaxDuration) < 0.001;
+      if (wasAtPreviousMax) return maxSceneDurationSeconds;
+      return Math.min(previousMax, maxSceneDurationSeconds);
+    });
+  }, [maxSceneDurationSeconds]);
+
+  useEffect(() => {
+    setSceneGenerationServiceChecks(previousChecks => {
+      const nextChecks: Record<string, boolean> = {};
+      generationServiceFilterOptions.forEach(option => {
+        nextChecks[option.value] = previousChecks[option.value] ?? true;
+      });
+      return nextChecks;
+    });
+  }, [generationServiceFilterOptions]);
 
   useEffect(() => {
     toolbarBackRef.current = onBack;
@@ -3357,7 +3491,7 @@ export function ImagesStep({
   const handleToggleScene = useCallback((segmentId: number, event?: React.MouseEvent) => {
     if (event?.shiftKey && lastClickedSceneRef.current !== null) {
       // Shift+Click: selecionar range
-      const ids = segments.map(s => s.id);
+      const ids = filteredSceneIds;
       const startIdx = ids.indexOf(lastClickedSceneRef.current);
       const endIdx = ids.indexOf(segmentId);
       if (startIdx !== -1 && endIdx !== -1) {
@@ -3369,25 +3503,27 @@ export function ImagesStep({
           rangeIds.forEach(id => next.add(id));
           return next;
         });
+        lastClickedSceneRef.current = segmentId;
+        return;
       }
-    } else {
-      // Click normal: toggle
-      setSelectedScenes(prev => {
-        const next = new Set(prev);
-        if (next.has(segmentId)) {
-          next.delete(segmentId);
-        } else {
-          next.add(segmentId);
-        }
-        return next;
-      });
     }
+
+    // Click normal: toggle
+    setSelectedScenes(prev => {
+      const next = new Set(prev);
+      if (next.has(segmentId)) {
+        next.delete(segmentId);
+      } else {
+        next.add(segmentId);
+      }
+      return next;
+    });
     lastClickedSceneRef.current = segmentId;
-  }, [segments]);
+  }, [filteredSceneIds]);
 
   // ── Processamento em lote — pool de workers paralelos (cancelável) ──
   const handleBatchProcess = useCallback(async () => {
-    const targetIds = segments
+    const targetIds = filteredSegments
       .filter(s => selectedScenes.has(s.id))
       .map(s => s.id);
 
@@ -3441,7 +3577,7 @@ export function ImagesStep({
 
     setBatchProcessing(false);
     setBatchProgress(prev => ({ ...prev, currentSceneId: null }));
-  }, [segments, selectedScenes, handleRegenerate]);
+  }, [filteredSegments, segments, selectedScenes, handleRegenerate]);
 
   const handleBatchCancel = useCallback(() => {
     batchCancelledRef.current = true;
@@ -3463,12 +3599,12 @@ export function ImagesStep({
   const handleBatchRegenerateAnimateFrames = async () => {
     if (batchProcessing || batchRegeneratingAnimateFrame) return;
 
-    if (selectedScenes.size === 0) {
+    if (selectedFilteredScenesCount === 0) {
       alert('Nenhuma cena selecionada.');
       return;
     }
 
-    const targetSegments = segments.filter(
+    const targetSegments = filteredSegments.filter(
       segment => selectedScenes.has(segment.id) && segment.assetType === 'video_frame_animate'
     );
 
@@ -3802,9 +3938,15 @@ export function ImagesStep({
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500"></div>
           <span className="text-white/60 text-sm">
-            {segmentsWithMediaCount} de {segments.length} prontas
+            {segmentsWithMediaCount}/{segments.length}
           </span>
         </div>
+
+        {/* <div className="flex items-center gap-2 border-l border-white/10 pl-4">
+          <span className="text-white/60 text-sm">
+            Exibindo {filteredSegmentsWithMediaCount} prontas em {filteredSegments.length}/{segments.length}
+          </span>
+        </div> */}
 
         {/* Aspect Ratio Selector */}
         {onAspectRatioChange && (
@@ -3887,88 +4029,267 @@ export function ImagesStep({
             disabled={
               batchProcessing
               || batchRegeneratingAnimateFrame
-              || selectedScenes.size === 0
-              || selectedVideoFrameAnimateCount === 0
+              || selectedFilteredScenesCount === 0
+              || selectedFilteredVideoFrameAnimateCount === 0
             }
             className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all shadow-lg ${
               batchProcessing
               || batchRegeneratingAnimateFrame
-              || selectedScenes.size === 0
-              || selectedVideoFrameAnimateCount === 0
+              || selectedFilteredScenesCount === 0
+              || selectedFilteredVideoFrameAnimateCount === 0
                 ? 'bg-white/10 border-white/10 text-white/30 cursor-not-allowed'
                 : 'bg-emerald-500/25 hover:bg-emerald-500/35 border-emerald-500/40 text-emerald-100'
             }`}
-            title={selectedVideoFrameAnimateCount === 0
+            title={selectedFilteredVideoFrameAnimateCount === 0
               ? 'Selecione ao menos uma cena com assetType video_frame_animate'
-              : `Regenerar animateFrame de ${selectedVideoFrameAnimateCount} cena(s) selecionada(s)`}
+              : `Regenerar animateFrame de ${selectedFilteredVideoFrameAnimateCount} cena(s) selecionada(s)`}
           >
             {batchRegeneratingAnimateFrame ? '⟳' : '🔁'}
           </button>
           
           {/* Botão de Configurações em Lote */}
-          <div className="relative flex items-center">
-            <button
-              onClick={() => setShowBatchSettings(!showBatchSettings)}
-              className="w-8 h-8 rounded-xl bg-gray-600/50 hover:bg-gray-500/70 border border-white/10 flex items-center justify-center text-white transition-all shadow-lg"
-              title="Configurar cenas selecionadas"
-            >
-              ⚙️
-            </button>
-            {showBatchSettings && (
-              <div
-                className="absolute top-full right-0 mt-2 z-[60] bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[240px] select-none"
-                onMouseLeave={() => setShowBatchSettings(false)}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowBatchSettings(!showBatchSettings);
+                  if (!showBatchSettings) setShowSceneFilterDropdown(false);
+                }}
+                className="w-8 h-8 rounded-xl bg-gray-600/50 hover:bg-gray-500/70 border border-white/10 flex items-center justify-center text-white transition-all shadow-lg"
+                title="Configurar cenas selecionadas"
               >
-                <div className="px-3 py-2 border-b border-white/10 bg-white/5">
-                  <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Ações em Lote</span>
+                ⚙️
+              </button>
+              {showBatchSettings && (
+                <div
+                  className="absolute top-full right-0 mt-2 z-[60] bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[240px] select-none"
+                  onMouseLeave={() => setShowBatchSettings(false)}
+                >
+                  <div className="px-3 py-2 border-b border-white/10 bg-white/5">
+                    <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Ações em Lote</span>
+                  </div>
+                  <div className="p-2 space-y-1">
+                    <div className="px-2 py-1 text-[10px] text-white/40 uppercase mb-1">Alterar Serviço (Selecionadas)</div>
+                    {GENERATION_SERVICES.map(svc => (
+                      <button
+                        key={svc.id}
+                        onClick={() => {
+                          if (selectedScenes.size === 0) {
+                            alert('Nenhuma cena selecionada.');
+                            return;
+                          }
+                          setSelectedService(prev => {
+                            const next = { ...prev };
+                            Array.from(selectedScenes).forEach(id => {
+                              next[id] = svc.id;
+                            });
+                            return next;
+                          });
+                          if (IMAGE_SERVICES.has(svc.id)) {
+                            setIngredientMode(prev => {
+                              const next = { ...prev };
+                              Array.from(selectedScenes).forEach(id => {
+                                next[id] = 'ingredients';
+                              });
+                              return next;
+                            });
+                          } else if (!supportsIngredientsForService(svc.id)) {
+                            setIngredientMode(prev => {
+                              const next = { ...prev };
+                              Array.from(selectedScenes).forEach(id => {
+                                if (next[id] === 'ingredients') {
+                                  next[id] = 'frames';
+                                }
+                              });
+                              return next;
+                            });
+                          }
+                          setShowBatchSettings(false);
+                        }}
+                        className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-all outline-none"
+                      >
+                        <span className="text-sm">{svc.icon}</span>
+                        <span>{svc.label}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="p-2 space-y-1">
-                  <div className="px-2 py-1 text-[10px] text-white/40 uppercase mb-1">Alterar Serviço (Selecionadas)</div>
-                  {GENERATION_SERVICES.map(svc => (
+              )}
+            </div>
+
+            <div className="relative">
+              <button
+                onClick={() => {
+                  setShowSceneFilterDropdown(!showSceneFilterDropdown);
+                  if (!showSceneFilterDropdown) setShowBatchSettings(false);
+                }}
+                className={`w-8 h-8 rounded-xl border flex items-center justify-center text-white transition-all shadow-lg ${
+                  hasActiveSceneFilters
+                    ? 'bg-cyan-600/50 hover:bg-cyan-500/60 border-cyan-400/60'
+                    : 'bg-gray-600/50 hover:bg-gray-500/70 border-white/10'
+                }`}
+                title="Filtrar cenas"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                </svg>
+              </button>
+              {showSceneFilterDropdown && (
+                <div
+                  className="absolute top-full right-0 mt-2 z-[60] bg-[#1a1a2e] border border-white/10 rounded-xl shadow-2xl overflow-hidden min-w-[320px] select-none"
+                  onMouseLeave={() => setShowSceneFilterDropdown(false)}
+                >
+                  <div className="px-3 py-2 border-b border-white/10 bg-white/5 flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">
+                      Filtros de Cena
+                    </span>
+                    <span className="text-[10px] text-white/50">
+                      {filteredSegments.length}/{segments.length}
+                    </span>
+                  </div>
+                  <div className="p-3 space-y-3">
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-white/50 uppercase tracking-wider">Tipo de mídia</label>
+                      <div className="bg-black/30 border border-white/10 rounded-lg p-2 space-y-1.5">
+                        <label className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={sceneMediaChecks.noMedia}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setSceneMediaChecks(prev => ({ ...prev, noMedia: checked }));
+                            }}
+                            className="accent-cyan-500"
+                          />
+                          <span>Sem mídia</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={sceneMediaChecks.image}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setSceneMediaChecks(prev => ({ ...prev, image: checked }));
+                            }}
+                            className="accent-cyan-500"
+                          />
+                          <span>Com imagem</span>
+                        </label>
+                        <label className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={sceneMediaChecks.video}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setSceneMediaChecks(prev => ({ ...prev, video: checked }));
+                            }}
+                            className="accent-cyan-500"
+                          />
+                          <span>Com vídeo</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[11px] text-white/50 uppercase tracking-wider">Serviço de geração</label>
+                      <div className="bg-black/30 border border-white/10 rounded-lg p-2 space-y-1.5 max-h-[160px] overflow-y-auto batch-dropdown-scroll">
+                        <label className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={includeManualGenerationService}
+                            onChange={(e) => setIncludeManualGenerationService(e.target.checked)}
+                            className="accent-cyan-500"
+                          />
+                          <span>Upload manual (null)</span>
+                        </label>
+                        {generationServiceFilterOptions.map(option => (
+                          <label key={option.value} className="flex items-center gap-2 text-sm text-white/80 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={sceneGenerationServiceChecks[option.value] ?? true}
+                              onChange={(e) => {
+                                const checked = e.target.checked;
+                                setSceneGenerationServiceChecks(prev => ({
+                                  ...prev,
+                                  [option.value]: checked,
+                                }));
+                              }}
+                              className="accent-cyan-500"
+                            />
+                            <span>{option.label}</span>
+                          </label>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 bg-white/5 border border-white/10 rounded-lg p-2">
+                      <div className="flex items-center justify-between text-[11px] text-white/60">
+                        <span>Duração da cena</span>
+                        <span className="font-mono text-cyan-300">
+                          {sceneDurationMinFilter}s - {sceneDurationMaxFilter}s
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/50 w-6">Min</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={maxSceneDurationSeconds}
+                          step={1}
+                          value={sceneDurationMinFilter}
+                          onChange={(e) => {
+                            const nextMin = Number(e.target.value);
+                            setSceneDurationMinFilter(nextMin);
+                            setSceneDurationMaxFilter(prevMax => Math.max(prevMax, nextMin));
+                          }}
+                          className="flex-1 accent-cyan-500"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] text-white/50 w-6">Max</span>
+                        <input
+                          type="range"
+                          min={0}
+                          max={maxSceneDurationSeconds}
+                          step={1}
+                          value={sceneDurationMaxFilter}
+                          onChange={(e) => {
+                            const nextMax = Number(e.target.value);
+                            setSceneDurationMaxFilter(nextMax);
+                            setSceneDurationMinFilter(prevMin => Math.min(prevMin, nextMax));
+                          }}
+                          className="flex-1 accent-cyan-500"
+                        />
+                      </div>
+                    </div>
+
                     <button
-                      key={svc.id}
                       onClick={() => {
-                        if (selectedScenes.size === 0) {
-                          alert('Nenhuma cena selecionada.');
-                          return;
-                        }
-                        setSelectedService(prev => {
-                          const next = { ...prev };
-                          Array.from(selectedScenes).forEach(id => {
-                            next[id] = svc.id;
-                          });
-                          return next;
-                        });
-                        if (IMAGE_SERVICES.has(svc.id)) {
-                          setIngredientMode(prev => {
-                            const next = { ...prev };
-                            Array.from(selectedScenes).forEach(id => {
-                              next[id] = 'ingredients';
-                            });
-                            return next;
-                          });
-                        } else if (!supportsIngredientsForService(svc.id)) {
-                          setIngredientMode(prev => {
-                            const next = { ...prev };
-                            Array.from(selectedScenes).forEach(id => {
-                              if (next[id] === 'ingredients') {
-                                next[id] = 'frames';
-                              }
-                            });
-                            return next;
-                          });
-                        }
-                        setShowBatchSettings(false);
+                        setSceneMediaChecks({ noMedia: true, image: true, video: true });
+                        setIncludeManualGenerationService(true);
+                        setSceneGenerationServiceChecks(() =>
+                          generationServiceFilterOptions.reduce((acc, option) => {
+                            acc[option.value] = true;
+                            return acc;
+                          }, {} as Record<string, boolean>)
+                        );
+                        setSceneDurationMinFilter(0);
+                        setSceneDurationMaxFilter(maxSceneDurationSeconds);
                       }}
-                      className="w-full flex items-center gap-2 px-2 py-1.5 text-xs text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-all outline-none"
+                      disabled={!hasActiveSceneFilters}
+                      className={`w-full px-2 py-1.5 rounded-lg text-xs transition-all ${
+                        hasActiveSceneFilters
+                          ? 'bg-white/10 hover:bg-white/20 text-white'
+                          : 'bg-white/5 text-white/30 cursor-not-allowed'
+                      }`}
+                      title="Limpar filtros"
                     >
-                      <span className="text-sm">{svc.icon}</span>
-                      <span>{svc.label}</span>
+                      Limpar filtros
                     </button>
-                  ))}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
 
           <div className="flex items-center gap-2 border-l border-white/10 pl-4 relative">
@@ -3996,10 +4317,10 @@ export function ImagesStep({
               {/* Botão principal - Processar */}
               <button
                 onClick={handleBatchProcess}
-                disabled={selectedScenes.size === 0}
+                disabled={selectedFilteredScenesCount === 0}
                 className="py-1.5 px-4 rounded-l-lg text-xs font-bold transition-all bg-gradient-to-r from-indigo-500 to-cyan-500 hover:from-indigo-600 hover:to-cyan-600 disabled:from-gray-600 disabled:to-gray-600 disabled:cursor-not-allowed text-white shadow-lg shadow-indigo-500/20 hover:shadow-indigo-500/40"
               >
-                🚀 Processar {selectedScenes.size === segments.length ? 'Todas' : `${selectedScenes.size} Cenas`}
+                🚀 Processar {selectedFilteredScenesCount} Cenas
               </button>
 
               {/* Separador */}
@@ -4024,14 +4345,28 @@ export function ImagesStep({
                   {/* Ações rápidas */}
                   <div className="flex border-b border-white/10">
                     <button
-                      onClick={() => setSelectedScenes(new Set(segments.map(s => s.id)))}
+                      onClick={() => {
+                        setSelectedScenes(prev => {
+                          const next = new Set(prev);
+                          filteredSceneIds.forEach(id => next.add(id));
+                          return next;
+                        });
+                      }}
+                      disabled={!hasFilteredScenes}
                       className="flex-1 px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-white/5 transition-all outline-none"
                     >
                       ✓ Todas
                     </button>
                     <div className="w-px bg-white/10" />
                     <button
-                      onClick={() => setSelectedScenes(new Set())}
+                      onClick={() => {
+                        setSelectedScenes(prev => {
+                          const next = new Set(prev);
+                          filteredSceneIds.forEach(id => next.delete(id));
+                          return next;
+                        });
+                      }}
+                      disabled={!hasFilteredScenes}
                       className="flex-1 px-3 py-2 text-xs text-white/60 hover:text-white hover:bg-white/5 transition-all outline-none"
                     >
                       ✕ Nenhuma
@@ -4051,7 +4386,7 @@ export function ImagesStep({
                       }
                     }}
                   >
-                    {segments.map(seg => {
+                    {filteredSegments.map(seg => {
                       const isChecked = selectedScenes.has(seg.id);
                       return (
                         <button
@@ -4081,6 +4416,11 @@ export function ImagesStep({
                         </button>
                       );
                     })}
+                    {filteredSegments.length === 0 && (
+                      <div className="px-3 py-2 text-xs text-white/40">
+                        Nenhuma cena visível com os filtros atuais.
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -4143,7 +4483,7 @@ export function ImagesStep({
             </button>
           </div>
         )}
-        {segments.map((segment) => {
+        {filteredSegments.map((segment) => {
           const isGenerating = generatingSegments.has(segment.id);
           const isUploading = uploadingSegments.has(segment.id);
           const hasImage = !!segment.imageUrl;
@@ -5223,6 +5563,13 @@ export function ImagesStep({
             </div>
           );
         })}
+        {filteredSegments.length === 0 && (
+          <div className="col-span-full p-6 bg-white/5 border border-white/10 rounded-xl text-center">
+            <p className="text-white/70 text-sm">
+              Nenhuma cena corresponde aos filtros atuais.
+            </p>
+          </div>
+        )}
       </div>
 
       {hoverImagePreview && (
