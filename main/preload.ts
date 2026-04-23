@@ -459,6 +459,45 @@ const handler = {
       fields?: Partial<Record<'imagePrompt' | 'firstFrame' | 'animateFrame', string>>;
     }) =>
       ipcRenderer.invoke('video-project:translate-scene-prompt', input),
+
+    // Gerar / editar composição dinâmica de motion graphics em Remotion
+    generateMotionGraphics: (input: {
+      prompt: string;
+      currentCode?: string;
+      conversationHistory?: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+        timestamp?: number;
+        provider?: string;
+        model?: string;
+      }>;
+      projectContext?: {
+        title?: string;
+        description?: string;
+        selectedRatio?: string;
+        durationInFrames?: number;
+        fps?: number;
+        selectedSegment?: {
+          id?: number;
+          text?: string;
+          start?: number;
+          end?: number;
+          sceneDescription?: string;
+          imagePrompt?: string;
+        } | null;
+        segments?: Array<{
+          id?: number;
+          text?: string;
+          start?: number;
+          end?: number;
+          sceneDescription?: string;
+          imagePrompt?: string;
+        }>;
+      };
+      provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+      model?: string;
+    }) =>
+      ipcRenderer.invoke('video-project:generate-motion-graphics', input),
     
     // Converter projeto para formato Remotion
     convertToRemotion: (project: any) => 

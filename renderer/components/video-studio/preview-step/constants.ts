@@ -18,6 +18,7 @@ export const FILMORA = {
   playhead:   '#ff3b5c',   // Playhead vermelho
   trackVideo: '#818cf8',   // Trilha de vídeo
   trackImage: '#38bdf8',   // Trilha de imagem
+  trackMotionGraphics: '#f59e0b', // Trilha de Remotion / motion graphics
   trackAudio: '#34d399',   // Trilha de áudio
   ruler:      '#1e1f26',   // Fundo da Régua
   rulerText:  '#9ca3af',   // Texto da Régua

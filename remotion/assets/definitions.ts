@@ -223,6 +223,13 @@ Exemplo da estrutura do JSON:
     badgeColor: 'bg-amber-500/20 text-amber-300',
     aiDescription: 'Linha do tempo 3D histórica (ideal para documentários, história, cronologias)',
   },
+  remotion_graphic: {
+    label: 'Remotion Graphic',
+    description: 'Motion graphic gerado por chat e renderizado pelo Remotion',
+    icon: '✨',
+    badgeColor: 'bg-amber-500/20 text-amber-300',
+    aiDescription: 'Motion graphic customizado gerado por código Remotion.',
+  },
 
   // ==================== ÁUDIO ====================
   audio: {

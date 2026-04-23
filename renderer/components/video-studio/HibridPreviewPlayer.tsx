@@ -4,12 +4,18 @@ import {
   mapOutputTimeToSourceTime,
   type TimelineKeepRange,
 } from '../../../remotion/utils/silence-compaction';
+import { MotionGraphicsTimelineLayer } from './preview-step/motion-graphics/MotionGraphicsTimelineLayer';
+import {
+  getMotionGraphicsData,
+  isMotionGraphicsSegment,
+} from './preview-step/motion-graphics/types';
 
 interface TimelineSegment {
   id: number | string;
   start: number;
   end: number;
   track?: number;
+  fileName?: string;
   transition?: string;
   transition_duration?: number;
   transitionDuration?: number;
@@ -30,6 +36,18 @@ interface TimelineSegment {
     volume?: number;
     fadeIn?: number;
     fadeOut?: number;
+  };
+  motionGraphics?: {
+    code?: string;
+    title?: string;
+    updatedAt?: number;
+    messages?: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      timestamp?: number;
+      provider?: string;
+      model?: string;
+    }>;
   };
 }
 
@@ -217,6 +235,17 @@ interface SegmentTransitionMeta {
   visibleEndSec: number;
 }
 
+const getEffectiveVisibleEndSec = (
+  segment: TimelineSegment,
+  transitionMeta?: SegmentTransitionMeta,
+) => {
+  if (isMotionGraphicsSegment(segment)) {
+    return segment.end;
+  }
+
+  return transitionMeta?.visibleEndSec ?? segment.end;
+};
+
 const getSegmentVolumeAtTime = (segment: TimelineSegment, timeSec: number) => {
   const baseVolume = clampVolume(segment.audio?.volume ?? 1);
   if (baseVolume <= 0) return 0;
@@ -370,7 +399,7 @@ export const HibridPreviewPlayer = React.forwardRef(({
   const hasVisibleSegmentAtCurrentTime = useMemo(() => {
     return orderedTimelineSegments.some((segment) => {
       const metadata = transitionMetaBySegment.get(getSegmentRenderKey(segment));
-      const visibleEndSec = metadata?.visibleEndSec ?? segment.end;
+      const visibleEndSec = getEffectiveVisibleEndSec(segment, metadata);
       return currentTimeSec >= segment.start && currentTimeSec < visibleEndSec;
     });
   }, [orderedTimelineSegments, transitionMetaBySegment, currentTimeSec]);
@@ -379,7 +408,7 @@ export const HibridPreviewPlayer = React.forwardRef(({
   const renderSegments = useMemo(() => {
     return orderedTimelineSegments.filter((segment) => {
       const metadata = transitionMetaBySegment.get(getSegmentRenderKey(segment));
-      const visibleEndSec = metadata?.visibleEndSec ?? segment.end;
+      const visibleEndSec = getEffectiveVisibleEndSec(segment, metadata);
       return visibleEndSec > currentTimeSec - PRELOAD_BEFORE_SEC
         && segment.start < currentTimeSec + PRELOAD_AFTER_SEC;
     });
@@ -404,6 +433,8 @@ export const HibridPreviewPlayer = React.forwardRef(({
   }, [project?.config?.backgroundMusic?.volume, project?.config?.mainAudioVolume]);
 
   const fitVideoToScene = project?.config?.fitVideoToScene ?? true;
+  const compositionWidth = Number(project?.config?.width || 1080);
+  const compositionHeight = Number(project?.config?.height || 1920);
   const removeAudioSilences = project?.config?.removeAudioSilences ?? false;
   const audioKeepRanges = useMemo<TimelineKeepRange[]>(() => {
     return Array.isArray(project?.config?.audioKeepRanges) ? project.config.audioKeepRanges : [];
@@ -686,14 +717,14 @@ export const HibridPreviewPlayer = React.forwardRef(({
       )}
 
       {renderSegments.map((segment, index) => {
+        const isMotionGraphics = isMotionGraphicsSegment(segment);
+        const motionGraphicsData = getMotionGraphicsData(segment);
         const rawUrl = segment.imageUrl || segment.asset_url || segment.background?.url;
         const sourceUrl = normalizeMediaUrl(rawUrl);
-        if (!sourceUrl) return null;
-
         const segmentKey = getSegmentRenderKey(segment);
         const transitionMeta = transitionMetaBySegment.get(segmentKey);
         const nextOnTrack = transitionMeta?.nextOnTrack || null;
-        const visibleEndSec = transitionMeta?.visibleEndSec ?? segment.end;
+        const visibleEndSec = getEffectiveVisibleEndSec(segment, transitionMeta);
         const isVisibleAtCurrentTime = currentTimeSec >= segment.start && currentTimeSec < visibleEndSec;
         const track = segment.track || 1;
         const transform = segment.transform || {};
@@ -751,6 +782,33 @@ export const HibridPreviewPlayer = React.forwardRef(({
           objectFit: 'contain',
           backgroundColor: '#000',
         };
+
+        if (isMotionGraphics) {
+          const code = String(motionGraphicsData?.code || '').trim();
+          if (!code) {
+            return null;
+          }
+
+          const currentFrame = Math.round(Math.max(0, currentTimeSec - segment.start) * fps);
+          const segmentDurationInFrames = Math.max(1, Math.round(Math.max(0.1, segment.end - segment.start) * fps));
+
+          return (
+            <div key={segmentKey} style={layerStyle}>
+              <div style={contentStyle}>
+                <MotionGraphicsTimelineLayer
+                  code={code}
+                  currentFrame={currentFrame}
+                  durationInFrames={segmentDurationInFrames}
+                  fps={fps}
+                  compositionWidth={compositionWidth}
+                  compositionHeight={compositionHeight}
+                  segmentId={segment.id}
+                />
+              </div>
+            </div>
+          );
+        }
+        if (!sourceUrl) return null;
 
         if (isVideo) {
           return (

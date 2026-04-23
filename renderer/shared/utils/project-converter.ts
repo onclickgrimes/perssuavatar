@@ -78,6 +78,21 @@ export interface AudioConfig {
   fadeOut?: number;
 }
 
+export interface MotionGraphicsChatPersistedMessage {
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp?: number;
+  provider?: string;
+  model?: string;
+}
+
+export interface MotionGraphicsSegmentData {
+  code?: string;
+  title?: string;
+  updatedAt?: number;
+  messages?: MotionGraphicsChatPersistedMessage[];
+}
+
 /** Referência de personagem extraída/definida na modal de Personagens e Lugares */
 export interface StoryCharacterReferenceItem {
   id: number;
@@ -113,6 +128,7 @@ export interface VideoSegment {
   start: number;
   end: number;
   speaker: number;
+  fileName?: string;
   
   // Deepgram
   words?: WordTiming[];
@@ -146,6 +162,7 @@ export interface VideoSegment {
   timeline_config?: TimelineConfig;
   transform?: TransformConfig;
   audio?: AudioConfig;
+  motionGraphics?: MotionGraphicsSegmentData;
   firstFrame?: string;
   animateFrame?: string;
   imagePromptTraduzido?: string;
@@ -187,6 +204,16 @@ export interface VideoProject {
       outputEnd: number;
     }>;
     mainAudioVolume?: number;
+    motionGraphics?: {
+      code?: string;
+      messages?: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+        timestamp?: number;
+        provider?: string;
+        model?: string;
+      }>;
+    };
   };
 }
 
@@ -197,8 +224,8 @@ export interface VideoProject {
 const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'id', 'text', 'start', 'end', 'speaker', 'words',
   'emotion', 'imagePrompt', 'IdOfTheCharactersInTheScene', 'IdOfTheLocationInTheScene', 'sceneDescription', 'assetType', 'cameraMovement', 'transition', 'transitionDuration', 'track',
-  'imageUrl', 'sourceImageUrl', 'generationService', 'asset_url', 'asset_duration',
-  'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio',
+  'fileName', 'imageUrl', 'sourceImageUrl', 'generationService', 'asset_url', 'asset_duration',
+  'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio', 'motionGraphics',
   'firstFrame',
   'animateFrame',
   'imagePromptTraduzido',
@@ -313,6 +340,7 @@ export function segmentToRemotionScene(seg: VideoSegment): any {
     ...(seg.background && { background: seg.background }),
     ...(seg.timeline_config && { timeline_config: seg.timeline_config }),
     ...(seg.transform && { transform: seg.transform }),
+    ...(seg.motionGraphics && { motion_graphics: seg.motionGraphics }),
     audio: {
       volume: seg.audio?.volume ?? 1,
       fadeIn: seg.audio?.fadeIn ?? 0,

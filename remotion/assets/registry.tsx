@@ -17,6 +17,7 @@ import { Timeline3D, Timeline3DProps } from '../components/Timeline3D';
 import { ChromaKeyMedia, greenScreenPreset, blueScreenPreset } from '../components/ChromaKeyMedia';
 import { useProjectConfig } from '../contexts/ProjectConfigContext';
 import { calculatePlaybackRate, getPlaybackRateInfo } from '../utils/playback-rate';
+import { compileMotionGraphicsCode } from '../utils/motion-graphics-compiler';
 
 // ========================================
 // TIPOS (definidos localmente para evitar dependência circular)
@@ -47,6 +48,18 @@ export interface SceneProps {
     volume?: number;
     fadeIn?: number;
     fadeOut?: number;
+  };
+  motion_graphics?: {
+    code?: string;
+    title?: string;
+    updatedAt?: number;
+    messages?: Array<{
+      role: 'user' | 'assistant';
+      content: string;
+      timestamp?: number;
+      provider?: string;
+      model?: string;
+    }>;
   };
   /** Prop interna para silenciar áudio em camadas de efeito */
   muteAudio?: boolean;
@@ -247,6 +260,41 @@ const Timeline3DAsset: AssetComponent = ({ scene }) => {
   );
 };
 
+const MotionGraphicsAsset: AssetComponent = ({ scene }) => {
+  const code = String(scene.motion_graphics?.code || '').trim();
+  if (!code) {
+    return null;
+  }
+
+  const compilation = React.useMemo(() => compileMotionGraphicsCode(code), [code]);
+
+  if (compilation.error || !compilation.Component) {
+    return compilation.error ? (
+      <AbsoluteFill
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          padding: 40,
+          color: '#fecaca',
+          background: 'rgba(127,29,29,0.35)',
+          textAlign: 'center',
+          fontSize: 28,
+        }}
+      >
+        {compilation.error}
+      </AbsoluteFill>
+    ) : null;
+  }
+
+  const Component = compilation.Component;
+  return (
+    <AbsoluteFill style={{ backgroundColor: 'transparent' }}>
+      <Component />
+    </AbsoluteFill>
+  );
+};
+
 /** Placeholder para tipos não implementados */
 const PlaceholderAsset: AssetComponent = ({ scene }) => (
   <AbsoluteFill style={{ backgroundColor: '#1a1a2e' }}>
@@ -300,6 +348,7 @@ const ASSET_COMPONENTS: Record<AssetType, AssetComponent> = {
   geometric_patterns: GeometricPatternsAsset,
   wavy_grid: WavyGridAsset,
   timeline_3d: Timeline3DAsset,
+  remotion_graphic: MotionGraphicsAsset,
   audio: AudioAsset,
   
   // Não implementados ainda

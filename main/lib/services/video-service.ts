@@ -347,13 +347,19 @@ export class VideoService extends EventEmitter {
 
     const scenes = project.scenes || (project as any).segments || [];
     let outputPath = '';
+    const temporaryMotionGraphicsAssets: string[] = [];
 
     if (scenes.length === 0) {
       return { success: false, error: 'Projeto sem cenas para renderizar.' };
     }
 
     try {
-      console.log('🎬 [FFmpeg] INICIANDO PIPELINE DE RENDERIZAÇÃO (SEM REMOTION)...');
+      const projectForFfmpeg = await this.prepareProjectForFfmpegRender(
+        project,
+        temporaryMotionGraphicsAssets,
+      );
+
+      console.log('🎬 [FFmpeg] INICIANDO PIPELINE DE RENDERIZAÇÃO...');
       outputPath = this.resolveOutputPath(
         fileName,
         this.estimateProjectOutputSizeBytes(project),
@@ -361,12 +367,19 @@ export class VideoService extends EventEmitter {
 
       const sequencer = new FFmpegSequencer(path.dirname(outputPath), app.getPath('temp'));
       let lastNativeProgressPercent = -1;
+      const ffmpegProgressStart = temporaryMotionGraphicsAssets.length > 0 ? 35 : 5;
+      const ffmpegProgressSpan = 100 - ffmpegProgressStart;
 
       console.log(`[FFmpeg] Iniciando agrupamento de base video: ${outputPath}`);
-      this.emitProgress({ progress: 0.05, stage: 'rendering', projectTitle: project.project_title, percent: 5 });
+      this.emitProgress({
+        progress: ffmpegProgressStart / 100,
+        stage: 'rendering',
+        projectTitle: project.project_title,
+        percent: ffmpegProgressStart,
+      });
 
       await sequencer.buildBaseVideo(
-        project,
+        projectForFfmpeg,
         outputPath,
         (pct: number) => {
           if (!Number.isFinite(pct)) {
@@ -381,11 +394,12 @@ export class VideoService extends EventEmitter {
           lastNativeProgressPercent = roundedPct;
 
           console.log(`[FFmpeg Log] Gerando Base Nativas: ${boundedPct.toFixed(2)}%`);
+          const mappedPercent = Math.round(ffmpegProgressStart + (ffmpegProgressSpan * (boundedPct / 100)));
           this.emitProgress({
-            progress: 0.05 + (0.95 * (boundedPct / 100)),
+            progress: mappedPercent / 100,
             stage: boundedPct >= 99 ? 'encoding' : 'rendering',
             projectTitle: project.project_title,
-            percent: Math.round(5 + (95 * (boundedPct / 100))),
+            percent: mappedPercent,
           });
         }
       );
@@ -412,6 +426,8 @@ export class VideoService extends EventEmitter {
       }
 
       return { success: false, error: normalizedError };
+    } finally {
+      this.cleanupTemporaryFiles(temporaryMotionGraphicsAssets);
     }
   }
 
@@ -779,6 +795,149 @@ export class VideoService extends EventEmitter {
     });
   }
 
+  private isMotionGraphicsScene(scene: any): boolean {
+    const assetType = String(scene?.asset_type ?? scene?.assetType ?? '').trim().toLowerCase();
+    return assetType === 'remotion_graphic';
+  }
+
+  private async renderMotionGraphicsClipAsset(params: {
+    serveUrl: string;
+    code: string;
+    durationInFrames: number;
+    fps: number;
+    width: number;
+    height: number;
+    outputPath: string;
+    onProgress: (progress: number) => void;
+  }): Promise<void> {
+    const inputProps = { code: params.code };
+    const composition = await selectComposition({
+      serveUrl: params.serveUrl,
+      id: 'MotionGraphicsRuntime',
+      inputProps,
+    });
+
+    composition.durationInFrames = Math.max(1, params.durationInFrames);
+    composition.fps = Math.max(1, params.fps);
+    composition.width = Math.max(2, params.width);
+    composition.height = Math.max(2, params.height);
+
+    if (fs.existsSync(params.outputPath)) {
+      fs.unlinkSync(params.outputPath);
+    }
+
+    await renderMedia({
+      composition,
+      serveUrl: params.serveUrl,
+      codec: 'prores' as any,
+      outputLocation: params.outputPath,
+      inputProps,
+      proResProfile: '4444',
+      onProgress: ({ progress }) => {
+        params.onProgress(Math.max(0, Math.min(1, progress)));
+      },
+      // @ts-ignore
+      imageFormat: 'png',
+      pixelFormat: 'yuva444p10le',
+      // @ts-ignore
+      transparentBackground: true,
+      hardwareAcceleration: 'disable',
+      concurrency: 4,
+      chromiumOptions: {
+        gl: 'angle',
+        disableWebSecurity: true,
+      },
+      timeoutInMilliseconds: 300000,
+    });
+  }
+
+  private async prepareProjectForFfmpegRender(
+    project: VideoProjectInput,
+    temporaryFiles: string[],
+  ): Promise<VideoProjectInput> {
+    const scenes = project.scenes || (project as any).segments || [];
+    const motionGraphicsScenes = scenes.filter((scene: any) => this.isMotionGraphicsScene(scene));
+
+    if (motionGraphicsScenes.length === 0) {
+      return project;
+    }
+
+    console.log(`🎬 [Hybrid] Pré-renderizando ${motionGraphicsScenes.length} trecho(s) Remotion para o FFmpeg...`);
+
+    const tempRenderDir = path.resolve(app.getPath('temp'), 'avatar-ai-motion-graphics-renders');
+    this.ensureDirectoryExists(tempRenderDir);
+
+    const serveUrl = await this.ensureBundle();
+    const width = Math.max(2, Number(project.config?.width || 1080));
+    const height = Math.max(2, Number(project.config?.height || 1920));
+    const fps = Math.max(1, Number(project.config?.fps || 30));
+    const preparedScenes = [...scenes];
+
+    for (let index = 0; index < preparedScenes.length; index++) {
+      const scene = preparedScenes[index];
+      if (!this.isMotionGraphicsScene(scene)) {
+        continue;
+      }
+
+      const motionSceneIndex = motionGraphicsScenes.findIndex((candidate: any) => candidate === scene);
+      const progressStart = 12 + ((motionSceneIndex / motionGraphicsScenes.length) * 23);
+      const progressEnd = 12 + (((motionSceneIndex + 1) / motionGraphicsScenes.length) * 23);
+      const tempOutputPath = path.join(
+        tempRenderDir,
+        `${this.sanitizeFileName(project.project_title)}-motion-${String(scene?.id ?? index)}-${Date.now()}-${Math.floor(Math.random() * 1_000_000)}.mov`,
+      );
+
+      temporaryFiles.push(tempOutputPath);
+      console.log(`🎬 [Hybrid] Renderizando trecho Remotion ${String(scene?.id ?? index)} para ${tempOutputPath}`);
+
+      const code = String(scene?.motion_graphics?.code || '').trim();
+      const durationSeconds = Math.max(
+        0.1,
+        Number(scene?.end_time ?? scene?.end ?? 0) - Number(scene?.start_time ?? scene?.start ?? 0),
+      );
+      const durationInFrames = Math.max(1, Math.ceil(durationSeconds * fps));
+
+      if (!code) {
+        console.warn(`⚠️ [Hybrid] Trecho Remotion ${String(scene?.id ?? index)} sem código. Pulando pré-render.`);
+        continue;
+      }
+
+      await this.renderMotionGraphicsClipAsset({
+        serveUrl,
+        code,
+        durationInFrames,
+        fps,
+        width,
+        height,
+        outputPath: tempOutputPath,
+        onProgress: (progress) => {
+          const mappedPercent = Math.round(progressStart + ((progressEnd - progressStart) * progress));
+          this.emitProgress({
+            progress: mappedPercent / 100,
+            stage: progress >= 0.95 ? 'encoding' : 'rendering',
+            projectTitle: project.project_title,
+            percent: mappedPercent,
+          });
+        },
+      });
+
+      preparedScenes[index] = {
+        ...scene,
+        asset_local_path: tempOutputPath,
+        asset_url: tempOutputPath,
+        asset_duration: Math.max(
+          0.1,
+          Number(scene?.end_time ?? scene?.end ?? 0) - Number(scene?.start_time ?? scene?.start ?? 0),
+        ),
+      };
+    }
+
+    return {
+      ...(project as any),
+      scenes: preparedScenes,
+    };
+  }
+
   private estimateCompositionOutputSizeBytes(
     composition: { durationInFrames: number; fps: number; width: number; height: number },
     inputProps?: Record<string, unknown>,
@@ -798,6 +957,20 @@ export class VideoService extends EventEmitter {
   private hasProjectAudio(inputProps?: Record<string, unknown>): boolean {
     const project = (inputProps?.project || {}) as any;
     return Boolean(project?.audioPath || project?.config?.backgroundMusic?.src);
+  }
+
+  private cleanupTemporaryFiles(filePaths: string[]): void {
+    for (const filePath of filePaths) {
+      if (!filePath || !fs.existsSync(filePath)) {
+        continue;
+      }
+
+      try {
+        fs.unlinkSync(filePath);
+      } catch (error) {
+        console.warn(`⚠️ Não foi possível remover arquivo temporário: ${filePath}`, error);
+      }
+    }
   }
 
   private resolveOutputPath(fileName: string, estimatedBytes?: number): string {

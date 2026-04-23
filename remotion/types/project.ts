@@ -336,6 +336,23 @@ export const BackgroundConfigSchema = z.object({
 
 export type BackgroundConfig = z.infer<typeof BackgroundConfigSchema>;
 
+export const MotionGraphicsMessageSchema = z.object({
+  role: z.enum(['user', 'assistant']),
+  content: z.string(),
+  timestamp: z.number().optional(),
+  provider: z.string().optional(),
+  model: z.string().optional(),
+});
+
+export const MotionGraphicsSceneSchema = z.object({
+  code: z.string().optional(),
+  title: z.string().optional(),
+  updatedAt: z.number().optional(),
+  messages: z.array(MotionGraphicsMessageSchema).optional(),
+}).optional();
+
+export type MotionGraphicsSceneConfig = z.infer<typeof MotionGraphicsSceneSchema>;
+
 // ========================================
 // SCENE
 // ========================================
@@ -400,6 +417,9 @@ export const SceneSchema = z.object({
 
   /** Configuração da transformação visual (PiP, zoom, opacidade, posição) */
   transform: TransformConfigSchema,
+
+  /** Código e histórico do clip Remotion */
+  motion_graphics: MotionGraphicsSceneSchema,
   
   /** Silenciar áudio (usado internamente para evitar duplicação em efeitos) */
   muteAudio: z.boolean().optional(),

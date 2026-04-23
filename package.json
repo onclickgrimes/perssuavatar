@@ -20,6 +20,7 @@
     "embeddings:from-supabase": "tsx main/generate-embeddings.ts --from-supabase"
   },
   "dependencies": {
+    "@babel/standalone": "^7.29.2",
     "@deepgram/sdk": "^4.11.2",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
@@ -31,7 +32,11 @@
     "@google/generative-ai": "^0.24.1",
     "@remotion/bundler": "^4.0.392",
     "@remotion/cli": "4.0.392",
+    "@remotion/lottie": "^4.0.392",
+    "@remotion/player": "^4.0.392",
     "@remotion/renderer": "4.0.392",
+    "@remotion/shapes": "^4.0.392",
+    "@remotion/transitions": "^4.0.392",
     "@supabase/supabase-js": "^2.89.0",
     "aws-sdk": "^2.1692.0",
     "dnd-kit": "^0.0.2",

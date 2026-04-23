@@ -15,5 +15,5 @@
     "isolatedModules": true,
     "jsx": "preserve"
   },
-  "exclude": ["node_modules", "renderer/next.config.js", "app", "dist", "perssuavatar-web"]
+  "exclude": ["node_modules", "renderer/next.config.js", "app", "dist", "perssuavatar-web", "template-prompt-to-motion-graphics-saas"]
 }

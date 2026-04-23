@@ -27,6 +27,18 @@ import { MediaPanel } from './preview-step/MediaPanel';
 import { Sidebar } from './preview-step/Sidebar';
 import { TimelineToolbar } from './preview-step/TimelineToolbar';
 import { Timeline } from './preview-step/Timeline';
+import { compileMotionGraphicsCode } from './preview-step/motion-graphics/compiler';
+import type {
+  MediaPanelTab,
+  MotionGraphicsClipSummary,
+  MotionGraphicsChatMessage,
+} from './preview-step/motion-graphics/types';
+import {
+  MOTION_GRAPHICS_ASSET_TYPE,
+  getMotionGraphicsData,
+  getMotionGraphicsSegmentLabel,
+  isMotionGraphicsSegment,
+} from './preview-step/motion-graphics/types';
 
 interface PreviewStepProps {
   project: ProjectState;
@@ -69,6 +81,10 @@ const normalizeAudioMutedRanges = (rawRanges: any): TimelineKeepRange[] => {
       outputEnd: Number(range?.outputEnd || 0),
     }))
     .filter((range) => range.sourceEnd > range.sourceStart);
+};
+
+const isAudioProjectSegment = (segment: { assetType?: string } | null | undefined) => {
+  return String(segment?.assetType || '').toLowerCase().startsWith('audio');
 };
 
 interface PreviewHistoryState {
@@ -126,6 +142,22 @@ const buildInitialHistoryStore = (project: ProjectState): PreviewHistoryStore =>
   index: 0,
 });
 
+const createMotionGraphicsMessage = (
+  role: MotionGraphicsChatMessage['role'],
+  content: string,
+  extra?: Partial<Pick<MotionGraphicsChatMessage, 'provider' | 'model' | 'timestamp'>>,
+): MotionGraphicsChatMessage => {
+  const timestamp = extra?.timestamp || Date.now();
+  return {
+    id: `${role}-${timestamp}-${Math.random().toString(36).slice(2, 8)}`,
+    role,
+    content,
+    timestamp,
+    provider: extra?.provider,
+    model: extra?.model,
+  };
+};
+
 const previewHistoryReducer = (state: PreviewHistoryStore, action: PreviewHistoryAction): PreviewHistoryStore => {
   switch (action.type) {
     case 'push': {
@@ -182,15 +214,26 @@ export function PreviewStep({
   onMainAudioVolumeChange,
   onProjectConfigChange,
 }: PreviewStepProps) {
+  const legacyMotionGraphicsSnapshot = (project?.config as any)?.motionGraphics || null;
+
   // Aspect ratio
   const [selectedRatio, setSelectedRatio] = useState<string>(() => {
     return project.selectedAspectRatios?.[0] || '9:16';
   });
   const [showRatioMenu, setShowRatioMenu] = useState(false);
   const [sidebarTab, setSidebarTab] = useState<'info' | 'transitions'>('info');
+  const [mediaPanelTab, setMediaPanelTab] = useState<MediaPanelTab>('pexels');
 
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  const [motionGraphicsGenerationError, setMotionGraphicsGenerationError] = useState<string | null>(null);
+  const [isMotionGraphicsGenerating, setIsMotionGraphicsGenerating] = useState(false);
+  const [selectedMotionGraphicsSegmentId, setSelectedMotionGraphicsSegmentId] = useState<number | null>(() => {
+    const firstMotionGraphicsSegment = project.segments.find((segment) => isMotionGraphicsSegment(segment));
+    return firstMotionGraphicsSegment ? Number(firstMotionGraphicsSegment.id) : null;
+  });
+  const legacyMotionGraphicsMigrationRef = useRef(false);
 
   // ========================================
   // HISTÓRICO (UNDO / REDO)
@@ -333,6 +376,9 @@ export function PreviewStep({
   const AVAILABLE_RATIOS = Object.keys(ASPECT_RATIO_DIMENSIONS);
   const currentRatios = project.selectedAspectRatios || ['9:16'];
   const isVerticalLayout = selectedRatio === '9:16' || selectedRatio === '3:4';
+  const compositionDimensions = useMemo(() => {
+    return ASPECT_RATIO_DIMENSIONS[selectedRatio] || { width: 1080, height: 1920 };
+  }, [selectedRatio]);
   const audioSilencePaddingMs = useMemo(() => {
     return normalizeSilencePaddingMs((project?.config as any)?.audioSilencePaddingMs);
   }, [project?.config?.audioSilencePaddingMs]);
@@ -626,15 +672,14 @@ export function PreviewStep({
 
   // Preview project (sem Remotion)
   const previewProject = useMemo(() => {
-    const dims = ASPECT_RATIO_DIMENSIONS[selectedRatio] || { width: 1080, height: 1920 };
     return {
       ...project,
       segments: visualSegments,
       subtitleMode,
       config: {
         ...(project.config || {}),
-        width: dims.width,
-        height: dims.height,
+        width: compositionDimensions.width,
+        height: compositionDimensions.height,
         fps: project.config?.fps || 30,
         fitVideoToScene,
         removeAudioSilences,
@@ -646,10 +691,11 @@ export function PreviewStep({
     };
   }, [
     fitVideoToScene,
+    compositionDimensions.height,
+    compositionDimensions.width,
     project,
     removeAudioSilences,
     selectedNiche,
-    selectedRatio,
     silenceCompactionRanges,
     effectiveMutedBaseAudioRanges,
     subtitleMode,
@@ -976,6 +1022,10 @@ export function PreviewStep({
         return segment;
       }
 
+      if (isMotionGraphicsSegment(segment)) {
+        return segment;
+      }
+
       return {
         ...segment,
         assetType: isVideoMedia ? 'video_stock' : 'image_static',
@@ -1120,6 +1170,429 @@ export function PreviewStep({
   // Segmento selecionado
   const selectedSegments = project.segments.filter(s => selectedSegmentIds.includes(s.id));
   const selectedSeg = selectedSegments.length > 0 ? selectedSegments[0] : null;
+  const motionGraphicsSegments = useMemo(() => {
+    return project.segments
+      .filter((segment) => isMotionGraphicsSegment(segment))
+      .sort((left, right) => {
+        if ((left.track || 1) !== (right.track || 1)) {
+          return Number(left.track || 1) - Number(right.track || 1);
+        }
+        return Number(left.start || 0) - Number(right.start || 0);
+      });
+  }, [project.segments]);
+  const selectedMotionGraphicsSegment = useMemo(() => {
+    const explicitSelection = motionGraphicsSegments.find((segment) => Number(segment.id) === selectedMotionGraphicsSegmentId);
+    if (explicitSelection) {
+      return explicitSelection;
+    }
+
+    return selectedSeg && isMotionGraphicsSegment(selectedSeg) ? selectedSeg : null;
+  }, [motionGraphicsSegments, selectedMotionGraphicsSegmentId, selectedSeg]);
+  const selectedMotionGraphicsData = useMemo(() => {
+    return getMotionGraphicsData(selectedMotionGraphicsSegment);
+  }, [selectedMotionGraphicsSegment]);
+  const selectedMotionGraphicsCode = String(selectedMotionGraphicsData?.code || '').trim();
+  const selectedMotionGraphicsMessages = useMemo<MotionGraphicsChatMessage[]>(() => {
+    const persistedMessages = Array.isArray(selectedMotionGraphicsData?.messages)
+      ? selectedMotionGraphicsData.messages
+      : [];
+
+    return persistedMessages
+      .filter((message) => message?.role === 'user' || message?.role === 'assistant')
+      .map((message, index) => ({
+        id: `persisted-${message.role}-${Number(message.timestamp || 0)}-${index}`,
+        role: message.role,
+        content: String(message.content || ''),
+        timestamp: Number(message.timestamp || Date.now()),
+        provider: message.provider ? String(message.provider) : undefined,
+        model: message.model ? String(message.model) : undefined,
+      }));
+  }, [selectedMotionGraphicsData]);
+  const selectedMotionGraphicsCompileError = useMemo(() => {
+    if (!selectedMotionGraphicsCode) {
+      return null;
+    }
+
+    return compileMotionGraphicsCode(selectedMotionGraphicsCode).error;
+  }, [selectedMotionGraphicsCode]);
+  const remotionDurationLabel = useMemo(() => {
+    const targetDurationInSeconds = selectedMotionGraphicsSegment
+      ? Math.max(0, Number(selectedMotionGraphicsSegment.end || 0) - Number(selectedMotionGraphicsSegment.start || 0))
+      : durationInSeconds;
+    const targetDurationInFrames = Math.max(1, Math.ceil(targetDurationInSeconds * fps));
+    return `${formatTimecode(targetDurationInSeconds)} • ${targetDurationInFrames}f @ ${fps}fps`;
+  }, [durationInSeconds, fps, selectedMotionGraphicsSegment]);
+  const motionGraphicsClips = useMemo<MotionGraphicsClipSummary[]>(() => {
+    return motionGraphicsSegments.map((segment) => {
+      const motionGraphics = getMotionGraphicsData(segment);
+      return {
+        id: Number(segment.id),
+        track: Number(segment.track || 1),
+        start: Number(segment.start || 0),
+        end: Number(segment.end || 0),
+        label: getMotionGraphicsSegmentLabel(segment),
+        hasCode: Boolean(String(motionGraphics?.code || '').trim()),
+        messageCount: Array.isArray(motionGraphics?.messages) ? motionGraphics.messages.length : 0,
+        updatedAt: typeof motionGraphics?.updatedAt === 'number' ? motionGraphics.updatedAt : undefined,
+      };
+    });
+  }, [motionGraphicsSegments]);
+
+  useEffect(() => {
+    if (!selectedSeg || !isMotionGraphicsSegment(selectedSeg)) {
+      return;
+    }
+
+    const nextId = Number(selectedSeg.id);
+    setSelectedMotionGraphicsSegmentId((previous) => (previous === nextId ? previous : nextId));
+  }, [selectedSeg]);
+
+  useEffect(() => {
+    if (
+      selectedMotionGraphicsSegmentId != null
+      && motionGraphicsSegments.some((segment) => Number(segment.id) === selectedMotionGraphicsSegmentId)
+    ) {
+      return;
+    }
+
+    const fallbackSegmentId = motionGraphicsSegments.length > 0
+      ? Number(motionGraphicsSegments[0].id)
+      : null;
+
+    setSelectedMotionGraphicsSegmentId((previous) => (
+      previous === fallbackSegmentId ? previous : fallbackSegmentId
+    ));
+  }, [motionGraphicsSegments, selectedMotionGraphicsSegmentId]);
+
+  const updateMotionGraphicsSegment = useCallback((
+    segmentId: number,
+    updater: (segment: any) => any,
+    options?: { pushHistory?: boolean },
+  ) => {
+    const updated = project.segments
+      .map((segment) => {
+        if (segment.id !== segmentId) {
+          return segment;
+        }
+
+        return updater(segment);
+      })
+      .sort((left, right) => left.start - right.start);
+
+    handleSegmentsChange(updated, { pushHistory: options?.pushHistory });
+  }, [handleSegmentsChange, project.segments]);
+
+  const createMotionGraphicsSegment = useCallback((options?: {
+    motionGraphics?: any;
+    pushHistory?: boolean;
+  }) => {
+    if (!onSegmentsUpdate) {
+      return null;
+    }
+
+    const sourceReferenceSegment = selectedSeg
+      && !isAudioProjectSegment(selectedSeg)
+      && !isMotionGraphicsSegment(selectedSeg)
+      ? selectedSeg
+      : null;
+    const sourceInsertionStart = removeAudioSilences
+      ? mapOutputTimeToSourceTime(currentTimeRef.current, silenceCompactionRanges)
+      : currentTimeRef.current;
+    const nextId = project.segments.reduce((maxId, segment) => Math.max(maxId, Number(segment.id || 0)), 0) + 1;
+    const start = sourceReferenceSegment
+      ? Number(sourceReferenceSegment.start || 0)
+      : Math.max(0, Number(sourceInsertionStart || 0));
+    const duration = sourceReferenceSegment
+      ? Math.max(0.5, Number(sourceReferenceSegment.end || 0) - Number(sourceReferenceSegment.start || 0))
+      : 5;
+    const track = sourceReferenceSegment
+      ? Math.max(1, Number(sourceReferenceSegment.track || 1) + 1)
+      : Math.max(1, videoTrackCount || 1);
+    const newSegment: any = {
+      id: nextId,
+      text: '',
+      fileName: `Remotion ${nextId}`,
+      start,
+      end: start + duration,
+      speaker: 0,
+      assetType: MOTION_GRAPHICS_ASSET_TYPE,
+      track,
+      motionGraphics: options?.motionGraphics,
+    };
+
+    const updated = [...project.segments, newSegment].sort((left, right) => left.start - right.start);
+    handleSegmentsChange(updated, { pushHistory: options?.pushHistory });
+    setSelectedSegmentIds([nextId]);
+    setSelectedBaseAudioRangeKeys([]);
+    setSelectedMotionGraphicsSegmentId(nextId);
+    setMediaPanelTab('remotion');
+    return newSegment;
+  }, [
+    handleSegmentsChange,
+    onSegmentsUpdate,
+    project.segments,
+    removeAudioSilences,
+    selectedSeg,
+    silenceCompactionRanges,
+    videoTrackCount,
+  ]);
+
+  useEffect(() => {
+    if (legacyMotionGraphicsMigrationRef.current) {
+      return;
+    }
+
+    const legacyCode = String(legacyMotionGraphicsSnapshot?.code || '').trim();
+    const legacyMessages = Array.isArray(legacyMotionGraphicsSnapshot?.messages)
+      ? legacyMotionGraphicsSnapshot.messages
+      : [];
+
+    if (!legacyCode && legacyMessages.length === 0) {
+      legacyMotionGraphicsMigrationRef.current = true;
+      return;
+    }
+
+    const alreadyMigrated = motionGraphicsSegments.some((segment) => {
+      const motionGraphics = getMotionGraphicsData(segment);
+      return String(motionGraphics?.code || '').trim() === legacyCode;
+    });
+
+    legacyMotionGraphicsMigrationRef.current = true;
+
+    if (!alreadyMigrated) {
+      const nextId = project.segments.reduce((maxId, segment) => Math.max(maxId, Number(segment.id || 0)), 0) + 1;
+      const topVisualTrack = project.segments.reduce((maxTrack, segment) => {
+        if (isAudioProjectSegment(segment)) {
+          return maxTrack;
+        }
+
+        return Math.max(maxTrack, Number(segment.track || 1));
+      }, 1);
+      const migratedSegment = {
+        id: nextId,
+        text: '',
+        fileName: 'Remotion legado',
+        start: 0,
+        end: Math.max(1, originalDurationInSeconds || 5),
+        speaker: 0,
+        assetType: MOTION_GRAPHICS_ASSET_TYPE,
+        track: topVisualTrack + 1,
+        motionGraphics: {
+          code: legacyCode,
+          title: 'Remotion legado',
+          updatedAt: Date.now(),
+          messages: legacyMessages,
+        },
+      };
+
+      handleSegmentsChange(
+        [...project.segments, migratedSegment].sort((left, right) => left.start - right.start),
+        { pushHistory: true },
+      );
+      setSelectedSegmentIds([nextId]);
+      setSelectedMotionGraphicsSegmentId(nextId);
+      setMediaPanelTab('remotion');
+    }
+
+    if (onProjectConfigChange) {
+      onProjectConfigChange((prevConfig: any) => {
+        if (!prevConfig?.motionGraphics) {
+          return prevConfig || {};
+        }
+
+        const nextConfig = { ...(prevConfig || {}) };
+        delete nextConfig.motionGraphics;
+        return nextConfig;
+      });
+    }
+  }, [
+    handleSegmentsChange,
+    legacyMotionGraphicsSnapshot,
+    motionGraphicsSegments,
+    onProjectConfigChange,
+    originalDurationInSeconds,
+    project.segments,
+  ]);
+
+  const handleSelectMotionGraphicsSegment = useCallback((segmentId: number) => {
+    setSelectedMotionGraphicsSegmentId(segmentId);
+    setSelectedSegmentIds([segmentId]);
+    setSelectedBaseAudioRangeKeys([]);
+    setMediaPanelTab('remotion');
+  }, []);
+
+  const buildMotionGraphicsTitle = useCallback((segment: any, prompt: string, summary?: string) => {
+    const currentTitle = String(segment?.motionGraphics?.title || '').trim();
+    if (currentTitle) {
+      return currentTitle;
+    }
+
+    const rawTitle = String(summary || prompt || '').replace(/\s+/g, ' ').trim();
+    if (!rawTitle) {
+      return `Remotion ${segment?.id ?? ''}`.trim();
+    }
+
+    return rawTitle.length > 34
+      ? `${rawTitle.slice(0, 34).trimEnd()}...`
+      : rawTitle;
+  }, []);
+
+  const handleResetMotionGraphics = useCallback(() => {
+    if (!selectedMotionGraphicsSegment) {
+      setMotionGraphicsGenerationError(null);
+      return;
+    }
+
+    updateMotionGraphicsSegment(Number(selectedMotionGraphicsSegment.id), (segment) => ({
+      ...segment,
+      fileName: `Remotion ${segment.id}`,
+      motionGraphics: undefined,
+    }), { pushHistory: true });
+    setMotionGraphicsGenerationError(null);
+  }, [selectedMotionGraphicsSegment, updateMotionGraphicsSegment]);
+
+  const handleSubmitMotionGraphics = useCallback(async (promptText: string) => {
+    const normalizedPrompt = String(promptText || '').trim();
+    if (!normalizedPrompt || isMotionGraphicsGenerating) {
+      return false;
+    }
+
+    const generateMotionGraphics = window.electron?.videoProject?.generateMotionGraphics;
+    if (!generateMotionGraphics) {
+      setMotionGraphicsGenerationError('Geração de motion graphics não disponível neste build.');
+      return false;
+    }
+
+    const targetSegment = selectedMotionGraphicsSegment || createMotionGraphicsSegment({ pushHistory: false });
+    if (!targetSegment) {
+      return false;
+    }
+
+    const currentMotionGraphics = getMotionGraphicsData(targetSegment);
+    const persistedMessages = Array.isArray(currentMotionGraphics?.messages)
+      ? currentMotionGraphics.messages
+      : [];
+    const userMessage = createMotionGraphicsMessage('user', normalizedPrompt);
+    const conversationHistory = [
+      ...persistedMessages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        timestamp: message.timestamp,
+        provider: message.provider,
+        model: message.model,
+      })),
+      {
+        role: 'user' as const,
+        content: normalizedPrompt,
+        timestamp: userMessage.timestamp,
+      },
+    ];
+
+    setMotionGraphicsGenerationError(null);
+    setIsMotionGraphicsGenerating(true);
+    setMediaPanelTab('remotion');
+    setSelectedMotionGraphicsSegmentId(Number(targetSegment.id));
+    setSelectedSegmentIds([Number(targetSegment.id)]);
+    setSelectedBaseAudioRangeKeys([]);
+
+    try {
+      const contextSegment = selectedSeg && !isAudioProjectSegment(selectedSeg)
+        ? selectedSeg
+        : targetSegment;
+      const result = await generateMotionGraphics({
+        prompt: normalizedPrompt,
+        currentCode: String(currentMotionGraphics?.code || '').trim() || undefined,
+        conversationHistory,
+        projectContext: {
+          title: project.title,
+          description: project.description,
+          selectedRatio,
+          durationInFrames,
+          fps,
+          selectedSegment: contextSegment ? {
+            id: contextSegment.id,
+            text: contextSegment.text,
+            start: contextSegment.start,
+            end: contextSegment.end,
+            sceneDescription: contextSegment.sceneDescription,
+            imagePrompt: contextSegment.imagePrompt,
+          } : null,
+          segments: project.segments.slice(0, 12).map((segment) => ({
+            id: segment.id,
+            text: segment.text,
+            start: segment.start,
+            end: segment.end,
+            sceneDescription: segment.sceneDescription,
+            imagePrompt: segment.imagePrompt,
+          })),
+        },
+      }) as {
+        success: boolean;
+        code?: string;
+        summary?: string;
+        providerUsed?: string;
+        modelUsed?: string;
+        error?: string;
+      };
+
+      if (!result?.success || !result.code) {
+        throw new Error(result?.error || 'A IA não retornou uma composição válida.');
+      }
+
+      const assistantSummary = result.summary || (currentMotionGraphics?.code ? 'Composição atualizada.' : 'Nova composição criada.');
+      const assistantMessage = createMotionGraphicsMessage(
+        'assistant',
+        assistantSummary,
+        {
+          provider: result.providerUsed,
+          model: result.modelUsed,
+        },
+      );
+
+      updateMotionGraphicsSegment(Number(targetSegment.id), (segment) => ({
+        ...segment,
+        motionGraphics: {
+          code: result.code,
+          title: buildMotionGraphicsTitle(segment, normalizedPrompt, assistantSummary),
+          updatedAt: Date.now(),
+          messages: [
+            ...persistedMessages,
+            {
+              role: 'user' as const,
+              content: normalizedPrompt,
+              timestamp: userMessage.timestamp,
+            },
+            {
+              role: 'assistant' as const,
+              content: assistantMessage.content,
+              timestamp: assistantMessage.timestamp,
+              provider: assistantMessage.provider,
+              model: assistantMessage.model,
+            },
+          ],
+        },
+      }), { pushHistory: true });
+      return true;
+    } catch (error: any) {
+      setMotionGraphicsGenerationError(error?.message || 'Falha ao gerar a composição Remotion.');
+      return false;
+    } finally {
+      setIsMotionGraphicsGenerating(false);
+    }
+  }, [
+    buildMotionGraphicsTitle,
+    createMotionGraphicsSegment,
+    durationInFrames,
+    fps,
+    isMotionGraphicsGenerating,
+    project.description,
+    project.segments,
+    project.title,
+    selectedRatio,
+    selectedSeg,
+    selectedMotionGraphicsSegment,
+    updateMotionGraphicsSegment,
+  ]);
 
   // ========================================
   // TIMELINE: Ruler Mouse Down
@@ -1273,9 +1746,23 @@ export function PreviewStep({
                 {/* Painel de Mídia */}
                 <div className="flex-1 min-w-0 bg-filmora-panel rounded-md border border-filmora-border overflow-hidden">
                   <MediaPanel
-                    selectedRatio={selectedRatio}
-                    selectedSeg={selectedSeg}
-                    onApplyPexelsVideoToSelected={handleApplyPexelsVideoToSelected}
+                  activeTab={mediaPanelTab}
+                  onActiveTabChange={setMediaPanelTab}
+                  selectedRatio={selectedRatio}
+                  selectedSeg={selectedSeg}
+                  onApplyPexelsVideoToSelected={handleApplyPexelsVideoToSelected}
+                    remotionClips={motionGraphicsClips}
+                    selectedRemotionClipId={selectedMotionGraphicsSegment ? Number(selectedMotionGraphicsSegment.id) : null}
+                    onSelectRemotionClip={handleSelectMotionGraphicsSegment}
+                    onCreateRemotionClip={() => createMotionGraphicsSegment({ pushHistory: true })}
+                    remotionMessages={selectedMotionGraphicsMessages}
+                    onRemotionSubmit={handleSubmitMotionGraphics}
+                    isRemotionGenerating={isMotionGraphicsGenerating}
+                    remotionGenerationError={motionGraphicsGenerationError}
+                    remotionCompileError={selectedMotionGraphicsCompileError}
+                    hasRemotionCode={Boolean(selectedMotionGraphicsCode)}
+                    onResetRemotion={handleResetMotionGraphics}
+                    remotionDurationLabel={remotionDurationLabel}
                   />
                 </div>
                 
@@ -1380,6 +1867,7 @@ export function PreviewStep({
               style={{ width: `${playerPanelWidth}px` }}
             >
               <PlayerArea 
+                 previewMode="timeline"
                  subtitleMode={subtitleMode} 
                  setSubtitleMode={setSubtitleMode} 
                  setHasUnsavedChanges={setHasUnsavedChanges} 
@@ -1395,6 +1883,11 @@ export function PreviewStep({
                  fps={fps} 
                  handlePlayerReady={handlePlayerReady} 
                  getCssAspectRatio={getCssAspectRatio} 
+                 compositionWidth={compositionDimensions.width}
+                 compositionHeight={compositionDimensions.height}
+                 motionGraphicsComponent={null}
+                 motionGraphicsError={null}
+                 isMotionGraphicsCompiling={false}
                  isPlaying={isPlaying} 
                  handleTogglePlay={handleTogglePlay} 
                  handleStepForward={handleStepForward} 
@@ -1417,9 +1910,23 @@ export function PreviewStep({
                 style={{ width: `${mediaPanelWidth}px` }}
               >
                 <MediaPanel
+                  activeTab={mediaPanelTab}
+                  onActiveTabChange={setMediaPanelTab}
                   selectedRatio={selectedRatio}
                   selectedSeg={selectedSeg}
                   onApplyPexelsVideoToSelected={handleApplyPexelsVideoToSelected}
+                  remotionClips={motionGraphicsClips}
+                  selectedRemotionClipId={selectedMotionGraphicsSegment ? Number(selectedMotionGraphicsSegment.id) : null}
+                  onSelectRemotionClip={handleSelectMotionGraphicsSegment}
+                  onCreateRemotionClip={() => createMotionGraphicsSegment({ pushHistory: true })}
+                  remotionMessages={selectedMotionGraphicsMessages}
+                  onRemotionSubmit={handleSubmitMotionGraphics}
+                  isRemotionGenerating={isMotionGraphicsGenerating}
+                  remotionGenerationError={motionGraphicsGenerationError}
+                  remotionCompileError={selectedMotionGraphicsCompileError}
+                  hasRemotionCode={Boolean(selectedMotionGraphicsCode)}
+                  onResetRemotion={handleResetMotionGraphics}
+                  remotionDurationLabel={remotionDurationLabel}
                 />
               </div>
 
@@ -1429,6 +1936,7 @@ export function PreviewStep({
               {/* Player (Ocupa o centro livre) */}
               <div className="flex-1 min-w-[200px] flex flex-col h-full bg-black rounded overflow-hidden">
                 <PlayerArea 
+                   previewMode="timeline"
                    subtitleMode={subtitleMode} 
                    setSubtitleMode={setSubtitleMode} 
                    setHasUnsavedChanges={setHasUnsavedChanges} 
@@ -1444,6 +1952,11 @@ export function PreviewStep({
                    fps={fps} 
                    handlePlayerReady={handlePlayerReady} 
                    getCssAspectRatio={getCssAspectRatio} 
+                   compositionWidth={compositionDimensions.width}
+                   compositionHeight={compositionDimensions.height}
+                   motionGraphicsComponent={null}
+                   motionGraphicsError={null}
+                   isMotionGraphicsCompiling={false}
                    isPlaying={isPlaying} 
                    handleTogglePlay={handleTogglePlay} 
                    handleStepForward={handleStepForward} 

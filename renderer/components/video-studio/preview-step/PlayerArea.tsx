@@ -2,8 +2,11 @@ import React from 'react';
 import { FILMORA } from './constants';
 import { Icons } from './Icons';
 import { VideoPreviewPlayer } from '../VideoPreviewPlayer';
+import { MotionGraphicsPreviewPlayer } from './motion-graphics/MotionGraphicsPreviewPlayer';
 
 interface PlayerAreaProps {
+  previewMode: 'timeline' | 'remotion';
+
   // Subtitle mode
   subtitleMode: 'paragraph' | 'word-by-word' | 'none';
   setSubtitleMode: (mode: 'paragraph' | 'word-by-word' | 'none') => void;
@@ -24,6 +27,11 @@ interface PlayerAreaProps {
   fps: number;
   handlePlayerReady: (player: any) => void;
   getCssAspectRatio: (ratio: string) => string;
+  compositionWidth: number;
+  compositionHeight: number;
+  motionGraphicsComponent: React.ComponentType | null;
+  motionGraphicsError: string | null;
+  isMotionGraphicsCompiling: boolean;
 
   // Transport controls
   isPlaying: boolean;
@@ -43,6 +51,7 @@ interface PlayerAreaProps {
 // PLAYER AREA (Centro) — Preview + Transport Controls
 // ========================================
 export function PlayerArea({
+  previewMode,
   subtitleMode,
   setSubtitleMode,
   setHasUnsavedChanges,
@@ -58,6 +67,11 @@ export function PlayerArea({
   fps,
   handlePlayerReady,
   getCssAspectRatio,
+  compositionWidth,
+  compositionHeight,
+  motionGraphicsComponent,
+  motionGraphicsError,
+  isMotionGraphicsCompiling,
   isPlaying,
   handleTogglePlay,
   handleStepForward,
@@ -73,25 +87,41 @@ export function PlayerArea({
 
       {/* Controles de Preview (subtítulo + aspect ratio) */}
       <div className="flex items-center justify-between px-4 py-2 gap-4 flex-wrap" style={{ background: FILMORA.bgDark, borderBottom: `1px solid ${FILMORA.border}` }}>
-        {/* Modo de Legenda */}
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] uppercase tracking-wider" style={{ color: FILMORA.textDim }}>Legenda</span>
-          <div className="flex rounded overflow-hidden" style={{ border: `1px solid ${FILMORA.border}` }}>
-            {(['paragraph', 'word-by-word', 'none'] as const).map(mode => (
-              <button
-                key={mode}
-                onClick={() => { setSubtitleMode(mode); setHasUnsavedChanges(true); }}
-                className="px-2.5 py-1 text-[10px] font-medium transition-all"
-                style={{
-                  background: subtitleMode === mode ? FILMORA.accent : 'transparent',
-                  color: subtitleMode === mode ? '#000' : FILMORA.textMuted,
-                }}
-              >
-                {mode === 'paragraph' ? 'Parágrafo' : mode === 'word-by-word' ? 'Palavra' : 'Nenhuma'}
-              </button>
-            ))}
+        {previewMode === 'timeline' ? (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider" style={{ color: FILMORA.textDim }}>Legenda</span>
+            <div className="flex rounded overflow-hidden" style={{ border: `1px solid ${FILMORA.border}` }}>
+              {(['paragraph', 'word-by-word', 'none'] as const).map(mode => (
+                <button
+                  key={mode}
+                  onClick={() => { setSubtitleMode(mode); setHasUnsavedChanges(true); }}
+                  className="px-2.5 py-1 text-[10px] font-medium transition-all"
+                  style={{
+                    background: subtitleMode === mode ? FILMORA.accent : 'transparent',
+                    color: subtitleMode === mode ? '#000' : FILMORA.textMuted,
+                  }}
+                >
+                  {mode === 'paragraph' ? 'Parágrafo' : mode === 'word-by-word' ? 'Palavra' : 'Nenhuma'}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        ) : (
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] uppercase tracking-wider" style={{ color: FILMORA.textDim }}>Preview</span>
+            <div
+              className="inline-flex items-center gap-2 rounded px-2.5 py-1 text-[10px] font-medium uppercase tracking-wide"
+              style={{
+                border: `1px solid ${FILMORA.border}`,
+                background: `${FILMORA.accent}14`,
+                color: FILMORA.accent,
+              }}
+            >
+              <span>Remotion</span>
+              <span style={{ color: FILMORA.textDim }}>IA</span>
+            </div>
+          </div>
+        )}
 
         {/* Aspect Ratio */}
         <div className="flex items-center gap-2">
@@ -156,12 +186,25 @@ export function PlayerArea({
           maxHeight: '100%',
           maxWidth: '100%',
         }}>
-          <VideoPreviewPlayer
-            project={previewProject}
-            durationInFrames={durationInFrames}
-            fps={fps}
-            onPlayerReady={handlePlayerReady}
-          />
+          {previewMode === 'remotion' ? (
+            <MotionGraphicsPreviewPlayer
+              Component={motionGraphicsComponent}
+              durationInFrames={durationInFrames}
+              fps={fps}
+              compositionWidth={compositionWidth}
+              compositionHeight={compositionHeight}
+              isCompiling={isMotionGraphicsCompiling}
+              error={motionGraphicsError}
+              onPlayerReady={handlePlayerReady}
+            />
+          ) : (
+            <VideoPreviewPlayer
+              project={previewProject}
+              durationInFrames={durationInFrames}
+              fps={fps}
+              onPlayerReady={handlePlayerReady}
+            />
+          )}
         </div>
       </div>
 

@@ -4,6 +4,10 @@ import { Icons } from './Icons';
 import { SceneThumbnail } from './SceneThumbnail';
 import { AudioWaveformDisplay } from './AudioWaveformDisplay';
 import {
+  getMotionGraphicsSegmentLabel,
+  isMotionGraphicsSegment,
+} from './motion-graphics/types';
+import {
   type TimelineKeepRange,
 } from '../../../../remotion/utils/silence-compaction';
 
@@ -722,7 +726,11 @@ export function Timeline({
           style={{ left: hoveredSegment.x + 15, top: hoveredSegment.y - 90, background: FILMORA.surface, border: `1px solid ${FILMORA.border}` }}
         >
           <p className="text-xs font-bold truncate mb-0.5" style={{ color: FILMORA.text }}>Cena {hoveredSeg.id}</p>
-          <p className="text-[10px] mb-1.5 line-clamp-2" style={{ color: FILMORA.textMuted }}>{hoveredSeg.fileName || hoveredSeg.text || 'Sem texto'}</p>
+          <p className="text-[10px] mb-1.5 line-clamp-2" style={{ color: FILMORA.textMuted }}>
+            {isMotionGraphicsSegment(hoveredSeg)
+              ? getMotionGraphicsSegmentLabel(hoveredSeg)
+              : hoveredSeg.fileName || hoveredSeg.text || 'Sem texto'}
+          </p>
           <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[9px]" style={{ color: FILMORA.textDim }}>
             <span>Início:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{hoveredSeg.start.toFixed(2)}s</span>
             <span>Fim:</span><span className="text-right" style={{ color: FILMORA.textMuted }}>{hoveredSeg.end.toFixed(2)}s</span>
@@ -942,9 +950,17 @@ export function Timeline({
                   const left = computedStart * zoomLevel;
                   const width = Math.max(4, duration * zoomLevel);
                   
-                  const isVideo = (seg.assetType || '').startsWith('video');
+                  const isMotionGraphics = isMotionGraphicsSegment(seg);
+                  const isVideo = !isMotionGraphics && (seg.assetType || '').startsWith('video');
                   const isSelected = selectedSegmentIds.includes(seg.id);
-                  const trackColor = isVideo ? FILMORA.trackVideo : FILMORA.trackImage;
+                  const trackColor = isMotionGraphics
+                    ? FILMORA.trackMotionGraphics
+                    : isVideo
+                      ? FILMORA.trackVideo
+                      : FILMORA.trackImage;
+                  const clipLabel = isMotionGraphics
+                    ? getMotionGraphicsSegmentLabel(seg)
+                    : seg.fileName || seg.text || 'Mídia';
 
                   return (
                     <div
@@ -976,12 +992,45 @@ export function Timeline({
                         </>
                       )}
 
-                      <SceneThumbnail 
-                        imageUrl={seg.imageUrl || seg.asset_url} 
-                        text={seg.text} 
-                        isVideo={isVideo}
-                        duration={duration} 
-                      />
+                      {isMotionGraphics ? (
+                        <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                          <div
+                            className="absolute inset-0 opacity-70"
+                            style={{
+                              background: [
+                                'radial-gradient(circle at 20% 25%, rgba(245,158,11,0.35), transparent 36%)',
+                                'radial-gradient(circle at 78% 30%, rgba(217,70,239,0.22), transparent 34%)',
+                                'linear-gradient(135deg, rgba(245,158,11,0.18), rgba(17,24,39,0.08) 55%, rgba(56,189,248,0.14))',
+                              ].join(', '),
+                            }}
+                          />
+                          <div
+                            className="absolute inset-0 opacity-30"
+                            style={{
+                              backgroundImage: 'repeating-linear-gradient(120deg, rgba(255,255,255,0.12) 0, rgba(255,255,255,0.12) 8px, transparent 8px, transparent 18px)',
+                            }}
+                          />
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <div
+                              className="rounded-full px-2.5 py-1 text-[9px] font-semibold uppercase tracking-[0.22em]"
+                              style={{
+                                border: `1px solid ${trackColor}66`,
+                                background: 'rgba(15,23,42,0.72)',
+                                color: '#fff7ed',
+                              }}
+                            >
+                              Remotion
+                            </div>
+                          </div>
+                        </div>
+                      ) : (
+                        <SceneThumbnail 
+                          imageUrl={seg.imageUrl || seg.asset_url} 
+                          text={seg.text} 
+                          isVideo={isVideo}
+                          duration={duration} 
+                        />
+                      )}
 
                       
                       {/* === NOVA BARRA SUPERIOR (HEADER DO CLIP) === */}
@@ -991,7 +1040,7 @@ export function Timeline({
                         onMouseLeave={handleSegmentMouseLeave}
                       >
                         <span className="text-[8.5px] font-medium truncate pointer-events-none text-white/90">
-                          {seg.fileName || seg.text || 'Mídia'}
+                          {clipLabel}
                         </span>
                       </div>
                       

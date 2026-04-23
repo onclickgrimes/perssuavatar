@@ -193,6 +193,44 @@ export class DeepSeekService {
         }
     }
 
+    public async getTextCompletion(
+        messages: DeepSeekMessage[],
+        options?: { maxTokens?: number; temperature?: number }
+    ): Promise<string> {
+        try {
+            const sanitizedMessages = messages.map(msg => {
+                if (!msg.role || !['user', 'assistant', 'system', 'tool'].includes(msg.role)) {
+                    return { role: 'user' as const, content: msg.content || '' };
+                }
+
+                if (msg.role === 'tool') {
+                    return {
+                        role: 'tool' as const,
+                        content: msg.content,
+                        tool_call_id: msg.tool_call_id || 'unknown'
+                    };
+                }
+
+                return {
+                    role: msg.role,
+                    content: msg.content || ''
+                };
+            }).filter(msg => msg.content !== '' && msg.content !== null);
+
+            const response = await this.getClient().chat.completions.create({
+                model: this.model,
+                temperature: options?.temperature ?? 0.4,
+                messages: sanitizedMessages as any,
+                max_tokens: options?.maxTokens ?? 4096,
+            });
+
+            return response.choices[0]?.message?.content || '';
+        } catch (error: any) {
+            console.error("DeepSeekService getTextCompletion Error:", error);
+            throw error;
+        }
+    }
+
     /**
      * Get the current model name
      */

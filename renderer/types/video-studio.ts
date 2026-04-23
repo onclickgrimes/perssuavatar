@@ -17,6 +17,8 @@ export type {
   ChromaKeyConfig,
   BackgroundConfig,
   TimelineConfig,
+  MotionGraphicsChatPersistedMessage,
+  MotionGraphicsSegmentData,
 } from '../shared/utils/project-converter';
 
 // ========================================

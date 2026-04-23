@@ -352,6 +352,55 @@ export function registerVideoEditorHandlers(): void {
     }
   });
 
+  registerVideoEditorGuardedHandle('video-project:generate-motion-graphics', async (
+    event,
+    input: {
+      prompt: string;
+      currentCode?: string;
+      conversationHistory?: Array<{
+        role: 'user' | 'assistant';
+        content: string;
+        timestamp?: number;
+        provider?: string;
+        model?: string;
+      }>;
+      projectContext?: {
+        title?: string;
+        description?: string;
+        selectedRatio?: string;
+        durationInFrames?: number;
+        fps?: number;
+        selectedSegment?: {
+          id?: number;
+          text?: string;
+          start?: number;
+          end?: number;
+          sceneDescription?: string;
+          imagePrompt?: string;
+        } | null;
+        segments?: Array<{
+          id?: number;
+          text?: string;
+          start?: number;
+          end?: number;
+          sceneDescription?: string;
+          imagePrompt?: string;
+        }>;
+      };
+      provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
+      model?: string;
+    }
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      console.log('✨ [VideoProject] Generating Remotion motion graphics...');
+      return await videoProjectService.generateMotionGraphicsCode(input || { prompt: '' });
+    } catch (error: any) {
+      console.error('❌ [VideoProject] Motion graphics generation error:', error);
+      return { success: false, error: error.message };
+    }
+  });
+
   // Handler para converter projeto para formato Remotion
   registerVideoEditorGuardedHandle('video-project:convert-to-remotion', async (event, project: VideoProjectData) => {
     try {

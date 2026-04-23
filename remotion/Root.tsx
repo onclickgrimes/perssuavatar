@@ -29,6 +29,10 @@ import {
   defaultSyncedQuizProps,
   calculateSyncedQuizDuration,
 } from './compositions/QuizVideoSyncedComposition';
+import {
+  MotionGraphicsRuntime,
+  motionGraphicsRuntimeSchema,
+} from './compositions/MotionGraphicsRuntime';
 
 export const RemotionRoot: React.FC = () => {
   // Calcular duração do projeto de exemplo
@@ -68,6 +72,19 @@ export const RemotionRoot: React.FC = () => {
             width: project.config?.width || 1920,
             height: project.config?.height || 1080,
           };
+        }}
+      />
+
+      <Composition
+        id="MotionGraphicsRuntime"
+        component={MotionGraphicsRuntime}
+        durationInFrames={150}
+        fps={30}
+        width={1920}
+        height={1080}
+        schema={motionGraphicsRuntimeSchema}
+        defaultProps={{
+          code: '',
         }}
       />
 

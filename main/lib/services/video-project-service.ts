@@ -77,6 +77,7 @@ export interface VideoProjectSegment {
     start: number;
     end: number;
     speaker: number;
+    fileName?: string;
     emotion?: string;
     imagePrompt?: string;
     IdOfTheCharactersInTheScene?: string;
@@ -144,6 +145,18 @@ export interface VideoProjectSegment {
         fadeIn?: number;
         fadeOut?: number;
     };
+    motionGraphics?: {
+        code?: string;
+        title?: string;
+        updatedAt?: number;
+        messages?: Array<{
+            role: 'user' | 'assistant';
+            content: string;
+            timestamp?: number;
+            provider?: string;
+            model?: string;
+        }>;
+    };
     firstFrame?: string;
     animateFrame?: string;
     imagePromptTraduzido?: string;
@@ -201,6 +214,16 @@ export interface VideoProjectData {
             outputEnd: number;
         }>;
         mainAudioVolume?: number;
+        motionGraphics?: {
+            code?: string;
+            messages?: Array<{
+                role: 'user' | 'assistant';
+                content: string;
+                timestamp?: number;
+                provider?: string;
+                model?: string;
+            }>;
+        };
     };
 }
 
@@ -248,6 +271,56 @@ export interface StoryAssetsExtractionResult {
     success: boolean;
     characters: StoryCharacterReference[];
     locations: StoryLocationReference[];
+    error?: string;
+}
+
+export interface MotionGraphicsChatMessage {
+    role: 'user' | 'assistant';
+    content: string;
+    timestamp?: number;
+    provider?: string;
+    model?: string;
+}
+
+export interface MotionGraphicsProjectContext {
+    title?: string;
+    description?: string;
+    selectedRatio?: string;
+    durationInFrames?: number;
+    fps?: number;
+    selectedSegment?: {
+        id?: number;
+        text?: string;
+        start?: number;
+        end?: number;
+        sceneDescription?: string;
+        imagePrompt?: string;
+    } | null;
+    segments?: Array<{
+        id?: number;
+        text?: string;
+        start?: number;
+        end?: number;
+        sceneDescription?: string;
+        imagePrompt?: string;
+    }>;
+}
+
+export interface MotionGraphicsGenerationInput {
+    prompt: string;
+    currentCode?: string;
+    conversationHistory?: MotionGraphicsChatMessage[];
+    projectContext?: MotionGraphicsProjectContext;
+    provider?: AIProvider;
+    model?: string;
+}
+
+export interface MotionGraphicsGenerationResult {
+    success: boolean;
+    code?: string;
+    summary?: string;
+    providerUsed?: AIProvider;
+    modelUsed?: string;
     error?: string;
 }
 
@@ -842,6 +915,362 @@ export class VideoProjectService extends EventEmitter {
         }
 
         throw new Error(`Unknown provider: ${provider}`);
+    }
+
+    private resolveMotionGraphicsModel(provider: AIProvider, requestedModel?: string): string {
+        const normalizedModel = String(requestedModel || '').trim();
+        if (normalizedModel) {
+            return normalizedModel;
+        }
+
+        if (provider === 'openai') {
+            return 'gpt-5-mini-2025-08-07';
+        }
+
+        if (provider === 'deepseek') {
+            return 'deepseek-chat';
+        }
+
+        return 'gemini-3.1-pro-preview';
+    }
+
+    private normalizeTextResponseContent(content: any): string {
+        if (typeof content === 'string') {
+            return content;
+        }
+
+        if (Array.isArray(content)) {
+            return content
+                .map((part: any) => {
+                    if (typeof part === 'string') return part;
+                    if (typeof part?.text === 'string') return part.text;
+                    return '';
+                })
+                .join('');
+        }
+
+        if (content == null) {
+            return '';
+        }
+
+        return String(content);
+    }
+
+    private stripMarkdownCodeFence(rawText: string): string {
+        const trimmed = String(rawText || '').trim();
+        return trimmed
+            .replace(/^```(?:tsx?|jsx?)?\s*/i, '')
+            .replace(/\s*```$/i, '')
+            .trim();
+    }
+
+    private extractMotionGraphicsCode(rawText: string): string {
+        const stripped = this.stripMarkdownCodeFence(rawText);
+        const startIndex = stripped.search(/(?:import\s+|export\s+const\s+\w+\s*=\s*\(\s*\)\s*=>\s*\{)/);
+        const candidate = startIndex >= 0 ? stripped.slice(startIndex).trim() : stripped;
+
+        const exportMatch = candidate.match(/export\s+const\s+\w+\s*=\s*\(\s*\)\s*=>\s*\{/);
+        if (!exportMatch || exportMatch.index == null) {
+            return candidate;
+        }
+
+        const bodyStart = exportMatch.index + exportMatch[0].length;
+        let braceCount = 1;
+        let endIndex = bodyStart;
+
+        for (let index = bodyStart; index < candidate.length; index += 1) {
+            const currentChar = candidate[index];
+            if (currentChar === '{') braceCount += 1;
+            if (currentChar === '}') braceCount -= 1;
+
+            if (braceCount === 0) {
+                endIndex = index;
+                break;
+            }
+        }
+
+        if (braceCount !== 0) {
+            return candidate;
+        }
+
+        const code = candidate.slice(0, endIndex + 1).trim();
+        return code.endsWith(';') ? code : `${code};`;
+    }
+
+    private buildMotionGraphicsSystemPrompt(): string {
+        return [
+            'You are an expert React motion graphics designer working with Remotion.',
+            'Return ONLY valid TSX code. Do not include explanations, markdown fences, bullet points, or comments outside the file.',
+            '',
+            'HARD REQUIREMENTS:',
+            '- Start with import statements.',
+            '- Export exactly one component as: export const MotionGraphicsScene = () => { ... };',
+            '- Use inline styles only.',
+            '- Use AbsoluteFill as the root layout.',
+            '- The root must stay transparent by default. Do not add a fullscreen opaque background unless the user explicitly asks for one.',
+            '- If you need panels, cards, glows, or shapes, render them as child layers instead of painting the whole screen background.',
+            '- Use useCurrentFrame() and useVideoConfig() for timing and responsiveness.',
+            '- Keep the file fully self-contained and deterministic.',
+            '- Do not use fetch(), setInterval(), requestAnimationFrame(), window APIs, or browser-only side effects.',
+            '- Do not use @remotion/three or ThreeCanvas in this build.',
+            '',
+            'AVAILABLE IMPORTS:',
+            'import React, { useEffect, useMemo, useRef, useState } from "react";',
+            'import { AbsoluteFill, Img, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";',
+            'import { TransitionSeries, linearTiming, springTiming } from "@remotion/transitions";',
+            'import { fade } from "@remotion/transitions/fade";',
+            'import { slide } from "@remotion/transitions/slide";',
+            'import { Circle, Ellipse, Pie, Rect, Star, Triangle } from "@remotion/shapes";',
+            'import { Lottie } from "@remotion/lottie";',
+            '',
+            'QUALITY BAR:',
+            '- Create polished motion graphics, not placeholder wireframes.',
+            '- Define editable constants inside the component body.',
+            '- Favor strong typography, spacing, rhythm, and animation clarity.',
+            '- Respect the current duration, width, and height from useVideoConfig().',
+            '',
+            'The next user message may ask for a new composition or an edit to an existing one. When editing, preserve what still works and always return the full replacement TSX file.',
+        ].join('\n');
+    }
+
+    private buildMotionGraphicsProjectContext(projectContext?: MotionGraphicsProjectContext): string {
+        if (!projectContext) {
+            return '{}';
+        }
+
+        const normalizedContext = {
+            title: projectContext.title || '',
+            description: projectContext.description || '',
+            selectedRatio: projectContext.selectedRatio || '',
+            durationInFrames: Number(projectContext.durationInFrames || 0),
+            fps: Number(projectContext.fps || 0),
+            selectedSegment: projectContext.selectedSegment
+                ? {
+                    id: Number(projectContext.selectedSegment.id || 0),
+                    text: String(projectContext.selectedSegment.text || ''),
+                    start: Number(projectContext.selectedSegment.start || 0),
+                    end: Number(projectContext.selectedSegment.end || 0),
+                    sceneDescription: String(projectContext.selectedSegment.sceneDescription || ''),
+                    imagePrompt: String(projectContext.selectedSegment.imagePrompt || ''),
+                }
+                : null,
+            segments: Array.isArray(projectContext.segments)
+                ? projectContext.segments.slice(0, 12).map((segment) => ({
+                    id: Number(segment?.id || 0),
+                    text: String(segment?.text || ''),
+                    start: Number(segment?.start || 0),
+                    end: Number(segment?.end || 0),
+                    sceneDescription: String(segment?.sceneDescription || ''),
+                    imagePrompt: String(segment?.imagePrompt || ''),
+                }))
+                : [],
+        };
+
+        return JSON.stringify(normalizedContext, null, 2);
+    }
+
+    private buildMotionGraphicsConversationContext(
+        conversationHistory?: MotionGraphicsChatMessage[]
+    ): string {
+        const relevantMessages = Array.isArray(conversationHistory)
+            ? conversationHistory
+                .filter((message) => message?.role === 'user' || message?.role === 'assistant')
+                .slice(-6)
+            : [];
+
+        if (!relevantMessages.length) {
+            return '';
+        }
+
+        return relevantMessages
+            .map((message) => `${message.role.toUpperCase()}: ${String(message.content || '').trim()}`)
+            .join('\n');
+    }
+
+    private async getGeminiTextCompletion(
+        messages: Array<{ role: string; content: string }>,
+        modelName?: string
+    ): Promise<string> {
+        const systemInstruction =
+            messages.find((message) => message.role === 'system')?.content || 'Return plain text only.';
+
+        const contents = messages
+            .filter((message) => message.role === 'user' || message.role === 'assistant')
+            .map((message) => ({
+                role: message.role === 'user' ? 'user' : 'model',
+                parts: [{ text: String(message.content || '') }],
+            }));
+
+        const {
+            ai,
+            backend,
+            project,
+            location,
+        } = createVideoGenAIClient(null, 'next');
+
+        const resolvedModel = this.resolveGenAIModel(modelName);
+
+        if (
+            backend === 'vertex' &&
+            resolvedModel.toLowerCase().startsWith('gemini-3.1-pro-preview') &&
+            String(location || '').toLowerCase() !== 'global'
+        ) {
+            throw new Error(
+                `O modelo ${resolvedModel} no Vertex AI só está disponível em location=global. Atualize Configurações > API e Modelos > Google Cloud Location para "global".`
+            );
+        }
+
+        console.log(
+            `✨ [VideoProject] Sending text request via Google GenAI (${backend}${backend === 'vertex' ? ` ${project}/${location}` : ''}) model=${resolvedModel}...`
+        );
+
+        const response = await ai.models.generateContent({
+            model: resolvedModel,
+            contents,
+            config: {
+                systemInstruction,
+                thinkingConfig: {
+                    thinkingLevel: ThinkingLevel.HIGH,
+                },
+            } as any,
+        } as any);
+
+        const rawText = String(response?.text || '').trim();
+        if (!rawText) {
+            throw new Error('Resposta vazia recebida do Google GenAI.');
+        }
+
+        return rawText;
+    }
+
+    private async getGeminiScrapingTextCompletion(
+        messages: Array<{ role: string; content: string }>
+    ): Promise<string> {
+        const { provider, providerId, providerName } = await this.ensureGeminiScrapingProvider();
+        console.log(`🕸️ [VideoProject] Using Gemini scraping provider for motion graphics: ${providerName} (${providerId})`);
+
+        const prompt = messages
+            .map((message) => `[${String(message.role || 'user').toUpperCase()}]\n${String(message.content || '')}`)
+            .join('\n\n');
+
+        const rawResponse = await provider.sendMessageWithStream(prompt);
+        if (!rawResponse || !rawResponse.trim()) {
+            throw new Error('Gemini scraping retornou resposta vazia.');
+        }
+
+        return rawResponse;
+    }
+
+    private async requestTextWithProvider(
+        provider: AIProvider,
+        payload: any[],
+        model?: string
+    ): Promise<string> {
+        if (provider === 'gemini') {
+            return this.getGeminiTextCompletion(payload, model);
+        }
+
+        if (provider === 'gemini_scraping') {
+            return this.getGeminiScrapingTextCompletion(payload);
+        }
+
+        if (provider === 'openai') {
+            if (!this.openAIService) throw new Error('OpenAI API not configured');
+            if (model) this.openAIService.setModel(model);
+            const response = await this.openAIService.getChatCompletion(payload);
+            return this.normalizeTextResponseContent((response as any)?.content);
+        }
+
+        if (provider === 'deepseek') {
+            if (!this.deepSeekService) throw new Error('DeepSeek API not configured');
+            if (model) this.deepSeekService.setModel(model);
+            return this.deepSeekService.getTextCompletion(payload, {
+                maxTokens: 4096,
+                temperature: 0.4,
+            });
+        }
+
+        throw new Error(`Unknown provider: ${provider}`);
+    }
+
+    public async generateMotionGraphicsCode(
+        input: MotionGraphicsGenerationInput
+    ): Promise<MotionGraphicsGenerationResult> {
+        const prompt = String(input?.prompt || '').trim();
+        if (!prompt) {
+            return {
+                success: false,
+                error: 'Prompt vazio para gerar motion graphics.',
+            };
+        }
+
+        const provider = input?.provider || 'gemini';
+        const resolvedModel = this.resolveMotionGraphicsModel(provider, input?.model);
+        const currentCode = String(input?.currentCode || '').trim();
+        const conversationContext = this.buildMotionGraphicsConversationContext(input?.conversationHistory);
+        const projectContext = this.buildMotionGraphicsProjectContext(input?.projectContext);
+
+        const userPrompt = [
+            'PROJECT CONTEXT:',
+            projectContext,
+            conversationContext ? `RECENT CHAT:\n${conversationContext}` : '',
+            currentCode ? `CURRENT CODE:\n\`\`\`tsx\n${currentCode}\n\`\`\`` : 'CURRENT CODE:\nNone yet.',
+            'USER REQUEST:',
+            prompt,
+            currentCode
+                ? 'Task: Update the current Remotion motion graphics component according to the request above. Preserve what still works, but return the full replacement TSX file only.'
+                : 'Task: Create a new Remotion motion graphics component based on the request above. Return the full TSX file only.',
+        ]
+            .filter(Boolean)
+            .join('\n\n');
+
+        const payload = [
+            {
+                role: 'system',
+                content: this.buildMotionGraphicsSystemPrompt(),
+            },
+            {
+                role: 'user',
+                content: userPrompt,
+            },
+        ];
+
+        this.emit('status', {
+            stage: 'analyzing',
+            message: `Gerando motion graphics com ${provider}...`,
+        });
+
+        try {
+            const rawResponse = await this.requestTextWithProvider(provider, payload, resolvedModel);
+            const code = this.extractMotionGraphicsCode(rawResponse);
+
+            if (!code.trim()) {
+                throw new Error('A IA não retornou código para a composição.');
+            }
+
+            this.emit('status', {
+                stage: 'analyzed',
+                message: 'Motion graphics atualizado.',
+            });
+
+            return {
+                success: true,
+                code,
+                summary: currentCode
+                    ? 'Atualizei a composição Remotion com base no seu pedido.'
+                    : 'Criei uma nova composição Remotion para o preview.',
+                providerUsed: provider,
+                modelUsed: resolvedModel,
+            };
+        } catch (error: any) {
+            console.error('❌ [MotionGraphics] Generation error:', error);
+            return {
+                success: false,
+                error: error?.message || 'Falha ao gerar motion graphics.',
+                providerUsed: provider,
+                modelUsed: resolvedModel,
+            };
+        }
     }
 
     /**
@@ -3686,6 +4115,9 @@ Responda APENAS com um objeto JSON válido no formato:
                 ...(seg.transform && {
                     transform: seg.transform
                 }),
+                ...(seg.motionGraphics && {
+                    motion_graphics: seg.motionGraphics
+                }),
                 // Audio (Volume, Fade-in, Fade-out)
                 audio: {
                     volume: seg.audio?.volume ?? 1,
@@ -3884,6 +4316,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 imageUrl: segment.imageUrl,
                 sourceImageUrl: segment.sourceImageUrl,
                 generationService: segment.generationService,
+                fileName: segment.fileName,
                 asset_url: segment.asset_url,
                 chroma_key: segment.chroma_key,
                 background: segment.background,
@@ -3897,6 +4330,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 asset_duration: segment.asset_duration,
                 transform: segment.transform,
                 audio: segment.audio,
+                motionGraphics: segment.motionGraphics,
                 firstFrame: segment.firstFrame,
                 animateFrame: segment.animateFrame,
                 imagePromptTraduzido: segment.imagePromptTraduzido,
