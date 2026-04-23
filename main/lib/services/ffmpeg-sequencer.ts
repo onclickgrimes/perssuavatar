@@ -2,11 +2,35 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { execFileSync } from 'child_process';
 import ffmpeg from 'fluent-ffmpeg';
-import ffmpegInstaller from '@ffmpeg-installer/ffmpeg';
 import { VideoProjectInput } from './video-service';
 
-// Conectar ffmpeg-fluent ao instalador baixado
-ffmpeg.setFfmpegPath(ffmpegInstaller.path);
+const normalizeFfmpegBinaryPath = (binaryPath: string): string => (
+  binaryPath.includes('app.asar')
+    ? binaryPath.replace('app.asar', 'app.asar.unpacked')
+    : binaryPath
+);
+
+const resolveFfmpegBinaryPath = (): string => {
+  try {
+    const ffmpegStaticPath = require('ffmpeg-static') as string | null;
+    if (typeof ffmpegStaticPath === 'string' && ffmpegStaticPath.trim().length > 0) {
+      return normalizeFfmpegBinaryPath(ffmpegStaticPath);
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(`[FFmpeg] ffmpeg-static indisponível; tentando fallback no sequencer. Motivo: ${reason}`);
+  }
+
+  const installerFallback = require('@ffmpeg-installer/ffmpeg') as { path?: string };
+  if (installerFallback?.path) {
+    return normalizeFfmpegBinaryPath(installerFallback.path);
+  }
+
+  throw new Error('[FFmpeg] Nenhum binário do ffmpeg encontrado no sequencer.');
+};
+
+const ffmpegBinaryPath = resolveFfmpegBinaryPath();
+ffmpeg.setFfmpegPath(ffmpegBinaryPath);
 
 type GpuEncoderType = 'nvenc' | 'amf' | 'qsv' | 'cpu';
 
@@ -47,7 +71,7 @@ export class FFmpegSequencer {
       gpuEncoderDetectionPromise = (async () => {
         try {
           const encodersOutput = execFileSync(
-            ffmpegInstaller.path,
+            ffmpegBinaryPath,
             ['-hide_banner', '-encoders'],
             {
               encoding: 'utf8',
@@ -137,6 +161,7 @@ export class FFmpegSequencer {
   }
 
   private mapTransition(remotionTransition: string): string {
+    const normalizedTransition = String(remotionTransition || 'fade').trim().toLowerCase();
     const map: Record<string, string> = {
       'fade': 'fade',
       'crossfade': 'fade',
@@ -146,10 +171,18 @@ export class FFmpegSequencer {
       'slide_down': 'slidedown',
       'wipe_left': 'wipeleft',
       'wipe_right': 'wiperight',
+      'wipe_up': 'wipeup',
+      'wipe_down': 'wipedown',
       'zoom_in': 'zoomin',
+      // xfade não possui "zoom out" nativo: usa fade rápido para preservar fluidez.
+      'zoom_out': 'fadefast',
+      'blur': 'hblur',
+      'glitch': 'pixelize',
+      'zoom_transition': 'zoomin',
+      'cut': 'none',
       'none': 'none',
     };
-    return map[remotionTransition] || 'fade';
+    return map[normalizedTransition] || 'fade';
   }
 
   private parseTimemarkToSeconds(timemark?: string): number | null {
@@ -664,6 +697,10 @@ export class FFmpegSequencer {
       });
 
       let lastOutputLabel = '[v0]';
+      const rawTransitionTimelineStart = Number(params.scenes[0]?.start_time ?? params.scenes[0]?.start ?? 0);
+      const transitionTimelineStart = Number.isFinite(rawTransitionTimelineStart)
+        ? rawTransitionTimelineStart
+        : 0;
       if (params.scenes.length > 1) {
         for (let i = 1; i < params.scenes.length; i++) {
           const scene = params.scenes[i];
@@ -676,8 +713,10 @@ export class FFmpegSequencer {
           if (mappedTransition === 'none' || transitionDur <= 0 || Number.isNaN(transitionDur)) {
             filterComplex.push(`${lastOutputLabel}[v${i}]concat=n=2:v=1:a=0${newOutLabel}`);
           } else {
+            // xfade offset é relativo ao início do stream base (t=0), não ao tempo absoluto da cena.
+            const offset = Math.max(0, startTime - transitionTimelineStart);
             filterComplex.push(
-              `${lastOutputLabel}[v${i}]xfade=transition=${mappedTransition}:duration=${transitionDur}:offset=${startTime}${newOutLabel}`,
+              `${lastOutputLabel}[v${i}]xfade=transition=${mappedTransition}:duration=${transitionDur}:offset=${offset}${newOutLabel}`,
             );
           }
 
@@ -1230,13 +1269,20 @@ export class FFmpegSequencer {
       throw new Error('Nenhuma cena encontrada para o FFmpeg sequenciar.');
     }
 
-    const minTrack = sortedScenes.reduce((min: number, scene: any) => {
+    // Escolher a trilha base com foco em mídia visual.
+    // Cenários comuns têm áudio em track baixo (A1) e vídeo em track mais alto (V2+).
+    // Se usarmos o menor track global, podemos acabar sem base visual e perder transições.
+    const scenesWithVisualStream = sortedScenes.filter((scene: any) =>
+      this.shouldIncludeSceneInVisualPipeline(scene),
+    );
+    const minTrackSource = scenesWithVisualStream.length > 0 ? scenesWithVisualStream : sortedScenes;
+    const minTrack = minTrackSource.reduce((min: number, scene: any) => {
       const sceneTrack = Number(scene.track ?? 1);
       return Math.min(min, Number.isFinite(sceneTrack) ? sceneTrack : 1);
     }, Number.POSITIVE_INFINITY);
 
     const baseTrackScenes = sortedScenes.filter((scene: any) => Number(scene.track ?? 1) === minTrack);
-    const overlayScenes = sortedScenes.filter((scene: any) => Number(scene.track ?? 1) > minTrack);
+    const overlayScenes = sortedScenes.filter((scene: any) => Number(scene.track ?? 1) !== minTrack);
     const orderedOverlayScenes = overlayScenes.slice().sort((a: any, b: any) => {
       const trackA = Number(a.track ?? 1);
       const trackB = Number(b.track ?? 1);
@@ -1258,6 +1304,15 @@ export class FFmpegSequencer {
     const orderedOverlays = orderedOverlayScenes.filter((scene: any) => this.shouldIncludeSceneInVisualPipeline(scene));
     const skippedVisualSceneCount =
       (baseTrackScenes.length - scenes.length) + (orderedOverlayScenes.length - orderedOverlays.length);
+
+    const transitionSceneCount = scenes.filter((scene: any) => {
+      const transition = String(scene.transition ?? '').toLowerCase();
+      const transitionDur = Number(scene.transition_duration ?? scene.transitionDuration ?? 0);
+      return transition !== 'none' && Number.isFinite(transitionDur) && transitionDur > 0;
+    }).length;
+    console.log(
+      `[FFmpeg] Tracks: base=${minTrack} baseItems=${baseTrackScenes.length} baseVisual=${scenes.length} overlays=${orderedOverlays.length} transitions=${transitionSceneCount}`,
+    );
 
     if (scenes.length === 0) {
       scenes.push({
@@ -1537,6 +1592,10 @@ export class FFmpegSequencer {
 
       // Se houver mais de uma cena, encadeia via xfade ou concat baseando no offset exato.
       let lastOutputLabel = '[v0]';
+      const rawTransitionTimelineStart = Number(scenes[0]?.start_time ?? scenes[0]?.start ?? 0);
+      const transitionTimelineStart = Number.isFinite(rawTransitionTimelineStart)
+        ? rawTransitionTimelineStart
+        : 0;
       if (scenes.length > 1) {
         for (let i = 1; i < scenes.length; i++) {
           const scene = scenes[i];
@@ -1551,7 +1610,8 @@ export class FFmpegSequencer {
           if (mappedTransition === 'none' || transitionDur <= 0 || Number.isNaN(transitionDur)) {
             filterComplex.push(`${lastOutputLabel}[v${i}]concat=n=2:v=1:a=0${newOutLabel}`);
           } else {
-            const offset = startTime;
+            // xfade offset é relativo ao início do stream base (t=0), não ao tempo absoluto da cena.
+            const offset = Math.max(0, startTime - transitionTimelineStart);
             filterComplex.push(
               `${lastOutputLabel}[v${i}]xfade=transition=${mappedTransition}:duration=${transitionDur}:offset=${offset}${newOutLabel}`,
             );

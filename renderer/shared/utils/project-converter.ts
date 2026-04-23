@@ -126,6 +126,7 @@ export interface VideoSegment {
   assetType?: string;
   cameraMovement?: string;
   transition?: string;
+  transitionDuration?: number;
   track?: number;
   
   // Media
@@ -195,7 +196,7 @@ export interface VideoProject {
 
 const SEGMENT_PROPERTIES: (keyof VideoSegment)[] = [
   'id', 'text', 'start', 'end', 'speaker', 'words',
-  'emotion', 'imagePrompt', 'IdOfTheCharactersInTheScene', 'IdOfTheLocationInTheScene', 'sceneDescription', 'assetType', 'cameraMovement', 'transition', 'track',
+  'emotion', 'imagePrompt', 'IdOfTheCharactersInTheScene', 'IdOfTheLocationInTheScene', 'sceneDescription', 'assetType', 'cameraMovement', 'transition', 'transitionDuration', 'track',
   'imageUrl', 'sourceImageUrl', 'generationService', 'asset_url', 'asset_duration',
   'highlightWords', 'chroma_key', 'background', 'timeline_config', 'transform', 'audio',
   'firstFrame',
@@ -299,7 +300,7 @@ export function segmentToRemotionScene(seg: VideoSegment): any {
     prompt_suggestion: seg.imagePrompt || '',
     camera_movement: seg.cameraMovement || 'static',
     transition: seg.transition || 'fade',
-    transition_duration: 0.5,
+    transition_duration: Number(seg.transitionDuration ?? 0.5),
     text_overlay: {
       text: seg.text,
       position: 'bottom',

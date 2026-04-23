@@ -88,6 +88,7 @@ export interface VideoProjectSegment {
     assetType?: string;
     cameraMovement?: string;
     transition?: string;
+    transitionDuration?: number;
     track?: number;
     // Palavras individuais com timing do Deepgram
     words?: Array<{
@@ -3651,7 +3652,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 prompt_suggestion: seg.imagePrompt || '',
                 camera_movement: seg.cameraMovement || 'static',
                 transition: seg.transition || 'fade',
-                transition_duration: 0.5,
+                transition_duration: Number(seg.transitionDuration ?? 0.5),
                 text_overlay: {
                     text: seg.text,
                     position: 'bottom',
@@ -3889,6 +3890,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 assetType: segment.assetType,
                 cameraMovement: segment.cameraMovement,
                 transition: segment.transition,
+                transitionDuration: segment.transitionDuration,
                 highlightWords: segment.highlightWords,
                 timeline_config: segment.timeline_config,
                 track: segment.track,

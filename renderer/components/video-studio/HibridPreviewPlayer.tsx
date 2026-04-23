@@ -10,6 +10,9 @@ interface TimelineSegment {
   start: number;
   end: number;
   track?: number;
+  transition?: string;
+  transition_duration?: number;
+  transitionDuration?: number;
   imageUrl?: string;
   asset_url?: string;
   assetType?: string;
@@ -35,6 +38,7 @@ const AUDIO_EXT_RE = /\.(mp3|wav|ogg|m4a|aac|flac)(\?.*)?$/i;
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif|heic|heif|tiff?)(\?.*)?$/i;
 const PRELOAD_BEFORE_SEC = 1.5;
 const PRELOAD_AFTER_SEC = 3;
+const DEFAULT_TRANSITION_DURATION_SEC = 0.5;
 
 const normalizeMediaUrl = (rawUrl?: string) => {
   if (!rawUrl) return '';
@@ -99,6 +103,119 @@ const getActiveSegmentsAtTime = (segments: TimelineSegment[], timeSec: number) =
       return a.start - b.start;
     });
 };
+
+type TransitionStyles = {
+  opacity?: number;
+  transform?: string;
+  filter?: string;
+};
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
+
+const normalizeTransitionType = (transition: unknown): string => {
+  const normalized = String(transition || 'fade').trim().toLowerCase();
+  return normalized || 'fade';
+};
+
+const getTransitionDurationSec = (segment?: TimelineSegment | null): number => {
+  if (!segment) return DEFAULT_TRANSITION_DURATION_SEC;
+  const raw = Number(segment.transition_duration ?? segment.transitionDuration ?? DEFAULT_TRANSITION_DURATION_SEC);
+  if (!Number.isFinite(raw)) return DEFAULT_TRANSITION_DURATION_SEC;
+  return Math.max(0, raw);
+};
+
+const getTransitionStyles = (
+  transitionType: string,
+  progress: number,
+  isEntering: boolean,
+): TransitionStyles => {
+  const safeProgress = clamp01(progress);
+  const enterOpacity = safeProgress;
+  const exitOpacity = 1 - safeProgress;
+  const normalizedTransition = normalizeTransitionType(transitionType);
+
+  switch (normalizedTransition) {
+    case 'none':
+      return {};
+    case 'slide_left': {
+      const x = isEntering ? (1 - safeProgress) * 100 : -safeProgress * 100;
+      return { transform: `translateX(${x}%)` };
+    }
+    case 'slide_right': {
+      const x = isEntering ? (safeProgress - 1) * 100 : safeProgress * 100;
+      return { transform: `translateX(${x}%)` };
+    }
+    case 'slide_up': {
+      const y = isEntering ? (1 - safeProgress) * 100 : -safeProgress * 100;
+      return { transform: `translateY(${y}%)` };
+    }
+    case 'slide_down': {
+      const y = isEntering ? (safeProgress - 1) * 100 : safeProgress * 100;
+      return { transform: `translateY(${y}%)` };
+    }
+    case 'zoom_in': {
+      const scale = isEntering
+        ? 0.85 + (safeProgress * 0.15)
+        : 1 + (safeProgress * 0.15);
+      return {
+        opacity: isEntering ? enterOpacity : exitOpacity,
+        transform: `scale(${scale})`,
+      };
+    }
+    case 'zoom_out': {
+      const scale = isEntering
+        ? 1.15 - (safeProgress * 0.15)
+        : 1 - (safeProgress * 0.15);
+      return {
+        opacity: isEntering ? enterOpacity : exitOpacity,
+        transform: `scale(${scale})`,
+      };
+    }
+    case 'blur': {
+      const blurPx = isEntering ? (1 - safeProgress) * 12 : safeProgress * 12;
+      return {
+        opacity: isEntering ? enterOpacity : exitOpacity,
+        filter: `blur(${blurPx.toFixed(2)}px)`,
+      };
+    }
+    case 'glitch': {
+      const jitter = isEntering ? (1 - safeProgress) * 12 : safeProgress * 12;
+      const direction = isEntering ? 1 : -1;
+      return {
+        opacity: isEntering ? enterOpacity : exitOpacity,
+        transform: `translateX(${(jitter * direction).toFixed(2)}px)`,
+        filter: `hue-rotate(${(jitter * 2).toFixed(2)}deg)`,
+      };
+    }
+    case 'zoom_transition':
+      return {
+        opacity: isEntering ? enterOpacity : exitOpacity,
+        transform: isEntering
+          ? `scale(${(0.9 + safeProgress * 0.1).toFixed(4)})`
+          : `scale(${(1 + safeProgress * 0.35).toFixed(4)})`,
+      };
+    case 'fade':
+    case 'crossfade':
+    case 'wipe_left':
+    case 'wipe_right':
+    default:
+      return {
+        opacity: isEntering ? enterOpacity : exitOpacity,
+      };
+  }
+};
+
+const getSegmentRenderKey = (segment: TimelineSegment) =>
+  `${segment.id}-${segment.start}-${segment.end}-${segment.track || 1}`;
+
+interface SegmentTransitionMeta {
+  nextOnTrack: TimelineSegment | null;
+  entryTransitionType: string;
+  entryDurationSec: number;
+  exitTransitionType: string;
+  exitDurationSec: number;
+  visibleEndSec: number;
+}
 
 const getSegmentVolumeAtTime = (segment: TimelineSegment, timeSec: number) => {
   const baseVolume = clampVolume(segment.audio?.volume ?? 1);
@@ -190,17 +307,83 @@ export const HibridPreviewPlayer = React.forwardRef(({
     return Math.max(segmentsDuration, framesDuration, 0);
   }, [timelineSegments, durationInFrames, fps]);
 
+  const orderedTimelineSegments = useMemo(() => {
+    return [...timelineSegments].sort((a, b) => {
+      const trackA = a.track || 1;
+      const trackB = b.track || 1;
+      if (trackA !== trackB) return trackA - trackB;
+      if (a.start !== b.start) return a.start - b.start;
+      if (a.end !== b.end) return a.end - b.end;
+      return String(a.id).localeCompare(String(b.id));
+    });
+  }, [timelineSegments]);
+
+  const transitionMetaBySegment = useMemo(() => {
+    const byTrack = new Map<number, TimelineSegment[]>();
+    const metadata = new Map<string, SegmentTransitionMeta>();
+
+    orderedTimelineSegments.forEach((segment) => {
+      const track = segment.track || 1;
+      if (!byTrack.has(track)) {
+        byTrack.set(track, []);
+      }
+      byTrack.get(track)!.push(segment);
+    });
+
+    byTrack.forEach((trackSegments) => {
+      for (let index = 0; index < trackSegments.length; index++) {
+        const segment = trackSegments[index];
+        const previousSegment = index > 0 ? trackSegments[index - 1] : null;
+        const nextSegment = index < trackSegments.length - 1 ? trackSegments[index + 1] : null;
+        const entryTransitionType = normalizeTransitionType(segment.transition);
+        const rawEntryDurationSec = getTransitionDurationSec(segment);
+        const entryDurationSec = previousSegment && entryTransitionType !== 'none'
+          ? rawEntryDurationSec
+          : 0;
+        const exitTransitionType = normalizeTransitionType(nextSegment?.transition);
+        const rawExitDurationSec = getTransitionDurationSec(nextSegment);
+        const exitDurationSec = nextSegment && exitTransitionType !== 'none'
+          ? rawExitDurationSec
+          : 0;
+        const visibleEndSec = nextSegment
+          ? Math.max(segment.end, nextSegment.start + exitDurationSec)
+          : segment.end;
+
+        metadata.set(getSegmentRenderKey(segment), {
+          nextOnTrack: nextSegment,
+          entryTransitionType,
+          entryDurationSec,
+          exitTransitionType,
+          exitDurationSec,
+          visibleEndSec,
+        });
+      }
+    });
+
+    return metadata;
+  }, [orderedTimelineSegments]);
+
   const activeSegments = useMemo(() => {
-    return getActiveSegmentsAtTime(timelineSegments, currentTimeSec);
-  }, [timelineSegments, currentTimeSec]);
+    return getActiveSegmentsAtTime(orderedTimelineSegments, currentTimeSec);
+  }, [orderedTimelineSegments, currentTimeSec]);
+
+  const hasVisibleSegmentAtCurrentTime = useMemo(() => {
+    return orderedTimelineSegments.some((segment) => {
+      const metadata = transitionMetaBySegment.get(getSegmentRenderKey(segment));
+      const visibleEndSec = metadata?.visibleEndSec ?? segment.end;
+      return currentTimeSec >= segment.start && currentTimeSec < visibleEndSec;
+    });
+  }, [orderedTimelineSegments, transitionMetaBySegment, currentTimeSec]);
 
   // Mantém ativos + uma janela de pré-carga para reduzir tela preta no scrub rápido.
   const renderSegments = useMemo(() => {
-    return timelineSegments.filter((segment) => {
-      return segment.end > currentTimeSec - PRELOAD_BEFORE_SEC
+    return orderedTimelineSegments.filter((segment) => {
+      const metadata = transitionMetaBySegment.get(getSegmentRenderKey(segment));
+      const visibleEndSec = metadata?.visibleEndSec ?? segment.end;
+      return visibleEndSec > currentTimeSec - PRELOAD_BEFORE_SEC
         && segment.start < currentTimeSec + PRELOAD_AFTER_SEC;
     });
-  }, [timelineSegments, currentTimeSec]);
+  }, [orderedTimelineSegments, transitionMetaBySegment, currentTimeSec]);
 
   const mainAudioUrl = useMemo(() => {
     const backgroundMusicSrc = project?.config?.backgroundMusic?.src;
@@ -496,7 +679,7 @@ export const HibridPreviewPlayer = React.forwardRef(({
 
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', backgroundColor: '#000', overflow: 'hidden' }}>
-      {activeSegments.length === 0 && (
+      {!hasVisibleSegmentAtCurrentTime && (
         <div style={{ color: '#666', width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           Nenhuma Mídia Ativa
         </div>
@@ -507,27 +690,59 @@ export const HibridPreviewPlayer = React.forwardRef(({
         const sourceUrl = normalizeMediaUrl(rawUrl);
         if (!sourceUrl) return null;
 
+        const segmentKey = getSegmentRenderKey(segment);
+        const transitionMeta = transitionMetaBySegment.get(segmentKey);
+        const nextOnTrack = transitionMeta?.nextOnTrack || null;
+        const visibleEndSec = transitionMeta?.visibleEndSec ?? segment.end;
+        const isVisibleAtCurrentTime = currentTimeSec >= segment.start && currentTimeSec < visibleEndSec;
         const track = segment.track || 1;
         const transform = segment.transform || {};
         const scale = transform.scale ?? 1;
         const positionX = transform.positionX ?? 0;
         const positionY = transform.positionY ?? 0;
-        const opacity = transform.opacity ?? 1;
+        const baseOpacity = transform.opacity ?? 1;
         const isVideo = isVideoSegment(segment, sourceUrl);
         const isAudio = isAudioSegment(segment, sourceUrl);
-        const isActive = segment.start <= currentTimeSec && segment.end > currentTimeSec;
-
+        const entryDurationSec = transitionMeta?.entryDurationSec ?? 0;
+        const isInEntryTransition = entryDurationSec > 0
+          && currentTimeSec >= segment.start
+          && currentTimeSec < segment.start + entryDurationSec;
+        const entryProgress = isInEntryTransition
+          ? (currentTimeSec - segment.start) / entryDurationSec
+          : 1;
+        const exitDurationSec = transitionMeta?.exitDurationSec ?? 0;
+        const exitStartSec = nextOnTrack?.start ?? Number.POSITIVE_INFINITY;
+        const isInExitTransition = exitDurationSec > 0
+          && currentTimeSec >= exitStartSec
+          && currentTimeSec < exitStartSec + exitDurationSec;
+        const exitProgress = isInExitTransition
+          ? (currentTimeSec - exitStartSec) / exitDurationSec
+          : 0;
+        const transitionStyles = isInExitTransition
+          ? getTransitionStyles(transitionMeta?.exitTransitionType || 'fade', exitProgress, false)
+          : isInEntryTransition
+            ? getTransitionStyles(transitionMeta?.entryTransitionType || 'fade', entryProgress, true)
+            : {};
+        const transitionOpacity = transitionStyles.opacity ?? 1;
         const layerStyle: React.CSSProperties = {
           position: 'absolute',
           inset: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          transform: `translate(${positionX}%, ${positionY}%) scale(${scale})`,
+          transform: transitionStyles.transform || 'none',
           transformOrigin: 'center center',
-          opacity: isActive ? opacity : 0,
+          filter: transitionStyles.filter,
+          opacity: isVisibleAtCurrentTime ? clamp01(baseOpacity * transitionOpacity) : 0,
           zIndex: track * 10 + index,
           pointerEvents: 'none',
+          willChange: 'opacity, transform, filter',
+        };
+        const contentStyle: React.CSSProperties = {
+          width: '100%',
+          height: '100%',
+          transform: `translate(${positionX}%, ${positionY}%) scale(${scale})`,
+          transformOrigin: 'center center',
         };
 
         const mediaStyle: React.CSSProperties = {
@@ -538,19 +753,21 @@ export const HibridPreviewPlayer = React.forwardRef(({
 
         if (isVideo) {
           return (
-            <div key={`${segment.id}-${segment.start}-${segment.end}`} style={layerStyle}>
-              <video
-                ref={(element) => {
-                  layerVideoRefs.current[String(segment.id)] = element;
-                }}
-                src={sourceUrl}
-                style={mediaStyle}
-                playsInline
-                preload="auto"
-                onLoadedMetadata={(event) => {
-                  syncSegmentMedia(segment, event.currentTarget, currentTimeRef.current, isPlayingRef.current);
-                }}
-              />
+            <div key={segmentKey} style={layerStyle}>
+              <div style={contentStyle}>
+                <video
+                  ref={(element) => {
+                    layerVideoRefs.current[String(segment.id)] = element;
+                  }}
+                  src={sourceUrl}
+                  style={mediaStyle}
+                  playsInline
+                  preload="auto"
+                  onLoadedMetadata={(event) => {
+                    syncSegmentMedia(segment, event.currentTarget, currentTimeRef.current, isPlayingRef.current);
+                  }}
+                />
+              </div>
             </div>
           );
         }
@@ -558,7 +775,7 @@ export const HibridPreviewPlayer = React.forwardRef(({
         if (isAudio) {
           return (
             <audio
-              key={`${segment.id}-${segment.start}-${segment.end}`}
+              key={segmentKey}
               ref={(element) => {
                 layerAudioRefs.current[String(segment.id)] = element;
               }}
@@ -572,12 +789,14 @@ export const HibridPreviewPlayer = React.forwardRef(({
         }
 
         return (
-          <div key={`${segment.id}-${segment.start}-${segment.end}`} style={layerStyle}>
-            <img
-              src={sourceUrl}
-              style={mediaStyle}
-              alt={`Mídia ${segment.id}`}
-            />
+          <div key={segmentKey} style={layerStyle}>
+            <div style={contentStyle}>
+              <img
+                src={sourceUrl}
+                style={mediaStyle}
+                alt={`Mídia ${segment.id}`}
+              />
+            </div>
           </div>
         );
       })}
