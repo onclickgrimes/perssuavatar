@@ -472,6 +472,168 @@ export function registerVideoEditorHandlers(): void {
     }
   });
 
+  // Handler para busca de vídeos no Pexels (painel de mídia do preview)
+  registerVideoEditorGuardedHandle(
+    'video-project:search-pexels-videos',
+    async (
+      event,
+      query: string,
+      options?: {
+        limit?: number;
+        orientation?: 'landscape' | 'portrait' | 'square';
+      }
+    ) => {
+      try {
+        const normalizedQuery = String(query || '').trim();
+        if (!normalizedQuery) {
+          return { success: true, results: [] };
+        }
+
+        const normalizedLimit = Math.max(1, Math.min(Number(options?.limit ?? 24) || 24, 80));
+        const normalizedOrientation = options?.orientation;
+        const orientation = normalizedOrientation === 'landscape'
+          || normalizedOrientation === 'portrait'
+          || normalizedOrientation === 'square'
+          ? normalizedOrientation
+          : undefined;
+
+        console.log(
+          `🔎 [VideoProject] Pexels vídeos: query="${normalizedQuery}" limit=${normalizedLimit}` +
+          `${orientation ? ` orientation=${orientation}` : ''}`,
+        );
+
+        const { getPexelsService } = require('../assets');
+        const pexelsService = getPexelsService();
+
+        const response = await pexelsService.searchVideos({
+          query: normalizedQuery,
+          perPage: normalizedLimit,
+          orientation,
+          locale: 'pt-BR',
+        });
+
+        const results = response.results.map((media: any) => ({
+          ...media,
+          attribution: pexelsService.getAttribution(media),
+        }));
+
+        console.log(`✅ [VideoProject] Pexels retornou ${results.length} vídeos`);
+
+        return {
+          success: true,
+          results,
+          totalResults: response.totalResults,
+          page: response.page,
+          hasNextPage: response.hasNextPage,
+          hasPrevPage: response.hasPrevPage,
+        };
+      } catch (error: any) {
+        console.error('❌ [VideoProject] Pexels search error:', error);
+        return { success: false, error: error.message || 'Erro ao buscar vídeos no Pexels.', results: [] };
+      }
+    }
+  );
+
+  // Handler para busca paginada de mídia no Pexels (vídeos/fotos)
+  registerVideoEditorGuardedHandle(
+    'video-project:search-pexels-media',
+    async (
+      event,
+      options?: {
+        query?: string;
+        mediaType?: 'video' | 'photo';
+        page?: number;
+        perPage?: number;
+        orientation?: 'landscape' | 'portrait' | 'square';
+        size?: 'small' | 'medium' | 'large';
+      }
+    ) => {
+      try {
+        const mediaType = options?.mediaType === 'photo' ? 'photo' : 'video';
+        const normalizedQuery = String(options?.query || '').trim();
+        const page = Math.max(1, Number(options?.page || 1));
+        const perPage = Math.max(1, Math.min(Number(options?.perPage || 24), 80));
+        const normalizedOrientation = options?.orientation;
+        const orientation = normalizedOrientation === 'landscape'
+          || normalizedOrientation === 'portrait'
+          || normalizedOrientation === 'square'
+          ? normalizedOrientation
+          : undefined;
+        const normalizedSize = options?.size;
+        const size = normalizedSize === 'small'
+          || normalizedSize === 'medium'
+          || normalizedSize === 'large'
+          ? normalizedSize
+          : undefined;
+
+        const { getPexelsService } = require('../assets');
+        const pexelsService = getPexelsService();
+
+        console.log(
+          `🔎 [VideoProject] Pexels ${mediaType}: query="${normalizedQuery || '[popular/curated]'}"` +
+          ` page=${page} perPage=${perPage}` +
+          `${orientation ? ` orientation=${orientation}` : ''}` +
+          `${size ? ` size=${size}` : ''}`,
+        );
+
+        let response: {
+          results: any[];
+          page: number;
+          perPage: number;
+          totalResults: number;
+          hasNextPage: boolean;
+          hasPrevPage: boolean;
+        };
+
+        if (mediaType === 'video') {
+          if (normalizedQuery) {
+            response = await pexelsService.searchVideos({
+              query: normalizedQuery,
+              page,
+              perPage,
+              orientation,
+              size,
+              locale: 'pt-BR',
+            });
+          } else {
+            response = await pexelsService.getPopularVideos(page, perPage);
+          }
+        } else {
+          if (normalizedQuery) {
+            response = await pexelsService.searchPhotos({
+              query: normalizedQuery,
+              page,
+              perPage,
+              orientation,
+              size,
+              locale: 'pt-BR',
+            });
+          } else {
+            response = await pexelsService.getCuratedPhotos(page, perPage);
+          }
+        }
+
+        const results = response.results.map((media: any) => ({
+          ...media,
+          attribution: pexelsService.getAttribution(media),
+        }));
+
+        return {
+          success: true,
+          results,
+          page: response.page,
+          perPage: response.perPage,
+          totalResults: response.totalResults,
+          hasNextPage: response.hasNextPage,
+          hasPrevPage: response.hasPrevPage,
+        };
+      } catch (error: any) {
+        console.error('❌ [VideoProject] Pexels media search error:', error);
+        return { success: false, error: error.message || 'Erro ao buscar mídia no Pexels.', results: [] };
+      }
+    },
+  );
+
   // Handler para gerar questões de quiz com IA
   registerVideoEditorGuardedHandle('quiz:generate', async (
     event, 

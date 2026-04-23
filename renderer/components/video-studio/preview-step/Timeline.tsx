@@ -28,6 +28,16 @@ interface TimelineProps {
   onAddVideoTrack: () => void;
   onAddAudioTrack: () => void;
   onFileUploadToTrack: (type: 'video' | 'audio', trackId: number, file: File) => void;
+  onLibraryMediaDrop?: (payload: {
+    trackType: 'video' | 'audio';
+    trackId: number;
+    dropTime: number;
+    media: {
+      type?: 'video' | 'photo';
+      directUrl?: string;
+      duration?: number;
+    };
+  }) => void;
   onSegmentMove: (id: number, newStart: number, newTrack: number, options?: { pushHistory?: boolean }) => void;
   onSegmentTrim: (id: number, newStart: number, newEnd: number, options?: { pushHistory?: boolean }) => void;
   onAudioChange: (audio: any, options?: { pushHistory?: boolean }) => void;
@@ -58,6 +68,37 @@ const isAudioTimelineSegment = (segment: any): boolean => {
   return assetType.startsWith('audio');
 };
 
+interface LibraryDragMediaPayload {
+  source?: string;
+  id?: number | string;
+  type?: 'video' | 'photo';
+  directUrl?: string;
+  duration?: number;
+}
+
+const parseLibraryDragPayload = (dataTransfer: DataTransfer | null): LibraryDragMediaPayload | null => {
+  if (!dataTransfer) return null;
+
+  const rawPayload = dataTransfer.getData('application/x-video-studio-media');
+  if (!rawPayload) return null;
+
+  try {
+    const parsed = JSON.parse(rawPayload);
+    if (
+      parsed
+      && parsed.source === 'pexels-media-panel'
+      && typeof parsed.directUrl === 'string'
+      && parsed.directUrl.trim().length > 0
+    ) {
+      return parsed as LibraryDragMediaPayload;
+    }
+  } catch (_) {
+    // ignore malformed payload
+  }
+
+  return null;
+};
+
 export function Timeline({
   visualSegments,
   durationInSeconds,
@@ -77,6 +118,7 @@ export function Timeline({
   onAddVideoTrack,
   onAddAudioTrack,
   onFileUploadToTrack,
+  onLibraryMediaDrop,
   onSegmentMove,
   onSegmentTrim,
   onAudioChange,
@@ -163,6 +205,62 @@ export function Timeline({
     currentX: number;
     currentY: number;
   } | null>(null);
+  const [libraryDropTarget, setLibraryDropTarget] = useState<{ trackType: 'video' | 'audio'; trackId: number } | null>(null);
+
+  const canDropLibraryMediaOnTrack = (payload: LibraryDragMediaPayload | null, trackType: 'video' | 'audio') => {
+    if (!payload) return false;
+    if (trackType !== 'video') return false;
+    return payload.type === 'video' || payload.type === 'photo';
+  };
+
+  const handleTrackDragOver = (event: React.DragEvent, trackType: 'video' | 'audio', trackId: number) => {
+    const payload = parseLibraryDragPayload(event.dataTransfer);
+    if (!canDropLibraryMediaOnTrack(payload, trackType)) {
+      return;
+    }
+
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    setLibraryDropTarget((prev) => (
+      prev?.trackType === trackType && prev?.trackId === trackId
+        ? prev
+        : { trackType, trackId }
+    ));
+  };
+
+  const handleTrackDragLeave = (event: React.DragEvent, trackType: 'video' | 'audio', trackId: number) => {
+    const relatedTarget = event.relatedTarget as Node | null;
+    if (relatedTarget && event.currentTarget.contains(relatedTarget)) {
+      return;
+    }
+
+    setLibraryDropTarget((prev) => (
+      prev?.trackType === trackType && prev?.trackId === trackId ? null : prev
+    ));
+  };
+
+  const handleTrackDrop = (event: React.DragEvent, trackType: 'video' | 'audio', trackId: number) => {
+    const payload = parseLibraryDragPayload(event.dataTransfer);
+    if (!canDropLibraryMediaOnTrack(payload, trackType)) {
+      setLibraryDropTarget(null);
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    setLibraryDropTarget(null);
+
+    onLibraryMediaDrop?.({
+      trackType,
+      trackId,
+      dropTime: Number(currentTimeRef.current || 0),
+      media: {
+        type: payload?.type,
+        directUrl: payload?.directUrl,
+        duration: payload?.duration,
+      },
+    });
+  };
 
   const handleTimelineMouseDown = (e: React.MouseEvent) => {
     // Apenas se clicar no fundo (não em um segmento)
@@ -751,8 +849,19 @@ export function Timeline({
             {/* ====== VIDEO TRACKS ====== */}
             {Array.from({ length: videoTrackCount }).reverse().map((_, i) => {
               const trackIndex = videoTrackCount - i;
+              const isDropTarget = libraryDropTarget?.trackType === 'video' && libraryDropTarget?.trackId === trackIndex;
               return (
-              <div key={`v-${trackIndex}`} className="relative h-[60px] border-b" style={{ background: FILMORA.bgDarker, borderColor: `${FILMORA.border}60` }}>
+              <div
+                key={`v-${trackIndex}`}
+                className="relative h-[60px] border-b"
+                style={{
+                  background: isDropTarget ? 'rgba(0,229,255,0.10)' : FILMORA.bgDarker,
+                  borderColor: isDropTarget ? `${FILMORA.accent}99` : `${FILMORA.border}60`,
+                }}
+                onDragOver={(event) => handleTrackDragOver(event, 'video', trackIndex)}
+                onDragLeave={(event) => handleTrackDragLeave(event, 'video', trackIndex)}
+                onDrop={(event) => handleTrackDrop(event, 'video', trackIndex)}
+              >
                 <div className="absolute inset-0 opacity-[0.02] track-background" style={{
                   backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
                   backgroundSize: `${zoomLevel}px 100%`
@@ -867,8 +976,19 @@ export function Timeline({
             {/* ====== AUDIO TRACKS ====== */}
             {Array.from({ length: audioTrackCount }).map((_, i) => {
               const trackIndex = i + 1;
+              const isDropTarget = libraryDropTarget?.trackType === 'audio' && libraryDropTarget?.trackId === trackIndex;
               return (
-              <div key={`a-${trackIndex}`} className="relative h-[50px] border-b" style={{ background: FILMORA.bgDarker, borderColor: `${FILMORA.border}60` }}>
+              <div
+                key={`a-${trackIndex}`}
+                className="relative h-[50px] border-b"
+                style={{
+                  background: isDropTarget ? 'rgba(0,229,255,0.08)' : FILMORA.bgDarker,
+                  borderColor: isDropTarget ? `${FILMORA.accent}99` : `${FILMORA.border}60`,
+                }}
+                onDragOver={(event) => handleTrackDragOver(event, 'audio', trackIndex)}
+                onDragLeave={(event) => handleTrackDragLeave(event, 'audio', trackIndex)}
+                onDrop={(event) => handleTrackDrop(event, 'audio', trackIndex)}
+              >
                 <div className="absolute inset-0 opacity-[0.02] track-background" style={{
                   backgroundImage: `repeating-linear-gradient(90deg, white 0, white 1px, transparent 1px, transparent ${zoomLevel}px)`,
                   backgroundSize: `${zoomLevel}px 100%`

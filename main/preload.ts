@@ -487,6 +487,24 @@ const handler = {
     // Buscar vídeos no Supabase por busca semântica
     searchVideos: (query: string, limit?: number) =>
       ipcRenderer.invoke('video-project:search-videos', query, limit),
+
+    // Buscar vídeos no Pexels
+    searchPexelsVideos: (
+      query: string,
+      options?: { limit?: number; orientation?: 'landscape' | 'portrait' | 'square' }
+    ) =>
+      ipcRenderer.invoke('video-project:search-pexels-videos', query, options),
+
+    // Buscar mídia no Pexels com paginação (vídeos/fotos)
+    searchPexelsMedia: (options?: {
+      query?: string;
+      mediaType?: 'video' | 'photo';
+      page?: number;
+      perPage?: number;
+      orientation?: 'landscape' | 'portrait' | 'square';
+      size?: 'small' | 'medium' | 'large';
+    }) =>
+      ipcRenderer.invoke('video-project:search-pexels-media', options),
     
     // Listener para status do projeto
     onStatus: (callback: (data: { stage: string; message: string }) => void) => {

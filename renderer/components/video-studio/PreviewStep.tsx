@@ -23,6 +23,7 @@ import {
 } from './preview-step/constants';
 
 import { PlayerArea } from './preview-step/PlayerArea';
+import { MediaPanel } from './preview-step/MediaPanel';
 import { Sidebar } from './preview-step/Sidebar';
 import { TimelineToolbar } from './preview-step/TimelineToolbar';
 import { Timeline } from './preview-step/Timeline';
@@ -951,6 +952,97 @@ export function PreviewStep({
     setHasUnsavedChanges(true);
   }, [onProjectConfigChange]);
 
+  const handleApplyPexelsVideoToSelected = useCallback((media: {
+    type?: 'video' | 'photo';
+    directUrl?: string;
+    duration?: number;
+  }) => {
+    if (!onSegmentsUpdate || selectedSegmentIds.length === 0) return;
+
+    const targetSegmentId = selectedSegmentIds[0];
+
+    const mediaType = String(media?.type || 'video').toLowerCase();
+    const isVideoMedia = mediaType === 'video';
+    const directUrl = String(media?.directUrl || '').trim();
+    if (!directUrl) return;
+
+    const normalizedDuration = Number(media?.duration);
+    const nextAssetDuration = Number.isFinite(normalizedDuration) && normalizedDuration > 0
+      ? Number(normalizedDuration.toFixed(2))
+      : undefined;
+
+    const updated = project.segments.map((segment) => {
+      if (segment.id !== targetSegmentId) {
+        return segment;
+      }
+
+      return {
+        ...segment,
+        assetType: isVideoMedia ? 'video_stock' : 'image_static',
+        imageUrl: directUrl,
+        asset_url: directUrl,
+        generationService: 'pexels',
+        asset_duration: isVideoMedia ? (nextAssetDuration ?? segment.asset_duration) : segment.asset_duration,
+      };
+    });
+
+    handleSegmentsChange(updated);
+  }, [handleSegmentsChange, onSegmentsUpdate, project.segments, selectedSegmentIds]);
+
+  const handleLibraryMediaDropToTrack = useCallback((payload: {
+    trackType: 'video' | 'audio';
+    trackId: number;
+    dropTime: number;
+    media: {
+      type?: 'video' | 'photo';
+      directUrl?: string;
+      duration?: number;
+    };
+  }) => {
+    if (!onSegmentsUpdate) return;
+    if (payload.trackType !== 'video') return;
+
+    const mediaType = String(payload.media?.type || 'video').toLowerCase();
+    const isVideoMedia = mediaType === 'video';
+    const directUrl = String(payload.media?.directUrl || '').trim();
+    if (!directUrl) return;
+
+    const sourceInsertionStart = removeAudioSilences
+      ? mapOutputTimeToSourceTime(payload.dropTime, silenceCompactionRanges)
+      : payload.dropTime;
+    const safeStart = Math.max(0, sourceInsertionStart);
+    const rawDuration = Number(payload.media?.duration);
+    const clipDuration = isVideoMedia && Number.isFinite(rawDuration) && rawDuration > 0
+      ? Number(rawDuration.toFixed(2))
+      : 5;
+
+    const maxId = project.segments.reduce((acc, curr) => Math.max(acc, curr.id), 0);
+    const newId = maxId + 1;
+    const newSegment: any = {
+      id: newId,
+      text: '',
+      start: safeStart,
+      end: safeStart + clipDuration,
+      speaker: 0,
+      assetType: isVideoMedia ? 'video_stock' : 'image_static',
+      imageUrl: directUrl,
+      asset_url: directUrl,
+      track: payload.trackId,
+      generationService: 'pexels',
+      ...(isVideoMedia && { asset_duration: clipDuration }),
+    };
+
+    const updated = [...project.segments, newSegment].sort((left, right) => left.start - right.start);
+    handleSegmentsChange(updated);
+    setSelectedSegmentIds([newId]);
+  }, [
+    handleSegmentsChange,
+    onSegmentsUpdate,
+    project.segments,
+    removeAudioSilences,
+    silenceCompactionRanges,
+  ]);
+
   // ========================================
   // ACTIONS (SPLIT, DELETE)
   // ========================================
@@ -1179,8 +1271,12 @@ export function PreviewStep({
               {/* Linha Superior da Coluna Esquerda */}
               <div className="flex flex-1 min-h-0">
                 {/* Painel de Mídia */}
-                <div className="flex-1 overflow-y-auto filmora-scrollbar flex items-center justify-center bg-filmora-panel rounded-md border border-filmora-border text-xs text-filmora-textMuted">
-                  [ Painel de Mídia / Biblioteca ]
+                <div className="flex-1 min-w-0 bg-filmora-panel rounded-md border border-filmora-border overflow-hidden">
+                  <MediaPanel
+                    selectedRatio={selectedRatio}
+                    selectedSeg={selectedSeg}
+                    onApplyPexelsVideoToSelected={handleApplyPexelsVideoToSelected}
+                  />
                 </div>
                 
                 {/* Divisória Vertical (Mídia | Sidebar) */}
@@ -1255,6 +1351,7 @@ export function PreviewStep({
                    onAddVideoTrack={handleAddVideoTrack} 
                    onAddAudioTrack={handleAddAudioTrack} 
                    onFileUploadToTrack={handleFileUploadToTrack} 
+                   onLibraryMediaDrop={handleLibraryMediaDropToTrack}
                    onSegmentMove={handleSegmentMove} 
                    onSegmentTrim={handleSegmentTrim} 
                    onAudioChange={handleAudioChange} 
@@ -1316,10 +1413,14 @@ export function PreviewStep({
             <div className="flex flex-1 min-h-0">
               {/* Painel de Mídia */}
               <div 
-                className="shrink-0 flex items-center justify-center bg-filmora-panel rounded border border-filmora-border text-xs text-filmora-textMuted"
+                className="shrink-0 bg-filmora-panel rounded border border-filmora-border overflow-hidden"
                 style={{ width: `${mediaPanelWidth}px` }}
               >
-                [ Painel de Mídia / Biblioteca ]
+                <MediaPanel
+                  selectedRatio={selectedRatio}
+                  selectedSeg={selectedSeg}
+                  onApplyPexelsVideoToSelected={handleApplyPexelsVideoToSelected}
+                />
               </div>
 
               {/* Divisória Vertical */}
@@ -1427,6 +1528,7 @@ export function PreviewStep({
                  onAddVideoTrack={handleAddVideoTrack} 
                  onAddAudioTrack={handleAddAudioTrack} 
                  onFileUploadToTrack={handleFileUploadToTrack} 
+                 onLibraryMediaDrop={handleLibraryMediaDropToTrack}
                  onSegmentMove={handleSegmentMove} 
                  onSegmentTrim={handleSegmentTrim} 
                  onAudioChange={handleAudioChange} 
