@@ -47,6 +47,10 @@ interface TimelineDragPayload {
   url?: string;
 }
 
+const MEDIA_DRAG_MIME = 'application/x-video-studio-media';
+const MEDIA_DRAG_MIME_FALLBACK = 'text/x-video-studio-media';
+const MEDIA_DRAG_TEXT_PREFIX = 'video-studio-media:';
+
 interface MediaPanelProps {
   selectedRatio: string;
   selectedSeg: any | null;
@@ -100,6 +104,26 @@ const dedupeResults = (results: PexelsMediaResult[]): PexelsMediaResult[] => {
     unique.set(`${item.type}-${item.id}`, item);
   });
   return Array.from(unique.values());
+};
+
+const PanelIcons = {
+  pexels: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="3" y="3" width="18" height="18" rx="4" />
+      <path d="M8 8h5a3 3 0 0 1 0 6H8z" />
+    </svg>
+  ),
+  library: (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M3.5 6.5A2.5 2.5 0 0 1 6 4h5l2 2h5a2.5 2.5 0 0 1 2.5 2.5v7A2.5 2.5 0 0 1 18 18H6a2.5 2.5 0 0 1-2.5-2.5z" />
+    </svg>
+  ),
+  search: (
+    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="11" cy="11" r="7" />
+      <line x1="21" y1="21" x2="16.65" y2="16.65" />
+    </svg>
+  ),
 };
 
 export function MediaPanel({
@@ -265,8 +289,15 @@ export function MediaPanel({
     };
 
     event.dataTransfer.effectAllowed = 'copy';
-    event.dataTransfer.setData('application/x-video-studio-media', JSON.stringify(dragPayload));
-    event.dataTransfer.setData('text/plain', media.directUrl);
+    const serializedPayload = JSON.stringify(dragPayload);
+    event.dataTransfer.setData(MEDIA_DRAG_MIME, serializedPayload);
+    event.dataTransfer.setData(MEDIA_DRAG_MIME_FALLBACK, serializedPayload);
+    event.dataTransfer.setData('text/plain', `${MEDIA_DRAG_TEXT_PREFIX}${encodeURIComponent(serializedPayload)}`);
+    (window as any).__VIDEO_STUDIO_LIBRARY_DRAG_PAYLOAD__ = dragPayload;
+  }, []);
+
+  const handleMediaDragEnd = useCallback(() => {
+    delete (window as any).__VIDEO_STUDIO_LIBRARY_DRAG_PAYLOAD__;
   }, []);
 
   const currentSortOptions = activePexelsType === 'video'
@@ -282,84 +313,63 @@ export function MediaPanel({
       { value: 'resolution_desc', label: 'Resolução ↓' },
       { value: 'resolution_asc', label: 'Resolução ↑' },
     ];
+  const sourceTabs = [
+    { key: 'pexels', label: 'Pexels', icon: PanelIcons.pexels, disabled: false },
+    { key: 'library', label: 'Biblioteca', icon: PanelIcons.library, disabled: true },
+  ] as const;
 
   return (
     <div className="w-full h-full flex flex-col overflow-hidden" style={{ background: FILMORA.bgDark }}>
-      <div className="flex border-b px-1 pt-1 gap-1" style={{ borderColor: FILMORA.border }}>
-        <button
-          type="button"
-          className="rounded-t px-2 py-1 text-[10px] font-semibold uppercase tracking-wide"
-          style={{
-            color: FILMORA.accent,
-            background: `${FILMORA.accent}22`,
-            border: `1px solid ${FILMORA.border}`,
-            borderBottomColor: 'transparent',
-          }}
-        >
-          Pexels
-        </button>
-        <button
-          type="button"
-          className="rounded-t px-2 py-1 text-[10px] font-semibold uppercase tracking-wide opacity-50 cursor-not-allowed"
-          style={{
-            color: FILMORA.textDim,
-            background: `${FILMORA.surface}80`,
-            border: `1px solid ${FILMORA.border}`,
-            borderBottomColor: 'transparent',
-          }}
-          title="Em breve"
-          disabled
-        >
-          Biblioteca
-        </button>
-      </div>
-
       <div className="px-2 py-2 border-b space-y-2" style={{ borderColor: FILMORA.border }}>
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            onClick={() => setActivePexelsType('video')}
-            className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide"
-            style={{
-              background: activePexelsType === 'video' ? `${FILMORA.accent}25` : FILMORA.surface,
-              color: activePexelsType === 'video' ? FILMORA.accent : FILMORA.textMuted,
-              border: `1px solid ${activePexelsType === 'video' ? FILMORA.accent : FILMORA.border}`,
-            }}
-          >
-            Vídeos
-          </button>
-          <button
-            type="button"
-            onClick={() => setActivePexelsType('photo')}
-            className="rounded px-2 py-1 text-[10px] font-semibold uppercase tracking-wide"
-            style={{
-              background: activePexelsType === 'photo' ? `${FILMORA.accent}25` : FILMORA.surface,
-              color: activePexelsType === 'photo' ? FILMORA.accent : FILMORA.textMuted,
-              border: `1px solid ${activePexelsType === 'photo' ? FILMORA.accent : FILMORA.border}`,
-            }}
-          >
-            Imagens
-          </button>
+        <div className="flex items-start gap-1.5">
+          {sourceTabs.map((tab) => {
+            const isActive = tab.key === 'pexels';
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                disabled={tab.disabled}
+                title={tab.disabled ? 'Em breve' : undefined}
+                className="w-[58px] h-[56px] rounded-md px-1 py-1 flex flex-col items-center justify-center gap-0.5 text-[7.5px] font-semibold uppercase tracking-wide transition-colors disabled:opacity-45 disabled:cursor-not-allowed"
+                style={{
+                  background: isActive ? `${FILMORA.accent}20` : `${FILMORA.surface}85`,
+                  color: isActive ? FILMORA.accent : FILMORA.textMuted,
+                  border: `1px solid ${isActive ? FILMORA.accent : FILMORA.border}`,
+                }}
+              >
+                {tab.icon}
+                <span className="leading-tight text-center">{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
 
         <div className="flex items-center gap-1.5">
-          <input
-            type="text"
-            value={queryInput}
-            onChange={(event) => setQueryInput(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') {
-                event.preventDefault();
-                handleSearchSubmit();
-              }
-            }}
-            placeholder={`Buscar ${activePexelsType === 'video' ? 'vídeos' : 'imagens'} no Pexels...`}
-            className="flex-1 rounded px-2 py-1.5 text-[11px] outline-none border bg-black/30"
-            style={{
-              borderColor: FILMORA.border,
-              color: FILMORA.text,
-            }}
-          />
+          <div className="relative flex-1">
+            <span
+              className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none"
+              style={{ color: FILMORA.textDim }}
+            >
+              {PanelIcons.search}
+            </span>
+            <input
+              type="text"
+              value={queryInput}
+              onChange={(event) => setQueryInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') {
+                  event.preventDefault();
+                  handleSearchSubmit();
+                }
+              }}
+              placeholder={`Buscar ${activePexelsType === 'video' ? 'vídeos' : 'imagens'} no Pexels...`}
+              className="w-full rounded pl-7 pr-2 py-1.5 text-[11px] outline-none border bg-black/30"
+              style={{
+                borderColor: FILMORA.border,
+                color: FILMORA.text,
+              }}
+            />
+          </div>
           <button
             type="button"
             onClick={handleSearchSubmit}
@@ -371,7 +381,18 @@ export function MediaPanel({
           </button>
         </div>
 
-        <div className="grid grid-cols-3 gap-1.5">
+        <div className="grid grid-cols-2 gap-1.5">
+          <select
+            value={activePexelsType}
+            onChange={(event) => setActivePexelsType(event.target.value as PexelsMediaType)}
+            className="rounded px-1.5 py-1 text-[10px] bg-black/30 border outline-none"
+            style={{ borderColor: FILMORA.border, color: FILMORA.text }}
+            title="Tipo de mídia"
+          >
+            <option value="video" className="bg-[#111]">Vídeos</option>
+            <option value="photo" className="bg-[#111]">Imagens</option>
+          </select>
+
           <select
             value={orientationFilter}
             onChange={(event) => setOrientationFilter(event.target.value as PexelsOrientationFilter)}
@@ -445,7 +466,10 @@ export function MediaPanel({
         )}
 
         {!isLoadingInitial && !error && results.length > 0 && (
-          <div className="grid grid-cols-1 gap-2">
+          <div
+            className="grid gap-2"
+            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(170px, 1fr))' }}
+          >
             {results.map((media) => {
               const mediaKey = `${media.type}-${media.id}`;
               return (
@@ -453,6 +477,7 @@ export function MediaPanel({
                   key={mediaKey}
                   draggable
                   onDragStart={(event) => handleMediaDragStart(event, media)}
+                  onDragEnd={handleMediaDragEnd}
                   onMouseEnter={() => handleVideoHoverStart(media)}
                   onMouseLeave={() => handleVideoHoverEnd(media)}
                   className="rounded border overflow-hidden cursor-grab active:cursor-grabbing"

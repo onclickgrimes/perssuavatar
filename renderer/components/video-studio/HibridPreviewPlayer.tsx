@@ -748,7 +748,8 @@ export const HibridPreviewPlayer = React.forwardRef(({
         const mediaStyle: React.CSSProperties = {
           width: '100%',
           height: '100%',
-          objectFit: fitVideoToScene ? 'cover' : 'contain',
+          objectFit: 'contain',
+          backgroundColor: '#000',
         };
 
         if (isVideo) {

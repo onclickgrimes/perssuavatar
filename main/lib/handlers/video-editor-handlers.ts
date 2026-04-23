@@ -585,6 +585,44 @@ export function registerVideoEditorHandlers(): void {
           hasPrevPage: boolean;
         };
 
+        const inferOrientationFromDimensions = (width: number, height: number): 'landscape' | 'portrait' | 'square' | null => {
+          if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+            return null;
+          }
+          const ratio = width / height;
+          if (ratio > 1.12) return 'landscape';
+          if (ratio < 0.88) return 'portrait';
+          return 'square';
+        };
+
+        const matchesOrientation = (media: any) => {
+          if (!orientation) return true;
+          const mediaOrientation = inferOrientationFromDimensions(
+            Number(media?.width || 0),
+            Number(media?.height || 0),
+          );
+          return mediaOrientation === orientation;
+        };
+
+        const classifySizeFromDimensions = (width: number, height: number): 'small' | 'medium' | 'large' | null => {
+          if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
+            return null;
+          }
+          const maxSide = Math.max(width, height);
+          if (maxSide >= 1920) return 'large';
+          if (maxSide >= 1280) return 'medium';
+          return 'small';
+        };
+
+        const matchesSize = (media: any) => {
+          if (!size) return true;
+          const mediaSize = classifySizeFromDimensions(
+            Number(media?.width || 0),
+            Number(media?.height || 0),
+          );
+          return mediaSize === size;
+        };
+
         if (mediaType === 'video') {
           if (normalizedQuery) {
             response = await pexelsService.searchVideos({
@@ -613,7 +651,11 @@ export function registerVideoEditorHandlers(): void {
           }
         }
 
-        const results = response.results.map((media: any) => ({
+        const filteredResults = response.results.filter((media: any) => (
+          matchesOrientation(media) && matchesSize(media)
+        ));
+
+        const results = filteredResults.map((media: any) => ({
           ...media,
           attribution: pexelsService.getAttribution(media),
         }));

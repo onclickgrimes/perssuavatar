@@ -1207,9 +1207,9 @@ export function PreviewStep({
   // ========================================
   // ESTADOS E LÓGICA DE RESIZE DOS PAINÉIS
   // ========================================
-  const [sidebarWidth, setSidebarWidth] = useState(350);
-  const [mediaPanelWidth, setMediaPanelWidth] = useState(280);
-  const [playerPanelWidth, setPlayerPanelWidth] = useState(400);
+  const [sidebarWidth, setSidebarWidth] = useState(340);
+  const [mediaPanelWidth, setMediaPanelWidth] = useState(320);
+  const [playerPanelWidth, setPlayerPanelWidth] = useState(360);
   const [timelineHeight, setTimelineHeight] = useState(300);
 
   // Função genérica para lidar com o arraste das divisórias
@@ -1280,7 +1280,7 @@ export function PreviewStep({
                 </div>
                 
                 {/* Divisória Vertical (Mídia | Sidebar) */}
-                <Divider onMouseDown={(e) => startResize(e, setSidebarWidth, true, true, 250, 600)} />
+                <Divider onMouseDown={(e) => startResize(e, setSidebarWidth, true, true, 220, 680)} />
 
                 {/* Sidebar */}
                 <div 
@@ -1372,7 +1372,7 @@ export function PreviewStep({
             </div>
 
             {/* Divisória Vertical (Esquerda | Player) */}
-            <Divider onMouseDown={(e) => startResize(e, setPlayerPanelWidth, true, true, 300, 800)} />
+            <Divider onMouseDown={(e) => startResize(e, setPlayerPanelWidth, true, true, 220, 900)} />
 
             {/* COLUNA DIREITA (Player) */}
             <div 
@@ -1424,10 +1424,10 @@ export function PreviewStep({
               </div>
 
               {/* Divisória Vertical */}
-              <Divider onMouseDown={(e) => startResize(e, setMediaPanelWidth, true, false, 200, 500)} />
+              <Divider onMouseDown={(e) => startResize(e, setMediaPanelWidth, true, false, 180, 1100)} />
 
               {/* Player (Ocupa o centro livre) */}
-              <div className="flex-1 min-w-[300px] flex flex-col h-full bg-black rounded overflow-hidden">
+              <div className="flex-1 min-w-[200px] flex flex-col h-full bg-black rounded overflow-hidden">
                 <PlayerArea 
                    subtitleMode={subtitleMode} 
                    setSubtitleMode={setSubtitleMode} 
@@ -1457,7 +1457,7 @@ export function PreviewStep({
               </div>
 
               {/* Divisória Vertical */}
-              <Divider onMouseDown={(e) => startResize(e, setSidebarWidth, true, true, 250, 600)} />
+              <Divider onMouseDown={(e) => startResize(e, setSidebarWidth, true, true, 220, 680)} />
 
               {/* Sidebar */}
               <div 

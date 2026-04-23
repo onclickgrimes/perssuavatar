@@ -76,24 +76,67 @@ interface LibraryDragMediaPayload {
   duration?: number;
 }
 
+const MEDIA_DRAG_MIME = 'application/x-video-studio-media';
+const MEDIA_DRAG_MIME_FALLBACK = 'text/x-video-studio-media';
+const MEDIA_DRAG_TEXT_PREFIX = 'video-studio-media:';
+
+const isValidLibraryPayload = (payload: any): payload is LibraryDragMediaPayload => {
+  return Boolean(
+    payload
+    && payload.source === 'pexels-media-panel'
+    && typeof payload.directUrl === 'string'
+    && payload.directUrl.trim().length > 0,
+  );
+};
+
+const getGlobalLibraryDragPayload = (): LibraryDragMediaPayload | null => {
+  const globalPayload = (window as any).__VIDEO_STUDIO_LIBRARY_DRAG_PAYLOAD__;
+  if (isValidLibraryPayload(globalPayload)) {
+    return globalPayload;
+  }
+  return null;
+};
+
 const parseLibraryDragPayload = (dataTransfer: DataTransfer | null): LibraryDragMediaPayload | null => {
-  if (!dataTransfer) return null;
+  if (!dataTransfer) {
+    return getGlobalLibraryDragPayload();
+  }
 
-  const rawPayload = dataTransfer.getData('application/x-video-studio-media');
-  if (!rawPayload) return null;
+  const rawCandidates = [
+    dataTransfer.getData(MEDIA_DRAG_MIME),
+    dataTransfer.getData(MEDIA_DRAG_MIME_FALLBACK),
+  ].filter(Boolean);
 
-  try {
-    const parsed = JSON.parse(rawPayload);
-    if (
-      parsed
-      && parsed.source === 'pexels-media-panel'
-      && typeof parsed.directUrl === 'string'
-      && parsed.directUrl.trim().length > 0
-    ) {
-      return parsed as LibraryDragMediaPayload;
+  const plainTextPayload = dataTransfer.getData('text/plain');
+  if (plainTextPayload && plainTextPayload.startsWith(MEDIA_DRAG_TEXT_PREFIX)) {
+    const encodedPayload = plainTextPayload.slice(MEDIA_DRAG_TEXT_PREFIX.length);
+    try {
+      rawCandidates.push(decodeURIComponent(encodedPayload));
+    } catch (_) {
+      // ignore malformed encoded payload
     }
-  } catch (_) {
-    // ignore malformed payload
+  }
+
+  for (const rawPayload of rawCandidates) {
+    try {
+      const parsed = JSON.parse(rawPayload);
+      if (isValidLibraryPayload(parsed)) {
+        return parsed;
+      }
+    } catch (_) {
+      // ignore malformed payload
+    }
+  }
+
+  const globalFallback = getGlobalLibraryDragPayload();
+  if (globalFallback) return globalFallback;
+
+  if (plainTextPayload && /^https?:\/\//i.test(plainTextPayload.trim())) {
+    return {
+      source: 'pexels-media-panel',
+      type: 'video',
+      directUrl: plainTextPayload.trim(),
+    };
   }
 
   return null;
@@ -207,15 +250,29 @@ export function Timeline({
   } | null>(null);
   const [libraryDropTarget, setLibraryDropTarget] = useState<{ trackType: 'video' | 'audio'; trackId: number } | null>(null);
 
-  const canDropLibraryMediaOnTrack = (payload: LibraryDragMediaPayload | null, trackType: 'video' | 'audio') => {
-    if (!payload) return false;
+  const hasLibraryDragType = (dataTransfer: DataTransfer | null) => {
+    if (!dataTransfer) return false;
+    const types = Array.from(dataTransfer.types || []);
+    return (
+      types.includes(MEDIA_DRAG_MIME)
+      || types.includes(MEDIA_DRAG_MIME_FALLBACK)
+      || types.includes('text/plain')
+    );
+  };
+
+  const canDropLibraryMediaOnTrack = (
+    payload: LibraryDragMediaPayload | null,
+    trackType: 'video' | 'audio',
+    dataTransfer?: DataTransfer | null,
+  ) => {
     if (trackType !== 'video') return false;
+    if (!payload) return hasLibraryDragType(dataTransfer || null);
     return payload.type === 'video' || payload.type === 'photo';
   };
 
   const handleTrackDragOver = (event: React.DragEvent, trackType: 'video' | 'audio', trackId: number) => {
     const payload = parseLibraryDragPayload(event.dataTransfer);
-    if (!canDropLibraryMediaOnTrack(payload, trackType)) {
+    if (!canDropLibraryMediaOnTrack(payload, trackType, event.dataTransfer)) {
       return;
     }
 
@@ -241,7 +298,7 @@ export function Timeline({
 
   const handleTrackDrop = (event: React.DragEvent, trackType: 'video' | 'audio', trackId: number) => {
     const payload = parseLibraryDragPayload(event.dataTransfer);
-    if (!canDropLibraryMediaOnTrack(payload, trackType)) {
+    if (!canDropLibraryMediaOnTrack(payload, trackType, event.dataTransfer)) {
       setLibraryDropTarget(null);
       return;
     }
