@@ -2357,6 +2357,7 @@ export function ImagesStep({
   const [batchResults, setBatchResults] = useState<Record<number, 'success' | 'error' | 'skipped'>>({});
   const [currentErrorHighlightIndex, setCurrentErrorHighlightIndex] = useState(0);
   const batchCancelledRef = useRef(false);
+  const batchAnimateFrameCancelledRef = useRef(false);
   const activeServicesRef = useRef<Record<number, string>>({});
   const generatingSegmentsRef = useRef<Set<number>>(new Set());
   const pendingProgressMessageRef = useRef<string | null>(null);
@@ -3662,6 +3663,11 @@ export function ImagesStep({
     window.electron?.videoProject?.cancelVertexQueue?.().catch?.(() => {});
   }, []);
 
+  const handleBatchRegenerateAnimateFramesStop = useCallback(() => {
+    if (!batchRegeneratingAnimateFrame) return;
+    batchAnimateFrameCancelledRef.current = true;
+  }, [batchRegeneratingAnimateFrame]);
+
   const handleBatchRegenerateAnimateFrames = async () => {
     if (batchProcessing || batchRegeneratingAnimateFrame) return;
 
@@ -3680,6 +3686,7 @@ export function ImagesStep({
     }
 
     setBatchRegeneratingAnimateFrame(true);
+    batchAnimateFrameCancelledRef.current = false;
     setBatchResults({});
     setCurrentErrorHighlightIndex(0);
 
@@ -3687,9 +3694,15 @@ export function ImagesStep({
     let successCount = 0;
     let failedCount = 0;
     let skippedNoImageCount = 0;
+    let wasCancelled = false;
 
     try {
       for (const segment of targetSegments) {
+        if (batchAnimateFrameCancelledRef.current) {
+          wasCancelled = true;
+          break;
+        }
+
         const firstFrameImagePath = getSegmentFirstFrameImagePath(segment);
         if (!firstFrameImagePath) {
           skippedNoImageCount++;
@@ -3699,8 +3712,17 @@ export function ImagesStep({
 
         let ok = false;
         for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+          if (batchAnimateFrameCancelledRef.current) {
+            wasCancelled = true;
+            break;
+          }
           ok = await handleRegenerateAnimateFramePrompt(segment, { silent: true });
           if (ok) break;
+        }
+
+        if (batchAnimateFrameCancelledRef.current) {
+          wasCancelled = true;
+          break;
         }
 
         if (ok) {
@@ -3713,15 +3735,19 @@ export function ImagesStep({
       }
     } finally {
       setBatchRegeneratingAnimateFrame(false);
+      batchAnimateFrameCancelledRef.current = false;
     }
 
+    const processedCount = successCount + failedCount + skippedNoImageCount;
+    const notProcessedCount = Math.max(0, targetSegments.length - processedCount);
     alert([
-      'Regeneração de animateFrame concluída.',
+      wasCancelled ? 'Regeneração de animateFrame interrompida.' : 'Regeneração de animateFrame concluída.',
       `Cenas alvo: ${targetSegments.length}`,
       `Tentativas por cena: ${maxAttempts}`,
       `Sucesso: ${successCount}`,
       `Falhas: ${failedCount}`,
       `Sem imagem do firstFrame: ${skippedNoImageCount}`,
+      ...(wasCancelled ? [`Não processadas após parar: ${notProcessedCount}`] : []),
     ].join('\n'));
   };
 
@@ -4094,26 +4120,36 @@ export function ImagesStep({
           )}
 
           <button
-            onClick={handleBatchRegenerateAnimateFrames}
+            onClick={batchRegeneratingAnimateFrame ? handleBatchRegenerateAnimateFramesStop : handleBatchRegenerateAnimateFrames}
             disabled={
-              batchProcessing
-              || batchRegeneratingAnimateFrame
-              || selectedFilteredScenesCount === 0
-              || selectedFilteredVideoFrameAnimateCount === 0
+              batchRegeneratingAnimateFrame
+                ? false
+                : (
+                  batchProcessing
+                  || selectedFilteredScenesCount === 0
+                  || selectedFilteredVideoFrameAnimateCount === 0
+                )
             }
             className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all shadow-lg ${
-              batchProcessing
-              || batchRegeneratingAnimateFrame
-              || selectedFilteredScenesCount === 0
-              || selectedFilteredVideoFrameAnimateCount === 0
-                ? 'bg-white/10 border-white/10 text-white/30 cursor-not-allowed'
-                : 'bg-emerald-500/25 hover:bg-emerald-500/35 border-emerald-500/40 text-emerald-100'
+              batchRegeneratingAnimateFrame
+                ? 'bg-red-500/30 hover:bg-red-500/40 border-red-500/50 text-red-100'
+                : (
+                  batchProcessing
+                  || selectedFilteredScenesCount === 0
+                  || selectedFilteredVideoFrameAnimateCount === 0
+                )
+                  ? 'bg-white/10 border-white/10 text-white/30 cursor-not-allowed'
+                  : 'bg-emerald-500/25 hover:bg-emerald-500/35 border-emerald-500/40 text-emerald-100'
             }`}
-            title={selectedFilteredVideoFrameAnimateCount === 0
-              ? 'Selecione ao menos uma cena com assetType video_frame_animate'
-              : `Regenerar animateFrame de ${selectedFilteredVideoFrameAnimateCount} cena(s) selecionada(s)`}
+            title={
+              batchRegeneratingAnimateFrame
+                ? 'Parar regeneração de animateFrame em lote'
+                : selectedFilteredVideoFrameAnimateCount === 0
+                  ? 'Selecione ao menos uma cena com assetType video_frame_animate'
+                  : `Regenerar animateFrame de ${selectedFilteredVideoFrameAnimateCount} cena(s) selecionada(s)`
+            }
           >
-            {batchRegeneratingAnimateFrame ? '⟳' : '🔁'}
+            {batchRegeneratingAnimateFrame ? '⏹' : '🔁'}
           </button>
           
           {/* Botão de Configurações em Lote */}
