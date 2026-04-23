@@ -120,6 +120,7 @@ export interface VideoProjectInput {
     fps?: number;
     backgroundColor?: string;
     removeAudioSilences?: boolean;
+    audioSilencePaddingMs?: number;
     audioKeepRanges?: Array<{
       sourceStart: number;
       sourceEnd: number;

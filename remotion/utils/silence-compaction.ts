@@ -21,10 +21,18 @@ type TimelineLikeSegment = {
 };
 
 const EPSILON = 0.0001;
+export const MIN_SILENCE_PADDING_MS = 0;
+export const MAX_SILENCE_PADDING_MS = 1000;
+export const DEFAULT_SILENCE_PADDING_MS = 50;
 
 const toFiniteNumber = (value: unknown, fallback = 0): number => {
   const numericValue = Number(value);
   return Number.isFinite(numericValue) ? numericValue : fallback;
+};
+
+export const normalizeSilencePaddingMs = (value: unknown): number => {
+  const normalizedValue = Math.round(toFiniteNumber(value, DEFAULT_SILENCE_PADDING_MS));
+  return Math.min(MAX_SILENCE_PADDING_MS, Math.max(MIN_SILENCE_PADDING_MS, normalizedValue));
 };
 
 const isAudioSegment = (segment: TimelineLikeSegment): boolean => {
@@ -97,9 +105,15 @@ export function buildSilenceCompactionRanges<T extends TimelineLikeSegment>(
      * Mantemos true por padrão para preservar o comportamento legado.
      */
     mergeAdjacentRanges?: boolean;
+    /**
+     * Margem em milissegundos preservada antes/depois de cada trecho narrado.
+     * Ajuda a evitar cortes bruscos de fonemas no início/fim da fala.
+     */
+    preservePaddingMs?: number;
   },
 ): TimelineKeepRange[] {
   const mergeAdjacentRanges = options?.mergeAdjacentRanges ?? true;
+  const preservePaddingSec = normalizeSilencePaddingMs(options?.preservePaddingMs) / 1000;
   const referenceSegments = getTimelineReferenceSegments(segments);
   if (referenceSegments.length === 0) {
     return [];
@@ -108,8 +122,14 @@ export function buildSilenceCompactionRanges<T extends TimelineLikeSegment>(
   const mergedRanges: Array<{ sourceStart: number; sourceEnd: number }> = [];
 
   referenceSegments.forEach((segment) => {
-    const sourceStart = Math.max(0, toFiniteNumber(segment.start));
-    const sourceEnd = Math.max(sourceStart, toFiniteNumber(segment.end));
+    const originalStart = Math.max(0, toFiniteNumber(segment.start));
+    const originalEnd = Math.max(originalStart, toFiniteNumber(segment.end));
+    if (originalEnd - originalStart <= EPSILON) {
+      return;
+    }
+
+    const sourceStart = Math.max(0, originalStart - preservePaddingSec);
+    const sourceEnd = Math.max(sourceStart, originalEnd + preservePaddingSec);
 
     if (sourceEnd - sourceStart <= EPSILON) {
       return;

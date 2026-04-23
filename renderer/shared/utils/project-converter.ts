@@ -178,6 +178,7 @@ export interface VideoProject {
     backgroundColor?: string;
     fitVideoToScene?: boolean;
     removeAudioSilences?: boolean;
+    audioSilencePaddingMs?: number;
     audioMutedRanges?: Array<{
       sourceStart: number;
       sourceEnd: number;
@@ -345,6 +346,7 @@ export function toRemotionFormat(
       componentsAllowed: options.componentsAllowed || project.componentsAllowed,
       defaultFont: options.defaultFont,
       fitVideoToScene: options.fitVideoToScene !== undefined ? options.fitVideoToScene : true,
+      audioSilencePaddingMs: project.config?.audioSilencePaddingMs,
       ...(Array.isArray(project.config?.audioMutedRanges) && project.config.audioMutedRanges.length > 0 && {
         audioMutedRanges: project.config.audioMutedRanges,
       }),

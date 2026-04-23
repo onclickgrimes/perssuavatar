@@ -19,6 +19,8 @@ interface SidebarProps {
   onFitVideoToSceneChange: (value: boolean) => void;
   removeAudioSilences: boolean;
   onRemoveAudioSilencesChange: (value: boolean) => void;
+  audioSilencePaddingMs?: number;
+  onAudioSilencePaddingMsChange?: (value: number) => void;
   mainAudioVolume?: number;
   handleMainAudioVolumeChange?: (volume: number) => void;
 }
@@ -42,9 +44,15 @@ export function Sidebar({
   onFitVideoToSceneChange,
   removeAudioSilences,
   onRemoveAudioSilencesChange,
+  audioSilencePaddingMs = 250,
+  onAudioSilencePaddingMsChange,
   mainAudioVolume = 1.0,
   handleMainAudioVolumeChange,
 }: SidebarProps) {
+  const normalizedAudioSilencePaddingMs = Number.isFinite(audioSilencePaddingMs)
+    ? Math.min(1000, Math.max(0, Math.round(audioSilencePaddingMs)))
+    : 250;
+
   return (
     <div className="w-full h-full flex flex-col overflow-hidden" style={{ background: FILMORA.bgDark, borderColor: FILMORA.border }}>
       {/* Tabs */}
@@ -172,6 +180,24 @@ export function Sidebar({
                   />
                 </button>
               </div>
+              {removeAudioSilences && (
+                <div className="mt-2 pt-2 border-t" style={{ borderColor: FILMORA.border }}>
+                  <div className="flex items-center justify-between text-[9px] mb-1">
+                    <span style={{ color: FILMORA.textDim }}>Margem de fala</span>
+                    <span className="font-semibold" style={{ color: FILMORA.accent }}>{normalizedAudioSilencePaddingMs} ms</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1000"
+                    step="50"
+                    value={normalizedAudioSilencePaddingMs}
+                    onChange={(e) => onAudioSilencePaddingMsChange?.(Number(e.target.value))}
+                    className="w-full h-1 bg-gray-700 rounded-lg appearance-none cursor-pointer accent-cyan-500"
+                    title="Margem preservada antes/depois da fala para evitar cortes bruscos"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Transformações (PiP) */}

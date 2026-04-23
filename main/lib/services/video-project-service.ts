@@ -32,6 +32,7 @@ import {
 import {
     buildSilenceCompactionRanges,
     compactTimelineSegments,
+    normalizeSilencePaddingMs,
 } from '../../../remotion/utils/silence-compaction';
 
 export type AIProvider = 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
@@ -191,6 +192,7 @@ export interface VideoProjectData {
         backgroundColor?: string;
         fitVideoToScene?: boolean;
         removeAudioSilences?: boolean;
+        audioSilencePaddingMs?: number;
         audioMutedRanges?: Array<{
             sourceStart: number;
             sourceEnd: number;
@@ -261,6 +263,7 @@ export interface RemotionProject {
         defaultFont?: string; // Fonte padrão do nicho (Google Fonts)
         fitVideoToScene?: boolean;
         removeAudioSilences?: boolean;
+        audioSilencePaddingMs?: number;
         audioKeepRanges?: Array<{
             sourceStart: number;
             sourceEnd: number;
@@ -3593,9 +3596,11 @@ Responda APENAS com um objeto JSON válido no formato:
     public convertToRemotionProject(project: VideoProjectData): RemotionProject {
         console.log('🔧 convertToRemotionProject - subtitleMode:', project.subtitleMode);
         const removeAudioSilences = project.config?.removeAudioSilences === true;
+        const audioSilencePaddingMs = normalizeSilencePaddingMs(project.config?.audioSilencePaddingMs);
         const audioKeepRanges = removeAudioSilences
             ? buildSilenceCompactionRanges(project.segments, {
                 mergeAdjacentRanges: false,
+                preservePaddingMs: audioSilencePaddingMs,
             })
             : [];
         const getRangeKey = (range: { sourceStart: number; sourceEnd: number; outputStart: number; outputEnd: number; }) => {
@@ -3704,6 +3709,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 defaultFont: project.defaultFont, // ✅ Fonte padrão do nicho
                 fitVideoToScene: project.config?.fitVideoToScene ?? true, // ✅ Acelerar/Desacelerar
                 removeAudioSilences,
+                audioSilencePaddingMs,
                 ...(audioKeepRanges.length > 0 && {
                     audioKeepRanges,
                 }),

@@ -10,6 +10,7 @@ import {
   compactTimelineSegments,
   getCompactedDuration,
   mapOutputTimeToSourceTime,
+  normalizeSilencePaddingMs,
   type TimelineKeepRange,
 } from '../../../remotion/utils/silence-compaction';
 
@@ -331,6 +332,9 @@ export function PreviewStep({
   const AVAILABLE_RATIOS = Object.keys(ASPECT_RATIO_DIMENSIONS);
   const currentRatios = project.selectedAspectRatios || ['9:16'];
   const isVerticalLayout = selectedRatio === '9:16' || selectedRatio === '3:4';
+  const audioSilencePaddingMs = useMemo(() => {
+    return normalizeSilencePaddingMs((project?.config as any)?.audioSilencePaddingMs);
+  }, [project?.config?.audioSilencePaddingMs]);
 
   const silenceCompactionRanges = useMemo<TimelineKeepRange[]>(() => {
     if (!removeAudioSilences) {
@@ -339,8 +343,9 @@ export function PreviewStep({
 
     return buildSilenceCompactionRanges(project.segments, {
       mergeAdjacentRanges: false,
+      preservePaddingMs: audioSilencePaddingMs,
     });
-  }, [project.segments, removeAudioSilences]);
+  }, [audioSilencePaddingMs, project.segments, removeAudioSilences]);
 
   const mutedBaseAudioRanges = useMemo<TimelineKeepRange[]>(() => {
     return normalizeAudioMutedRanges((project?.config as any)?.audioMutedRanges);
@@ -936,6 +941,16 @@ export function PreviewStep({
     setHasUnsavedChanges(true);
   }, [onMainAudioVolumeChange]);
 
+  const handleAudioSilencePaddingMsChange = useCallback((paddingMs: number) => {
+    if (!onProjectConfigChange) return;
+    const normalizedPaddingMs = normalizeSilencePaddingMs(paddingMs);
+    onProjectConfigChange((prevConfig: any) => ({
+      ...(prevConfig || {}),
+      audioSilencePaddingMs: normalizedPaddingMs,
+    }));
+    setHasUnsavedChanges(true);
+  }, [onProjectConfigChange]);
+
   // ========================================
   // ACTIONS (SPLIT, DELETE)
   // ========================================
@@ -1192,6 +1207,8 @@ export function PreviewStep({
                     onFitVideoToSceneChange={(val) => { onFitVideoToSceneChange(val); setHasUnsavedChanges(true); }}
                     removeAudioSilences={removeAudioSilences}
                     onRemoveAudioSilencesChange={(val) => { onRemoveAudioSilencesChange(val); setHasUnsavedChanges(true); }}
+                    audioSilencePaddingMs={audioSilencePaddingMs}
+                    onAudioSilencePaddingMsChange={handleAudioSilencePaddingMsChange}
                     mainAudioVolume={mainAudioVolume}
                     handleMainAudioVolumeChange={handleMainAudioVolumeChange}
                   />
@@ -1362,6 +1379,8 @@ export function PreviewStep({
                    onFitVideoToSceneChange={(val) => { onFitVideoToSceneChange(val); setHasUnsavedChanges(true); }} 
                    removeAudioSilences={removeAudioSilences}
                    onRemoveAudioSilencesChange={(val) => { onRemoveAudioSilencesChange(val); setHasUnsavedChanges(true); }}
+                   audioSilencePaddingMs={audioSilencePaddingMs}
+                   onAudioSilencePaddingMsChange={handleAudioSilencePaddingMsChange}
                    mainAudioVolume={mainAudioVolume} 
                    handleMainAudioVolumeChange={handleMainAudioVolumeChange} 
                 />

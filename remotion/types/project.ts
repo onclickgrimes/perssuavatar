@@ -503,6 +503,9 @@ export const ProjectConfigSchema = z.object({
   /** Se true, remove intervalos de silêncio entre segmentos narrados e junta a timeline */
   removeAudioSilences: z.boolean().optional(),
 
+  /** Margem (ms) preservada antes/depois de cada fala ao compactar silêncios */
+  audioSilencePaddingMs: z.number().optional(),
+
   /** Intervalos do áudio original preservados após compactar a timeline */
   audioKeepRanges: z.array(z.object({
     sourceStart: z.number(),

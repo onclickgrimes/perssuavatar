@@ -1041,6 +1041,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
             fps: 30, // Default 30fps
             fitVideoToScene: project.config?.fitVideoToScene ?? true,
             removeAudioSilences: project.config?.removeAudioSilences ?? false,
+            audioSilencePaddingMs: project.config?.audioSilencePaddingMs ?? 250,
             mainAudioVolume: project.config?.mainAudioVolume ?? 1.0,
             ...(Array.isArray(project.config?.audioMutedRanges) && {
               audioMutedRanges: project.config?.audioMutedRanges,
