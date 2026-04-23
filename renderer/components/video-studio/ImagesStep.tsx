@@ -498,6 +498,7 @@ export function ImagesStep({
   const characterStyle = String(storyReferences?.characterStyle || 'fotorrealista').trim() || 'fotorrealista';
   const locationStyle = String(storyReferences?.locationStyle || 'fotorrealista').trim() || 'fotorrealista';
   const [globalInstruction, setGlobalInstruction] = useState('');
+  const [showGlobalInstructionInput, setShowGlobalInstructionInput] = useState(false);
   const [sceneInstructions, setSceneInstructions] = useState<Record<number, string>>({});
   const [pendingSceneId, setPendingSceneId] = useState<number | null>(null);
   const [hoverImagePreview, setHoverImagePreview] = useState<HoverImagePreviewState | null>(null);
@@ -3881,7 +3882,7 @@ export function ImagesStep({
               📸 Personagens e Lugares
             </button>
 
-            <button
+            {/* <button
               onClick={handleExportFlowExtensionJson}
               disabled={flowExportableCount === 0}
               className={`px-4 py-2 border rounded-lg transition-all ${
@@ -3905,7 +3906,7 @@ export function ImagesStep({
               title="Importa o JSON com mídias geradas pela extensão"
             >
               {isImportingFlowResult ? '⏳ Importando...' : '📥 Importar Resultado Flow'}
-            </button>
+            </button> */}
 
             <button
               onClick={onContinue}
@@ -3920,34 +3921,12 @@ export function ImagesStep({
             </button>
           </div>
 
-          {onAnalyze && (
-            <div className="w-full max-w-[560px]">
-              <input
-                type="text"
-                value={globalInstruction}
-                onChange={(e) => setGlobalInstruction(e.target.value)}
-                placeholder="Instrução global para edição dos prompts"
-                className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-pink-500 focus:outline-none"
-                disabled={isAiBusy}
-              />
-            </div>
-          )}
+          {/* Input global movido para o dropdown da barra de status */}
         </div>
       </div>
 
       <div className="space-y-3">
-        {onAnalyze && (
-          <div className="w-full max-w-[720px]">
-            <input
-              type="text"
-              value={globalInstruction}
-              onChange={(e) => setGlobalInstruction(e.target.value)}
-              placeholder="Instrução global para edição dos prompts"
-              className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-pink-500 focus:outline-none"
-              disabled={isAiBusy}
-            />
-          </div>
-        )}
+        {/* Input global movido para o dropdown da barra de status */}
 
         <div className="flex gap-3 items-center flex-wrap">
           {onGenerateFirstFrame && hasImagePrompts && (
@@ -3961,7 +3940,7 @@ export function ImagesStep({
             </button>
           )}
 
-          <button
+          {/* <button
             onClick={handleExportFlowExtensionJson}
             disabled={flowExportableCount === 0}
             className={`px-4 py-2 border rounded-lg transition-all ${
@@ -3985,7 +3964,7 @@ export function ImagesStep({
             title="Importa o JSON com mídias geradas pela extensão"
           >
             {isImportingFlowResult ? '⏳ Importando...' : '📥 Importar Resultado Flow'}
-          </button>
+          </button> */}
         </div>
       </div>
 
@@ -3999,7 +3978,14 @@ export function ImagesStep({
       )}
 
       {/* Status */}
-      <div className="sticky top-0 z-40 flex flex-wrap items-center gap-4 p-4 bg-black/60 backdrop-blur-xl rounded-xl border border-white/10 shadow-lg">
+      <div className="sticky top-0 z-40">
+        <div
+          className={`flex flex-wrap items-center gap-4 p-4 bg-black/60 backdrop-blur-xl border border-white/10 shadow-lg transition-all duration-300 ${
+            onAnalyze && showGlobalInstructionInput
+              ? 'rounded-t-xl rounded-b-none border-b-0'
+              : 'rounded-xl'
+          }`}
+        >
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500"></div>
           <span className="text-white/60 text-sm">
@@ -4088,6 +4074,24 @@ export function ImagesStep({
 
         {/* ── Processamento em Lote ── */}
         <div className="ml-auto flex items-center gap-3 relative">
+          {onAnalyze && (
+            <button
+              type="button"
+              onClick={() => setShowGlobalInstructionInput(prev => !prev)}
+              disabled={isAiBusy}
+              className={`w-8 h-8 rounded-xl border flex items-center justify-center transition-all shadow-lg ${
+                isAiBusy
+                  ? 'bg-white/10 border-white/10 text-white/30 cursor-not-allowed'
+                  : showGlobalInstructionInput
+                    ? 'bg-fuchsia-500/25 hover:bg-fuchsia-500/35 border-fuchsia-500/40 text-fuchsia-100'
+                    : 'bg-white/10 hover:bg-white/20 border-white/20 text-white'
+              }`}
+              title={showGlobalInstructionInput ? 'Ocultar instrução global' : 'Mostrar instrução global'}
+              aria-expanded={showGlobalInstructionInput}
+            >
+              📝
+            </button>
+          )}
 
           <button
             onClick={handleBatchRegenerateAnimateFrames}
@@ -4525,6 +4529,32 @@ export function ImagesStep({
           )}
           </div>
         </div>
+        </div>
+
+        {onAnalyze && (
+          <div
+            className={`origin-top overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${
+              showGlobalInstructionInput
+                ? 'max-h-24 opacity-100'
+                : 'max-h-0 opacity-0 pointer-events-none'
+            }`}
+          >
+            <div
+              className={`p-3 bg-black/60 backdrop-blur-xl border border-white/10 border-t-0 rounded-b-xl transition-transform duration-300 ease-out ${
+                showGlobalInstructionInput ? 'translate-y-0' : '-translate-y-2'
+              }`}
+            >
+              <input
+                type="text"
+                value={globalInstruction}
+                onChange={(e) => setGlobalInstruction(e.target.value)}
+                placeholder="Instrução global para edição dos prompts"
+                className="w-full bg-black/30 border border-white/10 rounded-lg px-3 py-2 text-white text-sm placeholder-white/30 focus:border-pink-500 focus:outline-none"
+                disabled={isAiBusy}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
