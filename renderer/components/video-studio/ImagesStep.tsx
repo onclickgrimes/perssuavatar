@@ -2387,43 +2387,103 @@ export function ImagesStep({
       label: getGenerationServiceLabel(serviceId),
     }));
   }, [segments]);
-  const filteredSegments = useMemo(() => {
-    return segments.filter(segment => {
-      const hasMedia = Boolean(segment.imageUrl);
-      const isVideoMedia = isVideo(segment.imageUrl);
-      const sceneDurationSeconds = getSceneDurationInfo(segment).rawSeconds;
-      const generationService = typeof segment.generationService === 'string'
-        ? segment.generationService.trim()
-        : '';
+  const segmentIdsSignature = useMemo(
+    () => Array.from(new Set(segments.map(segment => segment.id))).sort((left, right) => left - right).join(','),
+    [segments]
+  );
+  const [sceneFilterRevision, setSceneFilterRevision] = useState(0);
+  const [filteredSceneIds, setFilteredSceneIds] = useState<number[]>(() =>
+    segments.map(segment => segment.id)
+  );
+  const sceneFilterStateRef = useRef<{
+    mediaChecks: { noMedia: boolean; image: boolean; video: boolean };
+    includeManualService: boolean;
+    generationServiceChecks: Record<string, boolean>;
+    durationMin: number;
+    durationMax: number;
+  }>({
+    mediaChecks: sceneMediaChecks,
+    includeManualService: includeManualGenerationService,
+    generationServiceChecks: sceneGenerationServiceChecks,
+    durationMin: sceneDurationMinFilter,
+    durationMax: sceneDurationMaxFilter,
+  });
 
-      if (sceneDurationSeconds < sceneDurationMinFilter || sceneDurationSeconds > sceneDurationMaxFilter) {
-        return false;
-      }
-
-      if (!hasMedia && !sceneMediaChecks.noMedia) return false;
-      if (hasMedia && !isVideoMedia && !sceneMediaChecks.image) return false;
-      if (hasMedia && isVideoMedia && !sceneMediaChecks.video) return false;
-
-      if (generationService.length === 0) {
-        return includeManualGenerationService;
-      }
-
-      if (sceneGenerationServiceChecks[generationService] === false) {
-        return false;
-      }
-
-      return true;
-    });
+  useEffect(() => {
+    sceneFilterStateRef.current = {
+      mediaChecks: sceneMediaChecks,
+      includeManualService: includeManualGenerationService,
+      generationServiceChecks: sceneGenerationServiceChecks,
+      durationMin: sceneDurationMinFilter,
+      durationMax: sceneDurationMaxFilter,
+    };
   }, [
-    segments,
-    isVideo,
-    sceneDurationMinFilter,
-    sceneDurationMaxFilter,
     sceneMediaChecks,
     includeManualGenerationService,
     sceneGenerationServiceChecks,
+    sceneDurationMinFilter,
+    sceneDurationMaxFilter,
   ]);
-  const filteredSceneIds = useMemo(() => filteredSegments.map(segment => segment.id), [filteredSegments]);
+
+  useEffect(() => {
+    const {
+      mediaChecks,
+      includeManualService,
+      generationServiceChecks,
+      durationMin,
+      durationMax,
+    } = sceneFilterStateRef.current;
+
+    const nextFilteredSceneIds = segmentsRef.current
+      .filter(segment => {
+        const hasMedia = Boolean(segment.imageUrl);
+        const isVideoMedia = isVideo(segment.imageUrl);
+        const sceneDurationSeconds = getSceneDurationInfo(segment).rawSeconds;
+        const generationService = typeof segment.generationService === 'string'
+          ? segment.generationService.trim()
+          : '';
+
+        if (sceneDurationSeconds < durationMin || sceneDurationSeconds > durationMax) {
+          return false;
+        }
+
+        if (!hasMedia && !mediaChecks.noMedia) return false;
+        if (hasMedia && !isVideoMedia && !mediaChecks.image) return false;
+        if (hasMedia && isVideoMedia && !mediaChecks.video) return false;
+
+        if (generationService.length === 0) {
+          return includeManualService;
+        }
+
+        if (generationServiceChecks[generationService] === false) {
+          return false;
+        }
+
+        return true;
+      })
+      .map(segment => segment.id);
+
+    setFilteredSceneIds(previousIds => {
+      if (
+        previousIds.length === nextFilteredSceneIds.length
+        && previousIds.every((sceneId, index) => sceneId === nextFilteredSceneIds[index])
+      ) {
+        return previousIds;
+      }
+      return nextFilteredSceneIds;
+    });
+  }, [
+    sceneFilterRevision,
+    segmentIdsSignature,
+    isVideo,
+  ]);
+  const filteredSceneIdSet = useMemo(() => new Set(filteredSceneIds), [filteredSceneIds]);
+  const filteredSegments = useMemo(() => {
+    return segments.filter(segment => filteredSceneIdSet.has(segment.id));
+  }, [
+    segments,
+    filteredSceneIdSet,
+  ]);
   const selectedFilteredScenesCount = useMemo(
     () => filteredSceneIds.reduce((count, sceneId) => count + (selectedScenes.has(sceneId) ? 1 : 0), 0),
     [filteredSceneIds, selectedScenes]
@@ -2507,6 +2567,11 @@ export function ImagesStep({
       generationServiceFilterOptions.forEach(option => {
         nextChecks[option.value] = previousChecks[option.value] ?? true;
       });
+      const previousKeys = Object.keys(previousChecks);
+      const nextKeys = Object.keys(nextChecks);
+      const unchanged = previousKeys.length === nextKeys.length
+        && nextKeys.every(key => previousChecks[key] === nextChecks[key]);
+      if (unchanged) return previousChecks;
       return nextChecks;
     });
   }, [generationServiceFilterOptions]);
@@ -4158,6 +4223,7 @@ export function ImagesStep({
                             onChange={(e) => {
                               const checked = e.target.checked;
                               setSceneMediaChecks(prev => ({ ...prev, noMedia: checked }));
+                              setSceneFilterRevision(prev => prev + 1);
                             }}
                             className="accent-cyan-500"
                           />
@@ -4170,6 +4236,7 @@ export function ImagesStep({
                             onChange={(e) => {
                               const checked = e.target.checked;
                               setSceneMediaChecks(prev => ({ ...prev, image: checked }));
+                              setSceneFilterRevision(prev => prev + 1);
                             }}
                             className="accent-cyan-500"
                           />
@@ -4182,6 +4249,7 @@ export function ImagesStep({
                             onChange={(e) => {
                               const checked = e.target.checked;
                               setSceneMediaChecks(prev => ({ ...prev, video: checked }));
+                              setSceneFilterRevision(prev => prev + 1);
                             }}
                             className="accent-cyan-500"
                           />
@@ -4197,7 +4265,10 @@ export function ImagesStep({
                           <input
                             type="checkbox"
                             checked={includeManualGenerationService}
-                            onChange={(e) => setIncludeManualGenerationService(e.target.checked)}
+                            onChange={(e) => {
+                              setIncludeManualGenerationService(e.target.checked);
+                              setSceneFilterRevision(prev => prev + 1);
+                            }}
                             className="accent-cyan-500"
                           />
                           <span>Upload manual (null)</span>
@@ -4213,6 +4284,7 @@ export function ImagesStep({
                                   ...prev,
                                   [option.value]: checked,
                                 }));
+                                setSceneFilterRevision(prev => prev + 1);
                               }}
                               className="accent-cyan-500"
                             />
@@ -4241,6 +4313,7 @@ export function ImagesStep({
                             const nextMin = Number(e.target.value);
                             setSceneDurationMinFilter(nextMin);
                             setSceneDurationMaxFilter(prevMax => Math.max(prevMax, nextMin));
+                            setSceneFilterRevision(prev => prev + 1);
                           }}
                           className="flex-1 accent-cyan-500"
                         />
@@ -4257,6 +4330,7 @@ export function ImagesStep({
                             const nextMax = Number(e.target.value);
                             setSceneDurationMaxFilter(nextMax);
                             setSceneDurationMinFilter(prevMin => Math.min(prevMin, nextMax));
+                            setSceneFilterRevision(prev => prev + 1);
                           }}
                           className="flex-1 accent-cyan-500"
                         />
@@ -4275,6 +4349,7 @@ export function ImagesStep({
                         );
                         setSceneDurationMinFilter(0);
                         setSceneDurationMaxFilter(maxSceneDurationSeconds);
+                        setSceneFilterRevision(prev => prev + 1);
                       }}
                       disabled={!hasActiveSceneFilters}
                       className={`w-full px-2 py-1.5 rounded-lg text-xs transition-all ${
