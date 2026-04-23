@@ -34,6 +34,14 @@ import {
     compactTimelineSegments,
     normalizeSilencePaddingMs,
 } from '../../../remotion/utils/silence-compaction';
+import {
+    detectMotionGraphicsSkillsHeuristically,
+    getMotionGraphicsSkillDisplayName,
+    loadMotionGraphicsSkillContent,
+    MOTION_GRAPHICS_SKILL_DETECTION_PROMPT,
+    normalizeMotionGraphicsSkillSelection,
+    type MotionGraphicsSkillName,
+} from './motion-graphics-skills';
 
 export type AIProvider = 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
 type ScenePromptTranslationField = 'imagePrompt' | 'firstFrame' | 'animateFrame';
@@ -155,6 +163,8 @@ export interface VideoProjectSegment {
             timestamp?: number;
             provider?: string;
             model?: string;
+            attachedImages?: MotionGraphicsReferenceImage[];
+            skillsUsed?: string[];
         }>;
     };
     firstFrame?: string;
@@ -222,6 +232,8 @@ export interface VideoProjectData {
                 timestamp?: number;
                 provider?: string;
                 model?: string;
+                attachedImages?: MotionGraphicsReferenceImage[];
+                skillsUsed?: string[];
             }>;
         };
     };
@@ -280,6 +292,20 @@ export interface MotionGraphicsChatMessage {
     timestamp?: number;
     provider?: string;
     model?: string;
+    attachedImages?: MotionGraphicsReferenceImage[];
+    skillsUsed?: string[];
+}
+
+export interface MotionGraphicsReferenceImage {
+    id?: string;
+    name?: string;
+    path?: string;
+    url?: string;
+    dataUrl?: string;
+    mimeType?: string;
+    width?: number;
+    height?: number;
+    source?: 'upload' | 'frame' | 'scene';
 }
 
 export interface MotionGraphicsProjectContext {
@@ -311,6 +337,7 @@ export interface MotionGraphicsGenerationInput {
     currentCode?: string;
     conversationHistory?: MotionGraphicsChatMessage[];
     projectContext?: MotionGraphicsProjectContext;
+    referenceImages?: MotionGraphicsReferenceImage[];
     provider?: AIProvider;
     model?: string;
 }
@@ -321,8 +348,28 @@ export interface MotionGraphicsGenerationResult {
     summary?: string;
     providerUsed?: AIProvider;
     modelUsed?: string;
+    skillsUsed?: string[];
+    skillDetectionSource?: 'model' | 'heuristic';
     error?: string;
 }
+
+type MotionGraphicsProviderMessagePart =
+    | {
+        type: 'text';
+        text: string;
+    }
+    | {
+        type: 'image';
+        data: string;
+        mimeType: string;
+        label?: string;
+    };
+
+type MotionGraphicsProviderMessage = {
+    role: 'system' | 'user' | 'assistant';
+    content?: string;
+    parts?: MotionGraphicsProviderMessagePart[];
+};
 
 export interface RemotionProject {
     project_title: string;
@@ -411,12 +458,20 @@ export class VideoProjectService extends EventEmitter {
     private videoService = new VideoService();
     private openAIService: OpenAIService | null = null;
     private deepSeekService: DeepSeekService | null = null;
+    private rootDir: string;
+    private motionGraphicsTemplateDir: string;
     private projectsDir: string;
     private imageServer: http.Server | null = null;
     private imageServerPort: number = 9999;
 
     constructor() {
         super();
+
+        this.rootDir = app.getAppPath();
+        this.motionGraphicsTemplateDir = path.resolve(
+            this.rootDir,
+            'template-prompt-to-motion-graphics-saas',
+        );
 
         // Inicializar diretório de projetos
         this.projectsDir = path.join(app.getPath('userData'), 'video-projects');
@@ -619,6 +674,77 @@ export class VideoProjectService extends EventEmitter {
         }
 
         throw new Error(`Imagem do firstFrame não encontrada: ${normalizedImagePath}`);
+    }
+
+    private parseInlineImageDataUrl(dataUrl: string): { data: string; mimeType: string } | null {
+        const normalized = String(dataUrl || '').trim();
+        if (!normalized.startsWith('data:image/')) {
+            return null;
+        }
+
+        const matched = normalized.match(/^data:([^;]+);base64,(.+)$/);
+        if (!matched) {
+            return null;
+        }
+
+        return {
+            mimeType: matched[1],
+            data: matched[2],
+        };
+    }
+
+    private async loadMotionGraphicsReferenceImages(
+        images?: MotionGraphicsReferenceImage[],
+    ): Promise<Array<{ data: string; mimeType: string; label?: string }>> {
+        if (!Array.isArray(images) || images.length === 0) {
+            return [];
+        }
+
+        const loadedImages: Array<{ data: string; mimeType: string; label?: string }> = [];
+        const seenSources = new Set<string>();
+
+        for (const image of images.slice(0, 4)) {
+            const localPath = String(image?.path || '').trim();
+            const url = String(image?.url || '').trim();
+            const dataUrl = String(image?.dataUrl || '').trim();
+            const label = String(image?.name || image?.source || '').trim() || undefined;
+            const dedupeKey = localPath || url || dataUrl;
+
+            if (!dedupeKey || seenSources.has(dedupeKey)) {
+                continue;
+            }
+            seenSources.add(dedupeKey);
+
+            try {
+                if (dataUrl) {
+                    const inlineData = this.parseInlineImageDataUrl(dataUrl);
+                    if (inlineData) {
+                        loadedImages.push({
+                            data: inlineData.data,
+                            mimeType: inlineData.mimeType,
+                            label,
+                        });
+                        continue;
+                    }
+                }
+
+                const source = localPath || url;
+                if (!source) {
+                    continue;
+                }
+
+                const inlineData = await this.loadImageAsInlineData(source);
+                loadedImages.push({
+                    data: inlineData.data,
+                    mimeType: inlineData.mimeType,
+                    label,
+                });
+            } catch (error) {
+                console.warn('[MotionGraphics] Failed to load reference image:', dedupeKey, error);
+            }
+        }
+
+        return loadedImages;
     }
 
     private buildAnimateFrameRegenerationPrompt(
@@ -997,8 +1123,8 @@ export class VideoProjectService extends EventEmitter {
         return code.endsWith(';') ? code : `${code};`;
     }
 
-    private buildMotionGraphicsSystemPrompt(): string {
-        return [
+    private buildMotionGraphicsSystemPrompt(skillContent?: string): string {
+        const promptSections = [
             'You are an expert React motion graphics designer working with Remotion.',
             'Return ONLY valid TSX code. Do not include explanations, markdown fences, bullet points, or comments outside the file.',
             '',
@@ -1030,7 +1156,17 @@ export class VideoProjectService extends EventEmitter {
             '- Respect the current duration, width, and height from useVideoConfig().',
             '',
             'The next user message may ask for a new composition or an edit to an existing one. When editing, preserve what still works and always return the full replacement TSX file.',
-        ].join('\n');
+        ];
+
+        if (skillContent) {
+            promptSections.push(
+                '',
+                'AGENTIC SKILLS:',
+                skillContent,
+            );
+        }
+
+        return promptSections.join('\n');
     }
 
     private buildMotionGraphicsProjectContext(projectContext?: MotionGraphicsProjectContext): string {
@@ -1083,22 +1219,163 @@ export class VideoProjectService extends EventEmitter {
         }
 
         return relevantMessages
-            .map((message) => `${message.role.toUpperCase()}: ${String(message.content || '').trim()}`)
+            .map((message) => {
+                const imageCount = Array.isArray(message.attachedImages)
+                    ? message.attachedImages.length
+                    : 0;
+                const imageNote = imageCount > 0
+                    ? ` [with ${imageCount} reference image${imageCount > 1 ? 's' : ''}]`
+                    : '';
+                return `${message.role.toUpperCase()}: ${String(message.content || '').trim()}${imageNote}`;
+            })
             .join('\n');
     }
 
+    private flattenMotionGraphicsMessageToText(message: MotionGraphicsProviderMessage): string {
+        if (Array.isArray(message.parts) && message.parts.length > 0) {
+            return message.parts
+                .map((part) => {
+                    if (part.type === 'text') {
+                        return part.text;
+                    }
+
+                    const label = String(part.label || '').trim();
+                    return label
+                        ? `[Reference image attached: ${label}]`
+                        : '[Reference image attached]';
+                })
+                .join('\n');
+        }
+
+        return String(message.content || '');
+    }
+
+    private buildGeminiContentParts(
+        message: MotionGraphicsProviderMessage,
+    ): Array<{ text: string } | { inlineData: { data: string; mimeType: string } }> {
+        if (!Array.isArray(message.parts) || message.parts.length === 0) {
+            return [{ text: String(message.content || '') }];
+        }
+
+        return message.parts.map((part) => {
+            if (part.type === 'text') {
+                return { text: part.text };
+            }
+
+            return {
+                inlineData: {
+                    data: part.data,
+                    mimeType: part.mimeType,
+                },
+            };
+        });
+    }
+
+    private async detectMotionGraphicsSkills(
+        input: {
+            prompt: string;
+            currentCode?: string;
+            projectContext?: MotionGraphicsProjectContext;
+            referenceImages?: MotionGraphicsReferenceImage[];
+            provider: AIProvider;
+            model?: string;
+        },
+    ): Promise<{ skills: MotionGraphicsSkillName[]; source: 'model' | 'heuristic' }> {
+        const heuristicSkills = detectMotionGraphicsSkillsHeuristically({
+            prompt: input.prompt,
+            currentCode: input.currentCode,
+            selectedRatio: input.projectContext?.selectedRatio,
+        });
+
+        if (input.provider === 'gemini_scraping') {
+            return {
+                skills: heuristicSkills,
+                source: 'heuristic',
+            };
+        }
+
+        const prompt = String(input.prompt || '').trim();
+        if (!prompt) {
+            return {
+                skills: heuristicSkills,
+                source: 'heuristic',
+            };
+        }
+
+        const codeExcerpt = String(input.currentCode || '').trim().slice(0, 1400);
+        const selectedRatio = String(input.projectContext?.selectedRatio || '').trim();
+        const selectedSegmentText = String(input.projectContext?.selectedSegment?.text || '').trim().slice(0, 280);
+        const referenceImageCount = Array.isArray(input.referenceImages)
+            ? input.referenceImages.length
+            : 0;
+
+        const detectionPayload: MotionGraphicsProviderMessage[] = [
+            {
+                role: 'system',
+                content: MOTION_GRAPHICS_SKILL_DETECTION_PROMPT,
+            },
+            {
+                role: 'user',
+                content: [
+                    `PROMPT:\n${prompt}`,
+                    selectedRatio ? `SELECTED_RATIO: ${selectedRatio}` : '',
+                    selectedSegmentText ? `SELECTED_SEGMENT_TEXT:\n${selectedSegmentText}` : '',
+                    codeExcerpt ? `CURRENT_CODE_EXCERPT:\n${codeExcerpt}` : '',
+                    referenceImageCount > 0 ? `REFERENCE_IMAGES: ${referenceImageCount}` : '',
+                    heuristicSkills.length > 0
+                        ? `HEURISTIC_HINTS: ${heuristicSkills.join(', ')}`
+                        : '',
+                ]
+                    .filter(Boolean)
+                    .join('\n\n'),
+            },
+        ];
+
+        try {
+            const rawResponse = await this.requestTextWithProvider(
+                input.provider,
+                detectionPayload,
+                input.model,
+            );
+            const parsed = this.parseJsonResponseText(rawResponse);
+            const modelSkills = normalizeMotionGraphicsSkillSelection(
+                Array.isArray(parsed?.skills) ? parsed.skills : [],
+            );
+            const mergedSkills = normalizeMotionGraphicsSkillSelection([
+                ...modelSkills,
+                ...heuristicSkills,
+            ]);
+
+            return {
+                skills: mergedSkills,
+                source: 'model',
+            };
+        } catch (error) {
+            console.warn('[MotionGraphics] Skill detection fallback:', error);
+            return {
+                skills: heuristicSkills,
+                source: 'heuristic',
+            };
+        }
+    }
+
     private async getGeminiTextCompletion(
-        messages: Array<{ role: string; content: string }>,
+        messages: MotionGraphicsProviderMessage[],
         modelName?: string
     ): Promise<string> {
         const systemInstruction =
-            messages.find((message) => message.role === 'system')?.content || 'Return plain text only.';
+            this.flattenMotionGraphicsMessageToText(
+                messages.find((message) => message.role === 'system') || {
+                    role: 'system',
+                    content: 'Return plain text only.',
+                },
+            ) || 'Return plain text only.';
 
         const contents = messages
             .filter((message) => message.role === 'user' || message.role === 'assistant')
             .map((message) => ({
                 role: message.role === 'user' ? 'user' : 'model',
-                parts: [{ text: String(message.content || '') }],
+                parts: this.buildGeminiContentParts(message),
             }));
 
         const {
@@ -1144,13 +1421,13 @@ export class VideoProjectService extends EventEmitter {
     }
 
     private async getGeminiScrapingTextCompletion(
-        messages: Array<{ role: string; content: string }>
+        messages: MotionGraphicsProviderMessage[]
     ): Promise<string> {
         const { provider, providerId, providerName } = await this.ensureGeminiScrapingProvider();
         console.log(`🕸️ [VideoProject] Using Gemini scraping provider for motion graphics: ${providerName} (${providerId})`);
 
         const prompt = messages
-            .map((message) => `[${String(message.role || 'user').toUpperCase()}]\n${String(message.content || '')}`)
+            .map((message) => `[${String(message.role || 'user').toUpperCase()}]\n${this.flattenMotionGraphicsMessageToText(message)}`)
             .join('\n\n');
 
         const rawResponse = await provider.sendMessageWithStream(prompt);
@@ -1163,7 +1440,7 @@ export class VideoProjectService extends EventEmitter {
 
     private async requestTextWithProvider(
         provider: AIProvider,
-        payload: any[],
+        payload: MotionGraphicsProviderMessage[],
         model?: string
     ): Promise<string> {
         if (provider === 'gemini') {
@@ -1177,14 +1454,22 @@ export class VideoProjectService extends EventEmitter {
         if (provider === 'openai') {
             if (!this.openAIService) throw new Error('OpenAI API not configured');
             if (model) this.openAIService.setModel(model);
-            const response = await this.openAIService.getChatCompletion(payload);
+            const textPayload = payload.map((message) => ({
+                role: message.role,
+                content: this.flattenMotionGraphicsMessageToText(message),
+            }));
+            const response = await this.openAIService.getChatCompletion(textPayload);
             return this.normalizeTextResponseContent((response as any)?.content);
         }
 
         if (provider === 'deepseek') {
             if (!this.deepSeekService) throw new Error('DeepSeek API not configured');
             if (model) this.deepSeekService.setModel(model);
-            return this.deepSeekService.getTextCompletion(payload, {
+            const textPayload = payload.map((message) => ({
+                role: message.role,
+                content: this.flattenMotionGraphicsMessageToText(message),
+            }));
+            return this.deepSeekService.getTextCompletion(textPayload, {
                 maxTokens: 4096,
                 temperature: 0.4,
             });
@@ -1209,12 +1494,34 @@ export class VideoProjectService extends EventEmitter {
         const currentCode = String(input?.currentCode || '').trim();
         const conversationContext = this.buildMotionGraphicsConversationContext(input?.conversationHistory);
         const projectContext = this.buildMotionGraphicsProjectContext(input?.projectContext);
+        const referenceImages = await this.loadMotionGraphicsReferenceImages(input?.referenceImages);
+        const detectedSkills = await this.detectMotionGraphicsSkills({
+            prompt,
+            currentCode,
+            projectContext: input?.projectContext,
+            referenceImages: input?.referenceImages,
+            provider,
+            model: resolvedModel,
+        });
+        const skillContent = loadMotionGraphicsSkillContent(
+            this.motionGraphicsTemplateDir,
+            detectedSkills.skills,
+        );
+        const skillSummary = detectedSkills.skills.length > 0
+            ? detectedSkills.skills.map((skill) => getMotionGraphicsSkillDisplayName(skill)).join(', ')
+            : 'General';
 
         const userPrompt = [
             'PROJECT CONTEXT:',
             projectContext,
             conversationContext ? `RECENT CHAT:\n${conversationContext}` : '',
             currentCode ? `CURRENT CODE:\n\`\`\`tsx\n${currentCode}\n\`\`\`` : 'CURRENT CODE:\nNone yet.',
+            referenceImages.length > 0
+                ? `REFERENCE IMAGES:\n${referenceImages.length} image(s) attached below. Use them as visual direction for style, layout, and composition details when relevant.`
+                : '',
+            detectedSkills.skills.length > 0
+                ? `SELECTED SKILLS:\n${detectedSkills.skills.join(', ')}`
+                : '',
             'USER REQUEST:',
             prompt,
             currentCode
@@ -1224,20 +1531,31 @@ export class VideoProjectService extends EventEmitter {
             .filter(Boolean)
             .join('\n\n');
 
-        const payload = [
+        const payload: MotionGraphicsProviderMessage[] = [
             {
                 role: 'system',
-                content: this.buildMotionGraphicsSystemPrompt(),
+                content: this.buildMotionGraphicsSystemPrompt(skillContent),
             },
             {
                 role: 'user',
-                content: userPrompt,
+                parts: [
+                    {
+                        type: 'text',
+                        text: userPrompt,
+                    },
+                    ...referenceImages.map((image) => ({
+                        type: 'image' as const,
+                        data: image.data,
+                        mimeType: image.mimeType,
+                        label: image.label,
+                    })),
+                ],
             },
         ];
 
         this.emit('status', {
             stage: 'analyzing',
-            message: `Gerando motion graphics com ${provider}...`,
+            message: `Gerando motion graphics com ${provider} (${skillSummary})...`,
         });
 
         try {
@@ -1261,6 +1579,8 @@ export class VideoProjectService extends EventEmitter {
                     : 'Criei uma nova composição Remotion para o preview.',
                 providerUsed: provider,
                 modelUsed: resolvedModel,
+                skillsUsed: detectedSkills.skills,
+                skillDetectionSource: detectedSkills.source,
             };
         } catch (error: any) {
             console.error('❌ [MotionGraphics] Generation error:', error);
@@ -1269,6 +1589,8 @@ export class VideoProjectService extends EventEmitter {
                 error: error?.message || 'Falha ao gerar motion graphics.',
                 providerUsed: provider,
                 modelUsed: resolvedModel,
+                skillsUsed: detectedSkills.skills,
+                skillDetectionSource: detectedSkills.source,
             };
         }
     }

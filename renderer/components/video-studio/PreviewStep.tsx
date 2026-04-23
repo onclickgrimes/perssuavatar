@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback, useMemo, useReducer } from 'react';
-import { ProjectState } from '../../types/video-studio';
+import type { MotionGraphicsReferenceImage, ProjectState } from '../../types/video-studio';
 import type { ChannelNiche } from './NicheModal';
 import { 
   audioPathToUrl, 
@@ -145,7 +145,7 @@ const buildInitialHistoryStore = (project: ProjectState): PreviewHistoryStore =>
 const createMotionGraphicsMessage = (
   role: MotionGraphicsChatMessage['role'],
   content: string,
-  extra?: Partial<Pick<MotionGraphicsChatMessage, 'provider' | 'model' | 'timestamp'>>,
+  extra?: Partial<Omit<MotionGraphicsChatMessage, 'id' | 'role' | 'content'>>,
 ): MotionGraphicsChatMessage => {
   const timestamp = extra?.timestamp || Date.now();
   return {
@@ -155,6 +155,8 @@ const createMotionGraphicsMessage = (
     timestamp,
     provider: extra?.provider,
     model: extra?.model,
+    attachedImages: extra?.attachedImages,
+    skillsUsed: extra?.skillsUsed,
   };
 };
 
@@ -1206,6 +1208,8 @@ export function PreviewStep({
         timestamp: Number(message.timestamp || Date.now()),
         provider: message.provider ? String(message.provider) : undefined,
         model: message.model ? String(message.model) : undefined,
+        attachedImages: Array.isArray(message.attachedImages) ? message.attachedImages : undefined,
+        skillsUsed: Array.isArray(message.skillsUsed) ? message.skillsUsed : undefined,
       }));
   }, [selectedMotionGraphicsData]);
   const selectedMotionGraphicsCompileError = useMemo(() => {
@@ -1451,7 +1455,10 @@ export function PreviewStep({
     setMotionGraphicsGenerationError(null);
   }, [selectedMotionGraphicsSegment, updateMotionGraphicsSegment]);
 
-  const handleSubmitMotionGraphics = useCallback(async (promptText: string) => {
+  const handleSubmitMotionGraphics = useCallback(async (
+    promptText: string,
+    options?: { attachedImages?: MotionGraphicsReferenceImage[] },
+  ) => {
     const normalizedPrompt = String(promptText || '').trim();
     if (!normalizedPrompt || isMotionGraphicsGenerating) {
       return false;
@@ -1472,7 +1479,12 @@ export function PreviewStep({
     const persistedMessages = Array.isArray(currentMotionGraphics?.messages)
       ? currentMotionGraphics.messages
       : [];
-    const userMessage = createMotionGraphicsMessage('user', normalizedPrompt);
+    const attachedImages = Array.isArray(options?.attachedImages)
+      ? options!.attachedImages.filter((image) => image?.url || image?.path || image?.dataUrl)
+      : [];
+    const userMessage = createMotionGraphicsMessage('user', normalizedPrompt, {
+      attachedImages: attachedImages.length > 0 ? attachedImages : undefined,
+    });
     const conversationHistory = [
       ...persistedMessages.map((message) => ({
         role: message.role,
@@ -1480,11 +1492,14 @@ export function PreviewStep({
         timestamp: message.timestamp,
         provider: message.provider,
         model: message.model,
+        attachedImages: message.attachedImages,
+        skillsUsed: message.skillsUsed,
       })),
       {
         role: 'user' as const,
         content: normalizedPrompt,
         timestamp: userMessage.timestamp,
+        attachedImages: attachedImages.length > 0 ? attachedImages : undefined,
       },
     ];
 
@@ -1503,6 +1518,7 @@ export function PreviewStep({
         prompt: normalizedPrompt,
         currentCode: String(currentMotionGraphics?.code || '').trim() || undefined,
         conversationHistory,
+        referenceImages: attachedImages,
         projectContext: {
           title: project.title,
           description: project.description,
@@ -1532,6 +1548,7 @@ export function PreviewStep({
         summary?: string;
         providerUsed?: string;
         modelUsed?: string;
+        skillsUsed?: string[];
         error?: string;
       };
 
@@ -1546,6 +1563,7 @@ export function PreviewStep({
         {
           provider: result.providerUsed,
           model: result.modelUsed,
+          skillsUsed: Array.isArray(result.skillsUsed) ? result.skillsUsed : undefined,
         },
       );
 
@@ -1561,6 +1579,7 @@ export function PreviewStep({
               role: 'user' as const,
               content: normalizedPrompt,
               timestamp: userMessage.timestamp,
+              attachedImages: attachedImages.length > 0 ? attachedImages : undefined,
             },
             {
               role: 'assistant' as const,
@@ -1568,6 +1587,7 @@ export function PreviewStep({
               timestamp: assistantMessage.timestamp,
               provider: assistantMessage.provider,
               model: assistantMessage.model,
+              skillsUsed: assistantMessage.skillsUsed,
             },
           ],
         },

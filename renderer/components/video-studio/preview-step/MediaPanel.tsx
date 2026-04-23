@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FILMORA } from './constants';
+import type { MotionGraphicsReferenceImage } from '../../../types/video-studio';
 import type {
   MotionGraphicsClipSummary,
   MediaPanelTab,
@@ -56,6 +57,8 @@ interface TimelineDragPayload {
 const MEDIA_DRAG_MIME = 'application/x-video-studio-media';
 const MEDIA_DRAG_MIME_FALLBACK = 'text/x-video-studio-media';
 const MEDIA_DRAG_TEXT_PREFIX = 'video-studio-media:';
+const MAX_REMOTION_REFERENCE_IMAGES = 4;
+const MAX_REMOTION_REFERENCE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
 
 interface MediaPanelProps {
   activeTab: MediaPanelTab;
@@ -68,7 +71,10 @@ interface MediaPanelProps {
   onSelectRemotionClip: (clipId: number) => void;
   onCreateRemotionClip: () => void;
   remotionMessages: MotionGraphicsChatMessage[];
-  onRemotionSubmit: (prompt: string) => Promise<boolean> | boolean;
+  onRemotionSubmit: (
+    prompt: string,
+    options?: { attachedImages?: MotionGraphicsReferenceImage[] },
+  ) => Promise<boolean> | boolean;
   isRemotionGenerating: boolean;
   remotionGenerationError: string | null;
   remotionCompileError: string | null;
@@ -76,6 +82,22 @@ interface MediaPanelProps {
   onResetRemotion: () => void;
   remotionDurationLabel: string;
 }
+
+const fileToDataUrl = (file: File): Promise<string> => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Falha ao ler imagem.'));
+    reader.readAsDataURL(file);
+  });
+};
+
+const formatMotionGraphicsSkillLabel = (value: string): string => {
+  return value
+    .replace(/^example-/, 'Ex. ')
+    .replace(/-/g, ' ')
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
 
 const getOrientationFromRatio = (ratio: string): PexelsOrientation => {
   if (ratio === '1:1') return 'square';
@@ -184,11 +206,15 @@ export function MediaPanel({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [remotionDraft, setRemotionDraft] = useState('');
+  const [remotionAttachedImages, setRemotionAttachedImages] = useState<MotionGraphicsReferenceImage[]>([]);
+  const [remotionAttachmentError, setRemotionAttachmentError] = useState<string | null>(null);
+  const [isRemotionDragging, setIsRemotionDragging] = useState(false);
 
   const requestIdRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const remotionFileInputRef = useRef<HTMLInputElement | null>(null);
 
   const autoOrientation = useMemo(() => getOrientationFromRatio(selectedRatio), [selectedRatio]);
   const canApplyToSelectedSegment = Boolean(selectedSeg && !isMotionGraphicsSegment(selectedSeg));
@@ -275,6 +301,12 @@ export function MediaPanel({
   }, [sortBy]);
 
   useEffect(() => {
+    setRemotionAttachedImages([]);
+    setRemotionAttachmentError(null);
+    setIsRemotionDragging(false);
+  }, [selectedRemotionClipId]);
+
+  useEffect(() => {
     if (activeTab !== 'pexels') return;
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -299,22 +331,142 @@ export function MediaPanel({
     setSubmittedQuery(normalized);
   }, [queryInput]);
 
+  const handleAddRemotionReferenceFiles = useCallback(async (incomingFiles: File[]) => {
+    const imageFiles = incomingFiles.filter((file) => file.type.startsWith('image/'));
+    if (imageFiles.length === 0) {
+      setRemotionAttachmentError('Selecione apenas imagens de referência.');
+      return;
+    }
+
+    const availableSlots = Math.max(0, MAX_REMOTION_REFERENCE_IMAGES - remotionAttachedImages.length);
+    if (availableSlots <= 0) {
+      setRemotionAttachmentError(`Máximo de ${MAX_REMOTION_REFERENCE_IMAGES} imagens por mensagem.`);
+      return;
+    }
+
+    const limitedFiles = imageFiles.slice(0, availableSlots);
+    const oversizedFiles = limitedFiles.filter((file) => file.size > MAX_REMOTION_REFERENCE_FILE_SIZE_BYTES);
+    if (oversizedFiles.length > 0) {
+      setRemotionAttachmentError(`Cada imagem deve ter no máximo ${Math.round(MAX_REMOTION_REFERENCE_FILE_SIZE_BYTES / (1024 * 1024))}MB.`);
+      return;
+    }
+
+    try {
+      const saveImage = window.electron?.videoProject?.saveImage;
+      const nextImages = await Promise.all(limitedFiles.map(async (file, index) => {
+        const dataUrl = await fileToDataUrl(file);
+        const imageId = `ref-${Date.now()}-${index}-${Math.random().toString(36).slice(2, 7)}`;
+        let localPath: string | undefined;
+        let httpUrl: string | undefined;
+
+        if (saveImage) {
+          try {
+            const result = await saveImage(
+              await file.arrayBuffer(),
+              `motion-ref-${Date.now()}-${file.name}`,
+              selectedRemotionClipId || 0,
+            );
+            if (result?.success) {
+              localPath = result.path ? String(result.path) : undefined;
+              httpUrl = result.httpUrl ? String(result.httpUrl) : undefined;
+            }
+          } catch (saveError) {
+            console.warn('[MediaPanel] Falha ao persistir imagem de referência:', saveError);
+          }
+        }
+
+        return {
+          id: imageId,
+          name: file.name,
+          path: localPath,
+          url: httpUrl,
+          dataUrl,
+          mimeType: file.type || undefined,
+          source: 'upload' as const,
+        };
+      }));
+
+      setRemotionAttachedImages((previous) => [...previous, ...nextImages].slice(0, MAX_REMOTION_REFERENCE_IMAGES));
+      setRemotionAttachmentError(null);
+    } catch (attachmentError: any) {
+      setRemotionAttachmentError(attachmentError?.message || 'Falha ao carregar imagens de referência.');
+    }
+  }, [remotionAttachedImages.length, selectedRemotionClipId]);
+
+  const handleRemotionFileSelect = useCallback(async (
+    event: React.ChangeEvent<HTMLInputElement>,
+  ) => {
+    const files = Array.from(event.target.files || []);
+    if (files.length > 0) {
+      await handleAddRemotionReferenceFiles(files);
+    }
+    event.target.value = '';
+  }, [handleAddRemotionReferenceFiles]);
+
+  const handleRemoveRemotionAttachment = useCallback((imageId: string) => {
+    setRemotionAttachedImages((previous) => previous.filter((image) => image.id !== imageId));
+  }, []);
+
+  const handleRemotionPaste = useCallback(async (
+    event: React.ClipboardEvent<HTMLTextAreaElement>,
+  ) => {
+    const files = Array.from(event.clipboardData.items)
+      .filter((item) => item.type.startsWith('image/'))
+      .map((item) => item.getAsFile())
+      .filter((file): file is File => Boolean(file));
+
+    if (files.length === 0) {
+      return;
+    }
+
+    event.preventDefault();
+    await handleAddRemotionReferenceFiles(files);
+  }, [handleAddRemotionReferenceFiles]);
+
+  const handleRemotionDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsRemotionDragging(true);
+  }, []);
+
+  const handleRemotionDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsRemotionDragging(false);
+  }, []);
+
+  const handleRemotionDrop = useCallback(async (event: React.DragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    event.stopPropagation();
+    setIsRemotionDragging(false);
+    const files = Array.from(event.dataTransfer.files || []);
+    if (files.length > 0) {
+      await handleAddRemotionReferenceFiles(files);
+    }
+  }, [handleAddRemotionReferenceFiles]);
+
   const handleRemotionSubmit = useCallback(async () => {
     const normalizedPrompt = remotionDraft.trim();
     if (!normalizedPrompt || isRemotionGenerating) {
       return;
     }
 
-    const success = await onRemotionSubmit(normalizedPrompt);
+    const success = await onRemotionSubmit(normalizedPrompt, {
+      attachedImages: remotionAttachedImages,
+    });
     if (success) {
       setRemotionDraft((current) => (
         current.trim() === normalizedPrompt ? '' : current
       ));
+      setRemotionAttachedImages([]);
+      setRemotionAttachmentError(null);
     }
-  }, [isRemotionGenerating, onRemotionSubmit, remotionDraft]);
+  }, [isRemotionGenerating, onRemotionSubmit, remotionAttachedImages, remotionDraft]);
 
   const handleResetRemotion = useCallback(() => {
     setRemotionDraft('');
+    setRemotionAttachedImages([]);
+    setRemotionAttachmentError(null);
     onResetRemotion();
   }, [onResetRemotion]);
 
@@ -598,6 +750,38 @@ export function MediaPanel({
                           </span>
                         )}
                       </div>
+                      {!isUser && Array.isArray(message.skillsUsed) && message.skillsUsed.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mb-1.5">
+                          {message.skillsUsed.map((skill) => (
+                            <span
+                              key={skill}
+                              className="rounded px-1.5 py-0.5 text-[8px] uppercase tracking-wide"
+                              style={{
+                                background: 'rgba(255,255,255,0.06)',
+                                border: `1px solid ${FILMORA.border}`,
+                                color: FILMORA.textDim,
+                              }}
+                            >
+                              {formatMotionGraphicsSkillLabel(skill)}
+                            </span>
+                          ))}
+                        </div>
+                      )}
+                      {Array.isArray(message.attachedImages) && message.attachedImages.length > 0 && (
+                        <div className="mb-2 flex gap-1.5 overflow-x-auto filmora-scrollbar">
+                          {message.attachedImages
+                            .filter((image) => image?.url || image?.dataUrl)
+                            .map((image) => (
+                              <img
+                                key={image.id || image.url || image.dataUrl}
+                                src={image.url || image.dataUrl}
+                                alt={image.name || 'Referência'}
+                                className="h-14 w-14 rounded object-cover border"
+                                style={{ borderColor: FILMORA.border }}
+                              />
+                            ))}
+                        </div>
+                      )}
                       <p className="text-[10px] leading-relaxed whitespace-pre-wrap">{message.content}</p>
                     </div>
                   </div>
@@ -606,10 +790,77 @@ export function MediaPanel({
             )}
           </div>
 
-          <div className="border-t p-2 space-y-2" style={{ borderColor: FILMORA.border }}>
+          <div
+            className="border-t p-2 space-y-2"
+            onDragOver={handleRemotionDragOver}
+            onDragLeave={handleRemotionDragLeave}
+            onDrop={handleRemotionDrop}
+            style={{
+              borderColor: isRemotionDragging ? FILMORA.accent : FILMORA.border,
+              background: isRemotionDragging ? `${FILMORA.accent}10` : undefined,
+            }}
+          >
+            <input
+              ref={remotionFileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              onChange={handleRemotionFileSelect}
+              className="hidden"
+            />
+
+            {remotionAttachmentError && (
+              <div
+                className="rounded border px-2.5 py-2 text-[10px]"
+                style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.22)', color: '#fecaca' }}
+              >
+                {remotionAttachmentError}
+              </div>
+            )}
+
+            {remotionAttachedImages.length > 0 && (
+              <div
+                className="rounded border px-2 py-2 space-y-2"
+                style={{ borderColor: FILMORA.border, background: 'rgba(0,0,0,0.18)' }}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-[9px] uppercase tracking-wide" style={{ color: FILMORA.textDim }}>
+                    Referências visuais
+                  </span>
+                  <span className="text-[9px]" style={{ color: FILMORA.textDim }}>
+                    {remotionAttachedImages.length}/{MAX_REMOTION_REFERENCE_IMAGES}
+                  </span>
+                </div>
+                <div className="flex gap-2 overflow-x-auto filmora-scrollbar">
+                  {remotionAttachedImages.map((image) => (
+                    <div key={image.id || image.url || image.dataUrl} className="relative shrink-0">
+                      <img
+                        src={image.url || image.dataUrl}
+                        alt={image.name || 'Referência'}
+                        className="h-16 w-16 rounded object-cover border"
+                        style={{ borderColor: FILMORA.border }}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveRemotionAttachment(String(image.id))}
+                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold"
+                        style={{ background: FILMORA.bgDark, color: FILMORA.text, border: `1px solid ${FILMORA.border}` }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-[9px] leading-relaxed" style={{ color: FILMORA.textDim }}>
+                  As imagens servem como referência visual do chat. Cole, arraste ou envie arquivos para guiar a composição.
+                </p>
+              </div>
+            )}
+
             <textarea
               value={remotionDraft}
               onChange={(event) => setRemotionDraft(event.target.value)}
+              onPaste={(event) => { void handleRemotionPaste(event); }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
                   event.preventDefault();
@@ -633,6 +884,18 @@ export function MediaPanel({
                   : 'Se o clip ainda estiver vazio, o próximo envio gera a primeira versão dele. Use Ctrl+Enter para enviar.'}
               </div>
               <div className="flex items-center gap-1.5">
+                <button
+                  type="button"
+                  onClick={() => remotionFileInputRef.current?.click()}
+                  disabled={isRemotionGenerating || remotionAttachedImages.length >= MAX_REMOTION_REFERENCE_IMAGES}
+                  className="rounded px-2.5 py-1.5 text-[10px] font-semibold transition-opacity disabled:opacity-50"
+                  style={{
+                    border: `1px solid ${FILMORA.border}`,
+                    color: FILMORA.textMuted,
+                  }}
+                >
+                  Referências
+                </button>
                 {selectedRemotionClip && (
                   <button
                     type="button"

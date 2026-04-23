@@ -78,12 +78,26 @@ export interface AudioConfig {
   fadeOut?: number;
 }
 
+export interface MotionGraphicsReferenceImage {
+  id?: string;
+  name?: string;
+  path?: string;
+  url?: string;
+  dataUrl?: string;
+  mimeType?: string;
+  width?: number;
+  height?: number;
+  source?: 'upload' | 'frame' | 'scene';
+}
+
 export interface MotionGraphicsChatPersistedMessage {
   role: 'user' | 'assistant';
   content: string;
   timestamp?: number;
   provider?: string;
   model?: string;
+  attachedImages?: MotionGraphicsReferenceImage[];
+  skillsUsed?: string[];
 }
 
 export interface MotionGraphicsSegmentData {

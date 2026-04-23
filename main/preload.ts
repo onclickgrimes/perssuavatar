@@ -470,6 +470,18 @@ const handler = {
         timestamp?: number;
         provider?: string;
         model?: string;
+        attachedImages?: Array<{
+          id?: string;
+          name?: string;
+          path?: string;
+          url?: string;
+          dataUrl?: string;
+          mimeType?: string;
+          width?: number;
+          height?: number;
+          source?: 'upload' | 'frame' | 'scene';
+        }>;
+        skillsUsed?: string[];
       }>;
       projectContext?: {
         title?: string;
@@ -494,6 +506,17 @@ const handler = {
           imagePrompt?: string;
         }>;
       };
+      referenceImages?: Array<{
+        id?: string;
+        name?: string;
+        path?: string;
+        url?: string;
+        dataUrl?: string;
+        mimeType?: string;
+        width?: number;
+        height?: number;
+        source?: 'upload' | 'frame' | 'scene';
+      }>;
       provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
       model?: string;
     }) =>

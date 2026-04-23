@@ -1,4 +1,7 @@
-import type { MotionGraphicsSegmentData } from '../../../../shared/utils/project-converter';
+import type {
+  MotionGraphicsReferenceImage,
+  MotionGraphicsSegmentData,
+} from '../../../../shared/utils/project-converter';
 
 export type MediaPanelTab = 'pexels' | 'remotion' | 'library';
 
@@ -11,6 +14,8 @@ export interface MotionGraphicsChatMessage {
   timestamp: number;
   provider?: string;
   model?: string;
+  attachedImages?: MotionGraphicsReferenceImage[];
+  skillsUsed?: string[];
 }
 
 export interface MotionGraphicsClipSummary {

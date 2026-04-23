@@ -18,6 +18,7 @@ export type {
   BackgroundConfig,
   TimelineConfig,
   MotionGraphicsChatPersistedMessage,
+  MotionGraphicsReferenceImage,
   MotionGraphicsSegmentData,
 } from '../shared/utils/project-converter';
 
