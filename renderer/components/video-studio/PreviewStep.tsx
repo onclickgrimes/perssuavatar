@@ -1457,7 +1457,12 @@ export function PreviewStep({
 
   const handleSubmitMotionGraphics = useCallback(async (
     promptText: string,
-    options?: { attachedImages?: MotionGraphicsReferenceImage[] },
+    options?: {
+      attachedImages?: MotionGraphicsReferenceImage[];
+      selectedSkills?: string[];
+      provider?: 'gemini' | 'openai' | 'deepseek';
+      model?: string;
+    },
   ) => {
     const normalizedPrompt = String(promptText || '').trim();
     if (!normalizedPrompt || isMotionGraphicsGenerating) {
@@ -1482,6 +1487,13 @@ export function PreviewStep({
     const attachedImages = Array.isArray(options?.attachedImages)
       ? options!.attachedImages.filter((image) => image?.url || image?.path || image?.dataUrl)
       : [];
+    const selectedSkills = Array.isArray(options?.selectedSkills)
+      ? options.selectedSkills
+        .map((skill) => String(skill || '').trim())
+        .filter(Boolean)
+      : [];
+    const selectedProvider = options?.provider;
+    const selectedModel = typeof options?.model === 'string' ? options.model.trim() : '';
     const userMessage = createMotionGraphicsMessage('user', normalizedPrompt, {
       attachedImages: attachedImages.length > 0 ? attachedImages : undefined,
     });
@@ -1519,6 +1531,9 @@ export function PreviewStep({
         currentCode: String(currentMotionGraphics?.code || '').trim() || undefined,
         conversationHistory,
         referenceImages: attachedImages,
+        selectedSkills,
+        provider: selectedProvider,
+        model: selectedModel || undefined,
         projectContext: {
           title: project.title,
           description: project.description,

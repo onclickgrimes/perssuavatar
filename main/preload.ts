@@ -517,10 +517,19 @@ const handler = {
         height?: number;
         source?: 'upload' | 'frame' | 'scene';
       }>;
+      selectedSkills?: string[];
       provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
       model?: string;
     }) =>
       ipcRenderer.invoke('video-project:generate-motion-graphics', input),
+
+    // Listar catálogo disponível de skills de motion graphics
+    listMotionGraphicsSkills: () =>
+      ipcRenderer.invoke('video-project:list-motion-graphics-skills'),
+
+    // Importar pacote de skills de motion graphics via diretório local
+    importMotionGraphicsSkillPackage: (sourceDirectoryPath?: string) =>
+      ipcRenderer.invoke('video-project:import-motion-graphics-skill-package', sourceDirectoryPath),
     
     // Converter projeto para formato Remotion
     convertToRemotion: (project: any) => 

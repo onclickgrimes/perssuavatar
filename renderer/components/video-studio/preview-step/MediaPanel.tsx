@@ -59,6 +59,88 @@ const MEDIA_DRAG_MIME_FALLBACK = 'text/x-video-studio-media';
 const MEDIA_DRAG_TEXT_PREFIX = 'video-studio-media:';
 const MAX_REMOTION_REFERENCE_IMAGES = 4;
 const MAX_REMOTION_REFERENCE_FILE_SIZE_BYTES = 10 * 1024 * 1024;
+const REMOTION_CHAT_THEME = {
+  bg: '#111111',
+  surface: '#212121',
+  surfaceMuted: '#181818',
+  surfaceAlt: '#262626',
+  border: '#313131',
+  borderStrong: '#3a3a3a',
+  text: '#f5f5f5',
+  textMuted: '#d4d4d8',
+  textDim: '#7a7a7a',
+  placeholder: '#686868',
+  accent: '#3b82f6',
+  accentMuted: 'rgba(59,130,246,0.16)',
+  icon: '#cfcfcf',
+};
+const DEFAULT_REMOTION_MODEL_OPTION = 'gemini:gemini-3.1-pro-preview';
+const remotionChatTimeFormatter = new Intl.DateTimeFormat('pt-BR', {
+  hour: '2-digit',
+  minute: '2-digit',
+});
+
+type MotionGraphicsProviderOption = 'gemini' | 'openai' | 'deepseek';
+
+interface MotionGraphicsModelOption {
+  value: string;
+  provider: MotionGraphicsProviderOption;
+  model: string;
+  label: string;
+  composerLabel: string;
+}
+
+const MOTION_GRAPHICS_MODEL_OPTIONS: MotionGraphicsModelOption[] = [
+  {
+    value: 'openai:gpt-5.4-mini',
+    provider: 'openai',
+    model: 'gpt-5.4-mini',
+    label: 'GPT 5.4 Mini',
+    composerLabel: 'GPT-5.4 Mini',
+  },
+  {
+    value: 'openai:gpt-5.4',
+    provider: 'openai',
+    model: 'gpt-5.4',
+    label: 'GPT 5.4',
+    composerLabel: 'GPT-5.4',
+  },
+  {
+    value: 'gemini:gemini-3.1-pro-preview',
+    provider: 'gemini',
+    model: 'gemini-3.1-pro-preview',
+    label: 'Gemini 3.1 Pro',
+    composerLabel: 'Gemini 3.1 Pro',
+  },
+  {
+    value: 'gemini:gemini-3-flash-preview',
+    provider: 'gemini',
+    model: 'gemini-3-flash-preview',
+    label: 'Gemini 3 Flash',
+    composerLabel: 'Gemini 3 Flash',
+  },
+  {
+    value: 'gemini:gemini-3.1-flash-lite-preview',
+    provider: 'gemini',
+    model: 'gemini-3.1-flash-lite-preview',
+    label: 'Gemini 3.1 Flash Lite',
+    composerLabel: 'Gemini 3.1 Flash Lite',
+  },
+  {
+    value: 'deepseek:deepseek-chat',
+    provider: 'deepseek',
+    model: 'deepseek-chat',
+    label: 'DeepSeek Chat V3',
+    composerLabel: 'DeepSeek Chat',
+  },
+  {
+    value: 'deepseek:deepseek-reasoner',
+    provider: 'deepseek',
+    model: 'deepseek-reasoner',
+    label: 'DeepSeek Reasoner R1',
+    composerLabel: 'DeepSeek Reasoner',
+  },
+];
 
 interface MediaPanelProps {
   activeTab: MediaPanelTab;
@@ -73,7 +155,12 @@ interface MediaPanelProps {
   remotionMessages: MotionGraphicsChatMessage[];
   onRemotionSubmit: (
     prompt: string,
-    options?: { attachedImages?: MotionGraphicsReferenceImage[] },
+    options?: {
+      attachedImages?: MotionGraphicsReferenceImage[];
+      selectedSkills?: string[];
+      provider?: MotionGraphicsProviderOption;
+      model?: string;
+    },
   ) => Promise<boolean> | boolean;
   isRemotionGenerating: boolean;
   remotionGenerationError: string | null;
@@ -81,6 +168,19 @@ interface MediaPanelProps {
   hasRemotionCode: boolean;
   onResetRemotion: () => void;
   remotionDurationLabel: string;
+}
+
+interface MotionGraphicsSkillLibraryItem {
+  id: string;
+  slug: string;
+  title: string;
+  description?: string;
+  kind: 'skill';
+  packageId: string;
+  packageName: string;
+  source: 'builtin' | 'imported';
+  tags: string[];
+  hasAssets: boolean;
 }
 
 const fileToDataUrl = (file: File): Promise<string> => {
@@ -93,10 +193,35 @@ const fileToDataUrl = (file: File): Promise<string> => {
 };
 
 const formatMotionGraphicsSkillLabel = (value: string): string => {
-  return value
-    .replace(/^example-/, 'Ex. ')
+  const normalizedValue = String(value || '').split('/').pop() || String(value || '');
+  return normalizedValue
     .replace(/-/g, ' ')
     .replace(/\b\w/g, (letter) => letter.toUpperCase());
+};
+
+const formatChatTimestamp = (timestamp?: number): string => {
+  const normalizedTimestamp = Number(timestamp || 0);
+  if (!Number.isFinite(normalizedTimestamp) || normalizedTimestamp <= 0) {
+    return '--:--';
+  }
+
+  return remotionChatTimeFormatter.format(new Date(normalizedTimestamp));
+};
+
+const resolveMotionGraphicsModelOption = (
+  provider?: string,
+  model?: string,
+): MotionGraphicsModelOption | null => {
+  const normalizedProvider = String(provider || '').trim();
+  const normalizedModel = String(model || '').trim();
+  if (!normalizedProvider && !normalizedModel) {
+    return null;
+  }
+
+  return MOTION_GRAPHICS_MODEL_OPTIONS.find((option) => (
+    option.provider === normalizedProvider
+    && option.model === normalizedModel
+  )) || MOTION_GRAPHICS_MODEL_OPTIONS.find((option) => option.model === normalizedModel) || null;
 };
 
 const getOrientationFromRatio = (ratio: string): PexelsOrientation => {
@@ -172,6 +297,41 @@ const PanelIcons = {
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
   ),
+  gear: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3.2" />
+      <path d="M19.4 15a1 1 0 0 0 .2 1.1l.1.1a1.5 1.5 0 0 1 0 2.1l-.3.3a1.5 1.5 0 0 1-2.1 0l-.1-.1a1 1 0 0 0-1.1-.2 1 1 0 0 0-.6.9V19a1.5 1.5 0 0 1-1.5 1.5h-.5A1.5 1.5 0 0 1 10 19v-.2a1 1 0 0 0-.6-.9 1 1 0 0 0-1.1.2l-.1.1a1.5 1.5 0 0 1-2.1 0l-.3-.3a1.5 1.5 0 0 1 0-2.1l.1-.1A1 1 0 0 0 6 15a1 1 0 0 0-.9-.6H5a1.5 1.5 0 0 1-1.5-1.5v-.5A1.5 1.5 0 0 1 5 10.9h.2A1 1 0 0 0 6 10a1 1 0 0 0-.2-1.1l-.1-.1a1.5 1.5 0 0 1 0-2.1l.3-.3a1.5 1.5 0 0 1 2.1 0l.1.1A1 1 0 0 0 9.4 6a1 1 0 0 0 .6-.9V5A1.5 1.5 0 0 1 11.5 3.5h.5A1.5 1.5 0 0 1 13.5 5v.2a1 1 0 0 0 .6.9 1 1 0 0 0 1.1-.2l.1-.1a1.5 1.5 0 0 1 2.1 0l.3.3a1.5 1.5 0 0 1 0 2.1l-.1.1A1 1 0 0 0 18 10a1 1 0 0 0 .9.6h.2a1.5 1.5 0 0 1 1.5 1.5v.5a1.5 1.5 0 0 1-1.5 1.5h-.2a1 1 0 0 0-.9.6Z" />
+    </svg>
+  ),
+  plus: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  ),
+  bookOpen: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2.5 6.5A2.5 2.5 0 0 1 5 4h5a3 3 0 0 1 3 3v13a3 3 0 0 0-3-3H5a2.5 2.5 0 0 0-2.5 2.5z" />
+      <path d="M21.5 6.5A2.5 2.5 0 0 0 19 4h-5a3 3 0 0 0-3 3v13a3 3 0 0 1 3-3h5a2.5 2.5 0 0 1 2.5 2.5z" />
+    </svg>
+  ),
+  paperclip: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m21.4 11.1-8.5 8.5a6 6 0 0 1-8.5-8.5l9.2-9.2a4 4 0 1 1 5.7 5.6l-9.2 9.2a2 2 0 1 1-2.8-2.8l8.5-8.5" />
+    </svg>
+  ),
+  camera: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 7.5A2.5 2.5 0 0 1 6.5 5h1.8l1.2-1.5h5l1.2 1.5h1.8A2.5 2.5 0 0 1 21 7.5v9A2.5 2.5 0 0 1 18.5 19h-12A2.5 2.5 0 0 1 4 16.5z" />
+      <circle cx="12" cy="12" r="3.5" />
+    </svg>
+  ),
+  arrowUp: (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 19V5" />
+      <path d="m5 12 7-7 7 7" />
+    </svg>
+  ),
 };
 
 export function MediaPanel({
@@ -209,15 +369,58 @@ export function MediaPanel({
   const [remotionAttachedImages, setRemotionAttachedImages] = useState<MotionGraphicsReferenceImage[]>([]);
   const [remotionAttachmentError, setRemotionAttachmentError] = useState<string | null>(null);
   const [isRemotionDragging, setIsRemotionDragging] = useState(false);
+  const [motionGraphicsSkills, setMotionGraphicsSkills] = useState<MotionGraphicsSkillLibraryItem[]>([]);
+  const [motionGraphicsSkillError, setMotionGraphicsSkillError] = useState<string | null>(null);
+  const [motionGraphicsSkillNotice, setMotionGraphicsSkillNotice] = useState<string | null>(null);
+  const [selectedRemotionSkills, setSelectedRemotionSkills] = useState<string[]>([]);
+  const [isLoadingMotionGraphicsSkills, setIsLoadingMotionGraphicsSkills] = useState(false);
+  const [isImportingMotionGraphicsSkills, setIsImportingMotionGraphicsSkills] = useState(false);
+  const [showAllMotionGraphicsSkills, setShowAllMotionGraphicsSkills] = useState(false);
+  const [isRemotionSkillPanelOpen, setIsRemotionSkillPanelOpen] = useState(false);
+  const [selectedRemotionModelValue, setSelectedRemotionModelValue] = useState(DEFAULT_REMOTION_MODEL_OPTION);
 
   const requestIdRef = useRef(0);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const listContainerRef = useRef<HTMLDivElement | null>(null);
   const videoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
   const remotionFileInputRef = useRef<HTMLInputElement | null>(null);
+  const remotionChatEndRef = useRef<HTMLDivElement | null>(null);
+  const remotionSkillPanelRef = useRef<HTMLDivElement | null>(null);
+  const remotionSkillButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const autoOrientation = useMemo(() => getOrientationFromRatio(selectedRatio), [selectedRatio]);
   const canApplyToSelectedSegment = Boolean(selectedSeg && !isMotionGraphicsSegment(selectedSeg));
+  const motionGraphicsSkillLabels = useMemo(() => {
+    return new Map(motionGraphicsSkills.map((skill) => [skill.id, skill.title]));
+  }, [motionGraphicsSkills]);
+  const visibleMotionGraphicsSkills = useMemo(() => {
+    return showAllMotionGraphicsSkills
+      ? motionGraphicsSkills
+      : motionGraphicsSkills.slice(0, 8);
+  }, [motionGraphicsSkills, showAllMotionGraphicsSkills]);
+  const selectedRemotionModelOption = useMemo(() => {
+    return MOTION_GRAPHICS_MODEL_OPTIONS.find((option) => option.value === selectedRemotionModelValue)
+      || MOTION_GRAPHICS_MODEL_OPTIONS.find((option) => option.value === DEFAULT_REMOTION_MODEL_OPTION)
+      || MOTION_GRAPHICS_MODEL_OPTIONS[0];
+  }, [selectedRemotionModelValue]);
+  const selectedSceneReferenceUrl = useMemo(() => {
+    const candidates = [selectedSeg?.sourceImageUrl, selectedSeg?.imageUrl];
+    const firstCandidate = candidates.find((value) => typeof value === 'string' && value.trim());
+    return firstCandidate ? String(firstCandidate) : '';
+  }, [selectedSeg]);
+  const canUseSelectedSceneReference = Boolean(
+    selectedSeg
+    && !isMotionGraphicsSegment(selectedSeg)
+    && selectedSceneReferenceUrl,
+  );
+  const selectedSceneReferenceName = useMemo(() => {
+    if (!selectedSeg) {
+      return 'Cena selecionada';
+    }
+
+    return String(selectedSeg.fileName || '').trim()
+      || (selectedSeg?.id != null ? `Cena ${selectedSeg.id}` : 'Cena selecionada');
+  }, [selectedSeg]);
   const effectiveOrientation = orientationFilter === 'auto' ? autoOrientation : orientationFilter;
   const orientationLabel = effectiveOrientation === 'portrait'
     ? 'Vertical'
@@ -304,7 +507,149 @@ export function MediaPanel({
     setRemotionAttachedImages([]);
     setRemotionAttachmentError(null);
     setIsRemotionDragging(false);
+    setSelectedRemotionSkills([]);
+    setMotionGraphicsSkillNotice(null);
+    setIsRemotionSkillPanelOpen(false);
   }, [selectedRemotionClipId]);
+
+  useEffect(() => {
+    const lastAssistantMessage = [...remotionMessages]
+      .reverse()
+      .find((message) => message.role === 'assistant' && (message.provider || message.model));
+    const matchedOption = resolveMotionGraphicsModelOption(
+      lastAssistantMessage?.provider,
+      lastAssistantMessage?.model,
+    );
+    const nextValue = matchedOption?.value || DEFAULT_REMOTION_MODEL_OPTION;
+
+    setSelectedRemotionModelValue((previous) => (previous === nextValue ? previous : nextValue));
+  }, [remotionMessages, selectedRemotionClipId]);
+
+  const loadMotionGraphicsSkillCatalog = useCallback(async () => {
+    const listSkills = window.electron?.videoProject?.listMotionGraphicsSkills;
+    if (!listSkills) {
+      setMotionGraphicsSkillError('Catálogo de skills não disponível neste build.');
+      setMotionGraphicsSkills([]);
+      return;
+    }
+
+    setIsLoadingMotionGraphicsSkills(true);
+    try {
+      const result = await listSkills() as {
+        success: boolean;
+        skills?: MotionGraphicsSkillLibraryItem[];
+        error?: string;
+      };
+
+      if (!result?.success) {
+        throw new Error(result?.error || 'Falha ao carregar skills.');
+      }
+
+      const nextSkills = Array.isArray(result.skills) ? result.skills : [];
+      setMotionGraphicsSkills(nextSkills);
+      setMotionGraphicsSkillError(null);
+      setSelectedRemotionSkills((previous) => previous.filter((skillId) => nextSkills.some((skill) => skill.id === skillId)));
+    } catch (skillError: any) {
+      setMotionGraphicsSkillError(skillError?.message || 'Falha ao carregar skills.');
+    } finally {
+      setIsLoadingMotionGraphicsSkills(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeTab !== 'remotion') {
+      return;
+    }
+
+    void loadMotionGraphicsSkillCatalog();
+  }, [activeTab, loadMotionGraphicsSkillCatalog]);
+
+  useEffect(() => {
+    if (!isRemotionSkillPanelOpen) {
+      return;
+    }
+
+    const handlePointerDown = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (remotionSkillPanelRef.current?.contains(target) || remotionSkillButtonRef.current?.contains(target)) {
+        return;
+      }
+
+      setIsRemotionSkillPanelOpen(false);
+    };
+
+    window.addEventListener('mousedown', handlePointerDown);
+    return () => window.removeEventListener('mousedown', handlePointerDown);
+  }, [isRemotionSkillPanelOpen]);
+
+  useEffect(() => {
+    if (activeTab !== 'remotion') {
+      return;
+    }
+
+    remotionChatEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [activeTab, remotionMessages.length, selectedRemotionClipId]);
+
+  const handleToggleRemotionSkill = useCallback((skillId: string) => {
+    const normalizedSkillId = String(skillId || '').trim();
+    if (!normalizedSkillId) {
+      return;
+    }
+
+    setSelectedRemotionSkills((previous) => (
+      previous.includes(normalizedSkillId)
+        ? previous.filter((item) => item !== normalizedSkillId)
+        : [...previous, normalizedSkillId]
+    ));
+  }, []);
+
+  const handleImportMotionGraphicsSkillPackage = useCallback(async () => {
+    const importSkillPackage = window.electron?.videoProject?.importMotionGraphicsSkillPackage;
+    if (!importSkillPackage) {
+      setMotionGraphicsSkillError('Importação de skills não disponível neste build.');
+      setIsRemotionSkillPanelOpen(true);
+      return;
+    }
+
+    setIsImportingMotionGraphicsSkills(true);
+    setIsRemotionSkillPanelOpen(true);
+    try {
+      const result = await importSkillPackage() as {
+        success: boolean;
+        canceled?: boolean;
+        packageName?: string;
+        importedSkillCount?: number;
+        skills?: MotionGraphicsSkillLibraryItem[];
+        error?: string;
+      };
+
+      if (result?.canceled) {
+        return;
+      }
+
+      if (!result?.success) {
+        throw new Error(result?.error || 'Falha ao importar pacote de skills.');
+      }
+
+      const importedSkills = Array.isArray(result.skills) ? result.skills : [];
+      if (importedSkills.length > 0) {
+        setSelectedRemotionSkills((previous) => {
+          const merged = [...previous, ...importedSkills.map((skill) => skill.id)];
+          return Array.from(new Set(merged));
+        });
+      }
+      setMotionGraphicsSkillNotice(
+        `${result.packageName || 'Pacote'} importado com ${Number(result.importedSkillCount || importedSkills.length)} skill(s).`,
+      );
+      setMotionGraphicsSkillError(null);
+      await loadMotionGraphicsSkillCatalog();
+    } catch (importError: any) {
+      setMotionGraphicsSkillError(importError?.message || 'Falha ao importar pacote de skills.');
+      setIsRemotionSkillPanelOpen(true);
+    } finally {
+      setIsImportingMotionGraphicsSkills(false);
+    }
+  }, [loadMotionGraphicsSkillCatalog]);
 
   useEffect(() => {
     if (activeTab !== 'pexels') return;
@@ -407,6 +752,39 @@ export function MediaPanel({
     setRemotionAttachedImages((previous) => previous.filter((image) => image.id !== imageId));
   }, []);
 
+  const handleUseSelectedSceneReference = useCallback(() => {
+    if (!canUseSelectedSceneReference || !selectedSceneReferenceUrl) {
+      setRemotionAttachmentError('Selecione uma cena com frame disponível para usar como referência.');
+      return;
+    }
+
+    if (remotionAttachedImages.length >= MAX_REMOTION_REFERENCE_IMAGES) {
+      setRemotionAttachmentError(`Máximo de ${MAX_REMOTION_REFERENCE_IMAGES} imagens por mensagem.`);
+      return;
+    }
+
+    if (remotionAttachedImages.some((image) => image.url === selectedSceneReferenceUrl)) {
+      setRemotionAttachmentError(null);
+      return;
+    }
+
+    setRemotionAttachedImages((previous) => [
+      ...previous,
+      {
+        id: `scene-ref-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: selectedSceneReferenceName,
+        url: selectedSceneReferenceUrl,
+        source: 'scene',
+      },
+    ]);
+    setRemotionAttachmentError(null);
+  }, [
+    canUseSelectedSceneReference,
+    remotionAttachedImages,
+    selectedSceneReferenceName,
+    selectedSceneReferenceUrl,
+  ]);
+
   const handleRemotionPaste = useCallback(async (
     event: React.ClipboardEvent<HTMLTextAreaElement>,
   ) => {
@@ -445,6 +823,10 @@ export function MediaPanel({
     }
   }, [handleAddRemotionReferenceFiles]);
 
+  const handleToggleRemotionSkillPanel = useCallback(() => {
+    setIsRemotionSkillPanelOpen((previous) => !previous);
+  }, []);
+
   const handleRemotionSubmit = useCallback(async () => {
     const normalizedPrompt = remotionDraft.trim();
     if (!normalizedPrompt || isRemotionGenerating) {
@@ -453,6 +835,9 @@ export function MediaPanel({
 
     const success = await onRemotionSubmit(normalizedPrompt, {
       attachedImages: remotionAttachedImages,
+      selectedSkills: selectedRemotionSkills,
+      provider: selectedRemotionModelOption.provider,
+      model: selectedRemotionModelOption.model,
     });
     if (success) {
       setRemotionDraft((current) => (
@@ -461,12 +846,21 @@ export function MediaPanel({
       setRemotionAttachedImages([]);
       setRemotionAttachmentError(null);
     }
-  }, [isRemotionGenerating, onRemotionSubmit, remotionAttachedImages, remotionDraft]);
+  }, [
+    isRemotionGenerating,
+    onRemotionSubmit,
+    remotionAttachedImages,
+    remotionDraft,
+    selectedRemotionModelOption.model,
+    selectedRemotionModelOption.provider,
+    selectedRemotionSkills,
+  ]);
 
   const handleResetRemotion = useCallback(() => {
     setRemotionDraft('');
     setRemotionAttachedImages([]);
     setRemotionAttachmentError(null);
+    setIsRemotionSkillPanelOpen(false);
     onResetRemotion();
   }, [onResetRemotion]);
 
@@ -571,121 +965,283 @@ export function MediaPanel({
       </div>
 
       {activeTab === 'remotion' ? (
-        <div className="flex-1 min-h-0 flex flex-col">
-          <div className="px-3 py-3 border-b space-y-2" style={{ borderColor: FILMORA.border }}>
-            <div className="flex items-start justify-between gap-2">
-              <div
-                className="flex-1 rounded border px-2.5 py-2 space-y-1"
-                style={{ borderColor: FILMORA.border, background: `${FILMORA.surface}CC` }}
-              >
-                <div className="flex items-center justify-between gap-2 text-[10px] uppercase tracking-wide">
-                  <span style={{ color: FILMORA.textDim }}>Trecho ativo</span>
-                  <span style={{ color: FILMORA.accent }}>{selectedRatio} • {remotionDurationLabel}</span>
-                </div>
-                <div className="text-[10px] leading-relaxed" style={{ color: FILMORA.textMuted }}>
-                  {selectedRemotionClip
-                    ? `Clip #${selectedRemotionClip.id} na V${selectedRemotionClip.track}. Mova e redimensione esse trecho diretamente na timeline.`
-                    : 'Crie um trecho Remotion para abrir um chat por clip e posicioná-lo onde quiser nas tracks de vídeo.'}
-                </div>
-                {selectedSeg && !isMotionGraphicsSegment(selectedSeg) && (
-                  <div className="text-[10px] leading-relaxed" style={{ color: FILMORA.textDim }}>
-                    Cena #{selectedSeg.id} selecionada na timeline. O prompt pode usar esse trecho como contexto visual.
+        <div className="flex-1 min-h-0 flex flex-col" style={{ background: REMOTION_CHAT_THEME.bg }}>
+          <div className="px-3 pt-3 pb-1">
+            <div className="relative flex justify-end">
+              <div className="relative flex items-center gap-1.5">
+                <button
+                  ref={remotionSkillButtonRef}
+                  type="button"
+                  onClick={handleToggleRemotionSkillPanel}
+                  className="h-8 w-8 rounded-full border flex items-center justify-center transition-colors"
+                  style={{
+                    borderColor: isRemotionSkillPanelOpen ? REMOTION_CHAT_THEME.accent : REMOTION_CHAT_THEME.borderStrong,
+                    background: isRemotionSkillPanelOpen ? REMOTION_CHAT_THEME.accentMuted : REMOTION_CHAT_THEME.surfaceMuted,
+                    color: isRemotionSkillPanelOpen ? REMOTION_CHAT_THEME.accent : REMOTION_CHAT_THEME.icon,
+                  }}
+                  title="Gerenciar skills e trecho ativo"
+                >
+                  {PanelIcons.gear}
+                </button>
+                <button
+                  type="button"
+                  onClick={onCreateRemotionClip}
+                  className="h-8 w-8 rounded-full border flex items-center justify-center transition-colors"
+                  style={{
+                    borderColor: REMOTION_CHAT_THEME.borderStrong,
+                    background: REMOTION_CHAT_THEME.surfaceMuted,
+                    color: REMOTION_CHAT_THEME.icon,
+                  }}
+                  title="Nova cena"
+                >
+                  {PanelIcons.plus}
+                </button>
+
+                {isRemotionSkillPanelOpen && (
+                  <div
+                    ref={remotionSkillPanelRef}
+                    className="absolute right-0 top-full mt-3 z-20 w-[320px] max-w-[calc(100vw-3rem)] rounded-[24px] border p-3 shadow-2xl space-y-3"
+                    style={{
+                      borderColor: REMOTION_CHAT_THEME.borderStrong,
+                      background: '#171717',
+                      boxShadow: '0 22px 60px rgba(0,0,0,0.45)',
+                    }}
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[10px] font-semibold uppercase tracking-[0.18em]" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                          Trecho ativo
+                        </div>
+                        <div className="mt-1 truncate text-[12px] font-semibold" style={{ color: REMOTION_CHAT_THEME.text }}>
+                          {selectedRemotionClip ? selectedRemotionClip.label : 'Nenhuma cena selecionada'}
+                        </div>
+                        <p className="mt-1 text-[10px] leading-relaxed" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                          {selectedRemotionClip
+                            ? `V${selectedRemotionClip.track} • ${formatDuration(selectedRemotionClip.end - selectedRemotionClip.start)} • ${selectedRemotionClip.messageCount} mensagens`
+                            : 'Use o botão + para criar uma nova cena e abrir o chat.'}
+                        </p>
+                      </div>
+                      {selectedRemotionClip && (
+                        <button
+                          type="button"
+                          onClick={handleResetRemotion}
+                          disabled={isRemotionGenerating}
+                          className="rounded-full border px-3 py-1.5 text-[10px] font-medium transition-opacity disabled:opacity-50"
+                          style={{ borderColor: REMOTION_CHAT_THEME.borderStrong, color: REMOTION_CHAT_THEME.textMuted }}
+                        >
+                          Limpar
+                        </button>
+                      )}
+                    </div>
+
+                    {selectedSeg && !isMotionGraphicsSegment(selectedSeg) && (
+                      <div
+                        className="rounded-[18px] border px-3 py-2 text-[10px] leading-relaxed"
+                        style={{
+                          borderColor: REMOTION_CHAT_THEME.border,
+                          background: REMOTION_CHAT_THEME.surfaceMuted,
+                          color: REMOTION_CHAT_THEME.textDim,
+                        }}
+                      >
+                        Cena #{selectedSeg.id} selecionada na timeline. O atalho da camera usa esse frame como referência quando disponível.
+                      </div>
+                    )}
+
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-[11px] font-semibold" style={{ color: REMOTION_CHAT_THEME.text }}>
+                          Biblioteca de skills
+                        </div>
+                        <p className="mt-1 text-[10px] leading-relaxed" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                          Fixe skills para o próximo prompt e importe novas bibliotecas a partir de uma pasta local.
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        {selectedRemotionSkills.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setSelectedRemotionSkills([])}
+                            className="rounded-full border px-2.5 py-1 text-[9px] font-medium"
+                            style={{ borderColor: REMOTION_CHAT_THEME.borderStrong, color: REMOTION_CHAT_THEME.textMuted }}
+                          >
+                            Limpar
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => { void loadMotionGraphicsSkillCatalog(); }}
+                          className="rounded-full border px-2.5 py-1 text-[9px] font-medium"
+                          style={{ borderColor: REMOTION_CHAT_THEME.borderStrong, color: REMOTION_CHAT_THEME.textMuted }}
+                        >
+                          Atualizar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { void handleImportMotionGraphicsSkillPackage(); }}
+                          disabled={isImportingMotionGraphicsSkills}
+                          className="rounded-full border px-2.5 py-1 text-[9px] font-medium transition-opacity disabled:opacity-50"
+                          style={{ borderColor: REMOTION_CHAT_THEME.borderStrong, color: REMOTION_CHAT_THEME.text }}
+                        >
+                          {isImportingMotionGraphicsSkills ? 'Importando...' : 'Importar'}
+                        </button>
+                      </div>
+                    </div>
+
+                    {motionGraphicsSkillNotice && (
+                      <div
+                        className="rounded-[16px] border px-3 py-2 text-[10px]"
+                        style={{
+                          borderColor: 'rgba(59,130,246,0.45)',
+                          background: 'rgba(59,130,246,0.12)',
+                          color: REMOTION_CHAT_THEME.text,
+                        }}
+                      >
+                        {motionGraphicsSkillNotice}
+                      </div>
+                    )}
+
+                    {motionGraphicsSkillError && (
+                      <div
+                        className="rounded-[16px] border px-3 py-2 text-[10px]"
+                        style={{
+                          borderColor: '#7f1d1d',
+                          background: 'rgba(127,29,29,0.22)',
+                          color: '#fecaca',
+                        }}
+                      >
+                        {motionGraphicsSkillError}
+                      </div>
+                    )}
+
+                    {selectedRemotionSkills.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {selectedRemotionSkills.map((skillId) => (
+                          <button
+                            key={skillId}
+                            type="button"
+                            onClick={() => handleToggleRemotionSkill(skillId)}
+                            className="rounded-full px-2.5 py-1 text-[9px] font-medium"
+                            style={{
+                              background: REMOTION_CHAT_THEME.accentMuted,
+                              border: `1px solid ${REMOTION_CHAT_THEME.accent}`,
+                              color: REMOTION_CHAT_THEME.accent,
+                            }}
+                          >
+                            {motionGraphicsSkillLabels.get(skillId) || formatMotionGraphicsSkillLabel(skillId)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div
+                      className="rounded-[18px] border p-1.5 max-h-[210px] overflow-y-auto filmora-scrollbar"
+                      style={{ borderColor: REMOTION_CHAT_THEME.border, background: REMOTION_CHAT_THEME.surfaceMuted }}
+                    >
+                      {isLoadingMotionGraphicsSkills ? (
+                        <div className="px-2 py-2 text-[10px]" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                          Carregando skills...
+                        </div>
+                      ) : motionGraphicsSkills.length === 0 ? (
+                        <div className="px-2 py-2 text-[10px]" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                          Nenhuma skill carregada.
+                        </div>
+                      ) : (
+                        <div className="space-y-1.5">
+                          {visibleMotionGraphicsSkills.map((skill) => {
+                            const isSelected = selectedRemotionSkills.includes(skill.id);
+
+                            return (
+                              <button
+                                key={skill.id}
+                                type="button"
+                                onClick={() => handleToggleRemotionSkill(skill.id)}
+                                className="w-full rounded-[16px] px-3 py-2 text-left transition-colors"
+                                style={{
+                                  border: `1px solid ${isSelected ? REMOTION_CHAT_THEME.accent : REMOTION_CHAT_THEME.border}`,
+                                  background: isSelected ? REMOTION_CHAT_THEME.accentMuted : REMOTION_CHAT_THEME.surface,
+                                }}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <span className="truncate text-[10px] font-semibold" style={{ color: isSelected ? REMOTION_CHAT_THEME.accent : REMOTION_CHAT_THEME.text }}>
+                                    {skill.title}
+                                  </span>
+                                  <span className="text-[8px] uppercase tracking-[0.18em]" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                                    Skill
+                                  </span>
+                                </div>
+                                <div className="mt-1 flex items-center justify-between gap-2 text-[9px]" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                                  <span className="truncate">{skill.source === 'builtin' ? 'Default' : skill.packageName}</span>
+                                  <span>{skill.hasAssets ? 'Com assets' : 'Sem assets'}</span>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {motionGraphicsSkills.length > 8 && (
+                      <button
+                        type="button"
+                        onClick={() => setShowAllMotionGraphicsSkills((previous) => !previous)}
+                        className="text-[10px] font-medium"
+                        style={{ color: REMOTION_CHAT_THEME.textMuted }}
+                      >
+                        {showAllMotionGraphicsSkills ? 'Mostrar menos' : `Mostrar todas (${motionGraphicsSkills.length})`}
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
-
-              <button
-                type="button"
-                onClick={onCreateRemotionClip}
-                className="shrink-0 rounded px-3 py-2 text-[10px] font-semibold uppercase tracking-wide"
-                style={{ background: FILMORA.accent, color: '#000' }}
-              >
-                Novo trecho
-              </button>
             </div>
-
-            <div
-              className="rounded border p-1.5 space-y-1 max-h-[140px] overflow-y-auto filmora-scrollbar"
-              style={{ borderColor: FILMORA.border, background: 'rgba(0,0,0,0.18)' }}
-            >
-              {remotionClips.length === 0 ? (
-                <div className="px-2 py-2 text-[10px]" style={{ color: FILMORA.textDim }}>
-                  Nenhum trecho Remotion no projeto ainda.
-                </div>
-              ) : (
-                remotionClips.map((clip) => {
-                  const isSelected = clip.id === selectedRemotionClipId;
-
-                  return (
-                    <button
-                      key={clip.id}
-                      type="button"
-                      onClick={() => onSelectRemotionClip(clip.id)}
-                      className="w-full rounded px-2.5 py-2 text-left transition-colors"
-                      style={{
-                        border: `1px solid ${isSelected ? FILMORA.accent : FILMORA.border}`,
-                        background: isSelected ? `${FILMORA.accent}12` : `${FILMORA.surface}B3`,
-                      }}
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-[10px] font-semibold truncate" style={{ color: isSelected ? FILMORA.accent : FILMORA.text }}>
-                          {clip.label}
-                        </span>
-                        <span className="text-[9px] uppercase tracking-wide" style={{ color: FILMORA.textDim }}>
-                          V{clip.track}
-                        </span>
-                      </div>
-                      <div className="mt-1 flex items-center justify-between gap-2 text-[9px]" style={{ color: FILMORA.textDim }}>
-                        <span>{formatDuration(clip.end - clip.start)} • {clip.messageCount} msgs</span>
-                        <span>{clip.hasCode ? 'Com código' : 'Sem código'}</span>
-                      </div>
-                    </button>
-                  );
-                })
-              )}
-            </div>
-
-            {remotionGenerationError && (
-              <div
-                className="rounded border px-2.5 py-2 text-[10px]"
-                style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.22)', color: '#fecaca' }}
-              >
-                {remotionGenerationError}
-              </div>
-            )}
-
-            {remotionCompileError && (
-              <div
-                className="rounded border px-2.5 py-2 text-[10px]"
-                style={{ borderColor: '#7c2d12', background: 'rgba(124,45,18,0.24)', color: '#fed7aa' }}
-              >
-                Erro de compilação da composição: {remotionCompileError}
-              </div>
-            )}
           </div>
 
-          <div className="flex-1 overflow-y-auto filmora-scrollbar p-2 space-y-2">
+          {(remotionGenerationError || remotionCompileError) && (
+            <div className="px-4 pt-3 space-y-2">
+              {remotionGenerationError && (
+                <div
+                  className="rounded-[18px] border px-3 py-2 text-[11px]"
+                  style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.22)', color: '#fecaca' }}
+                >
+                  {remotionGenerationError}
+                </div>
+              )}
+              {remotionCompileError && (
+                <div
+                  className="rounded-[18px] border px-3 py-2 text-[11px]"
+                  style={{ borderColor: '#7c2d12', background: 'rgba(124,45,18,0.24)', color: '#fed7aa' }}
+                >
+                  Erro de compilação da composição: {remotionCompileError}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex-1 min-h-0 overflow-y-auto filmora-scrollbar px-4 py-4 space-y-4">
             {!selectedRemotionClip ? (
-              <div className="rounded border p-3 space-y-3" style={{ borderColor: FILMORA.border, background: `${FILMORA.surface}A6` }}>
+              <div
+                className="rounded-[22px] border px-4 py-4 space-y-3"
+                style={{ borderColor: REMOTION_CHAT_THEME.border, background: REMOTION_CHAT_THEME.surfaceMuted }}
+              >
                 <div>
-                  <p className="text-[11px] font-semibold" style={{ color: FILMORA.text }}>
-                    Clips Remotion por faixa
+                  <p className="text-[13px] font-semibold" style={{ color: REMOTION_CHAT_THEME.text }}>
+                    Nenhuma cena ativa
                   </p>
-                  <p className="text-[10px] mt-1 leading-relaxed" style={{ color: FILMORA.textMuted }}>
-                    Cada trecho Remotion vira um chat independente. Crie um clip, depois arraste, corte e sobreponha na timeline.
+                  <p className="mt-1 text-[11px] leading-relaxed" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                    Cada cena Remotion mantém um chat independente. Crie uma nova cena no botão + ou envie um prompt para gerar o primeiro trecho.
                   </p>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {remotionQuickPrompts.map((prompt) => (
                     <button
                       key={prompt}
                       type="button"
                       onClick={() => setRemotionDraft(prompt)}
-                      className="w-full rounded px-2.5 py-2 text-left text-[10px] transition-colors"
+                      className="w-full rounded-[18px] border px-3 py-3 text-left text-[12px] leading-relaxed transition-colors"
                       style={{
-                        border: `1px solid ${FILMORA.border}`,
-                        background: 'rgba(0,0,0,0.16)',
-                        color: FILMORA.textMuted,
+                        borderColor: REMOTION_CHAT_THEME.border,
+                        background: REMOTION_CHAT_THEME.surface,
+                        color: REMOTION_CHAT_THEME.textMuted,
                       }}
                     >
                       {prompt}
@@ -694,26 +1250,29 @@ export function MediaPanel({
                 </div>
               </div>
             ) : remotionMessages.length === 0 ? (
-              <div className="rounded border p-3 space-y-3" style={{ borderColor: FILMORA.border, background: `${FILMORA.surface}A6` }}>
+              <div
+                className="rounded-[22px] border px-4 py-4 space-y-3"
+                style={{ borderColor: REMOTION_CHAT_THEME.border, background: REMOTION_CHAT_THEME.surfaceMuted }}
+              >
                 <div>
-                  <p className="text-[11px] font-semibold" style={{ color: FILMORA.text }}>
+                  <p className="text-[13px] font-semibold" style={{ color: REMOTION_CHAT_THEME.text }}>
                     Chat do clip {selectedRemotionClip.label}
                   </p>
-                  <p className="text-[10px] mt-1 leading-relaxed" style={{ color: FILMORA.textMuted }}>
-                    Esse trecho cobre {formatDuration(selectedRemotionClip.end - selectedRemotionClip.start)} na timeline. O preview toca no player principal respeitando a transparência do clip.
+                  <p className="mt-1 text-[11px] leading-relaxed" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                    Esse trecho cobre {formatDuration(selectedRemotionClip.end - selectedRemotionClip.start)} na timeline. Use o chat para criar ou ajustar a composição desse clip.
                   </p>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-2">
                   {remotionQuickPrompts.map((prompt) => (
                     <button
                       key={prompt}
                       type="button"
                       onClick={() => setRemotionDraft(prompt)}
-                      className="w-full rounded px-2.5 py-2 text-left text-[10px] transition-colors"
+                      className="w-full rounded-[18px] border px-3 py-3 text-left text-[12px] leading-relaxed transition-colors"
                       style={{
-                        border: `1px solid ${FILMORA.border}`,
-                        background: 'rgba(0,0,0,0.16)',
-                        color: FILMORA.textMuted,
+                        borderColor: REMOTION_CHAT_THEME.border,
+                        background: REMOTION_CHAT_THEME.surface,
+                        color: REMOTION_CHAT_THEME.textMuted,
                       }}
                     >
                       {prompt}
@@ -724,51 +1283,35 @@ export function MediaPanel({
             ) : (
               remotionMessages.map((message) => {
                 const isUser = message.role === 'user';
+                const skillLabels = Array.isArray(message.skillsUsed)
+                  ? message.skillsUsed.map((skill) => motionGraphicsSkillLabels.get(skill) || formatMotionGraphicsSkillLabel(skill))
+                  : [];
 
                 return (
-                  <div
-                    key={message.id}
-                    className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}
-                  >
+                  <div key={message.id} className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} space-y-1`}>
+                    <div className={`flex items-center gap-2 text-[10px] px-1 ${isUser ? 'flex-row-reverse' : ''}`}>
+                      <span
+                        className="font-semibold"
+                        style={{ color: isUser ? REMOTION_CHAT_THEME.textMuted : REMOTION_CHAT_THEME.accent }}
+                      >
+                        {isUser ? 'Você' : 'Assistente'}
+                      </span>
+                      <span style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                        {formatChatTimestamp(message.timestamp)}
+                      </span>
+                    </div>
+
                     <div
-                      className="max-w-[92%] rounded-lg px-3 py-2"
+                      className={`max-w-[90%] md:max-w-[85%] rounded-[18px] px-4 py-3 shadow-sm ${
+                        isUser ? 'rounded-tr-[4px]' : 'rounded-tl-[4px]'
+                      }`}
                       style={{
-                        background: isUser
-                          ? `${FILMORA.accent}22`
-                          : `${FILMORA.surface}E6`,
-                        border: `1px solid ${isUser ? `${FILMORA.accent}55` : FILMORA.border}`,
-                        color: isUser ? FILMORA.text : FILMORA.textMuted,
+                        background: isUser ? 'rgba(59,130,246,0.12)' : REMOTION_CHAT_THEME.surface,
+                        border: `1px solid ${isUser ? 'rgba(59,130,246,0.2)' : REMOTION_CHAT_THEME.border}`,
                       }}
                     >
-                      <div className="flex items-center justify-between gap-3 mb-1">
-                        <span className="text-[9px] uppercase tracking-wide" style={{ color: isUser ? FILMORA.accent : FILMORA.textDim }}>
-                          {isUser ? 'Você' : 'IA'}
-                        </span>
-                        {(message.provider || message.model) && !isUser && (
-                          <span className="text-[9px]" style={{ color: FILMORA.textDim }}>
-                            {[message.provider, message.model].filter(Boolean).join(' • ')}
-                          </span>
-                        )}
-                      </div>
-                      {!isUser && Array.isArray(message.skillsUsed) && message.skillsUsed.length > 0 && (
-                        <div className="flex flex-wrap gap-1 mb-1.5">
-                          {message.skillsUsed.map((skill) => (
-                            <span
-                              key={skill}
-                              className="rounded px-1.5 py-0.5 text-[8px] uppercase tracking-wide"
-                              style={{
-                                background: 'rgba(255,255,255,0.06)',
-                                border: `1px solid ${FILMORA.border}`,
-                                color: FILMORA.textDim,
-                              }}
-                            >
-                              {formatMotionGraphicsSkillLabel(skill)}
-                            </span>
-                          ))}
-                        </div>
-                      )}
                       {Array.isArray(message.attachedImages) && message.attachedImages.length > 0 && (
-                        <div className="mb-2 flex gap-1.5 overflow-x-auto filmora-scrollbar">
+                        <div className={`mb-3 flex gap-2 overflow-x-auto filmora-scrollbar ${isUser ? 'justify-end' : 'justify-start'}`}>
                           {message.attachedImages
                             .filter((image) => image?.url || image?.dataUrl)
                             .map((image) => (
@@ -776,156 +1319,220 @@ export function MediaPanel({
                                 key={image.id || image.url || image.dataUrl}
                                 src={image.url || image.dataUrl}
                                 alt={image.name || 'Referência'}
-                                className="h-14 w-14 rounded object-cover border"
-                                style={{ borderColor: FILMORA.border }}
+                                className="h-16 w-16 rounded-[12px] object-cover border"
+                                style={{ borderColor: isUser ? 'rgba(59,130,246,0.2)' : REMOTION_CHAT_THEME.border }}
                               />
                             ))}
                         </div>
                       )}
-                      <p className="text-[10px] leading-relaxed whitespace-pre-wrap">{message.content}</p>
+                      
+                      <div className={`flex items-end gap-2 ${isUser ? 'justify-end' : 'justify-start'}`}>
+                        <p className="min-w-0 whitespace-pre-wrap break-words text-[13px] leading-6" style={{ color: REMOTION_CHAT_THEME.text }}>
+                          {message.content}
+                        </p>
+                        {!isUser && skillLabels.length > 0 && (
+                          <div className="group/skills relative shrink-0" style={{ color: REMOTION_CHAT_THEME.icon }}>
+                            <span className="block cursor-help">{PanelIcons.bookOpen}</span>
+                            <div
+                              className="pointer-events-none absolute bottom-full left-0 mb-2 w-56 rounded-[12px] border px-3 py-2 opacity-0 transition-opacity group-hover/skills:opacity-100 z-10"
+                              style={{
+                                borderColor: REMOTION_CHAT_THEME.borderStrong,
+                                background: '#1c1c1c',
+                                boxShadow: '0 14px 30px rgba(0,0,0,0.35)',
+                              }}
+                            >
+                              <div className="text-[10px] font-semibold uppercase tracking-[0.16em]" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+                                Skills usadas
+                              </div>
+                              <div className="mt-2 space-y-1">
+                                {skillLabels.map((skillLabel) => (
+                                  <div key={`${message.id}-${skillLabel}`} className="text-[11px] leading-relaxed" style={{ color: REMOTION_CHAT_THEME.textMuted }}>
+                                    {skillLabel}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 );
               })
             )}
+            <div ref={remotionChatEndRef} />
           </div>
 
-          <div
-            className="border-t p-2 space-y-2"
-            onDragOver={handleRemotionDragOver}
-            onDragLeave={handleRemotionDragLeave}
-            onDrop={handleRemotionDrop}
-            style={{
-              borderColor: isRemotionDragging ? FILMORA.accent : FILMORA.border,
-              background: isRemotionDragging ? `${FILMORA.accent}10` : undefined,
-            }}
-          >
-            <input
-              ref={remotionFileInputRef}
-              type="file"
-              accept="image/*"
-              multiple
-              onChange={handleRemotionFileSelect}
-              className="hidden"
-            />
-
-            {remotionAttachmentError && (
-              <div
-                className="rounded border px-2.5 py-2 text-[10px]"
-                style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.22)', color: '#fecaca' }}
-              >
-                {remotionAttachmentError}
-              </div>
-            )}
-
-            {remotionAttachedImages.length > 0 && (
-              <div
-                className="rounded border px-2 py-2 space-y-2"
-                style={{ borderColor: FILMORA.border, background: 'rgba(0,0,0,0.18)' }}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-[9px] uppercase tracking-wide" style={{ color: FILMORA.textDim }}>
-                    Referências visuais
-                  </span>
-                  <span className="text-[9px]" style={{ color: FILMORA.textDim }}>
-                    {remotionAttachedImages.length}/{MAX_REMOTION_REFERENCE_IMAGES}
-                  </span>
-                </div>
-                <div className="flex gap-2 overflow-x-auto filmora-scrollbar">
-                  {remotionAttachedImages.map((image) => (
-                    <div key={image.id || image.url || image.dataUrl} className="relative shrink-0">
-                      <img
-                        src={image.url || image.dataUrl}
-                        alt={image.name || 'Referência'}
-                        className="h-16 w-16 rounded object-cover border"
-                        style={{ borderColor: FILMORA.border }}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveRemotionAttachment(String(image.id))}
-                        className="absolute -top-1 -right-1 w-4 h-4 rounded-full flex items-center justify-center text-[9px] font-bold"
-                        style={{ background: FILMORA.bgDark, color: FILMORA.text, border: `1px solid ${FILMORA.border}` }}
-                      >
-                        ×
-                      </button>
-                    </div>
-                  ))}
-                </div>
-                <p className="text-[9px] leading-relaxed" style={{ color: FILMORA.textDim }}>
-                  As imagens servem como referência visual do chat. Cole, arraste ou envie arquivos para guiar a composição.
-                </p>
-              </div>
-            )}
-
-            <textarea
-              value={remotionDraft}
-              onChange={(event) => setRemotionDraft(event.target.value)}
-              onPaste={(event) => { void handleRemotionPaste(event); }}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
-                  event.preventDefault();
-                  void handleRemotionSubmit();
-                }
-              }}
-              placeholder={selectedRemotionClip
-                ? 'Descreva como esse clip Remotion deve ficar ou o que quer ajustar...'
-                : 'Descreva o primeiro trecho Remotion. Se não houver clip selecionado, o painel cria um novo.'}
-              className="w-full min-h-[92px] rounded px-3 py-2 text-[11px] outline-none border resize-none bg-black/30"
+          <div className="px-3 pb-3 pt-1 shrink-0">
+            <div
+              className="rounded-[20px] border p-2.5 transition-colors overflow-hidden"
+              onDragOver={handleRemotionDragOver}
+              onDragLeave={handleRemotionDragLeave}
+              onDrop={handleRemotionDrop}
               style={{
-                borderColor: FILMORA.border,
-                color: FILMORA.text,
+                borderColor: isRemotionDragging ? REMOTION_CHAT_THEME.accent : REMOTION_CHAT_THEME.borderStrong,
+                background: isRemotionDragging ? 'rgba(59,130,246,0.08)' : REMOTION_CHAT_THEME.surface,
+                boxShadow: '0 -4px 20px rgba(0,0,0,0.15)',
               }}
-            />
+            >
+              <input
+                ref={remotionFileInputRef}
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={handleRemotionFileSelect}
+                className="hidden"
+              />
 
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-[9px] leading-relaxed" style={{ color: FILMORA.textDim }}>
-                {hasRemotionCode
-                  ? 'Esse envio atualiza o código do clip ativo. Use Ctrl+Enter para enviar.'
-                  : 'Se o clip ainda estiver vazio, o próximo envio gera a primeira versão dele. Use Ctrl+Enter para enviar.'}
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => remotionFileInputRef.current?.click()}
-                  disabled={isRemotionGenerating || remotionAttachedImages.length >= MAX_REMOTION_REFERENCE_IMAGES}
-                  className="rounded px-2.5 py-1.5 text-[10px] font-semibold transition-opacity disabled:opacity-50"
+              {remotionAttachmentError && (
+                <div
+                  className="mb-2 rounded-[12px] border px-3 py-1.5 text-[11px]"
+                  style={{ borderColor: '#7f1d1d', background: 'rgba(127,29,29,0.22)', color: '#fecaca' }}
+                >
+                  {remotionAttachmentError}
+                </div>
+              )}
+
+              {remotionAttachedImages.length > 0 && (
+                <div className="mb-2">
+                  <div className="flex flex-wrap gap-2">
+                    {remotionAttachedImages.map((image) => (
+                      <div key={image.id || image.url || image.dataUrl} className="relative h-[60px] w-[60px] shrink-0">
+                        <img
+                          src={image.url || image.dataUrl}
+                          alt={image.name || 'Referência'}
+                          className="h-full w-full rounded-[12px] object-cover border"
+                          style={{ borderColor: REMOTION_CHAT_THEME.borderStrong }}
+                        />
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveRemotionAttachment(String(image.id))}
+                          className="absolute -right-1.5 -top-1.5 h-5 w-5 rounded-full flex items-center justify-center text-[10px] font-bold shadow-md"
+                          style={{
+                            background: '#262626',
+                            color: '#fff',
+                            border: `1px solid ${REMOTION_CHAT_THEME.borderStrong}`,
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-2">
+                <div 
+                  className="rounded-[16px] border px-1 py-1"
                   style={{
-                    border: `1px solid ${FILMORA.border}`,
-                    color: FILMORA.textMuted,
+                    borderColor: REMOTION_CHAT_THEME.borderStrong,
+                    background: REMOTION_CHAT_THEME.surfaceMuted,
                   }}
                 >
-                  Referências
-                </button>
-                {selectedRemotionClip && (
-                  <button
-                    type="button"
-                    onClick={handleResetRemotion}
-                    disabled={isRemotionGenerating}
-                    className="rounded px-2.5 py-1.5 text-[10px] font-semibold transition-opacity disabled:opacity-50"
-                    style={{
-                      border: `1px solid ${FILMORA.border}`,
-                      color: FILMORA.textMuted,
+                  <textarea
+                    value={remotionDraft}
+                    onChange={(event) => setRemotionDraft(event.target.value)}
+                    onPaste={(event) => { void handleRemotionPaste(event); }}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' && (event.ctrlKey || event.metaKey)) {
+                        event.preventDefault();
+                        void handleRemotionSubmit();
+                      }
                     }}
-                  >
-                    Limpar
-                  </button>
-                )}
-                <button
-                  type="button"
-                  onClick={() => { void handleRemotionSubmit(); }}
-                  disabled={!remotionDraft.trim() || isRemotionGenerating}
-                  className="rounded px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wide transition-opacity disabled:opacity-50"
-                  style={{ background: FILMORA.accent, color: '#000' }}
-                >
-                  {isRemotionGenerating
-                    ? 'Gerando...'
-                    : hasRemotionCode
-                      ? 'Atualizar'
-                      : selectedRemotionClip
-                        ? 'Gerar'
-                        : 'Criar + gerar'}
-                </button>
+                    placeholder={selectedRemotionClip
+                      ? 'Descreva a cena...'
+                      : 'Descreva a primeira cena...'}
+                    className="w-full min-h-[44px] max-h-[120px] resize-none bg-transparent px-3 py-2.5 text-[13px] leading-relaxed outline-none filmora-scrollbar"
+                    style={{
+                      color: REMOTION_CHAT_THEME.text,
+                      caretColor: REMOTION_CHAT_THEME.text,
+                      backgroundColor: 'transparent',
+                      border: 'none',
+                      boxShadow: 'none',
+                    }}
+                  />
+                  
+                  <div className="flex flex-wrap items-center justify-between gap-2 px-1 pb-1">
+                    <div className="flex flex-wrap items-center gap-1.5 flex-1 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => remotionFileInputRef.current?.click()}
+                        disabled={isRemotionGenerating || remotionAttachedImages.length >= MAX_REMOTION_REFERENCE_IMAGES}
+                        className="h-8 w-8 rounded-full flex items-center justify-center transition-all disabled:opacity-40 shrink-0 hover:bg-white/10"
+                        style={{
+                          background: 'transparent',
+                          color: REMOTION_CHAT_THEME.icon,
+                        }}
+                        title="Anexar imagem"
+                      >
+                        {PanelIcons.paperclip}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleUseSelectedSceneReference}
+                        disabled={isRemotionGenerating || !canUseSelectedSceneReference || remotionAttachedImages.length >= MAX_REMOTION_REFERENCE_IMAGES}
+                        className="h-8 w-8 rounded-full flex items-center justify-center transition-all disabled:opacity-40 shrink-0 hover:bg-white/10"
+                        style={{
+                          background: 'transparent',
+                          color: REMOTION_CHAT_THEME.icon,
+                        }}
+                        title="Usar frame da cena selecionada"
+                      >
+                        {PanelIcons.camera}
+                      </button>
+                      <select
+                        value={selectedRemotionModelValue}
+                        onChange={(event) => setSelectedRemotionModelValue(event.target.value)}
+                        className="max-w-[120px] sm:max-w-[160px] rounded-[10px] px-2 py-1 text-[11px] outline-none truncate"
+                        style={{
+                          background: 'rgba(255,255,255,0.05)',
+                          border: 'none',
+                          color: REMOTION_CHAT_THEME.textMuted,
+                        }}
+                        title="Modelo da IA"
+                      >
+                        {MOTION_GRAPHICS_MODEL_OPTIONS.map((option) => (
+                          <option key={option.value} value={option.value} className="bg-[#111111]">
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => { void handleRemotionSubmit(); }}
+                      disabled={!remotionDraft.trim() || isRemotionGenerating}
+                      className="h-8 rounded-full px-4 flex items-center justify-center transition-opacity disabled:opacity-40 shrink-0 gap-1.5"
+                      style={{
+                        background: !remotionDraft.trim() || isRemotionGenerating
+                          ? 'rgba(255,255,255,0.05)'
+                          : REMOTION_CHAT_THEME.accent,
+                        color: !remotionDraft.trim() || isRemotionGenerating ? REMOTION_CHAT_THEME.textDim : '#ffffff',
+                      }}
+                      title={isRemotionGenerating ? 'Gerando...' : 'Enviar'}
+                    >
+                      <span className="text-[12px] font-semibold">{isRemotionGenerating ? 'Aguarde' : 'Enviar'}</span>
+                      <span className="scale-75">{PanelIcons.arrowUp}</span>
+                    </button>
+                  </div>
+                </div>
               </div>
+            </div>
+            <div className="mt-1.5 px-1 flex flex-wrap items-center justify-between gap-1 text-[9px] opacity-70" style={{ color: REMOTION_CHAT_THEME.textDim }}>
+              <span className="truncate max-w-[60%]">
+                {hasRemotionCode
+                  ? 'Ação atualiza código atual.'
+                  : 'Ação gera primeira cena.'}
+              </span>
+              <span className="truncate max-w-[40%] text-right">
+                {selectedRemotionSkills.length > 0
+                  ? `${selectedRemotionSkills.length} skill(s)`
+                  : canUseSelectedSceneReference
+                    ? 'Frame disponível'
+                    : selectedRemotionModelOption.composerLabel}
+              </span>
             </div>
           </div>
         </div>

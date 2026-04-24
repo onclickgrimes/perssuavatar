@@ -226,6 +226,8 @@ export interface VideoProject {
         timestamp?: number;
         provider?: string;
         model?: string;
+        attachedImages?: MotionGraphicsReferenceImage[];
+        skillsUsed?: string[];
       }>;
     };
   };

@@ -35,12 +35,16 @@ import {
     normalizeSilencePaddingMs,
 } from '../../../remotion/utils/silence-compaction';
 import {
+    buildMotionGraphicsSkillDetectionPrompt,
     detectMotionGraphicsSkillsHeuristically,
     getMotionGraphicsSkillDisplayName,
+    importMotionGraphicsSkillPackage,
+    listMotionGraphicsSkills,
     loadMotionGraphicsSkillContent,
-    MOTION_GRAPHICS_SKILL_DETECTION_PROMPT,
     normalizeMotionGraphicsSkillSelection,
-    type MotionGraphicsSkillName,
+    type MotionGraphicsSkillId,
+    type MotionGraphicsSkillLibraryRoots,
+    type MotionGraphicsSkillListItem,
 } from './motion-graphics-skills';
 
 export type AIProvider = 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
@@ -338,6 +342,7 @@ export interface MotionGraphicsGenerationInput {
     conversationHistory?: MotionGraphicsChatMessage[];
     projectContext?: MotionGraphicsProjectContext;
     referenceImages?: MotionGraphicsReferenceImage[];
+    selectedSkills?: string[];
     provider?: AIProvider;
     model?: string;
 }
@@ -459,7 +464,8 @@ export class VideoProjectService extends EventEmitter {
     private openAIService: OpenAIService | null = null;
     private deepSeekService: DeepSeekService | null = null;
     private rootDir: string;
-    private motionGraphicsTemplateDir: string;
+    private motionGraphicsBuiltInSkillsDir: string;
+    private motionGraphicsImportedSkillsDir: string;
     private projectsDir: string;
     private imageServer: http.Server | null = null;
     private imageServerPort: number = 9999;
@@ -468,10 +474,19 @@ export class VideoProjectService extends EventEmitter {
         super();
 
         this.rootDir = app.getAppPath();
-        this.motionGraphicsTemplateDir = path.resolve(
+        this.motionGraphicsBuiltInSkillsDir = path.resolve(
             this.rootDir,
-            'template-prompt-to-motion-graphics-saas',
+            'motion-graphics-skills',
+            'packages',
         );
+        this.motionGraphicsImportedSkillsDir = path.join(
+            app.getPath('userData'),
+            'motion-graphics-skills',
+            'packages',
+        );
+        if (!fs.existsSync(this.motionGraphicsImportedSkillsDir)) {
+            fs.mkdirSync(this.motionGraphicsImportedSkillsDir, { recursive: true });
+        }
 
         // Inicializar diretório de projetos
         this.projectsDir = path.join(app.getPath('userData'), 'video-projects');
@@ -509,6 +524,24 @@ export class VideoProjectService extends EventEmitter {
         this.stopImageServer();
         this.removeAllListeners();
         console.log('🎬 VideoProjectService destroyed');
+    }
+
+    private getMotionGraphicsSkillLibraryRoots(): MotionGraphicsSkillLibraryRoots {
+        return {
+            builtInPackagesDir: this.motionGraphicsBuiltInSkillsDir,
+            importedPackagesDir: this.motionGraphicsImportedSkillsDir,
+        };
+    }
+
+    public listMotionGraphicsSkills(): MotionGraphicsSkillListItem[] {
+        return listMotionGraphicsSkills(this.getMotionGraphicsSkillLibraryRoots());
+    }
+
+    public importMotionGraphicsSkillPackage(sourceDirectoryPath: string) {
+        return importMotionGraphicsSkillPackage(
+            this.getMotionGraphicsSkillLibraryRoots(),
+            sourceDirectoryPath,
+        );
     }
 
     /**
@@ -1277,17 +1310,32 @@ export class VideoProjectService extends EventEmitter {
             currentCode?: string;
             projectContext?: MotionGraphicsProjectContext;
             referenceImages?: MotionGraphicsReferenceImage[];
+            selectedSkills?: string[];
+            availableSkills: MotionGraphicsSkillListItem[];
             provider: AIProvider;
             model?: string;
         },
-    ): Promise<{ skills: MotionGraphicsSkillName[]; source: 'model' | 'heuristic' }> {
-        const heuristicSkills = detectMotionGraphicsSkillsHeuristically({
-            prompt: input.prompt,
-            currentCode: input.currentCode,
-            selectedRatio: input.projectContext?.selectedRatio,
-        });
+    ): Promise<{ skills: MotionGraphicsSkillId[]; source: 'model' | 'heuristic' }> {
+        const manualSkills = normalizeMotionGraphicsSkillSelection(
+            Array.isArray(input.selectedSkills) ? input.selectedSkills : [],
+            input.availableSkills,
+        );
+        const heuristicSkills = normalizeMotionGraphicsSkillSelection(
+            [
+                ...manualSkills,
+                ...detectMotionGraphicsSkillsHeuristically(
+                    {
+                        prompt: input.prompt,
+                        currentCode: input.currentCode,
+                        selectedRatio: input.projectContext?.selectedRatio,
+                    },
+                    input.availableSkills,
+                ),
+            ],
+            input.availableSkills,
+        );
 
-        if (input.provider === 'gemini_scraping') {
+        if (input.availableSkills.length === 0 || input.provider === 'gemini_scraping') {
             return {
                 skills: heuristicSkills,
                 source: 'heuristic',
@@ -1312,7 +1360,7 @@ export class VideoProjectService extends EventEmitter {
         const detectionPayload: MotionGraphicsProviderMessage[] = [
             {
                 role: 'system',
-                content: MOTION_GRAPHICS_SKILL_DETECTION_PROMPT,
+                content: buildMotionGraphicsSkillDetectionPrompt(input.availableSkills),
             },
             {
                 role: 'user',
@@ -1340,11 +1388,13 @@ export class VideoProjectService extends EventEmitter {
             const parsed = this.parseJsonResponseText(rawResponse);
             const modelSkills = normalizeMotionGraphicsSkillSelection(
                 Array.isArray(parsed?.skills) ? parsed.skills : [],
+                input.availableSkills,
             );
             const mergedSkills = normalizeMotionGraphicsSkillSelection([
+                ...manualSkills,
                 ...modelSkills,
                 ...heuristicSkills,
-            ]);
+            ], input.availableSkills);
 
             return {
                 skills: mergedSkills,
@@ -1495,20 +1545,25 @@ export class VideoProjectService extends EventEmitter {
         const conversationContext = this.buildMotionGraphicsConversationContext(input?.conversationHistory);
         const projectContext = this.buildMotionGraphicsProjectContext(input?.projectContext);
         const referenceImages = await this.loadMotionGraphicsReferenceImages(input?.referenceImages);
+        const availableSkills = this.listMotionGraphicsSkills();
         const detectedSkills = await this.detectMotionGraphicsSkills({
             prompt,
             currentCode,
             projectContext: input?.projectContext,
             referenceImages: input?.referenceImages,
+            selectedSkills: input?.selectedSkills,
+            availableSkills,
             provider,
             model: resolvedModel,
         });
         const skillContent = loadMotionGraphicsSkillContent(
-            this.motionGraphicsTemplateDir,
+            this.getMotionGraphicsSkillLibraryRoots(),
             detectedSkills.skills,
         );
         const skillSummary = detectedSkills.skills.length > 0
-            ? detectedSkills.skills.map((skill) => getMotionGraphicsSkillDisplayName(skill)).join(', ')
+            ? detectedSkills.skills
+                .map((skill) => getMotionGraphicsSkillDisplayName(skill, availableSkills))
+                .join(', ')
             : 'General';
 
         const userPrompt = [
@@ -1520,7 +1575,9 @@ export class VideoProjectService extends EventEmitter {
                 ? `REFERENCE IMAGES:\n${referenceImages.length} image(s) attached below. Use them as visual direction for style, layout, and composition details when relevant.`
                 : '',
             detectedSkills.skills.length > 0
-                ? `SELECTED SKILLS:\n${detectedSkills.skills.join(', ')}`
+                ? `SELECTED SKILLS:\n${detectedSkills.skills
+                    .map((skill) => `- ${skill}: ${getMotionGraphicsSkillDisplayName(skill, availableSkills)}`)
+                    .join('\n')}`
                 : '',
             'USER REQUEST:',
             prompt,

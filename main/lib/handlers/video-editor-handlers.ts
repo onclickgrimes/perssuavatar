@@ -4,7 +4,7 @@
  * Handlers IPC para o Video Studio/Editor.
  * Gerencia transcrição, análise por IA, renderização e persistência de projetos.
  */
-import { ipcMain, BrowserWindow, IpcMainInvokeEvent } from 'electron';
+import { ipcMain, BrowserWindow, IpcMainInvokeEvent, dialog } from 'electron';
 import { VideoProjectSegment, VideoProjectData, VideoProjectService } from '../services/video-project-service';
 import { ensureModuleActive, buildModuleAccessDeniedPayload } from '../services/module-access-service';
 import ffmpeg from 'fluent-ffmpeg';
@@ -410,6 +410,7 @@ export function registerVideoEditorHandlers(): void {
         height?: number;
         source?: 'upload' | 'frame' | 'scene';
       }>;
+      selectedSkills?: string[];
       provider?: 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
       model?: string;
     }
@@ -421,6 +422,59 @@ export function registerVideoEditorHandlers(): void {
     } catch (error: any) {
       console.error('❌ [VideoProject] Motion graphics generation error:', error);
       return { success: false, error: error.message };
+    }
+  });
+
+  registerVideoEditorGuardedHandle('video-project:list-motion-graphics-skills', async () => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      return {
+        success: true,
+        skills: videoProjectService.listMotionGraphicsSkills(),
+      };
+    } catch (error: any) {
+      console.error('❌ [VideoProject] Motion graphics skills list error:', error);
+      return {
+        success: false,
+        error: error.message,
+        skills: [],
+      };
+    }
+  });
+
+  registerVideoEditorGuardedHandle('video-project:import-motion-graphics-skill-package', async (
+    event,
+    sourceDirectoryPath?: string,
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+
+      let resolvedSourcePath = String(sourceDirectoryPath || '').trim();
+      if (!resolvedSourcePath) {
+        const window = BrowserWindow.fromWebContents(event.sender) || getWindowFn?.() || undefined;
+        const result = await dialog.showOpenDialog(window, {
+          title: 'Importar pacote de skills Remotion',
+          buttonLabel: 'Importar',
+          properties: ['openDirectory'],
+        });
+
+        if (result.canceled || !Array.isArray(result.filePaths) || result.filePaths.length === 0) {
+          return {
+            success: false,
+            canceled: true,
+          };
+        }
+
+        resolvedSourcePath = String(result.filePaths[0] || '').trim();
+      }
+
+      return videoProjectService.importMotionGraphicsSkillPackage(resolvedSourcePath);
+    } catch (error: any) {
+      console.error('❌ [VideoProject] Motion graphics skill import error:', error);
+      return {
+        success: false,
+        error: error.message,
+      };
     }
   });
 

@@ -10,8 +10,7 @@ files:
       - package.json
       - app
       - migrations
-      - template-prompt-to-motion-graphics-saas/src/skills/**/*
-      - template-prompt-to-motion-graphics-saas/src/examples/code/**/*
+      - motion-graphics-skills/**/*
 publish: null
 npmRebuild: false
 win:

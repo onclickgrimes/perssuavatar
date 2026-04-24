@@ -1,0 +1,70 @@
+{
+  "packageId": "defaults",
+  "packageName": "Default Motion Graphics",
+  "skills": [
+    {
+      "id": "charts",
+      "title": "Charts",
+      "description": "Bar charts, line graphs, progress indicators and data visualizations.",
+      "kind": "skill",
+      "entryFile": "skills/charts.md",
+      "tags": ["chart", "graph", "histogram", "bar chart", "pie chart", "data", "metric", "analytics", "progress"]
+    },
+    {
+      "id": "typography",
+      "title": "Typography",
+      "description": "Text animation patterns, kinetic typography and editorial layouts.",
+      "kind": "skill",
+      "entryFile": "skills/typography.md",
+      "tags": ["typewriter", "typography", "text animation", "headline", "title", "kinetic text", "word", "caption"]
+    },
+    {
+      "id": "social-media",
+      "title": "Social Media",
+      "description": "Vertical social layouts for stories, reels, shorts and posts.",
+      "kind": "skill",
+      "entryFile": "skills/social-media.md",
+      "tags": ["instagram", "story", "stories", "reels", "tiktok", "shorts", "social media", "vertical video", "post"]
+    },
+    {
+      "id": "messaging",
+      "title": "Messaging",
+      "description": "Chat bubbles, messaging UIs and conversation visuals.",
+      "kind": "skill",
+      "entryFile": "skills/messaging.md",
+      "tags": ["chat", "message", "whatsapp", "imessage", "messenger", "dm", "bubble", "conversation"]
+    },
+    {
+      "id": "3d",
+      "title": "3D",
+      "description": "Depth, perspective and 3D-inspired composition patterns.",
+      "kind": "skill",
+      "entryFile": "skills/3d.md",
+      "tags": ["3d", "three", "cube", "sphere", "spatial", "depth"]
+    },
+    {
+      "id": "transitions",
+      "title": "Transitions",
+      "description": "Scene changes, wipes, fades and composition transitions.",
+      "kind": "skill",
+      "entryFile": "skills/transitions.md",
+      "tags": ["transition", "scene change", "crossfade", "wipe", "fade between", "slide between"]
+    },
+    {
+      "id": "sequencing",
+      "title": "Sequencing",
+      "description": "Staggered reveals, phases and step-by-step timing patterns.",
+      "kind": "skill",
+      "entryFile": "skills/sequencing.md",
+      "tags": ["sequence", "stagger", "step by step", "phase", "one by one", "timeline"]
+    },
+    {
+      "id": "spring-physics",
+      "title": "Spring Physics",
+      "description": "Bouncy, elastic and spring-based motion behaviour.",
+      "kind": "skill",
+      "entryFile": "skills/spring-physics.md",
+      "tags": ["spring", "bouncy", "bounce", "elastic", "organic motion", "overshoot"]
+    }
+  ]
+}
