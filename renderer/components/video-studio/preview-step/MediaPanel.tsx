@@ -87,7 +87,6 @@ interface MotionGraphicsModelOption {
   provider: MotionGraphicsProviderOption;
   model: string;
   label: string;
-  composerLabel: string;
 }
 
 const MOTION_GRAPHICS_MODEL_OPTIONS: MotionGraphicsModelOption[] = [
@@ -96,49 +95,42 @@ const MOTION_GRAPHICS_MODEL_OPTIONS: MotionGraphicsModelOption[] = [
     provider: 'openai',
     model: 'gpt-5.4-mini',
     label: 'GPT 5.4 Mini',
-    composerLabel: 'GPT-5.4 Mini',
   },
   {
     value: 'openai:gpt-5.4',
     provider: 'openai',
     model: 'gpt-5.4',
     label: 'GPT 5.4',
-    composerLabel: 'GPT-5.4',
   },
   {
     value: 'gemini:gemini-3.1-pro-preview',
     provider: 'gemini',
     model: 'gemini-3.1-pro-preview',
     label: 'Gemini 3.1 Pro',
-    composerLabel: 'Gemini 3.1 Pro',
   },
   {
     value: 'gemini:gemini-3-flash-preview',
     provider: 'gemini',
     model: 'gemini-3-flash-preview',
     label: 'Gemini 3 Flash',
-    composerLabel: 'Gemini 3 Flash',
   },
   {
     value: 'gemini:gemini-3.1-flash-lite-preview',
     provider: 'gemini',
     model: 'gemini-3.1-flash-lite-preview',
     label: 'Gemini 3.1 Flash Lite',
-    composerLabel: 'Gemini 3.1 Flash Lite',
   },
   {
     value: 'deepseek:deepseek-chat',
     provider: 'deepseek',
     model: 'deepseek-chat',
     label: 'DeepSeek Chat V3',
-    composerLabel: 'DeepSeek Chat',
   },
   {
     value: 'deepseek:deepseek-reasoner',
     provider: 'deepseek',
     model: 'deepseek-reasoner',
     label: 'DeepSeek Reasoner R1',
-    composerLabel: 'DeepSeek Reasoner',
   },
 ];
 
@@ -349,7 +341,6 @@ export function MediaPanel({
   isRemotionGenerating,
   remotionGenerationError,
   remotionCompileError,
-  hasRemotionCode,
   onResetRemotion,
   remotionDurationLabel,
 }: MediaPanelProps) {
@@ -1423,13 +1414,7 @@ export function MediaPanel({
               )}
 
               <div className="flex flex-col gap-2">
-                <div 
-                  className="rounded-[16px] border px-1 py-1"
-                  style={{
-                    borderColor: REMOTION_CHAT_THEME.borderStrong,
-                    background: REMOTION_CHAT_THEME.surfaceMuted,
-                  }}
-                >
+                <div className="px-1 py-1">
                   <textarea
                     value={remotionDraft}
                     onChange={(event) => setRemotionDraft(event.target.value)}
@@ -1519,20 +1504,6 @@ export function MediaPanel({
                   </div>
                 </div>
               </div>
-            </div>
-            <div className="mt-1.5 px-1 flex flex-wrap items-center justify-between gap-1 text-[9px] opacity-70" style={{ color: REMOTION_CHAT_THEME.textDim }}>
-              <span className="truncate max-w-[60%]">
-                {hasRemotionCode
-                  ? 'Ação atualiza código atual.'
-                  : 'Ação gera primeira cena.'}
-              </span>
-              <span className="truncate max-w-[40%] text-right">
-                {selectedRemotionSkills.length > 0
-                  ? `${selectedRemotionSkills.length} skill(s)`
-                  : canUseSelectedSceneReference
-                    ? 'Frame disponível'
-                    : selectedRemotionModelOption.composerLabel}
-              </span>
             </div>
           </div>
         </div>
