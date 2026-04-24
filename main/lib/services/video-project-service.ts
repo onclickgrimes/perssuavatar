@@ -1432,7 +1432,6 @@ export class VideoProjectService extends EventEmitter {
                 skillsUsed: input.skillsUsed,
                 skillDetectionSource: input.skillDetectionSource,
                 providerPrompt: this.buildMotionGraphicsProviderPromptSnapshot(input.provider, input.payload),
-                internalPayload: input.payload.map((message) => this.serializeMotionGraphicsPromptMessageForFile(message)),
             };
 
             fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2), 'utf8');
