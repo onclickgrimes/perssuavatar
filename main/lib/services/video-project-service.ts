@@ -312,28 +312,33 @@ export interface MotionGraphicsReferenceImage {
     source?: 'upload' | 'frame' | 'scene';
 }
 
+interface MotionGraphicsProjectContextWord {
+    punctuatedWord?: string;
+    word?: string;
+    start?: number;
+    end?: number;
+}
+
+interface MotionGraphicsProjectContextSegment {
+    id?: number;
+    text?: string;
+    start?: number;
+    end?: number;
+    track?: number;
+    assetType?: string;
+    sceneDescription?: string;
+    imagePrompt?: string;
+    words?: MotionGraphicsProjectContextWord[];
+}
+
 export interface MotionGraphicsProjectContext {
     title?: string;
     description?: string;
     selectedRatio?: string;
     durationInFrames?: number;
     fps?: number;
-    selectedSegment?: {
-        id?: number;
-        text?: string;
-        start?: number;
-        end?: number;
-        sceneDescription?: string;
-        imagePrompt?: string;
-    } | null;
-    segments?: Array<{
-        id?: number;
-        text?: string;
-        start?: number;
-        end?: number;
-        sceneDescription?: string;
-        imagePrompt?: string;
-    }>;
+    motionGraphicsSegment?: MotionGraphicsProjectContextSegment | null;
+    segments?: MotionGraphicsProjectContextSegment[];
 }
 
 export interface MotionGraphicsGenerationInput {
@@ -1191,6 +1196,57 @@ export class VideoProjectService extends EventEmitter {
         return promptSections.join('\n');
     }
 
+    private normalizeMotionGraphicsProjectContextWords(words?: MotionGraphicsProjectContextWord[]): Array<{
+        punctuatedWord: string;
+        start: number;
+        end: number;
+    }> {
+        if (!Array.isArray(words)) {
+            return [];
+        }
+
+        return words
+            .map((word) => {
+                const start = Number(word?.start ?? 0);
+                const end = Number(word?.end ?? 0);
+                return {
+                    punctuatedWord: String(word?.punctuatedWord || word?.word || '').trim(),
+                    start,
+                    end,
+                };
+            })
+            .filter((word) => (
+                Boolean(word.punctuatedWord)
+                && Number.isFinite(word.start)
+                && Number.isFinite(word.end)
+                && word.end >= word.start
+            ));
+    }
+
+    private normalizeMotionGraphicsProjectContextSegment(
+        segment?: MotionGraphicsProjectContextSegment | null,
+    ) {
+        if (!segment) {
+            return null;
+        }
+
+        const start = Number(segment.start ?? 0);
+        const end = Number(segment.end ?? 0);
+
+        return {
+            id: Number(segment.id || 0),
+            text: String(segment.text || ''),
+            start,
+            end,
+            durationInSeconds: Math.max(0, end - start),
+            track: Number(segment.track || 0),
+            assetType: String(segment.assetType || ''),
+            sceneDescription: String(segment.sceneDescription || ''),
+            imagePrompt: String(segment.imagePrompt || ''),
+            words: this.normalizeMotionGraphicsProjectContextWords(segment.words),
+        };
+    }
+
     private buildMotionGraphicsProjectContext(projectContext?: MotionGraphicsProjectContext): string {
         if (!projectContext) {
             return '{}';
@@ -1202,25 +1258,13 @@ export class VideoProjectService extends EventEmitter {
             selectedRatio: projectContext.selectedRatio || '',
             durationInFrames: Number(projectContext.durationInFrames || 0),
             fps: Number(projectContext.fps || 0),
-            selectedSegment: projectContext.selectedSegment
-                ? {
-                    id: Number(projectContext.selectedSegment.id || 0),
-                    text: String(projectContext.selectedSegment.text || ''),
-                    start: Number(projectContext.selectedSegment.start || 0),
-                    end: Number(projectContext.selectedSegment.end || 0),
-                    sceneDescription: String(projectContext.selectedSegment.sceneDescription || ''),
-                    imagePrompt: String(projectContext.selectedSegment.imagePrompt || ''),
-                }
-                : null,
+            motionGraphicsSegment: this.normalizeMotionGraphicsProjectContextSegment(
+                projectContext.motionGraphicsSegment,
+            ),
             segments: Array.isArray(projectContext.segments)
-                ? projectContext.segments.slice(0, 12).map((segment) => ({
-                    id: Number(segment?.id || 0),
-                    text: String(segment?.text || ''),
-                    start: Number(segment?.start || 0),
-                    end: Number(segment?.end || 0),
-                    sceneDescription: String(segment?.sceneDescription || ''),
-                    imagePrompt: String(segment?.imagePrompt || ''),
-                }))
+                ? projectContext.segments
+                    .map((segment) => this.normalizeMotionGraphicsProjectContextSegment(segment))
+                    .filter(Boolean)
                 : [],
         };
 
@@ -1446,7 +1490,7 @@ export class VideoProjectService extends EventEmitter {
 
         const codeExcerpt = String(input.currentCode || '').trim().slice(0, 1400);
         const selectedRatio = String(input.projectContext?.selectedRatio || '').trim();
-        const selectedSegmentText = String(input.projectContext?.selectedSegment?.text || '').trim().slice(0, 280);
+        const selectedSegmentText = String(input.projectContext?.segments?.[0]?.text || '').trim().slice(0, 280);
         const referenceImageCount = Array.isArray(input.referenceImages)
             ? input.referenceImages.length
             : 0;

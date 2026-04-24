@@ -489,21 +489,39 @@ const handler = {
         selectedRatio?: string;
         durationInFrames?: number;
         fps?: number;
-        selectedSegment?: {
+        motionGraphicsSegment?: {
           id?: number;
           text?: string;
           start?: number;
           end?: number;
+          durationInSeconds?: number;
+          track?: number;
+          assetType?: string;
           sceneDescription?: string;
           imagePrompt?: string;
+          words?: Array<{
+            punctuatedWord?: string;
+            word?: string;
+            start?: number;
+            end?: number;
+          }>;
         } | null;
         segments?: Array<{
           id?: number;
           text?: string;
           start?: number;
           end?: number;
+          durationInSeconds?: number;
+          track?: number;
+          assetType?: string;
           sceneDescription?: string;
           imagePrompt?: string;
+          words?: Array<{
+            punctuatedWord?: string;
+            word?: string;
+            start?: number;
+            end?: number;
+          }>;
         }>;
       };
       referenceImages?: Array<{

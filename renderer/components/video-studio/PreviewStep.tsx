@@ -87,6 +87,42 @@ const isAudioProjectSegment = (segment: { assetType?: string } | null | undefine
   return String(segment?.assetType || '').toLowerCase().startsWith('audio');
 };
 
+const buildMotionGraphicsContextSegment = (segment: any) => {
+  if (!segment) {
+    return null;
+  }
+
+  const start = Number(segment.start || 0);
+  const end = Number(segment.end || 0);
+  const words = Array.isArray(segment.words)
+    ? segment.words
+      .map((word: any) => ({
+        punctuatedWord: String(word?.punctuatedWord || word?.word || '').trim(),
+        start: Number(word?.start ?? 0),
+        end: Number(word?.end ?? 0),
+      }))
+      .filter((word: any) => (
+        Boolean(word.punctuatedWord)
+        && Number.isFinite(word.start)
+        && Number.isFinite(word.end)
+        && word.end >= word.start
+      ))
+    : [];
+
+  return {
+    id: segment.id,
+    text: segment.text,
+    start,
+    end,
+    durationInSeconds: Math.max(0, end - start),
+    track: Number(segment.track || 0),
+    assetType: segment.assetType,
+    sceneDescription: segment.sceneDescription,
+    imagePrompt: segment.imagePrompt,
+    words,
+  };
+};
+
 interface PreviewHistoryState {
   segments: any[];
   audioMutedRanges: TimelineKeepRange[];
@@ -1475,7 +1511,21 @@ export function PreviewStep({
       return false;
     }
 
-    const targetSegment = selectedMotionGraphicsSegment || createMotionGraphicsSegment({ pushHistory: false });
+    const selectedTimelineSegments = project.segments
+      .filter((segment) => selectedSegmentIds.includes(Number(segment.id)))
+      .sort((left, right) => {
+        const startDiff = Number(left.start || 0) - Number(right.start || 0);
+        if (startDiff !== 0) {
+          return startDiff;
+        }
+        return Number(left.track || 1) - Number(right.track || 1);
+      });
+    const selectedMotionGraphicsFromTimeline = selectedTimelineSegments.find((segment) => (
+      isMotionGraphicsSegment(segment)
+    ));
+    const targetSegment = selectedMotionGraphicsFromTimeline
+      || selectedMotionGraphicsSegment
+      || createMotionGraphicsSegment({ pushHistory: false });
     if (!targetSegment) {
       return false;
     }
@@ -1523,9 +1573,11 @@ export function PreviewStep({
     setSelectedBaseAudioRangeKeys([]);
 
     try {
-      const contextSegment = selectedSeg && !isAudioProjectSegment(selectedSeg)
-        ? selectedSeg
-        : targetSegment;
+      const selectedContextSegments = selectedTimelineSegments
+        .filter((segment) => !isAudioProjectSegment(segment))
+        .filter((segment) => !isMotionGraphicsSegment(segment))
+        .map(buildMotionGraphicsContextSegment)
+        .filter(Boolean);
       const result = await generateMotionGraphics({
         prompt: normalizedPrompt,
         currentCode: String(currentMotionGraphics?.code || '').trim() || undefined,
@@ -1540,22 +1592,8 @@ export function PreviewStep({
           selectedRatio,
           durationInFrames,
           fps,
-          selectedSegment: contextSegment ? {
-            id: contextSegment.id,
-            text: contextSegment.text,
-            start: contextSegment.start,
-            end: contextSegment.end,
-            sceneDescription: contextSegment.sceneDescription,
-            imagePrompt: contextSegment.imagePrompt,
-          } : null,
-          segments: project.segments.slice(0, 12).map((segment) => ({
-            id: segment.id,
-            text: segment.text,
-            start: segment.start,
-            end: segment.end,
-            sceneDescription: segment.sceneDescription,
-            imagePrompt: segment.imagePrompt,
-          })),
+          motionGraphicsSegment: buildMotionGraphicsContextSegment(targetSegment),
+          segments: selectedContextSegments,
         },
       }) as {
         success: boolean;
@@ -1624,7 +1662,7 @@ export function PreviewStep({
     project.segments,
     project.title,
     selectedRatio,
-    selectedSeg,
+    selectedSegmentIds,
     selectedMotionGraphicsSegment,
     updateMotionGraphicsSegment,
   ]);
