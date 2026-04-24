@@ -389,6 +389,52 @@ export class GeminiProvider {
     await new Promise(resolve => setTimeout(resolve, delay));
   }
 
+  private isInternalNewTabUrl(url: string): boolean {
+    return (
+      !url ||
+      url === 'about:blank' ||
+      url.startsWith('chrome://newtab') ||
+      url.startsWith('chrome://new-tab-page')
+    );
+  }
+
+  private async selectAutomationPage(): Promise<Page> {
+    if (!this.browser) {
+      throw new Error('Browser nao disponivel');
+    }
+
+    const pages = (await this.browser.pages()).filter(page => !page.isClosed());
+
+    const currentUsable =
+      this.page &&
+      !this.page.isClosed() &&
+      !this.isInternalNewTabUrl(this.page.url())
+        ? this.page
+        : null;
+
+    const preferredPage =
+      currentUsable ||
+      pages.find(page => page.url().includes('gemini.google.com')) ||
+      pages.find(page => page.url().includes('accounts.google.com'));
+
+    if (preferredPage) {
+      this.page = preferredPage;
+      return this.page;
+    }
+
+    // Chrome can expose an internal New Tab target with a 1x1 viewport.
+    // Creating our own tab avoids driving an invisible/wrong target.
+    this.page = await this.browser.newPage();
+
+    for (const page of pages) {
+      if (page !== this.page && this.isInternalNewTabUrl(page.url())) {
+        await page.close().catch(() => { });
+      }
+    }
+
+    return this.page;
+  }
+
   /**
    * Foca o primeiro campo de prompt visÃ­vel/editÃ¡vel no Gemini.
    */
@@ -556,9 +602,7 @@ export class GeminiProvider {
       }
       this.browser = await this.connectToRemoteChrome();
 
-      // Reaproveita a aba inicial do Chrome para poupar recursos.
-      const pages = await this.browser.pages();
-      this.page = pages[0] || await this.browser.newPage();
+      this.page = await this.selectAutomationPage();
       await this.page.bringToFront().catch(() => { });
 
       // Inicializa sessÃ£o CDP para interceptaÃ§Ã£o de rede
