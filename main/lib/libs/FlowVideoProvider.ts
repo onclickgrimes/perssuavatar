@@ -335,6 +335,129 @@ export class FlowVideoProvider {
     await new Promise(resolve => setTimeout(resolve, delay));
   }
 
+  private isInternalNewTabUrl(url: string): boolean {
+    return (
+      !url ||
+      url === 'about:blank' ||
+      url.startsWith('chrome://newtab') ||
+      url.startsWith('chrome://new-tab-page')
+    );
+  }
+
+  private async selectAutomationPage(): Promise<Page> {
+    if (!this.browser) {
+      throw new Error('Browser não disponível');
+    }
+
+    const pages = (await this.browser.pages()).filter(page => !page.isClosed());
+
+    const currentUsable =
+      this.page &&
+      !this.page.isClosed() &&
+      !this.isInternalNewTabUrl(this.page.url())
+        ? this.page
+        : null;
+
+    const preferredPage =
+      currentUsable ||
+      pages.find(page => page.url().includes('/project/')) ||
+      pages.find(page => page.url().includes('labs.google')) ||
+      pages.find(page => page.url().includes('accounts.google.com'));
+
+    if (preferredPage) {
+      this.page = preferredPage;
+      return this.page;
+    }
+
+    // Chrome pode expor uma aba interna "New Tab" que fica com viewport 1x1.
+    // Criar uma aba própria evita logar ações em um alvo invisível/errado.
+    this.page = await this.browser.newPage();
+
+    for (const page of pages) {
+      if (page !== this.page && this.isInternalNewTabUrl(page.url())) {
+        await page.close().catch(() => { });
+      }
+    }
+
+    return this.page;
+  }
+
+  private async findOpenProjectPage(): Promise<Page | null> {
+    if (!this.browser) return null;
+
+    const pages = (await this.browser.pages()).filter(page => !page.isClosed());
+    const orderedPages = [
+      ...(this.page && !this.page.isClosed() ? [this.page] : []),
+      ...pages.filter(page => page !== this.page),
+    ];
+
+    for (const page of orderedPages) {
+      if (page.url().includes('/project/')) {
+        this.page = page;
+        return this.page;
+      }
+    }
+
+    return null;
+  }
+
+  private async isProjectEditorReady(page: Page): Promise<boolean> {
+    if (!page.url().includes('/project/')) return false;
+
+    try {
+      return await page.evaluate(`(function() {
+        function visible(node) {
+          if (!node || !node.getBoundingClientRect) return false;
+          var rect = node.getBoundingClientRect();
+          if (rect.width <= 0 || rect.height <= 0) return false;
+          var style = window.getComputedStyle(node);
+          return !style || (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0');
+        }
+
+        var icons = document.querySelectorAll('i');
+        for (var i = 0; i < icons.length; i++) {
+          var text = (icons[i].textContent || '').trim();
+          if ((text === 'filter_list' || text === 'settings_2') && visible(icons[i])) return true;
+        }
+
+        var editors = document.querySelectorAll('[data-slate-editor="true"], [contenteditable="true"], textarea');
+        for (var j = 0; j < editors.length; j++) {
+          if (visible(editors[j])) return true;
+        }
+
+        return false;
+      })()`) as boolean;
+    } catch {
+      return false;
+    }
+  }
+
+  private async waitForProjectPage(timeoutMs: number): Promise<boolean> {
+    const start = Date.now();
+    let lastProjectUrl: string | null = null;
+
+    while (Date.now() - start < timeoutMs) {
+      const projectPage = await this.findOpenProjectPage();
+      if (projectPage) {
+        lastProjectUrl = projectPage.url();
+        if (await this.isProjectEditorReady(projectPage)) {
+          const elapsed = Math.round((Date.now() - start) / 100) / 10;
+          console.log(`✅ [Flow] Página de projeto pronta em ${elapsed}s: ${lastProjectUrl}`);
+          return true;
+        }
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+
+    if (lastProjectUrl) {
+      console.warn(`⚠️ [Flow] Projeto aberto, mas editor ainda não confirmou prontidão: ${lastProjectUrl}`);
+      return true;
+    }
+
+    return false;
+  }
+
   /**
    * Verifica se o browser e a page ainda estão vivos/conectados.
    * Se não estiverem, reseta o estado para permitir re-inicialização.
@@ -432,10 +555,8 @@ export class FlowVideoProvider {
       }
       this.browser = await this.connectToRemoteChrome();
 
-      // Reaproveita a aba inicial do Chrome para poupar recursos.
-      const pages = await this.browser.pages();
-      this.page = pages[0] || await this.browser.newPage();
-      await this.page.bringToFront().catch(() => { });
+      this.page = await this.selectAutomationPage();
+      console.log(`📍 [Flow] Aba de automação selecionada: ${this.page.url()}`);
 
       console.log(`✅ [Flow] Navegador inicializado com perfil próprio`);
     } catch (error) {
@@ -605,8 +726,8 @@ export class FlowVideoProvider {
         throw new Error('Página não disponível');
       }
 
-      // Trazer a aba para o foreground para evitar que Chrome congele o Execution Context
-      try { await this.page.bringToFront(); } catch (e) { }
+      // Trazer uma aba controlável para o foreground para evitar que Chrome congele o Execution Context
+      this.page = await this.selectAutomationPage();
 
       // 1b. Verificar créditos antes de iniciar
       emitProgress('navigating', 'Verificando créditos...');
@@ -1443,28 +1564,24 @@ export class FlowVideoProvider {
     if (!this.page) return false;
 
     try {
-      // Verifica se já está numa rota /project/
-      const currentUrl = this.page.url();
-      if (currentUrl.includes('/project/')) {
-        console.log(`✅ [Flow] Já está numa página de projeto: ${currentUrl}`);
+      this.page = await this.selectAutomationPage();
+
+      if (await this.waitForProjectPage(1000)) {
+        console.log(`✅ [Flow] Já está numa página de projeto: ${this.page.url()}`);
         return true;
       }
 
       console.log(`🔍 [Flow] Procurando botão "Novo projeto" / "New Project"...`);
 
-      let clicked = false;
-
-      // Estratégia 0 (preferencial em headless): clique via DOM puro
-      if (this.config.headless) {
-        const domClickMode = await this.tryClickNewProjectViaDom();
-        if (domClickMode) {
-          clicked = true;
-          console.log(`✅ [Flow] Botão novo projeto clicado via DOM (${domClickMode})`);
+      const attemptClick = async (attempt: number): Promise<string | null> => {
+        if (attempt > 1) {
+          const domClickMode = await this.tryClickNewProjectViaDom();
+          if (domClickMode) {
+            return `dom:${domClickMode}`;
+          }
         }
-      }
 
-      // Estratégia 1: Buscar por texto do botão
-      if (!clicked) {
+        // Estratégia 1: Buscar por texto do botão
         const buttons = await this.page.$$('button');
         for (const btn of buttons) {
           const text = (await this.getTextContent(btn)).toLowerCase();
@@ -1472,17 +1589,13 @@ export class FlowVideoProvider {
             if (await this.isVisible(btn)) {
               const ok = await this.safeClickHandle(btn, `new-project-button:text:${text.substring(0, 40)}`);
               if (ok) {
-                clicked = true;
-                console.log(`✅ [Flow] Botão encontrado pelo texto: "${text}"`);
-                break;
+                return `button:text:${text.substring(0, 60)}`;
               }
             }
           }
         }
-      }
 
-      // Estratégia 2: Buscar pelo ícone add_2
-      if (!clicked) {
+        // Estratégia 2: Buscar pelo ícone add_2
         const icons = await this.page.$$('i.google-symbols');
         for (const icon of icons) {
           const text = await this.getTextContent(icon);
@@ -1490,17 +1603,13 @@ export class FlowVideoProvider {
             if (await this.isVisible(icon)) {
               const ok = await this.safeClickHandle(icon, 'new-project-icon:add_2');
               if (ok) {
-                clicked = true;
-                console.log(`✅ [Flow] Botão encontrado pelo ícone add_2`);
-                break;
+                return 'icon:add_2';
               }
             }
           }
         }
-      }
 
-      // Estratégia 3: Buscar em links (<a>)
-      if (!clicked) {
+        // Estratégia 3: Buscar em links (<a>)
         const links = await this.page.$$('a');
         for (const link of links) {
           const text = (await this.getTextContent(link)).toLowerCase();
@@ -1508,72 +1617,60 @@ export class FlowVideoProvider {
             if (await this.isVisible(link)) {
               const ok = await this.safeClickHandle(link, `new-project-link:text:${text.substring(0, 40)}`);
               if (ok) {
-                clicked = true;
-                console.log(`✅ [Flow] Link encontrado pelo texto: "${text}"`);
-                break;
+                return `link:text:${text.substring(0, 60)}`;
               }
             }
           }
         }
-      }
 
-      if (!clicked) {
-        console.error('❌ [Flow] Botão "Novo projeto" não encontrado');
-        try {
-          const debugPath = path.join(this.outputDir, `flow-new-project-debug-${Date.now()}.png`);
-          await this.page.screenshot({ path: debugPath, fullPage: true });
-          console.log(`📸 [Flow] Screenshot de debug: ${debugPath}`);
-        } catch { }
-        return false;
-      }
+        // Estratégia 4: clique via DOM puro. Serve como fallback quando o target
+        // real do botão fica em um wrapper diferente do elemento que contém o texto.
+        if (attempt === 1) {
+          const domClickMode = await this.tryClickNewProjectViaDom();
+          if (domClickMode) {
+            return `dom:${domClickMode}`;
+          }
+        }
 
-      console.log(`✅ [Flow] Botão clicado, aguardando página de projeto carregar...`);
+        return null;
+      };
 
-      // Espera dinâmica: polling até o botão "filter_list" (Ordenar e filtrar) aparecer,
-      // que é um indicador confiável de que a página de projeto foi carregada.
-      const projectReadyTimeoutMs = 20000;
-      const pollIntervalMs = 500;
-      const projectReadyStart = Date.now();
-      let projectReady = false;
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        const clickedBy = await attemptClick(attempt);
 
-      while (Date.now() - projectReadyStart < projectReadyTimeoutMs) {
-        // Critério 1: URL contém /project/
-        const currentUrl = this.page.url();
-        if (currentUrl.includes('/project/')) {
-          // Critério 2: botão filter_list está visível (página totalmente carregada)
+        if (!clickedBy) {
+          console.error('❌ [Flow] Botão "Novo projeto" não encontrado');
           try {
-            const filterBtns = await this.page.$$('button');
-            for (const btn of filterBtns) {
-              const icons = await btn.$$('i');
-              for (const icon of icons) {
-                if ((await this.getTextContent(icon)).trim() === 'filter_list') {
-                  if (await this.isVisible(btn)) {
-                    projectReady = true;
-                    break;
-                  }
-                }
-              }
-              if (projectReady) break;
-            }
+            const debugPath = path.join(this.outputDir, `flow-new-project-debug-${Date.now()}.png`);
+            await this.page.screenshot({ path: debugPath, fullPage: true });
+            console.log(`📸 [Flow] Screenshot de debug: ${debugPath}`);
           } catch { }
-
-          if (projectReady) {
-            const elapsed = Math.round((Date.now() - projectReadyStart) / 100) / 10;
-            console.log(`✅ [Flow] Página de projeto pronta em ${elapsed}s: ${currentUrl}`);
-            return true;
-          }
+          return false;
         }
-        await new Promise(resolve => setTimeout(resolve, pollIntervalMs));
+
+        console.log(`🖱️ [Flow] Clique em "Novo projeto" enviado (${clickedBy}), aguardando /project/...`);
+
+        const waitMs = attempt === 3 ? 20000 : 8000;
+        if (await this.waitForProjectPage(waitMs)) {
+          return true;
+        }
+
+        const currentUrl = this.page?.url() || '(sem página)';
+        console.warn(`⚠️ [Flow] Clique ${attempt}/3 não abriu projeto. URL atual: ${currentUrl}`);
+        await this.randomDelay(700, 1200);
       }
 
-      // Timeout: verificar mesmo sem o filter_list (pode ter mudado o layout)
       const finalUrl = this.page.url();
-      if (finalUrl.includes('/project/')) {
-        console.warn(`⚠️ [Flow] Projeto aberto mas filter_list não encontrado: ${finalUrl}`);
-        return true;
+      console.error(`❌ [Flow] Timeout: URL não contém /project/ após novas tentativas: ${finalUrl}`);
+
+      if (this.browser) {
+        try {
+          const pages = await this.browser.pages();
+          const urls = pages.map((page, index) => `${index + 1}:${page.url()}`).join(' | ');
+          console.log(`📑 [Flow] Abas abertas no timeout: ${urls}`);
+        } catch { }
       }
 
-      console.error(`❌ [Flow] Timeout: URL não contém /project/ após ${projectReadyTimeoutMs / 1000}s: ${finalUrl}`);
       try {
         const debugPath = path.join(this.outputDir, `flow-route-debug-${Date.now()}.png`);
         await this.page.screenshot({ path: debugPath, fullPage: true });
@@ -3549,8 +3646,8 @@ export class FlowVideoProvider {
       }
       if (!this.page) throw new Error('Página não disponível');
 
-      // Trazer a aba para o foreground para evitar que Chrome congele o Execution Context
-      try { await this.page.bringToFront(); } catch (e) { }
+      // Trazer uma aba controlável para o foreground para evitar que Chrome congele o Execution Context
+      this.page = await this.selectAutomationPage();
 
       // 2. Navegar para o Flow se necessário
       const currentUrl = this.page.url();
