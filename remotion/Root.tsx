@@ -83,6 +83,16 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         schema={motionGraphicsRuntimeSchema}
+        calculateMetadata={async ({ props }) => {
+          const fps = Math.max(1, Number(props.fps || 30));
+          const durationInFrames = Math.max(1, Math.round(Number(props.durationInFrames || props.segmentDurationInFrames || 150)));
+          return {
+            durationInFrames,
+            fps,
+            width: Math.max(2, Number(props.width || 1920)),
+            height: Math.max(2, Number(props.height || 1080)),
+          };
+        }}
         defaultProps={{
           code: '',
         }}

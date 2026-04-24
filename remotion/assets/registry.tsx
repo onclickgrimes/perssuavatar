@@ -52,6 +52,8 @@ export interface SceneProps {
   motion_graphics?: {
     code?: string;
     title?: string;
+    durationInSeconds?: number;
+    durationInFrames?: number;
     updatedAt?: number;
     messages?: Array<{
       role: 'user' | 'assistant';
@@ -260,13 +262,27 @@ const Timeline3DAsset: AssetComponent = ({ scene }) => {
   );
 };
 
-const MotionGraphicsAsset: AssetComponent = ({ scene }) => {
+const MotionGraphicsAsset: AssetComponent = ({ scene, sceneDurationSeconds }) => {
   const code = String(scene.motion_graphics?.code || '').trim();
+  const { fps } = useVideoConfig();
+  const compilation = React.useMemo(() => (
+    code
+      ? compileMotionGraphicsCode(code)
+      : { Component: null, error: null }
+  ), [code]);
+
   if (!code) {
     return null;
   }
 
-  const compilation = React.useMemo(() => compileMotionGraphicsCode(code), [code]);
+  const segmentDurationInSeconds = Math.max(
+    0.1,
+    Number(sceneDurationSeconds || scene.motion_graphics?.durationInSeconds || 0.1),
+  );
+  const segmentDurationInFrames = Math.max(
+    1,
+    Number(scene.motion_graphics?.durationInFrames || Math.round(segmentDurationInSeconds * fps)),
+  );
 
   if (compilation.error || !compilation.Component) {
     return compilation.error ? (
@@ -290,7 +306,10 @@ const MotionGraphicsAsset: AssetComponent = ({ scene }) => {
   const Component = compilation.Component;
   return (
     <AbsoluteFill style={{ backgroundColor: 'transparent' }}>
-      <Component />
+      <Component
+        segmentDurationInFrames={segmentDurationInFrames}
+        segmentDurationInSeconds={segmentDurationInSeconds}
+      />
     </AbsoluteFill>
   );
 };

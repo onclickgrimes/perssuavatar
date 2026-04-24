@@ -196,6 +196,14 @@ const createMotionGraphicsMessage = (
   };
 };
 
+const buildMotionGraphicsDurationMetadata = (start: number, end: number, fps: number) => {
+  const durationInSeconds = Math.max(0.1, Number(end || 0) - Number(start || 0));
+  return {
+    durationInSeconds: Number(durationInSeconds.toFixed(4)),
+    durationInFrames: Math.max(1, Math.round(durationInSeconds * Math.max(1, fps || 30))),
+  };
+};
+
 const previewHistoryReducer = (state: PreviewHistoryStore, action: PreviewHistoryAction): PreviewHistoryStore => {
   switch (action.type) {
     case 'push': {
@@ -619,13 +627,27 @@ export function PreviewStep({
 
     const updated = project.segments.map(s => {
       if (s.id === id) {
+        if (isMotionGraphicsSegment(s)) {
+          const timing = buildMotionGraphicsDurationMetadata(sourceStart, sourceEnd, Number(project.config?.fps || 30));
+          return {
+            ...s,
+            start: sourceStart,
+            end: sourceEnd,
+            motionGraphics: {
+              ...(s.motionGraphics || {}),
+              ...timing,
+              updatedAt: Date.now(),
+            },
+          };
+        }
+
         return { ...s, start: sourceStart, end: sourceEnd };
       }
       return s;
     });
     updated.sort((a, b) => a.start - b.start);
     handleSegmentsChange(updated, { pushHistory: options?.pushHistory });
-  }, [handleSegmentsChange, onSegmentsUpdate, project.segments, removeAudioSilences, silenceCompactionRanges]);
+  }, [handleSegmentsChange, onSegmentsUpdate, project.config?.fps, project.segments, removeAudioSilences, silenceCompactionRanges]);
 
   const handleBackClick = useCallback(() => {
     if (hasUnsavedChanges) {
@@ -758,7 +780,7 @@ export function PreviewStep({
     setHasUnsavedChanges(true);
   };
 
-  const fps = 30;
+  const fps = Math.max(1, Number(project.config?.fps || 30));
   const durationInFrames = Math.ceil(durationInSeconds * fps);
   const getCssAspectRatio = (ratio: string) => ratio.replace(':', '/');
   const audioUrl = useMemo(() => audioPathToUrl(project.audioPath), [project.audioPath]);
@@ -1125,6 +1147,7 @@ export function PreviewStep({
     setSelectedSegmentIds([newId]);
   }, [
     handleSegmentsChange,
+    fps,
     onSegmentsUpdate,
     project.segments,
     removeAudioSilences,
@@ -1357,7 +1380,12 @@ export function PreviewStep({
       speaker: 0,
       assetType: MOTION_GRAPHICS_ASSET_TYPE,
       track,
-      motionGraphics: options?.motionGraphics,
+      motionGraphics: options?.motionGraphics
+        ? {
+          ...options.motionGraphics,
+          ...buildMotionGraphicsDurationMetadata(start, start + duration, fps),
+        }
+        : undefined,
     };
 
     const updated = [...project.segments, newSegment].sort((left, right) => left.start - right.start);
@@ -1420,6 +1448,7 @@ export function PreviewStep({
         motionGraphics: {
           code: legacyCode,
           title: 'Remotion legado',
+          ...buildMotionGraphicsDurationMetadata(0, Math.max(1, originalDurationInSeconds || 5), fps),
           updatedAt: Date.now(),
           messages: legacyMessages,
         },
@@ -1448,6 +1477,7 @@ export function PreviewStep({
   }, [
     handleSegmentsChange,
     legacyMotionGraphicsSnapshot,
+    fps,
     motionGraphicsSegments,
     onProjectConfigChange,
     originalDurationInSeconds,
@@ -1529,6 +1559,11 @@ export function PreviewStep({
     if (!targetSegment) {
       return false;
     }
+    const targetMotionGraphicsTiming = buildMotionGraphicsDurationMetadata(
+      Number(targetSegment.start || 0),
+      Number(targetSegment.end || 0),
+      fps,
+    );
 
     const currentMotionGraphics = getMotionGraphicsData(targetSegment);
     const persistedMessages = Array.isArray(currentMotionGraphics?.messages)
@@ -1590,7 +1625,7 @@ export function PreviewStep({
           title: project.title,
           description: project.description,
           selectedRatio,
-          durationInFrames,
+          durationInFrames: targetMotionGraphicsTiming.durationInFrames,
           fps,
           motionGraphicsSegment: buildMotionGraphicsContextSegment(targetSegment),
           segments: selectedContextSegments,
@@ -1625,6 +1660,7 @@ export function PreviewStep({
         motionGraphics: {
           code: result.code,
           title: buildMotionGraphicsTitle(segment, normalizedPrompt, assistantSummary),
+          ...targetMotionGraphicsTiming,
           updatedAt: Date.now(),
           messages: [
             ...persistedMessages,
@@ -1655,7 +1691,6 @@ export function PreviewStep({
   }, [
     buildMotionGraphicsTitle,
     createMotionGraphicsSegment,
-    durationInFrames,
     fps,
     isMotionGraphicsGenerating,
     project.description,

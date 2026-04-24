@@ -40,6 +40,8 @@ interface TimelineSegment {
   motionGraphics?: {
     code?: string;
     title?: string;
+    durationInSeconds?: number;
+    durationInFrames?: number;
     updatedAt?: number;
     messages?: Array<{
       role: 'user' | 'assistant';

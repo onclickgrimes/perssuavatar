@@ -103,6 +103,8 @@ export interface MotionGraphicsChatPersistedMessage {
 export interface MotionGraphicsSegmentData {
   code?: string;
   title?: string;
+  durationInSeconds?: number;
+  durationInFrames?: number;
   updatedAt?: number;
   messages?: MotionGraphicsChatPersistedMessage[];
 }

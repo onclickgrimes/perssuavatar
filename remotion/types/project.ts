@@ -347,6 +347,8 @@ export const MotionGraphicsMessageSchema = z.object({
 export const MotionGraphicsSceneSchema = z.object({
   code: z.string().optional(),
   title: z.string().optional(),
+  durationInSeconds: z.number().optional(),
+  durationInFrames: z.number().optional(),
   updatedAt: z.number().optional(),
   messages: z.array(MotionGraphicsMessageSchema).optional(),
 }).optional();

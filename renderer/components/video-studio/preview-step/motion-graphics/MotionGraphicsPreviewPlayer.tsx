@@ -90,6 +90,8 @@ export function MotionGraphicsPreviewPlayer({
       component={Component}
       inputProps={{
         __motionGraphicsRuntimeErrorMode: 'full',
+        segmentDurationInFrames: durationInFrames,
+        segmentDurationInSeconds: durationInFrames / fps,
       }}
       durationInFrames={durationInFrames}
       fps={fps}

@@ -810,7 +810,15 @@ export class VideoService extends EventEmitter {
     outputPath: string;
     onProgress: (progress: number) => void;
   }): Promise<void> {
-    const inputProps = { code: params.code };
+    const inputProps = {
+      code: params.code,
+      durationInFrames: Math.max(1, params.durationInFrames),
+      fps: Math.max(1, params.fps),
+      width: Math.max(2, params.width),
+      height: Math.max(2, params.height),
+      segmentDurationInFrames: Math.max(1, params.durationInFrames),
+      segmentDurationInSeconds: Math.max(0.1, params.durationInFrames / Math.max(1, params.fps)),
+    };
     const composition = await selectComposition({
       serveUrl: params.serveUrl,
       id: 'MotionGraphicsRuntime',

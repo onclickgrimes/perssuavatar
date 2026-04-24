@@ -30,6 +30,37 @@ const compilationCache = new Map<string, MotionGraphicsCompilationResult>();
 
 type MotionGraphicsRuntimeErrorMode = 'none' | 'full' | 'compact';
 
+interface MotionGraphicsVideoConfigOverride {
+  durationInFrames?: number;
+  fps?: number;
+  width?: number;
+  height?: number;
+}
+
+const MotionGraphicsVideoConfigContext = React.createContext<MotionGraphicsVideoConfigOverride | null>(null);
+
+const toPositiveFiniteNumber = (value: unknown): number | undefined => {
+  const numberValue = Number(value);
+  return Number.isFinite(numberValue) && numberValue > 0 ? numberValue : undefined;
+};
+
+const useMotionGraphicsVideoConfig = () => {
+  const config = useVideoConfig();
+  const override = React.useContext(MotionGraphicsVideoConfigContext);
+
+  if (!override) {
+    return config;
+  }
+
+  return {
+    ...config,
+    ...(override.durationInFrames ? { durationInFrames: Math.max(1, Math.round(override.durationInFrames)) } : {}),
+    ...(override.fps ? { fps: override.fps } : {}),
+    ...(override.width ? { width: override.width } : {}),
+    ...(override.height ? { height: override.height } : {}),
+  };
+};
+
 interface MotionGraphicsRuntimeBoundaryProps {
   children: React.ReactNode;
   mode: MotionGraphicsRuntimeErrorMode;
@@ -313,7 +344,7 @@ export function compileMotionGraphicsCode(code: string): MotionGraphicsCompilati
       interpolate,
       spring,
       useCurrentFrame,
-      useVideoConfig,
+      useMotionGraphicsVideoConfig,
       useState,
       useEffect,
       useMemo,
@@ -349,10 +380,24 @@ export function compileMotionGraphicsCode(code: string): MotionGraphicsCompilati
       } = props as Record<string, unknown> & {
         __motionGraphicsRuntimeErrorMode?: MotionGraphicsRuntimeErrorMode;
       };
+      const durationOverride = toPositiveFiniteNumber(
+        componentProps.segmentDurationInFrames ?? componentProps.durationInFrames,
+      );
+      const fpsOverride = toPositiveFiniteNumber(componentProps.fps);
+      const widthOverride = toPositiveFiniteNumber(componentProps.width);
+      const heightOverride = toPositiveFiniteNumber(componentProps.height);
+      const videoConfigOverride = React.useMemo(() => ({
+        durationInFrames: durationOverride,
+        fps: fpsOverride,
+        width: widthOverride,
+        height: heightOverride,
+      }), [durationOverride, fpsOverride, heightOverride, widthOverride]);
 
       return (
         <MotionGraphicsRuntimeBoundary mode={__motionGraphicsRuntimeErrorMode || 'none'}>
-          <GeneratedComponent {...componentProps} />
+          <MotionGraphicsVideoConfigContext.Provider value={videoConfigOverride}>
+            <GeneratedComponent {...componentProps} />
+          </MotionGraphicsVideoConfigContext.Provider>
         </MotionGraphicsRuntimeBoundary>
       );
     };
