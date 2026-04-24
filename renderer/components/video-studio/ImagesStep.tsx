@@ -119,6 +119,7 @@ const FLOW_EXTENSION_RESULT_SCHEMA = 'flow-extension-result.v1';
 const IMAGE_REFERENCE_LIMIT = 10;
 const DEFAULT_INGREDIENT_LIMIT = 3;
 const IMAGE_SERVICE_IDS = new Set(['flow-image', 'vertex-image', 'flow-image-api', 'flow-image-pro']);
+const GENERATION_COUNT_OPTIONS = [1, 2, 3, 4] as const;
 const VEO3_API_ALLOWED_SECONDS = [4, 6, 8] as const;
 const VEO2_API_ALLOWED_SECONDS = [5, 6, 8] as const;
 const GROK_ALLOWED_SECONDS = [6, 10] as const;
@@ -190,6 +191,12 @@ const VIDEO_FRAME_PROMPT_FIELDS: VideoFramePromptField[] = ['firstFrame', 'anima
 
 const getIngredientLimitByService = (serviceId: string): number => {
   return IMAGE_SERVICE_IDS.has(serviceId) ? IMAGE_REFERENCE_LIMIT : DEFAULT_INGREDIENT_LIMIT;
+};
+
+const normalizeGenerationCount = (value: unknown): number => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return 1;
+  return Math.max(1, Math.min(4, Math.round(numericValue)));
 };
 
 const getSceneDurationInfo = (segment: Pick<TranscriptionSegment, 'start' | 'end'>): { rawSeconds: number; roundedSeconds: number } => {
@@ -2030,7 +2037,7 @@ export function ImagesStep({
       const prompt = buildFlowPrompt(segment, service).trim();
       if (!prompt) return;
 
-      const count = Math.max(1, Math.min(4, imageCount[segment.id] ?? 1));
+      const count = normalizeGenerationCount(imageCount[segment.id]);
       const mediaType: FlowExportMediaType = service === 'flow-image' ? 'image' : 'video';
       const hasCurrentVideo = isVideo(segment.imageUrl);
       const referenceImageUrl = segment.imageUrl && !hasCurrentVideo
@@ -2490,6 +2497,17 @@ export function ImagesStep({
     () => filteredSceneIds.reduce((count, sceneId) => count + (selectedScenes.has(sceneId) ? 1 : 0), 0),
     [filteredSceneIds, selectedScenes]
   );
+  const selectedBatchGenerationCount = useMemo<number | 'mixed'>(() => {
+    const selectedSceneIds = Array.from(selectedScenes);
+    if (selectedSceneIds.length === 0) return 1;
+
+    const firstCount = normalizeGenerationCount(imageCount[selectedSceneIds[0]]);
+    const hasMixedCounts = selectedSceneIds.some(sceneId =>
+      normalizeGenerationCount(imageCount[sceneId]) !== firstCount
+    );
+
+    return hasMixedCounts ? 'mixed' : firstCount;
+  }, [imageCount, selectedScenes]);
   const hasFilteredScenes = filteredSceneIds.length > 0;
   const segmentsWithMediaCount = useMemo(
     () => segments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
@@ -3070,7 +3088,7 @@ export function ImagesStep({
 
       // ── VEO 2 FLOW (Google Flow via Puppeteer, modelo Veo 2 - Fast) ──
       if (service === 'veo2-flow') {
-        const count = imageCount[segmentId] ?? 1;
+        const count = normalizeGenerationCount(imageCount[segmentId]);
         console.log(`🌊 [Veo2Flow] Gerando ${count} vídeo(s) para segmento ${segmentId}...`);
         
         if (referenceImagePath) {
@@ -3104,7 +3122,7 @@ export function ImagesStep({
 
       // ── VEO 3 (Google Flow via Puppeteer) ──
       } else if (service === 'veo3' || service === 'veo3-lite-flow') {
-        const count = imageCount[segmentId] ?? 1;
+        const count = normalizeGenerationCount(imageCount[segmentId]);
         if (vo3Credits !== null && vo3Credits < 20) {
           if (!silent) alert(`Créditos insuficientes! Você tem ${vo3Credits} créditos e precisa de pelo menos 20 para gerar um vídeo no Flow.`);
           setGeneratingSegments(prev => { const next = new Set(prev); next.delete(segmentId); return next; });
@@ -3238,7 +3256,7 @@ export function ImagesStep({
       // ── IMAGE (Flow) ──
       } else if (service === 'flow-image') {
         console.log(`🖼️ [FlowImg] Gerando imagem para segmento ${segmentId}...`);
-        const count = imageCount[segmentId] ?? 1;
+        const count = normalizeGenerationCount(imageCount[segmentId]);
 
         // Verificar modo Ingredients e referências de personagem/lugar
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
@@ -3282,7 +3300,7 @@ export function ImagesStep({
       // ── IMAGE (Vertex Studio) ──
       } else if (service === 'vertex-image') {
         console.log(`🧩 [VertexImg] Gerando imagem para segmento ${segmentId}...`);
-        const count = imageCount[segmentId] ?? 1;
+        const count = normalizeGenerationCount(imageCount[segmentId]);
 
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
         const sceneReferencePaths = getSceneReferencePaths(segment);
@@ -3327,7 +3345,7 @@ export function ImagesStep({
         const imageModel = getImageModelByService(service);
         const imageModelLabel = service === 'flow-image-pro' ? 'Nano Banana Pro' : 'Nano Banana 2';
         console.log(`🖼️ [ImageAPI] Gerando imagem para segmento ${segmentId} com ${imageModelLabel}...`);
-        const count = imageCount[segmentId] ?? 1;
+        const count = normalizeGenerationCount(imageCount[segmentId]);
 
         // Verificar modo Ingredients e referências de personagem/lugar
         const isIngredientsExplicit = ingredientMode[segmentId] === 'ingredients';
@@ -4174,6 +4192,35 @@ export function ImagesStep({
                     <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Ações em Lote</span>
                   </div>
                   <div className="p-2 space-y-1">
+                    <div className="space-y-1.5 pb-2 mb-1 border-b border-white/10">
+                      <label className="block px-2 text-[10px] text-white/40 uppercase">
+                        Número de gerações (Selecionadas)
+                      </label>
+                      <select
+                        value={selectedBatchGenerationCount}
+                        disabled={selectedScenes.size === 0}
+                        onChange={(e) => {
+                          const nextCount = normalizeGenerationCount(e.target.value);
+                          setImageCount(prev => {
+                            const next = { ...prev };
+                            Array.from(selectedScenes).forEach(id => {
+                              next[id] = nextCount;
+                            });
+                            return next;
+                          });
+                        }}
+                        className="w-full bg-black/40 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white focus:border-cyan-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {selectedBatchGenerationCount === 'mixed' && (
+                          <option value="mixed" disabled>Misto</option>
+                        )}
+                        {GENERATION_COUNT_OPTIONS.map(count => (
+                          <option key={count} value={count}>
+                            {count} geração{count > 1 ? 's' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
                     <div className="px-2 py-1 text-[10px] text-white/40 uppercase mb-1">Alterar Serviço (Selecionadas)</div>
                     {GENERATION_SERVICES.map(svc => (
                       <button
