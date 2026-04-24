@@ -18,7 +18,12 @@ import { ImagesStep } from '../ImagesStep';
 import { PreviewStep } from '../PreviewStep';
 import { RenderingStep } from '../RenderingStep';
 import { CompleteStep } from '../CompleteStep';
-import { toSaveFormat, fromSaveFormat, type StoryReferencesState } from '../../../shared/utils/project-converter';
+import {
+  ensureFlowWatermarkTransform,
+  toSaveFormat,
+  fromSaveFormat,
+  type StoryReferencesState,
+} from '../../../shared/utils/project-converter';
 
 interface AudioToVideoToolProps {
   onBack: () => void;
@@ -948,7 +953,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         const isVideoFile = !!imageUrl && ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v']
           .some(ext => imageUrl.toLowerCase().endsWith(ext));
         
-        const newSeg: any = { ...seg, imageUrl };
+        let newSeg: any = { ...seg, imageUrl };
         if (generationService !== undefined) {
           newSeg.generationService = generationService;
         }
@@ -975,6 +980,8 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           // Novo video sem duracao valida: limpa valor antigo para forcar reprobe do metadata.
           delete newSeg.asset_duration;
         }
+
+        newSeg = ensureFlowWatermarkTransform(newSeg, { force: true });
         
         return newSeg;
       }),

@@ -75,6 +75,11 @@ type AnimateFrameRegenerationResult = {
 };
 
 const DEFAULT_SCENE_PROMPT_TRANSLATION_MODEL = 'gemma-4-31b-it';
+const FLOW_WATERMARK_VIDEO_SERVICES = new Set(['veo3', 'veo3-lite-flow', 'veo2-flow']);
+const FLOW_WATERMARK_TRANSFORM = {
+    scale: 1.09,
+    positionX: 3,
+};
 
 // ========================================
 // TYPES
@@ -549,6 +554,47 @@ export class VideoProjectService extends EventEmitter {
             this.getMotionGraphicsSkillLibraryRoots(),
             sourceDirectoryPath,
         );
+    }
+
+    private isFlowWatermarkVideoService(generationService: unknown): boolean {
+        return typeof generationService === 'string'
+            && FLOW_WATERMARK_VIDEO_SERVICES.has(generationService.trim());
+    }
+
+    private ensureFlowWatermarkTransform<T extends VideoProjectSegment>(
+        segment: T,
+        options: { force?: boolean } = {}
+    ): T {
+        if (!this.isFlowWatermarkVideoService(segment.generationService)) {
+            return segment;
+        }
+
+        const currentTransform = segment.transform || {};
+        const hasValidScale = typeof currentTransform.scale === 'number' && Number.isFinite(currentTransform.scale);
+        const hasValidPositionX = typeof currentTransform.positionX === 'number' && Number.isFinite(currentTransform.positionX);
+        const nextScale = options.force || !hasValidScale
+            ? FLOW_WATERMARK_TRANSFORM.scale
+            : currentTransform.scale;
+        const nextPositionX = options.force || !hasValidPositionX
+            ? FLOW_WATERMARK_TRANSFORM.positionX
+            : currentTransform.positionX;
+
+        if (
+            currentTransform === segment.transform
+            && currentTransform.scale === nextScale
+            && currentTransform.positionX === nextPositionX
+        ) {
+            return segment;
+        }
+
+        return {
+            ...segment,
+            transform: {
+                ...currentTransform,
+                scale: nextScale,
+                positionX: nextPositionX,
+            },
+        } as T;
     }
 
     /**
@@ -4171,7 +4217,7 @@ export class VideoProjectService extends EventEmitter {
             delete (nextSegment as any).IdOfTheLocationInTheScene;
         }
 
-        return nextSegment;
+        return this.ensureFlowWatermarkTransform(nextSegment);
     }
 
     private stringifyPromptForEdition(prompt: unknown): string {
@@ -4585,7 +4631,8 @@ Responda APENAS com um objeto JSON válido no formato:
             ? compactTimelineSegments(project.segments, audioKeepRanges, { compactWords: true })
             : project.segments;
 
-        const scenes = timelineSegments.map(seg => {
+        const scenes = timelineSegments.map(segment => {
+            const seg = this.ensureFlowWatermarkTransform(segment);
             const rawAssetPath = seg.asset_url || seg.imageUrl;
             const localAssetPath = this.toLocalFsPath(rawAssetPath);
 
@@ -4797,6 +4844,7 @@ Responda APENAS com um objeto JSON válido no formato:
             characterStyle: String(project.storyReferences?.characterStyle || 'fotorrealista').trim() || 'fotorrealista',
             locationStyle: String(project.storyReferences?.locationStyle || 'fotorrealista').trim() || 'fotorrealista',
         };
+        const projectSegments = project.segments.map(segment => this.ensureFlowWatermarkTransform(segment));
 
         // Reorganizar propriedades na ordem desejada
         const orderedProject = {
@@ -4830,7 +4878,7 @@ Responda APENAS com um objeto JSON válido no formato:
                 backgroundColor: '#0a0a0a',
                 ...project.config, // Sobrescreve com valores do projeto se existirem
             },
-            segments: project.segments.map(segment => ({
+            segments: projectSegments.map(segment => ({
                 id: segment.id,
                 text: segment.text,
                 start: segment.start,

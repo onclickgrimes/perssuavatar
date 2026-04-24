@@ -71,6 +71,53 @@ export interface TransformConfig {
   opacity?: number;
 }
 
+export const FLOW_WATERMARK_VIDEO_SERVICES = new Set(['veo3', 'veo3-lite-flow', 'veo2-flow']);
+export const FLOW_WATERMARK_TRANSFORM: Pick<TransformConfig, 'scale' | 'positionX'> = {
+  scale: 1.09,
+  positionX: 3,
+};
+
+export function isFlowWatermarkVideoService(generationService: unknown): boolean {
+  return typeof generationService === 'string'
+    && FLOW_WATERMARK_VIDEO_SERVICES.has(generationService.trim());
+}
+
+export function ensureFlowWatermarkTransform<T extends { generationService?: string | null; transform?: TransformConfig }>(
+  segment: T,
+  options: { force?: boolean } = {}
+): T {
+  if (!isFlowWatermarkVideoService(segment.generationService)) {
+    return segment;
+  }
+
+  const currentTransform = segment.transform || {};
+  const hasValidScale = typeof currentTransform.scale === 'number' && Number.isFinite(currentTransform.scale);
+  const hasValidPositionX = typeof currentTransform.positionX === 'number' && Number.isFinite(currentTransform.positionX);
+  const nextScale = options.force || !hasValidScale
+    ? FLOW_WATERMARK_TRANSFORM.scale
+    : currentTransform.scale;
+  const nextPositionX = options.force || !hasValidPositionX
+    ? FLOW_WATERMARK_TRANSFORM.positionX
+    : currentTransform.positionX;
+
+  if (
+    currentTransform === segment.transform
+    && currentTransform.scale === nextScale
+    && currentTransform.positionX === nextPositionX
+  ) {
+    return segment;
+  }
+
+  return {
+    ...segment,
+    transform: {
+      ...currentTransform,
+      scale: nextScale,
+      positionX: nextPositionX,
+    },
+  };
+}
+
 /** Configuração de Áudio */
 export interface AudioConfig {
   volume?: number;
@@ -281,7 +328,7 @@ export function mapSegment(source: any): VideoSegment {
     segment.animateFrameTraduzido = source.animateFrameOriginal;
   }
 
-  return segment as VideoSegment;
+  return ensureFlowWatermarkTransform(segment as VideoSegment);
 }
 
 /** Mapeia um projeto copiando todas as propriedades definidas */
@@ -328,41 +375,43 @@ export function fromSaveFormat(loaded: any): VideoProject {
 
 /** Converte segmento para formato Remotion (Scene) */
 export function segmentToRemotionScene(seg: VideoSegment): any {
+  const normalizedSeg = ensureFlowWatermarkTransform(seg);
+
   return {
-    id: seg.id,
-    track: seg.track || 1,
-    start_time: seg.start,
-    end_time: seg.end,
-    transcript_segment: seg.text,
+    id: normalizedSeg.id,
+    track: normalizedSeg.track || 1,
+    start_time: normalizedSeg.start,
+    end_time: normalizedSeg.end,
+    transcript_segment: normalizedSeg.text,
     visual_concept: {
-      description: seg.text,
+      description: normalizedSeg.text,
       art_style: 'photorealistic',
-      emotion: seg.emotion || 'neutro',
+      emotion: normalizedSeg.emotion || 'neutro',
     },
-    asset_type: seg.assetType || 'image_static',
-    asset_url: seg.asset_url || seg.imageUrl || '',
-    ...(seg.asset_duration != null && { asset_duration: seg.asset_duration }),
-    prompt_suggestion: seg.imagePrompt || '',
-    camera_movement: seg.cameraMovement || 'static',
-    transition: seg.transition || 'fade',
-    transition_duration: Number(seg.transitionDuration ?? 0.5),
+    asset_type: normalizedSeg.assetType || 'image_static',
+    asset_url: normalizedSeg.asset_url || normalizedSeg.imageUrl || '',
+    ...(normalizedSeg.asset_duration != null && { asset_duration: normalizedSeg.asset_duration }),
+    prompt_suggestion: normalizedSeg.imagePrompt || '',
+    camera_movement: normalizedSeg.cameraMovement || 'static',
+    transition: normalizedSeg.transition || 'fade',
+    transition_duration: Number(normalizedSeg.transitionDuration ?? 0.5),
     text_overlay: {
-      text: seg.text,
+      text: normalizedSeg.text,
       position: 'bottom',
       style: 'subtitle',
       animation: 'fade',
-      words: seg.words,
+      words: normalizedSeg.words,
     },
-    ...(seg.chroma_key && { chroma_key: seg.chroma_key }),
-    ...(seg.highlightWords?.length && { highlight_words: seg.highlightWords }),
-    ...(seg.background && { background: seg.background }),
-    ...(seg.timeline_config && { timeline_config: seg.timeline_config }),
-    ...(seg.transform && { transform: seg.transform }),
-    ...(seg.motionGraphics && { motion_graphics: seg.motionGraphics }),
+    ...(normalizedSeg.chroma_key && { chroma_key: normalizedSeg.chroma_key }),
+    ...(normalizedSeg.highlightWords?.length && { highlight_words: normalizedSeg.highlightWords }),
+    ...(normalizedSeg.background && { background: normalizedSeg.background }),
+    ...(normalizedSeg.timeline_config && { timeline_config: normalizedSeg.timeline_config }),
+    ...(normalizedSeg.transform && { transform: normalizedSeg.transform }),
+    ...(normalizedSeg.motionGraphics && { motion_graphics: normalizedSeg.motionGraphics }),
     audio: {
-      volume: seg.audio?.volume ?? 1,
-      fadeIn: seg.audio?.fadeIn ?? 0,
-      fadeOut: seg.audio?.fadeOut ?? 0,
+      volume: normalizedSeg.audio?.volume ?? 1,
+      fadeIn: normalizedSeg.audio?.fadeIn ?? 0,
+      fadeOut: normalizedSeg.audio?.fadeOut ?? 0,
     },
   };
 }
