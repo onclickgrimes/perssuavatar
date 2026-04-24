@@ -1304,6 +1304,111 @@ export class VideoProjectService extends EventEmitter {
         });
     }
 
+    private serializeMotionGraphicsPromptPartForFile(part: MotionGraphicsProviderMessagePart) {
+        if (part.type === 'text') {
+            return {
+                type: 'text',
+                text: part.text,
+            };
+        }
+
+        const base64Length = String(part.data || '').length;
+        return {
+            type: 'image',
+            mimeType: part.mimeType,
+            label: part.label || '',
+            dataOmitted: true,
+            base64Length,
+            approximateBytes: Math.floor((base64Length * 3) / 4),
+        };
+    }
+
+    private serializeMotionGraphicsPromptMessageForFile(message: MotionGraphicsProviderMessage) {
+        return {
+            role: message.role,
+            ...(message.content ? { content: message.content } : {}),
+            ...(Array.isArray(message.parts) && message.parts.length > 0
+                ? { parts: message.parts.map((part) => this.serializeMotionGraphicsPromptPartForFile(part)) }
+                : {}),
+        };
+    }
+
+    private buildMotionGraphicsProviderPromptSnapshot(
+        provider: AIProvider,
+        payload: MotionGraphicsProviderMessage[],
+    ) {
+        if (provider === 'gemini') {
+            const systemInstruction = this.flattenMotionGraphicsMessageToText(
+                payload.find((message) => message.role === 'system') || {
+                    role: 'system',
+                    content: 'Return plain text only.',
+                },
+            ) || 'Return plain text only.';
+
+            return {
+                systemInstruction,
+                contents: payload
+                    .filter((message) => message.role === 'user' || message.role === 'assistant')
+                    .map((message) => ({
+                        role: message.role === 'user' ? 'user' : 'model',
+                        parts: Array.isArray(message.parts) && message.parts.length > 0
+                            ? message.parts.map((part) => this.serializeMotionGraphicsPromptPartForFile(part))
+                            : [{ type: 'text', text: String(message.content || '') }],
+                    })),
+            };
+        }
+
+        if (provider === 'gemini_scraping') {
+            return {
+                prompt: payload
+                    .map((message) => `[${String(message.role || 'user').toUpperCase()}]\n${this.flattenMotionGraphicsMessageToText(message)}`)
+                    .join('\n\n'),
+            };
+        }
+
+        return {
+            messages: payload.map((message) => ({
+                role: message.role,
+                content: this.flattenMotionGraphicsMessageToText(message),
+            })),
+        };
+    }
+
+    private saveMotionGraphicsPromptDebugFile(input: {
+        provider: AIProvider;
+        model: string;
+        prompt: string;
+        payload: MotionGraphicsProviderMessage[];
+        skillsUsed: MotionGraphicsSkillId[];
+        skillDetectionSource: 'model' | 'heuristic';
+        skillSummary: string;
+    }): void {
+        try {
+            const debugDir = path.join(this.projectsDir, 'debug');
+            if (!fs.existsSync(debugDir)) {
+                fs.mkdirSync(debugDir, { recursive: true });
+            }
+
+            const filePath = path.join(debugDir, 'motion-graphics-last-prompt.json');
+            const snapshot = {
+                createdAt: new Date().toISOString(),
+                provider: input.provider,
+                model: input.model,
+                userPrompt: input.prompt,
+                skillSummary: input.skillSummary,
+                skillsUsed: input.skillsUsed,
+                skillDetectionSource: input.skillDetectionSource,
+                providerPrompt: this.buildMotionGraphicsProviderPromptSnapshot(input.provider, input.payload),
+                internalPayload: input.payload.map((message) => this.serializeMotionGraphicsPromptMessageForFile(message)),
+            };
+
+            fs.writeFileSync(filePath, JSON.stringify(snapshot, null, 2), 'utf8');
+            console.log(`[MotionGraphics] Prompt debug file saved: ${filePath}`);
+        } catch (error) {
+            console.warn('[MotionGraphics] Failed to save prompt debug file:', error);
+        }
+    }
+
     private async detectMotionGraphicsSkills(
         input: {
             prompt: string;
@@ -1609,6 +1714,16 @@ export class VideoProjectService extends EventEmitter {
                 ],
             },
         ];
+
+        this.saveMotionGraphicsPromptDebugFile({
+            provider,
+            model: resolvedModel,
+            prompt,
+            payload,
+            skillsUsed: detectedSkills.skills,
+            skillDetectionSource: detectedSkills.source,
+            skillSummary,
+        });
 
         this.emit('status', {
             stage: 'analyzing',
