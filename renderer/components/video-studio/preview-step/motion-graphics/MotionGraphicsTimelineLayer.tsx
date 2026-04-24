@@ -32,6 +32,7 @@ interface MotionGraphicsTimelineLayerProps {
   compositionWidth: number;
   compositionHeight: number;
   segmentId: number | string;
+  isPlaying?: boolean;
 }
 
 export function MotionGraphicsTimelineLayer({
@@ -42,6 +43,7 @@ export function MotionGraphicsTimelineLayer({
   compositionWidth,
   compositionHeight,
   segmentId,
+  isPlaying = false,
 }: MotionGraphicsTimelineLayerProps) {
   const playerRef = useRef<PlayerRef>(null);
   const compilation = useMemo(() => compileMotionGraphicsCode(code), [code]);
@@ -54,12 +56,38 @@ export function MotionGraphicsTimelineLayer({
     }
 
     try {
-      playerRef.current.seekTo(safeFrame);
-      playerRef.current.pause();
+      const currentPlayerFrame = typeof playerRef.current.getCurrentFrame === 'function'
+        ? playerRef.current.getCurrentFrame()
+        : null;
+      const syncTolerance = isPlaying ? Math.max(2, Math.round(fps * 0.15)) : 0;
+      const shouldSeek = currentPlayerFrame == null
+        || Math.abs(currentPlayerFrame - safeFrame) > syncTolerance;
+
+      if (shouldSeek) {
+        playerRef.current.seekTo(safeFrame);
+      }
+
+      if (isPlaying) {
+        if (!playerRef.current.isPlaying()) {
+          playerRef.current.play();
+        }
+      } else if (playerRef.current.isPlaying()) {
+        playerRef.current.pause();
+      }
     } catch (_) {
       // no-op
     }
-  }, [compilation.Component, safeFrame]);
+  }, [compilation.Component, fps, isPlaying, safeFrame]);
+
+  useEffect(() => {
+    return () => {
+      try {
+        playerRef.current?.pause();
+      } catch (_) {
+        // no-op
+      }
+    };
+  }, []);
 
   if (compilation.error || !compilation.Component) {
     return compilation.error ? overlayErrorFallback({ error: new Error(compilation.error) }) : null;

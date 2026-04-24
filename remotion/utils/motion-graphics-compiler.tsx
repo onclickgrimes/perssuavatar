@@ -11,8 +11,10 @@ import { slide } from '@remotion/transitions/slide';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AbsoluteFill,
+  Audio,
   Img,
   Sequence,
+  Easing,
   interpolate,
   spring,
   useCurrentFrame,
@@ -273,8 +275,10 @@ export function compileMotionGraphicsCode(code: string): MotionGraphicsCompilati
     const createComponent = new Function(
       'React',
       'AbsoluteFill',
+      'Audio',
       'Img',
       'Sequence',
+      'Easing',
       'interpolate',
       'spring',
       'useCurrentFrame',
@@ -302,8 +306,10 @@ export function compileMotionGraphicsCode(code: string): MotionGraphicsCompilati
     const GeneratedComponent = createComponent(
       React,
       AbsoluteFill,
+      Audio,
       Img,
       Sequence,
+      Easing,
       interpolate,
       spring,
       useCurrentFrame,

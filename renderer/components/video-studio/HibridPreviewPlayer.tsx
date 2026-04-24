@@ -803,6 +803,7 @@ export const HibridPreviewPlayer = React.forwardRef(({
                   compositionWidth={compositionWidth}
                   compositionHeight={compositionHeight}
                   segmentId={segment.id}
+                  isPlaying={isPlaying && currentTimeSec >= segment.start && currentTimeSec < segment.end}
                 />
               </div>
             </div>
