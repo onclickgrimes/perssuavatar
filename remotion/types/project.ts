@@ -513,6 +513,9 @@ export const ProjectConfigSchema = z.object({
   /** Base URL para assets servidos localmente (ex: http://localhost:9999) */
   assetsBaseUrl: z.string().optional(),
 
+  /** Token transitório resolvido no processo main via getPrimaryApiKey('mapbox') */
+  mapboxAccessToken: z.string().optional(),
+
   /** Componentes Remotion permitidos (ex: ['HighlightWord', 'AnimatedSvgOverlay']) */
   componentsAllowed: z.array(z.string()).optional(),
 

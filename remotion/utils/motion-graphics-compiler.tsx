@@ -1,5 +1,7 @@
 import * as Babel from '@babel/standalone';
 import { Lottie } from '@remotion/lottie';
+import * as turf from '@turf/turf';
+import mapboxgl from 'mapbox-gl';
 import * as RemotionShapes from '@remotion/shapes';
 import {
   TransitionSeries,
@@ -18,8 +20,10 @@ import {
   interpolate,
   spring,
   useCurrentFrame,
+  useDelayRender,
   useVideoConfig,
 } from 'remotion';
+import { ProjectConfigContext, useProjectConfig } from '../contexts/ProjectConfigContext';
 
 export interface MotionGraphicsCompilationResult {
   Component: React.ComponentType<any> | null;
@@ -314,16 +318,20 @@ export function compileMotionGraphicsCode(code: string): MotionGraphicsCompilati
       'spring',
       'useCurrentFrame',
       'useVideoConfig',
+      'useDelayRender',
       'useState',
       'useEffect',
       'useMemo',
       'useRef',
+      'useProjectConfig',
       'TransitionSeries',
       'linearTiming',
       'springTiming',
       'fade',
       'slide',
       'Lottie',
+      'mapboxgl',
+      'turf',
       'Rect',
       'Circle',
       'Triangle',
@@ -345,16 +353,20 @@ export function compileMotionGraphicsCode(code: string): MotionGraphicsCompilati
       spring,
       useCurrentFrame,
       useMotionGraphicsVideoConfig,
+      useDelayRender,
       useState,
       useEffect,
       useMemo,
       useRef,
+      useProjectConfig,
       TransitionSeries,
       linearTiming,
       springTiming,
       fade,
       slide,
       Lottie,
+      mapboxgl,
+      turf,
       (RemotionShapes as any).Rect,
       (RemotionShapes as any).Circle,
       (RemotionShapes as any).Triangle,
@@ -392,11 +404,19 @@ export function compileMotionGraphicsCode(code: string): MotionGraphicsCompilati
         width: widthOverride,
         height: heightOverride,
       }), [durationOverride, fpsOverride, heightOverride, widthOverride]);
+      const generated = <GeneratedComponent {...componentProps} />;
+      const projectConfig = componentProps.projectConfig;
 
       return (
         <MotionGraphicsRuntimeBoundary mode={__motionGraphicsRuntimeErrorMode || 'none'}>
           <MotionGraphicsVideoConfigContext.Provider value={videoConfigOverride}>
-            <GeneratedComponent {...componentProps} />
+            {projectConfig == null ? (
+              generated
+            ) : (
+              <ProjectConfigContext.Provider value={projectConfig as any}>
+                {generated}
+              </ProjectConfigContext.Provider>
+            )}
           </MotionGraphicsVideoConfigContext.Provider>
         </MotionGraphicsRuntimeBoundary>
       );

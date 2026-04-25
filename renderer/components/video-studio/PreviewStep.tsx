@@ -275,6 +275,7 @@ export function PreviewStep({
 
   const [motionGraphicsGenerationError, setMotionGraphicsGenerationError] = useState<string | null>(null);
   const [isMotionGraphicsGenerating, setIsMotionGraphicsGenerating] = useState(false);
+  const [motionGraphicsRuntimeConfig, setMotionGraphicsRuntimeConfig] = useState<Record<string, unknown>>({});
   const [selectedMotionGraphicsSegmentId, setSelectedMotionGraphicsSegmentId] = useState<number | null>(() => {
     const firstMotionGraphicsSegment = project.segments.find((segment) => isMotionGraphicsSegment(segment));
     return firstMotionGraphicsSegment ? Number(firstMotionGraphicsSegment.id) : null;
@@ -730,14 +731,47 @@ export function PreviewStep({
     return silenceCompactionRanges.filter((range) => mutedKeySet.has(getKeepRangeKey(range)));
   }, [effectiveMutedBaseAudioRangeKeys, silenceCompactionRanges]);
 
+  useEffect(() => {
+    let canceled = false;
+    const getRuntimeConfig = window.electron?.videoProject?.getMotionGraphicsRuntimeConfig;
+
+    if (!getRuntimeConfig) {
+      setMotionGraphicsRuntimeConfig({});
+      return;
+    }
+
+    getRuntimeConfig(project.config || {})
+      .then((result: any) => {
+        if (canceled) return;
+        setMotionGraphicsRuntimeConfig(result?.success && result?.config ? result.config : {});
+      })
+      .catch(() => {
+        if (!canceled) {
+          setMotionGraphicsRuntimeConfig({});
+        }
+      });
+
+    return () => {
+      canceled = true;
+    };
+  }, [project.config]);
+
   // Preview project (sem Remotion)
   const previewProject = useMemo(() => {
+    const {
+      apiKeys,
+      mapboxAccessToken,
+      mapbox,
+      ...safeProjectConfig
+    } = (project.config || {}) as Record<string, unknown>;
+
     return {
       ...project,
       segments: visualSegments,
       subtitleMode,
       config: {
-        ...(project.config || {}),
+        ...safeProjectConfig,
+        ...motionGraphicsRuntimeConfig,
         width: compositionDimensions.width,
         height: compositionDimensions.height,
         fps: project.config?.fps || 30,
@@ -754,6 +788,7 @@ export function PreviewStep({
     compositionDimensions.height,
     compositionDimensions.width,
     project,
+    motionGraphicsRuntimeConfig,
     removeAudioSilences,
     selectedNiche,
     silenceCompactionRanges,

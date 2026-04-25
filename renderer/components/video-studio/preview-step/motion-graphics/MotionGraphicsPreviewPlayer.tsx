@@ -18,6 +18,7 @@ interface MotionGraphicsPreviewPlayerProps {
   fps: number;
   compositionWidth: number;
   compositionHeight: number;
+  projectConfig?: Record<string, unknown>;
   isCompiling?: boolean;
   error?: string | null;
   onPlayerReady?: (player: any) => void;
@@ -29,6 +30,7 @@ export function MotionGraphicsPreviewPlayer({
   fps,
   compositionWidth,
   compositionHeight,
+  projectConfig,
   isCompiling = false,
   error,
   onPlayerReady,
@@ -92,6 +94,7 @@ export function MotionGraphicsPreviewPlayer({
         __motionGraphicsRuntimeErrorMode: 'full',
         segmentDurationInFrames: durationInFrames,
         segmentDurationInSeconds: durationInFrames / fps,
+        projectConfig: projectConfig || {},
       }}
       durationInFrames={durationInFrames}
       fps={fps}

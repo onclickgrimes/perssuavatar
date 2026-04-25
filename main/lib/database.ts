@@ -12,7 +12,8 @@ export type ApiCredentialService =
   | 'gemini_translation'
   | 'vertex'
   | 'aws_polly'
-  | 'pexels';
+  | 'pexels'
+  | 'mapbox';
 
 export interface ApiCredential {
   id: string;
@@ -52,6 +53,7 @@ const SINGLE_KEY_SERVICES = new Set<ApiCredentialService>([
   'gemini_translation',
   'aws_polly',
   'pexels',
+  'mapbox',
 ]);
 
 // Schema de tipos para o banco de dados
@@ -539,6 +541,7 @@ function normalizeLabel(service: ApiCredentialService, label?: string): string {
     vertex: 'Google Vertex AI',
     aws_polly: 'AWS Polly',
     pexels: 'Pexels',
+    mapbox: 'Mapbox',
   };
 
   return map[service];

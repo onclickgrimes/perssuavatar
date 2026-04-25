@@ -807,6 +807,7 @@ export class VideoService extends EventEmitter {
     fps: number;
     width: number;
     height: number;
+    projectConfig?: Record<string, unknown>;
     outputPath: string;
     onProgress: (progress: number) => void;
   }): Promise<void> {
@@ -816,6 +817,7 @@ export class VideoService extends EventEmitter {
       fps: Math.max(1, params.fps),
       width: Math.max(2, params.width),
       height: Math.max(2, params.height),
+      projectConfig: params.projectConfig || {},
       segmentDurationInFrames: Math.max(1, params.durationInFrames),
       segmentDurationInSeconds: Math.max(0.1, params.durationInFrames / Math.max(1, params.fps)),
     };
@@ -917,6 +919,7 @@ export class VideoService extends EventEmitter {
         fps,
         width,
         height,
+        projectConfig: (project.config || {}) as Record<string, unknown>,
         outputPath: tempOutputPath,
         onProgress: (progress) => {
           const mappedPercent = Math.round(progressStart + ((progressEnd - progressStart) * progress));

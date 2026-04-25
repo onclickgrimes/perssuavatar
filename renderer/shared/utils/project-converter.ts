@@ -349,8 +349,19 @@ export function mapProject(source: any): VideoProject {
 
 /** Converte projeto para formato de salvamento */
 export function toSaveFormat(project: VideoProject, niche?: { id?: number; name?: string; components_allowed?: string[] }): VideoProject {
+  const mappedProject = mapProject(project);
+  if (mappedProject.config) {
+    const {
+      apiKeys,
+      mapboxAccessToken,
+      mapbox,
+      ...safeConfig
+    } = mappedProject.config as Record<string, unknown>;
+    mappedProject.config = safeConfig as VideoProject['config'];
+  }
+
   return {
-    ...mapProject(project),
+    ...mappedProject,
     componentsAllowed: niche?.components_allowed || project.componentsAllowed,
     nicheId: niche?.id || project.nicheId,
     nicheName: niche?.name || project.nicheName,

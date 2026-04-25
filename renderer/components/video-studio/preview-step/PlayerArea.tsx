@@ -193,6 +193,7 @@ export function PlayerArea({
               fps={fps}
               compositionWidth={compositionWidth}
               compositionHeight={compositionHeight}
+              projectConfig={previewProject?.config || {}}
               isCompiling={isMotionGraphicsCompiling}
               error={motionGraphicsError}
               onPlayerReady={handlePlayerReady}

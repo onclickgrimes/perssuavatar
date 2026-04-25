@@ -144,10 +144,10 @@ const handler = {
       ipcRenderer.invoke('db:set-assistant-mode', mode),
 
     // API Credentials
-    getApiCredentials: (service?: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'gemini_translation' | 'vertex' | 'aws_polly' | 'pexels') =>
+    getApiCredentials: (service?: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'gemini_translation' | 'vertex' | 'aws_polly' | 'pexels' | 'mapbox') =>
       ipcRenderer.invoke('db:get-api-credentials', service),
     createApiCredential: (input: {
-      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'gemini_translation' | 'vertex' | 'aws_polly' | 'pexels';
+      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'gemini_translation' | 'vertex' | 'aws_polly' | 'pexels' | 'mapbox';
       label?: string;
       apiKey?: string;
       accessKeyId?: string;
@@ -168,7 +168,7 @@ const handler = {
     deleteApiCredential: (credentialId: string) =>
       ipcRenderer.invoke('db:delete-api-credential', credentialId),
     setActiveApiCredential: (
-      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'gemini_translation' | 'vertex' | 'aws_polly' | 'pexels',
+      service: 'deepgram' | 'elevenlabs' | 'openai' | 'deepseek' | 'gemini' | 'gemini_translation' | 'vertex' | 'aws_polly' | 'pexels' | 'mapbox',
       credentialId: string
     ) => ipcRenderer.invoke('db:set-active-api-credential', service, credentialId),
     
@@ -544,6 +544,10 @@ const handler = {
     // Listar catálogo disponível de skills de motion graphics
     listMotionGraphicsSkills: () =>
       ipcRenderer.invoke('video-project:list-motion-graphics-skills'),
+
+    // Configuração transitória para runtime de motion graphics (chaves resolvidas no main)
+    getMotionGraphicsRuntimeConfig: (config?: Record<string, unknown>) =>
+      ipcRenderer.invoke('video-project:get-motion-graphics-runtime-config', config),
 
     // Importar pacote de skills de motion graphics via diretório local
     importMotionGraphicsSkillPackage: (sourceDirectoryPath?: string) =>

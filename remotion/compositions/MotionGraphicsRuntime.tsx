@@ -1,6 +1,7 @@
 import React from 'react';
 import { AbsoluteFill } from 'remotion';
 import { z } from 'zod';
+import { ProjectConfigContext } from '../contexts/ProjectConfigContext';
 import { compileMotionGraphicsCode } from '../utils/motion-graphics-compiler';
 
 export const motionGraphicsRuntimeSchema = z.object({
@@ -12,6 +13,7 @@ export const motionGraphicsRuntimeSchema = z.object({
   segmentId: z.number().or(z.string()).optional(),
   segmentDurationInFrames: z.number().optional(),
   segmentDurationInSeconds: z.number().optional(),
+  projectConfig: z.any().optional(),
 });
 
 type MotionGraphicsRuntimeProps = z.infer<typeof motionGraphicsRuntimeSchema>;
@@ -42,13 +44,16 @@ export const MotionGraphicsRuntime: React.FC<MotionGraphicsRuntimeProps> = (prop
   const Component = compilation.Component;
 
   return (
-    <AbsoluteFill style={{ backgroundColor: 'transparent' }}>
-      <Component
-        __motionGraphicsRuntimeErrorMode="none"
-        segmentId={props.segmentId}
-        segmentDurationInFrames={props.segmentDurationInFrames || props.durationInFrames}
-        segmentDurationInSeconds={props.segmentDurationInSeconds}
-      />
-    </AbsoluteFill>
+    <ProjectConfigContext.Provider value={props.projectConfig || null}>
+      <AbsoluteFill style={{ backgroundColor: 'transparent' }}>
+        <Component
+          __motionGraphicsRuntimeErrorMode="none"
+          segmentId={props.segmentId}
+          segmentDurationInFrames={props.segmentDurationInFrames || props.durationInFrames}
+          segmentDurationInSeconds={props.segmentDurationInSeconds}
+          projectConfig={props.projectConfig}
+        />
+      </AbsoluteFill>
+    </ProjectConfigContext.Provider>
   );
 };

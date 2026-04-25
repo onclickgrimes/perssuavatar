@@ -43,7 +43,8 @@ type ApiCredentialService =
   | 'gemini_translation'
   | 'vertex'
   | 'aws_polly'
-  | 'pexels';
+  | 'pexels'
+  | 'mapbox';
 
 interface ApiCredential {
   id: string;
@@ -82,6 +83,7 @@ const API_SERVICE_META: Record<ApiCredentialService, {
   vertex: { label: 'Google Vertex AI', icon: '☁️', multi: true },
   aws_polly: { label: 'AWS Polly', icon: '☁️', multi: false },
   pexels: { label: 'Pexels', icon: '📷', multi: false },
+  mapbox: { label: 'Mapbox', icon: '🗺️', multi: false },
 };
 
 const API_SERVICE_ORDER: ApiCredentialService[] = [
@@ -94,6 +96,7 @@ const API_SERVICE_ORDER: ApiCredentialService[] = [
   'vertex',
   'aws_polly',
   'pexels',
+  'mapbox',
 ];
 
 interface ApiCredentialFormState {

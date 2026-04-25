@@ -460,6 +460,26 @@ export function registerVideoEditorHandlers(): void {
     }
   });
 
+  registerVideoEditorGuardedHandle('video-project:get-motion-graphics-runtime-config', async (
+    event,
+    config?: Record<string, unknown>,
+  ) => {
+    try {
+      if (!videoProjectService) throw new Error('Serviço de vídeo não inicializado');
+      return {
+        success: true,
+        config: videoProjectService.getMotionGraphicsRuntimeConfig(config || {}),
+      };
+    } catch (error: any) {
+      console.error('❌ [VideoProject] Motion graphics runtime config error:', error);
+      return {
+        success: false,
+        error: error.message,
+        config: {},
+      };
+    }
+  });
+
   registerVideoEditorGuardedHandle('video-project:import-motion-graphics-skill-package', async (
     event,
     sourceDirectoryPath?: string,

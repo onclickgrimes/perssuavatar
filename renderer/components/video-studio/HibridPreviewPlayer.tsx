@@ -804,6 +804,7 @@ export const HibridPreviewPlayer = React.forwardRef(({
                   fps={fps}
                   compositionWidth={compositionWidth}
                   compositionHeight={compositionHeight}
+                  projectConfig={project?.config || {}}
                   segmentId={segment.id}
                   isPlaying={isPlaying && currentTimeSec >= segment.start && currentTimeSec < segment.end}
                 />

@@ -556,6 +556,28 @@ export class VideoProjectService extends EventEmitter {
         );
     }
 
+    private sanitizeProjectConfigForRuntime(config?: Record<string, unknown>): Record<string, unknown> {
+        const {
+            apiKeys,
+            mapboxAccessToken,
+            mapbox,
+            ...safeConfig
+        } = (config || {}) as Record<string, unknown>;
+
+        return safeConfig;
+    }
+
+    public getMotionGraphicsRuntimeConfig(config?: Record<string, unknown>): Record<string, unknown> {
+        const runtimeConfig = this.sanitizeProjectConfigForRuntime(config);
+        const mapboxAccessToken = getPrimaryApiKey('mapbox');
+
+        if (mapboxAccessToken) {
+            runtimeConfig.mapboxAccessToken = mapboxAccessToken;
+        }
+
+        return runtimeConfig;
+    }
+
     private isFlowWatermarkVideoService(generationService: unknown): boolean {
         return typeof generationService === 'string'
             && FLOW_WATERMARK_VIDEO_SERVICES.has(generationService.trim());
@@ -1211,7 +1233,7 @@ export class VideoProjectService extends EventEmitter {
 
     private buildMotionGraphicsSystemPrompt(skillContent?: string): string {
         const promptSections = [
-            'You generate self-contained React/Remotion TSX for a transparent motion-graphics overlay.',
+            'You generate self-contained React/Remotion TSX.',
             'Return ONLY valid TSX code. Do not include explanations, markdown fences, bullet points, or comments outside the file.',
             '',
             'REQUIREMENTS:',
@@ -1219,15 +1241,13 @@ export class VideoProjectService extends EventEmitter {
             '- Export exactly one component as: export const MotionGraphicsScene = () => { ... };',
             '- Use inline styles only.',
             '- Use AbsoluteFill as the root layout.',
-            '- Keep the root transparent by default. Only render backgrounds as child layers when explicitly requested.',
             '- Use useCurrentFrame() and useVideoConfig() for timing, sizing, and animation.',
             '- Keep the code self-contained, deterministic, and render-safe.',
-            '- Do not use fetch(), setInterval(), requestAnimationFrame(), window APIs, or browser side effects.',
-            '- Do not use @remotion/three or ThreeCanvas.',
             '- Make the result polished and production-ready, not a placeholder.',
             '',
             'AVAILABLE IDENTIFIERS:',
-            'React, AbsoluteFill, Audio, Img, Sequence, Easing, interpolate, spring, useCurrentFrame, useVideoConfig, useMemo',
+            'React, AbsoluteFill, Audio, Img, Sequence, Easing, interpolate, spring, useCurrentFrame, useVideoConfig, useDelayRender, useState, useEffect, useMemo, useRef',
+            'useProjectConfig, mapboxgl, turf',
             'TransitionSeries, linearTiming, springTiming, fade, slide',
             'Rect, Circle, Triangle, Star, Ellipse, Pie, Lottie',
         ];
@@ -4630,6 +4650,9 @@ Responda APENAS com um objeto JSON válido no formato:
         const timelineSegments = removeAudioSilences
             ? compactTimelineSegments(project.segments, audioKeepRanges, { compactWords: true })
             : project.segments;
+        const motionGraphicsRuntimeConfig = this.getMotionGraphicsRuntimeConfig(
+            (project.config || {}) as Record<string, unknown>,
+        );
 
         const scenes = timelineSegments.map(segment => {
             const seg = this.ensureFlowWatermarkTransform(segment);
@@ -4723,6 +4746,9 @@ Responda APENAS com um objeto JSON válido no formato:
                 }),
                 ...(audioMutedRanges.length > 0 && {
                     audioMutedRanges,
+                }),
+                ...(motionGraphicsRuntimeConfig.mapboxAccessToken && {
+                    mapboxAccessToken: String(motionGraphicsRuntimeConfig.mapboxAccessToken),
                 }),
                 assetsBaseUrl: `http://localhost:${this.imageServerPort}`, // ✅ URL base dinâmica
                 // Incluir áudio da narração/transcrição
@@ -4845,6 +4871,9 @@ Responda APENAS com um objeto JSON válido no formato:
             locationStyle: String(project.storyReferences?.locationStyle || 'fotorrealista').trim() || 'fotorrealista',
         };
         const projectSegments = project.segments.map(segment => this.ensureFlowWatermarkTransform(segment));
+        const safeProjectConfig = this.sanitizeProjectConfigForRuntime(
+            (project.config || {}) as Record<string, unknown>,
+        ) as NonNullable<VideoProjectData['config']>;
 
         // Reorganizar propriedades na ordem desejada
         const orderedProject = {
@@ -4872,11 +4901,11 @@ Responda APENAS com um objeto JSON válido no formato:
                 return acc;
             }, {} as Record<string, { width: number, height: number }>),
             config: {
-                width: project.config?.width || defaultWidth,
-                height: project.config?.height || defaultHeight,
+                width: safeProjectConfig.width || defaultWidth,
+                height: safeProjectConfig.height || defaultHeight,
                 fps: 60,
                 backgroundColor: '#0a0a0a',
-                ...project.config, // Sobrescreve com valores do projeto se existirem
+                ...safeProjectConfig, // Sobrescreve com valores do projeto se existirem
             },
             segments: projectSegments.map(segment => ({
                 id: segment.id,

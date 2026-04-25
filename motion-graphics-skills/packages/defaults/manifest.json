@@ -11,6 +11,14 @@
       "tags": ["chart", "graph", "histogram", "bar chart", "pie chart", "data", "metric", "analytics", "progress"]
     },
     {
+      "id": "maps",
+      "title": "Maps",
+      "description": "Mapbox map animations, routes, markers, camera moves and geographic visualizations.",
+      "kind": "skill",
+      "entryFile": "skills/maps.md",
+      "tags": ["map", "maps", "mapbox", "route", "routes", "geography", "location", "city", "country", "travel", "marker"]
+    },
+    {
       "id": "typography",
       "title": "Typography",
       "description": "Text animation patterns, kinetic typography and editorial layouts.",

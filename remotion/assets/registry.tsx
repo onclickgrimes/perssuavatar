@@ -265,6 +265,7 @@ const Timeline3DAsset: AssetComponent = ({ scene }) => {
 const MotionGraphicsAsset: AssetComponent = ({ scene, sceneDurationSeconds }) => {
   const code = String(scene.motion_graphics?.code || '').trim();
   const { fps } = useVideoConfig();
+  const projectConfig = useProjectConfig();
   const compilation = React.useMemo(() => (
     code
       ? compileMotionGraphicsCode(code)
@@ -309,6 +310,7 @@ const MotionGraphicsAsset: AssetComponent = ({ scene, sceneDurationSeconds }) =>
       <Component
         segmentDurationInFrames={segmentDurationInFrames}
         segmentDurationInSeconds={segmentDurationInSeconds}
+        projectConfig={projectConfig}
       />
     </AbsoluteFill>
   );

@@ -31,6 +31,7 @@ interface MotionGraphicsTimelineLayerProps {
   fps: number;
   compositionWidth: number;
   compositionHeight: number;
+  projectConfig?: Record<string, unknown>;
   segmentId: number | string;
   isPlaying?: boolean;
 }
@@ -42,6 +43,7 @@ export function MotionGraphicsTimelineLayer({
   fps,
   compositionWidth,
   compositionHeight,
+  projectConfig,
   segmentId,
   isPlaying = false,
 }: MotionGraphicsTimelineLayerProps) {
@@ -103,6 +105,7 @@ export function MotionGraphicsTimelineLayer({
         segmentId,
         segmentDurationInFrames: safeDurationInFrames,
         segmentDurationInSeconds: safeDurationInFrames / fps,
+        projectConfig: projectConfig || {},
       }}
       durationInFrames={safeDurationInFrames}
       fps={fps}

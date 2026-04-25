@@ -1029,6 +1029,12 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         const renderTitle = ratiosToRender.length > 1 
           ? `${project.title}-${ratio.replace(':','-')}`
           : project.title;
+        const {
+          apiKeys,
+          mapboxAccessToken,
+          mapbox,
+          ...safeProjectConfig
+        } = (project.config || {}) as Record<string, unknown>;
 
         console.log(`🎬 Rendering ${ratio} (${dims.width}x${dims.height})...`);
 
@@ -1042,7 +1048,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           componentsAllowed: selectedNiche?.components_allowed || project.componentsAllowed, // ✅ Componentes permitidos (nicho ou projeto salvo)
           defaultFont: selectedNiche?.default_font, // ✅ Fonte padrão do nicho
           config: {
-            ...(project.config || {}),
+            ...safeProjectConfig,
             width: dims.width,
             height: dims.height,
             fps: 30, // Default 30fps
