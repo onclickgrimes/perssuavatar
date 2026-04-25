@@ -1716,7 +1716,7 @@ Lembre-se:
     }
   });
 
-  // Handler para gerar vídeo via Google Flow (Veo 3)
+  // Handler para gerar vídeo via Flow2API local (Veo 3 / Veo 3 Lite)
   registerVideoEditorGuardedHandle('video-project:generate-vo3', async (
     event,
     options: {
@@ -1734,30 +1734,29 @@ Lembre-se:
     try {
       const count = Math.min(options.count || 1, 4);
       const hasIngredients = options.ingredientImagePaths && options.ingredientImagePaths.length > 0;
-      console.log(`🌊 [Flow/Veo3] Generating ${count} video(s) with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'}, model: ${options.model || 'Veo 3.1 - Fast'}${hasIngredients ? `, ingredients: ${options.ingredientImagePaths!.length}` : ''})`);
+      const isLiteFlow = String(options.model || '').toLowerCase().includes('lite');
+      console.log(`🌊 [Flow2API/Veo3] Generating ${count} video(s) with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'}, service: ${isLiteFlow ? 'veo3-lite-flow' : 'veo3'}${hasIngredients ? `, ingredients: ${options.ingredientImagePaths!.length}` : ''})`);
 
-      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
-      const flowProvider = getFlowVideoProvider({
-        headless: options.headless ?? 'new',
-        geminiProviderId: options.geminiProviderId,
-      });
+      const { getFlow2APIService } = require('../services/flow2API-service');
+      const flow2APIService = getFlow2APIService();
 
       const window = getWindowFn?.();
 
-      const result = await flowProvider.generateVideo(
-        options.prompt,
-        (progress: any) => {
+      const result = await flow2APIService.generateVideo({
+        prompt: options.prompt,
+        service: isLiteFlow ? 'veo3-lite-flow' : 'veo3',
+        aspectRatio: options.aspectRatio,
+        count,
+        referenceImagePath: options.referenceImagePath,
+        finalImagePath: options.finalImagePath,
+        ingredientImagePaths: options.ingredientImagePaths,
+        model: options.model,
+        onProgress: (progress: any) => {
           if (window && !window.isDestroyed()) {
             window.webContents.send('video-project:vo3-progress', progress);
           }
         },
-        options.aspectRatio,
-        options.model || 'Veo 3.1 - Fast',
-        count,
-        options.referenceImagePath,
-        options.finalImagePath,
-        options.ingredientImagePaths
-      );
+      });
 
       if (!result.success) {
         throw new Error(result.error || 'Erro desconhecido na geração do vídeo');
@@ -1778,47 +1777,30 @@ Lembre-se:
          }
       }
 
-      console.log(`✅ [Flow/Veo3] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((realDurationMs || 0) / 1000)}s)`);
+      console.log(`✅ [Flow2API/Veo3] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((realDurationMs || 0) / 1000)}s)`);
 
       return {
         success: true,
         videoPath: result.videoPath,
         httpUrl,
-        credits: result.credits,
         durationMs: realDurationMs,
       };
 
     } catch (error: any) {
-      console.error('❌ [Flow/Veo3] Generation error:', error);
+      console.error('❌ [Flow2API/Veo3] Generation error:', error);
       return { success: false, error: error.message };
     }
   });
 
-  // Handler para consultar créditos do Flow (sem gerar vídeo)
+  // Handler para consultar disponibilidade do Flow2API (sem gerar vídeo)
   registerVideoEditorGuardedHandle('video-project:get-vo3-credits', async () => {
     try {
-      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
-      const flowProvider = getFlowVideoProvider({ headless: 'new' });
-      
-      // Inicializar browser se necessário
-      if (!flowProvider.isBrowserAlive()) {
-        await flowProvider.init();
-      }
-      
-      // Navegar para Flow se não estiver lá
-      const page = flowProvider.getPage();
-      if (page) {
-        const url = page.url();
-        if (!url.includes('labs.google')) {
-          await page.goto('https://labs.google/fx/flow', { waitUntil: 'networkidle2', timeout: 30000 });
-          await new Promise(r => setTimeout(r, 2000));
-        }
-      }
-      
-      const credits = await flowProvider.getCredits();
-      return { success: true, credits };
+      const { getFlow2APIService } = require('../services/flow2API-service');
+      const flow2APIService = getFlow2APIService();
+      const isAvailable = await flow2APIService.isAvailable();
+      return { success: true, credits: null, isAvailable, baseUrl: flow2APIService.getBaseUrl() };
     } catch (error: any) {
-      console.error('❌ [Flow/Veo3] Credits check error:', error);
+      console.error('❌ [Flow2API] Availability check error:', error);
       return { success: false, credits: null, error: error.message };
     }
   });
@@ -1954,7 +1936,7 @@ Lembre-se:
       const model = options.model?.trim() || '';
       const useGeminiApi = !!model;
       const hasIngredients = options.ingredientImagePaths && options.ingredientImagePaths.length > 0;
-      console.log(`🖼️ [${useGeminiApi ? 'Gemini/Img' : 'Flow/Img'}] Gerando ${count} imagem(ns) (${useGeminiApi ? `model: ${model}` : 'Flow UI'}${options.aspectRatio ? `, ratio: ${options.aspectRatio}` : ''}) com prompt: "${options.prompt.substring(0, 80)}..."${hasIngredients ? ` (com ${options.ingredientImagePaths!.length} referências)` : ''}`);
+      console.log(`🖼️ [${useGeminiApi ? 'Gemini/Img' : 'Flow2API/Img'}] Gerando ${count} imagem(ns) (${useGeminiApi ? `model: ${model}` : 'Flow2API'}${options.aspectRatio ? `, ratio: ${options.aspectRatio}` : ''}) com prompt: "${options.prompt.substring(0, 80)}..."${hasIngredients ? ` (com ${options.ingredientImagePaths!.length} referências)` : ''}`);
 
       let result: any;
 
@@ -1973,19 +1955,15 @@ Lembre-se:
           options.ingredientImagePaths
         );
       } else {
-        const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
-        const flowProvider = getFlowVideoProvider({
-          headless: options.headless ?? 'new',
-          geminiProviderId: options.geminiProviderId,
-        });
+        const { getFlow2APIService } = require('../services/flow2API-service');
+        const flow2APIService = getFlow2APIService();
 
-        result = await flowProvider.generateImages(
+        result = await flow2APIService.generateImages(
           options.prompt,
           count,
           (progress: any) => {
             event.sender.send('video-project:flow-image-progress', progress);
           },
-          '🍌 Nano Banana Pro',
           options.aspectRatio,
           options.ingredientImagePaths
         );
@@ -1999,7 +1977,7 @@ Lembre-se:
         videoProjectService ? videoProjectService.convertToHttpUrl(p) : p
       );
 
-      console.log(`✅ [${useGeminiApi ? 'Gemini/Img' : 'Flow/Img'}] ${result.imagePaths.length} imagem(ns) gerada(s)`);
+      console.log(`✅ [${useGeminiApi ? 'Gemini/Img' : 'Flow2API/Img'}] ${result.imagePaths.length} imagem(ns) gerada(s)`);
       return {
         success: true,
         imagePaths: result.imagePaths,
@@ -2083,7 +2061,7 @@ Lembre-se:
     }
   });
 
-  // Handler para gerar VÍDEO via Google Flow com Veo 2
+  // Handler para gerar VÍDEO do serviço FlowExport "veo2-flow" via Flow2API local
   registerVideoEditorGuardedHandle('video-project:generate-vo2-flow', async (event, options: {
     prompt: string;
     aspectRatio?: string;
@@ -2095,29 +2073,26 @@ Lembre-se:
   }) => {
     try {
       const count = Math.min(options.count || 1, 4);
-      console.log(`🌊 [Flow/Veo2] Generating ${count} video(s) with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'})`);
+      console.log(`🌊 [Flow2API/Veo2Flow] Generating ${count} video(s) with prompt: "${options.prompt.substring(0, 80)}..." (ratio: ${options.aspectRatio || 'default'})`);
 
-      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
-      const flowProvider = getFlowVideoProvider({
-        headless: options.headless ?? 'new',
-        geminiProviderId: options.geminiProviderId,
-      });
+      const { getFlow2APIService } = require('../services/flow2API-service');
+      const flow2APIService = getFlow2APIService();
 
       const window = getWindowFn?.();
 
-      const result = await flowProvider.generateVideo(
-        options.prompt,
-        (progress: any) => {
+      const result = await flow2APIService.generateVideo({
+        prompt: options.prompt,
+        service: 'veo2-flow',
+        aspectRatio: options.aspectRatio,
+        count,
+        referenceImagePath: options.referenceImagePath,
+        finalImagePath: options.finalImagePath,
+        onProgress: (progress: any) => {
           if (window && !window.isDestroyed()) {
             window.webContents.send('video-project:vo2-flow-progress', progress);
           }
         },
-        options.aspectRatio,
-        'Veo 2 - Fast',
-        count,
-        options.referenceImagePath,
-        options.finalImagePath
-      );
+      });
 
       if (!result.success) {
         throw new Error(result.error || 'Erro desconhecido na geração do vídeo Veo 2');
@@ -2136,7 +2111,7 @@ Lembre-se:
          }
       }
 
-      console.log(`✅ [Flow/Veo2] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((realDurationMs || 0) / 1000)}s)`);
+      console.log(`✅ [Flow2API/Veo2Flow] Video generated: ${result.videoPath} → ${httpUrl} (${Math.round((realDurationMs || 0) / 1000)}s)`);
       return {
         success: true,
         videoPath: result.videoPath,
@@ -2145,7 +2120,7 @@ Lembre-se:
       };
 
     } catch (error: any) {
-      console.error('❌ [Flow/Veo2] Generation error:', error);
+      console.error('❌ [Flow2API/Veo2Flow] Generation error:', error);
       return { success: false, error: error.message };
     }
   });
@@ -2214,41 +2189,37 @@ Lembre-se:
   // Handler para cancelar a fila de geração do Flow (esvazia mutex e slots)
   registerVideoEditorGuardedHandle('video-project:cancel-flow-queue', async () => {
     try {
-      const { cancelFlowQueue } = require('../libs/FlowVideoProvider');
-      cancelFlowQueue();
-      console.log('⏹️ [Flow] Fila de geração cancelada pelo usuário.');
-      return { success: true };
+      console.log('⏹️ [Flow2API] Cancelamento solicitado. Flow2API gerencia a fila no serviço local.');
+      return { success: true, message: 'Flow2API gerencia a fila no servico local.' };
     } catch (err: any) {
-      console.error('❌ [Flow] Erro ao cancelar fila:', err.message);
+      console.error('❌ [Flow2API] Erro ao processar cancelamento:', err.message);
       return { success: false, error: err.message };
     }
   });
 
-  // Handler para consultar se o navegador do Flow está aberto
+  // Handler para consultar se o Flow2API local está disponível
   registerVideoEditorGuardedHandle('video-project:get-flow-browser-status', async () => {
     try {
-      const { getFlowVideoProvider } = require('../libs/FlowVideoProvider');
-      const flowProvider = getFlowVideoProvider();
-      const isOpen = flowProvider.isBrowserAlive();
-      return { success: true, isOpen };
+      const { getFlow2APIService } = require('../services/flow2API-service');
+      const flow2APIService = getFlow2APIService();
+      const isAvailable = await flow2APIService.isAvailable();
+      return { success: true, isOpen: isAvailable, isAvailable, baseUrl: flow2APIService.getBaseUrl() };
     } catch (err: any) {
-      console.error('❌ [Flow] Erro ao consultar status do navegador:', err.message);
-      return { success: false, isOpen: false, error: err.message };
+      console.error('❌ [Flow2API] Erro ao consultar status:', err.message);
+      return { success: false, isOpen: false, isAvailable: false, error: err.message };
     }
   });
 
-  // Handler para fechar/matar o navegador do Flow
+  // Handler mantido por compatibilidade; Flow2API roda como serviço externo.
   registerVideoEditorGuardedHandle('video-project:close-flow-browser', async () => {
     try {
-      const { getFlowVideoProvider, cancelFlowQueue } = require('../libs/FlowVideoProvider');
-      cancelFlowQueue();
-      const flowProvider = getFlowVideoProvider();
-      await flowProvider.close();
-      const isOpen = flowProvider.isBrowserAlive();
-      console.log('🔌 [Flow] Navegador fechado via ação manual do usuário.');
-      return { success: true, isOpen };
+      const { getFlow2APIService } = require('../services/flow2API-service');
+      const flow2APIService = getFlow2APIService();
+      const isAvailable = await flow2APIService.isAvailable();
+      console.log('🔌 [Flow2API] Close solicitado, mas o servico externo permanece sob controle do usuario.');
+      return { success: true, isOpen: isAvailable, isAvailable, baseUrl: flow2APIService.getBaseUrl() };
     } catch (err: any) {
-      console.error('❌ [Flow] Erro ao fechar navegador:', err.message);
+      console.error('❌ [Flow2API] Erro ao processar close:', err.message);
       return { success: false, error: err.message };
     }
   });
