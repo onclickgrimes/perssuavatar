@@ -281,15 +281,15 @@ const extractPromptString = (imagePrompt: unknown): string => {
 };
 
 const getGenerationServiceLabel = (serviceId: string): string => {
-  if (serviceId === 'veo3') return 'Veo 3.1 (Flow2API)';
-  if (serviceId === 'veo3-lite-flow') return 'Veo 3.1 Lite (Flow2API)';
+  if (serviceId === 'veo3') return 'Veo 3.1 (Flow)';
+  if (serviceId === 'veo3-lite-flow') return 'Veo 3.1 Lite (Flow)';
   if (serviceId === 'veo3-api') return 'Veo 3.1 (API)';
   if (serviceId === 'veo3-fast-api') return 'Veo 3.1 Fast (API)';
   if (serviceId === 'veo3-lite-api') return 'Veo 3.1 Lite (API)';
   if (serviceId === 'grok') return 'Grok';
-  if (serviceId === 'veo2-flow') return 'Veo 2 (Flow2API)';
+  if (serviceId === 'veo2-flow') return 'Veo 2 (Flow)';
   if (serviceId === 'veo2') return 'Veo 2 (API)';
-  if (serviceId === 'flow-image') return 'Imagem (Flow2API)';
+  if (serviceId === 'flow-image') return 'Imagem (Flow)';
   if (serviceId === 'vertex-image') return 'Imagem (Vertex)';
   if (serviceId === 'flow-image-api') return 'Nano Banana 2';
   if (serviceId === 'flow-image-pro') return 'Nano Banana Pro';
@@ -509,9 +509,9 @@ export function ImagesStep({
   const [vo3Progress, setVo3Progress] = useState<Record<number, string>>({});
   const [vo3Credits, setVo3Credits] = useState<number | null>(null);
   const [isCheckingCredits, setIsCheckingCredits] = useState<boolean>(false);
-  // Mantido por compatibilidade com a assinatura IPC antiga; Flow2API ignora headless.
+  // Mantido por compatibilidade com a assinatura IPC antiga; Flow ignora headless.
   const [showFlowBrowser, setShowFlowBrowser] = useState<boolean>(true);
-  // Estado de disponibilidade do Flow2API local (online/offline).
+  // Estado de disponibilidade do Flow local (online/offline).
   const [isFlowBrowserOpen, setIsFlowBrowserOpen] = useState<boolean>(false);
   const [isFlowBrowserStatusLoading, setIsFlowBrowserStatusLoading] = useState<boolean>(false);
   const [isFlowBrowserClosing, setIsFlowBrowserClosing] = useState<boolean>(false);
@@ -2824,7 +2824,7 @@ export function ImagesStep({
         setIsFlowBrowserOpen(result.isOpen === true);
       }
     } catch (error) {
-      console.error('Erro ao consultar status do Flow2API:', error);
+      console.error('Erro ao consultar status do Flow:', error);
     } finally {
       if (showLoading) setIsFlowBrowserStatusLoading(false);
     }
@@ -2840,10 +2840,10 @@ export function ImagesStep({
       if (result?.success) {
         setIsFlowBrowserOpen(result.isOpen === true);
       } else {
-        console.error('Falha ao processar fechamento do Flow2API:', result?.error || 'erro desconhecido');
+        console.error('Falha ao processar fechamento do Flow:', result?.error || 'erro desconhecido');
       }
     } catch (error) {
-      console.error('Erro ao processar fechamento do Flow2API:', error);
+      console.error('Erro ao processar fechamento do Flow:', error);
     } finally {
       setIsFlowBrowserClosing(false);
       setIsFlowBrowserCloseHover(false);
@@ -2877,26 +2877,6 @@ export function ImagesStep({
       return changed ? next : prev;
     });
   }, [segments]);
-  
-  // Buscar créditos iniciais
-  // useEffect(() => {
-  //   const fetchCredits = async () => {
-  //     if (hasVo3Segments) {
-  //       setIsCheckingCredits(true);
-  //       try {
-  //         const result = await window.electron?.videoProject?.getVo3Credits?.();
-  //         if (result?.success && result.credits !== null) {
-  //           setVo3Credits(result.credits);
-  //         }
-  //       } catch (error) {
-  //         console.error('Erro ao buscar créditos Flow:', error);
-  //       } finally {
-  //         setIsCheckingCredits(false);
-  //       }
-  //     }
-  //   };
-  //   fetchCredits();
-  // }, [hasVo3Segments]);
 
   // Listener de progresso Veo3
   useEffect(() => {
@@ -2914,7 +2894,7 @@ export function ImagesStep({
     return () => { cleanup?.(); };
   }, [queueProgressUpdate]);
 
-  // Listener de progresso Veo2 Flow (via Flow2API)
+  // Listener de progresso Veo2 Flow (via Flow)
   useEffect(() => {
     const cleanup = window.electron?.videoProject?.onVo2FlowProgress?.((data) => {
       queueProgressUpdate(data?.message || 'Gerando com Veo 2 Flow...');
@@ -2930,7 +2910,7 @@ export function ImagesStep({
     return () => { cleanup?.(); };
   }, [queueProgressUpdate]);
 
-  // Listener de progresso de imagem (Flow2API / Gemini Image API)
+  // Listener de progresso de imagem (Flow / Gemini Image API)
   useEffect(() => {
     const cleanup = window.electron?.videoProject?.onFlowImageProgress?.((data) => {
       queueProgressUpdate(data?.message || 'Gerando imagem...');
@@ -2947,7 +2927,7 @@ export function ImagesStep({
     return () => { cleanup?.(); };
   }, [queueProgressUpdate]);
 
-  // Atualiza status do Flow2API local (online/offline)
+  // Atualiza status do Flow local (online/offline)
   useEffect(() => {
     refreshFlowBrowserStatus(true);
     const intervalId = window.setInterval(() => {
@@ -3078,14 +3058,14 @@ export function ImagesStep({
 
   // Serviços disponíveis para geração
   const GENERATION_SERVICES = [
-    { id: 'veo3',           label: 'Veo 3.1 (Flow2API)',     icon: '🌊', description: 'Google Veo 3.1 via Flow2API local' },
-    { id: 'veo3-lite-flow', label: 'Veo 3.1 - Lite (Flow2API)', icon: '🌊', description: 'Google Veo 3.1 - Lite via Flow2API local' },
+    { id: 'veo3',           label: 'Veo 3.1 (Flow)',     icon: '🌊', description: 'Google Veo 3.1 via Flow local' },
+    { id: 'veo3-lite-flow', label: 'Veo 3.1 - Lite (Flow)', icon: '🌊', description: 'Google Veo 3.1 - Lite via Flow local' },
     { id: 'veo3-api',       label: 'Veo 3.1 (API)',    icon: '🚀', description: 'Google Veo 3.1 via API Oficial' },
     { id: 'veo3-fast-api',  label: 'Veo 3.1 Fast',     icon: '⚡', description: 'Google Veo 3.1 Fast via API Oficial' },
     { id: 'veo3-lite-api',  label: 'Veo 3.1 Lite (API)', icon: '💭', description: 'Google Veo 3.1 Lite via API Oficial' },
     { id: 'grok',           label: 'Grok',             icon: '✖️', description: 'Geração de vídeo com Grok' },
-    // { id: 'veo2-flow',      label: 'Veo 2 (Flow2API)',     icon: '🌊', description: 'Video via Flow2API local' },
-    { id: 'flow-image',     label: 'Imagem (Flow2API)',      icon: '🖼️', description: 'Imagem via Flow2API local' },
+    // { id: 'veo2-flow',      label: 'Veo 2 (Flow)',     icon: '🌊', description: 'Video via Flow local' },
+    { id: 'flow-image',     label: 'Imagem (Flow)',      icon: '🖼️', description: 'Imagem via Flow local' },
     { id: 'vertex-image',   label: 'Imagem (Vertex)',    icon: '🧩', description: 'Vertex Studio com pool de abas' },
     { id: 'flow-image-api', label: '🍌 Nano Banana 2',   icon: '🖼️', description: 'gemini-3.1-flash-image-preview' },
     { id: 'flow-image-pro', label: '🍌 Nano Banana Pro', icon: '🖼️', description: 'gemini-3-pro-image-preview' },
@@ -3165,7 +3145,7 @@ export function ImagesStep({
         ? (normalizedFirstFrame || normalizedAnimateFrame || basePrompt)
         : (normalizedAnimateFrame || basePrompt);
 
-      // ── VEO 2 FLOW (Flow2API local) ──
+      // ── VEO 2 FLOW (Flow local) ──
       if (service === 'veo2-flow') {
         const count = normalizeGenerationCount(imageCount[segmentId]);
         console.log(`🌊 [Veo2Flow] Gerando ${count} vídeo(s) para segmento ${segmentId}...`);
@@ -3199,7 +3179,7 @@ export function ImagesStep({
           if (!silent) alert(`Falha na geração Veo 2 Flow: ${result?.error}`);
         }
 
-      // ── VEO 3 (Flow2API local) ──
+      // ── VEO 3 (Flow local) ──
       } else if (service === 'veo3' || service === 'veo3-lite-flow') {
         const count = normalizeGenerationCount(imageCount[segmentId]);
         if (vo3Credits !== null && vo3Credits < 20) {
@@ -3263,7 +3243,7 @@ export function ImagesStep({
           model: isIngredients ? 'Veo 3.1 - Fast' : flowModelName,
         });
         const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Timeout: geração Veo 3 excedeu 12 minutos. Verifique se o Flow2API está rodando em http://localhost:8000/.')), veo3TimeoutMs)
+          setTimeout(() => reject(new Error('Timeout: geração Veo 3 excedeu 12 minutos. Verifique se o Flow está rodando em http://localhost:8000/.')), veo3TimeoutMs)
         );
         const result = await Promise.race([veo3Promise, timeoutPromise]) as any;
 
@@ -3332,7 +3312,7 @@ export function ImagesStep({
           if (!silent) alert(`Falha na geração Grok: ${result?.error}`);
         }
 
-      // ── IMAGE (Flow2API) ──
+      // ── IMAGE (Flow) ──
       } else if (service === 'flow-image') {
         console.log(`🖼️ [FlowImg] Gerando imagem para segmento ${segmentId}...`);
         const count = normalizeGenerationCount(imageCount[segmentId]);
@@ -3352,7 +3332,7 @@ export function ImagesStep({
           return false;
         }
 
-        setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando ${count} imagem(ns) com Flow2API${ingredientPaths.length > 0 ? ` e ${ingredientPaths.length} ref(s)` : ''}...` }));
+        setVo3Progress(prev => ({ ...prev, [segmentId]: `Gerando ${count} imagem(ns) com Flow${ingredientPaths.length > 0 ? ` e ${ingredientPaths.length} ref(s)` : ''}...` }));
 
         const result = await window.electron?.videoProject?.generateFlowImage({
           prompt: targetGenerationPrompt,
@@ -3373,7 +3353,7 @@ export function ImagesStep({
           success = true;
         } else {
           console.error(`❌ [FlowImg] Falha:`, result?.error);
-          if (!silent) alert(`Falha na geração de imagem via Flow2API: ${result?.error}`);
+          if (!silent) alert(`Falha na geração de imagem via Flow: ${result?.error}`);
         }
 
       // ── IMAGE (Vertex Studio) ──
@@ -3873,7 +3853,7 @@ export function ImagesStep({
     // Se tem imagem (não vídeo) → label depende do serviço
     const svc = serviceOverride || getEffectiveService(segment);
     if (segment.imageUrl && !isVideo(segment.imageUrl)) {
-      if (svc === 'flow-image') return '🖼️ Gerar nova Imagem (Flow2API)';
+      if (svc === 'flow-image') return '🖼️ Gerar nova Imagem (Flow)';
       if (svc === 'vertex-image') return '🧩 Gerar nova Imagem (Vertex)';
       if (svc === 'flow-image-api') return '🍌 Gerar nova Imagem';
       if (svc === 'flow-image-pro') return '🍌 Gerar nova Imagem (Pro)';
@@ -3888,7 +3868,7 @@ export function ImagesStep({
     if (svc === 'veo3-lite-api') return '🪶 Gerar com Veo 3.1 Lite';
     if (svc === 'veo3') return '🌊 Gerar com Veo 3';
     // if (svc === 'veo2-flow') return '🌊 Gerar com Veo 2 Flow';
-    if (svc === 'flow-image') return '🖼️ Imagem com Flow2API';
+    if (svc === 'flow-image') return '🖼️ Imagem com Flow';
     if (svc === 'vertex-image') return '🧩 Imagem com Vertex';
     if (svc === 'flow-image-api') return '🍌 Imagem com Nano Banana 2';
     if (svc === 'flow-image-pro') return '🍌 Imagem com Nano Banana Pro';
@@ -4147,7 +4127,7 @@ export function ImagesStep({
         )}
 
         <div className="flex items-center gap-2 border-l border-white/10 pl-4">
-          <span className="text-white/60 text-sm">Flow2API:</span>
+          <span className="text-white/60 text-sm">Flow:</span>
           <span
             className={`px-3 py-1 rounded-lg text-xs font-semibold ${
               isFlowBrowserStatusLoading
@@ -4941,7 +4921,7 @@ export function ImagesStep({
                   </div>
                 )}
 
-                {/* Mini-select de quantidade (Flow2API video: veo3 / veo2-flow) */}
+                {/* Mini-select de quantidade (Flow video: veo3 / veo2-flow) */}
                 {(effectiveService === 'veo3' || effectiveService === 'veo3-lite-flow' || effectiveService === 'veo2-flow') && !isGenerating && (
                   <div className="absolute top-2 right-2 z-10">
                     <select
