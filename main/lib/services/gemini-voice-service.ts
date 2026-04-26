@@ -35,6 +35,10 @@ export interface WavConversionOptions {
     bitsPerSample: number;
 }
 
+const TARGET_AUDIO_ENCODING = 'LINEAR16';
+const TARGET_SAMPLE_RATE_HZ = 22050;
+const GEMINI_TTS_DEFAULT_MIME_TYPE = 'audio/L16;rate=24000';
+
 // Vozes disponíveis no Gemini TTS
 export const GEMINI_VOICES = [
     'Achernar',
@@ -188,6 +192,7 @@ export class GeminiVoiceService {
 
         console.log(`[GeminiVoice] Gerando áudio para: "${text.substring(0, 50)}..."`);
         console.log(`[GeminiVoice] Voz: ${voiceName}, Temperatura: ${temperature}`);
+        console.log(`[GeminiVoice] Áudio: ${TARGET_AUDIO_ENCODING}, ${TARGET_SAMPLE_RATE_HZ} Hz`);
 
         try {
             this.ensureClient();
@@ -223,7 +228,7 @@ export class GeminiVoiceService {
 
             // Coletar todos os chunks de áudio
             const audioBuffers: Buffer[] = [];
-            let mimeType: string = 'audio/L16;rate=24000';
+            let mimeType: string = GEMINI_TTS_DEFAULT_MIME_TYPE;
 
             for await (const chunk of response) {
                 if (!chunk.candidates || 
@@ -346,9 +351,15 @@ export class GeminiVoiceService {
     }
 
     private convertToWav(rawBuffer: Buffer, mimeType: string): Buffer {
-        const options = this.parseMimeType(mimeType);
-        const wavHeader = this.createWavHeader(rawBuffer.length, options);
-        return Buffer.concat([wavHeader, rawBuffer]);
+        const sourceOptions = this.parseMimeType(mimeType);
+        const targetOptions: WavConversionOptions = {
+            ...sourceOptions,
+            sampleRate: TARGET_SAMPLE_RATE_HZ,
+            bitsPerSample: 16,
+        };
+        const linear16Buffer = this.normalizeLinear16SampleRate(rawBuffer, sourceOptions, targetOptions);
+        const wavHeader = this.createWavHeader(linear16Buffer.length, targetOptions);
+        return Buffer.concat([wavHeader, linear16Buffer]);
     }
 
     private parseMimeType(mimeType: string): WavConversionOptions {
@@ -378,6 +389,78 @@ export class GeminiVoiceService {
         }
 
         return options;
+    }
+
+    private normalizeLinear16SampleRate(
+        rawBuffer: Buffer,
+        sourceOptions: WavConversionOptions,
+        targetOptions: WavConversionOptions
+    ): Buffer {
+        if (sourceOptions.bitsPerSample !== 16) {
+            throw new Error(
+                `Formato de áudio inesperado: ${sourceOptions.bitsPerSample} bits. ` +
+                `${TARGET_AUDIO_ENCODING} requer PCM de 16 bits.`
+            );
+        }
+
+        const alignedLength = rawBuffer.length - (rawBuffer.length % 2);
+        const linear16Buffer = alignedLength === rawBuffer.length
+            ? rawBuffer
+            : rawBuffer.subarray(0, alignedLength);
+
+        if (sourceOptions.sampleRate === targetOptions.sampleRate) {
+            return linear16Buffer;
+        }
+
+        return this.resamplePcm16(
+            linear16Buffer,
+            sourceOptions.sampleRate,
+            targetOptions.sampleRate,
+            targetOptions.numChannels
+        );
+    }
+
+    private resamplePcm16(
+        input: Buffer,
+        sourceSampleRate: number,
+        targetSampleRate: number,
+        numChannels: number
+    ): Buffer {
+        const bytesPerSample = 2;
+        const sourceFrameCount = Math.floor(input.length / (bytesPerSample * numChannels));
+
+        if (sourceFrameCount === 0 || sourceSampleRate <= 0 || targetSampleRate <= 0) {
+            return input;
+        }
+
+        const targetFrameCount = Math.max(
+            1,
+            Math.round(sourceFrameCount * targetSampleRate / sourceSampleRate)
+        );
+        const output = Buffer.alloc(targetFrameCount * numChannels * bytesPerSample);
+
+        for (let targetFrame = 0; targetFrame < targetFrameCount; targetFrame++) {
+            const sourcePosition = targetFrame * sourceSampleRate / targetSampleRate;
+            const sourceFrame = Math.min(Math.floor(sourcePosition), sourceFrameCount - 1);
+            const nextFrame = Math.min(sourceFrame + 1, sourceFrameCount - 1);
+            const fraction = sourcePosition - sourceFrame;
+
+            for (let channel = 0; channel < numChannels; channel++) {
+                const sampleOffset = (sourceFrame * numChannels + channel) * bytesPerSample;
+                const nextSampleOffset = (nextFrame * numChannels + channel) * bytesPerSample;
+                const sample = input.readInt16LE(sampleOffset);
+                const nextSample = input.readInt16LE(nextSampleOffset);
+                const interpolated = Math.round(sample + (nextSample - sample) * fraction);
+                const outputOffset = (targetFrame * numChannels + channel) * bytesPerSample;
+
+                output.writeInt16LE(
+                    Math.max(-32768, Math.min(32767, interpolated)),
+                    outputOffset
+                );
+            }
+        }
+
+        return output;
     }
 
     private createWavHeader(dataLength: number, options: WavConversionOptions): Buffer {
