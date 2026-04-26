@@ -300,6 +300,16 @@ export class NicheService {
 
         const firstCharacterId = context?.characters?.find(item => Number.isFinite(item.id) && item.id > 0)?.id;
         const firstLocationId = context?.locations?.find(item => Number.isFinite(item.id) && item.id > 0)?.id;
+        const characterReferenceIds = (context?.characters || [])
+            .map(item => item.id)
+            .filter(id => Number.isFinite(id) && id > 0);
+        const preferredExampleCharacterIds = [1, 3].filter(id => characterReferenceIds.includes(id));
+        const exampleCharacterIds = preferredExampleCharacterIds.length > 1
+            ? preferredExampleCharacterIds
+            : characterReferenceIds.slice(0, 2);
+        const exampleCharactersInScene = exampleCharacterIds.length > 1
+            ? exampleCharacterIds.join(',')
+            : String(firstCharacterId || '1,3');
         const hasCharacterReferences = Number.isFinite(firstCharacterId) && (firstCharacterId as number) > 0;
         const hasLocationReferences = Number.isFinite(firstLocationId) && (firstLocationId as number) > 0;
 
@@ -316,7 +326,7 @@ export class NicheService {
         };
 
         if (hasCharacterReferences) {
-            exampleSegment.IdOfTheCharactersInTheScene = String(firstCharacterId);
+            exampleSegment.IdOfTheCharactersInTheScene = exampleCharactersInScene;
         }
 
         if (hasLocationReferences) {
@@ -383,7 +393,7 @@ export class NicheService {
             };
 
             if (hasCharacterReferences) {
-                frameAnimateExample.IdOfTheCharactersInTheScene = String(firstCharacterId);
+                frameAnimateExample.IdOfTheCharactersInTheScene = exampleCharactersInScene;
             }
 
             if (hasLocationReferences) {
