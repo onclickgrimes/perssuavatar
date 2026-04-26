@@ -1261,6 +1261,7 @@ export class VideoProjectService extends EventEmitter {
             '- Use inline styles only.',
             '- Use AbsoluteFill as the root layout.',
             '- Use useCurrentFrame() and useVideoConfig() for timing, sizing, and animation.',
+            '- Every interpolate() inputRange must be strictly increasing at runtime. If values come from words, captions, segments, or rounded frames, clamp them to keep at least a 1-frame gap before calling interpolate().',
             '- Keep the code self-contained, deterministic, and render-safe.',
             '- Make the result polished and production-ready, not a placeholder.',
             '',

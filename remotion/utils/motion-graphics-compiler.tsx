@@ -279,6 +279,40 @@ const UnsupportedThreeCanvas = () => {
   throw new Error('ThreeCanvas is not available in this build.');
 };
 
+const MIN_INTERPOLATE_RANGE_GAP = 1 / 1000;
+
+const makeStrictlyIncreasingInputRange = (inputRange: readonly number[]): number[] | null => {
+  if (inputRange.length < 2) {
+    return null;
+  }
+
+  const normalized = inputRange.map(Number);
+  if (normalized.some((value) => !Number.isFinite(value))) {
+    return null;
+  }
+
+  let changed = false;
+  for (let index = 1; index < normalized.length; index++) {
+    if (normalized[index] > normalized[index - 1]) {
+      continue;
+    }
+
+    changed = true;
+    normalized[index - 1] = normalized[index] - MIN_INTERPOLATE_RANGE_GAP;
+
+    for (let back = index - 1; back > 0 && normalized[back] <= normalized[back - 1]; back--) {
+      normalized[back - 1] = normalized[back] - MIN_INTERPOLATE_RANGE_GAP;
+    }
+  }
+
+  return changed ? normalized : null;
+};
+
+const safeInterpolate: typeof interpolate = ((input: number, inputRange: readonly number[], outputRange: readonly number[], options?: any) => {
+  const normalizedInputRange = makeStrictlyIncreasingInputRange(inputRange);
+  return interpolate(input, normalizedInputRange || inputRange, outputRange, options);
+}) as typeof interpolate;
+
 export function compileMotionGraphicsCode(code: string): MotionGraphicsCompilationResult {
   const normalizedCode = String(code || '').trim();
   if (!normalizedCode) {
@@ -349,7 +383,7 @@ export function compileMotionGraphicsCode(code: string): MotionGraphicsCompilati
       Img,
       Sequence,
       Easing,
-      interpolate,
+      safeInterpolate,
       spring,
       useCurrentFrame,
       useMotionGraphicsVideoConfig,
