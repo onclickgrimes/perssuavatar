@@ -4370,8 +4370,8 @@ export class VideoProjectService extends EventEmitter {
         }
 
         if (shouldMentionSceneReferences) {
-            promptRules.push('- Se precisar indicar personagens, retorne "IdOfTheCharactersInTheScene" no mesmo nível do segmento (nunca dentro de imagePrompt).');
-            promptRules.push('- Se precisar indicar lugares, retorne "IdOfTheLocationInTheScene" no mesmo nível do segmento (nunca dentro de imagePrompt).');
+            promptRules.push('- Se precisar indicar personagens, retorne "IdOfTheCharactersInTheScene" no mesmo nível do segmento.');
+            promptRules.push('- Se precisar indicar lugares, retorne "IdOfTheLocationInTheScene" no mesmo nível do segmento.');
         }
 
         promptRules.push('- Não retorne explicações fora do JSON.');

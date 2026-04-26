@@ -16,6 +16,10 @@ import type { StoryReferencesState as PersistedStoryReferencesState } from '../.
 
 type AnalysisProvider = 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
 
+interface AnalysisTargetOptions {
+  segmentIds?: number[];
+}
+
 interface ImagesStepProps {
   segments: TranscriptionSegment[];
   projectTitle?: string;
@@ -33,7 +37,7 @@ interface ImagesStepProps {
   onSaveProject?: () => void | Promise<void>;
   canSaveProject?: boolean;
   isSavingProject?: boolean;
-  onAnalyze?: (instruction?: string, context?: AnalysisReferenceContext) => void | Promise<void>;
+  onAnalyze?: (instruction?: string, context?: AnalysisReferenceContext, options?: AnalysisTargetOptions) => void | Promise<void>;
   onAnalyzeScene?: (segmentId: number, instruction: string) => void | Promise<void>;
   isProcessing?: boolean;
   onSegmentsUpdate?: (newSegments: TranscriptionSegment[]) => void;
@@ -1732,7 +1736,17 @@ export function ImagesStep({
     const instruction = hasPrompts && hasGlobalInstruction
       ? globalInstruction.trim()
       : undefined;
-    await onAnalyze(instruction, buildAnalysisReferencesContext());
+
+    if (instruction && filteredSceneIds.length === 0) {
+      alert('Nenhuma cena corresponde aos filtros atuais para editar.');
+      return;
+    }
+
+    await onAnalyze(
+      instruction,
+      buildAnalysisReferencesContext(),
+      instruction ? { segmentIds: filteredSceneIds } : undefined
+    );
   };
 
   const handleApplySceneInstruction = async (segmentId: number) => {
@@ -2540,12 +2554,16 @@ export function ImagesStep({
     segments,
     filteredSceneIdSet,
   ]);
-  const selectedFilteredScenesCount = useMemo(
-    () => filteredSceneIds.reduce((count, sceneId) => count + (selectedScenes.has(sceneId) ? 1 : 0), 0),
+  const selectedFilteredSceneIds = useMemo(
+    () => filteredSceneIds.filter(sceneId => selectedScenes.has(sceneId)),
     [filteredSceneIds, selectedScenes]
   );
+  const selectedFilteredScenesCount = useMemo(
+    () => selectedFilteredSceneIds.length,
+    [selectedFilteredSceneIds]
+  );
   const selectedBatchGenerationCount = useMemo<number | 'mixed'>(() => {
-    const selectedSceneIds = Array.from(selectedScenes);
+    const selectedSceneIds = selectedFilteredSceneIds;
     if (selectedSceneIds.length === 0) return 1;
 
     const firstCount = normalizeGenerationCount(imageCount[selectedSceneIds[0]]);
@@ -2554,21 +2572,21 @@ export function ImagesStep({
     );
 
     return hasMixedCounts ? 'mixed' : firstCount;
-  }, [imageCount, selectedScenes]);
+  }, [imageCount, selectedFilteredSceneIds]);
   const selectedBatchGenerationRangeValue = useMemo(() => {
-    const firstSelectedSceneId = Array.from(selectedScenes)[0];
+    const firstSelectedSceneId = selectedFilteredSceneIds[0];
     return firstSelectedSceneId == null ? 1 : normalizeGenerationCount(imageCount[firstSelectedSceneId]);
-  }, [imageCount, selectedScenes]);
+  }, [imageCount, selectedFilteredSceneIds]);
   const applySelectedBatchGenerationCount = useCallback((value: unknown) => {
     const nextCount = normalizeGenerationCount(value);
     setImageCount(prev => {
       const next = { ...prev };
-      Array.from(selectedScenes).forEach(id => {
+      selectedFilteredSceneIds.forEach(id => {
         next[id] = nextCount;
       });
       return next;
     });
-  }, [selectedScenes]);
+  }, [selectedFilteredSceneIds]);
   const hasFilteredScenes = filteredSceneIds.length > 0;
   const segmentsWithMediaCount = useMemo(
     () => segments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
@@ -4252,7 +4270,7 @@ export function ImagesStep({
                         max={GENERATION_COUNT_OPTIONS[GENERATION_COUNT_OPTIONS.length - 1]}
                         step={1}
                         value={selectedBatchGenerationRangeValue}
-                        disabled={selectedScenes.size === 0}
+                        disabled={selectedFilteredScenesCount === 0}
                         onPointerDown={() => {
                           if (selectedBatchGenerationCount === 'mixed') {
                             applySelectedBatchGenerationCount(selectedBatchGenerationRangeValue);
@@ -4314,13 +4332,13 @@ export function ImagesStep({
                       <button
                         key={svc.id}
                         onClick={() => {
-                          if (selectedScenes.size === 0) {
+                          if (selectedFilteredScenesCount === 0) {
                             alert('Nenhuma cena selecionada.');
                             return;
                           }
                           setSelectedService(prev => {
                             const next = { ...prev };
-                            Array.from(selectedScenes).forEach(id => {
+                            selectedFilteredSceneIds.forEach(id => {
                               next[id] = svc.id;
                             });
                             return next;
@@ -4328,7 +4346,7 @@ export function ImagesStep({
                           if (IMAGE_SERVICES.has(svc.id)) {
                             setIngredientMode(prev => {
                               const next = { ...prev };
-                              Array.from(selectedScenes).forEach(id => {
+                              selectedFilteredSceneIds.forEach(id => {
                                 next[id] = 'ingredients';
                               });
                               return next;
@@ -4336,7 +4354,7 @@ export function ImagesStep({
                           } else if (!supportsIngredientsForService(svc.id)) {
                             setIngredientMode(prev => {
                               const next = { ...prev };
-                              Array.from(selectedScenes).forEach(id => {
+                              selectedFilteredSceneIds.forEach(id => {
                                 if (next[id] === 'ingredients') {
                                   next[id] = 'frames';
                                 }

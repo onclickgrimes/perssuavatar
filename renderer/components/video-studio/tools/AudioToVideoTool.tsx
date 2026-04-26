@@ -41,6 +41,10 @@ interface NichePromptContextPayload {
   locations?: NicheContextItem[];
 }
 
+interface PromptEditTargetOptions {
+  segmentIds?: number[];
+}
+
 const createDefaultStoryReferences = (): StoryReferencesState => ({
   characters: [],
   locations: [],
@@ -519,10 +523,11 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     });
   }, []);
 
-  // Handler para análise global por IA (regerar ou editar todos os prompts)
+  // Handler para análise global por IA (regerar prompts ou editar um subconjunto)
   const handleAnalyzeWithAI = useCallback(async (
     userInstruction?: string,
-    referencesContext?: NichePromptContextPayload
+    referencesContext?: NichePromptContextPayload,
+    targetOptions?: PromptEditTargetOptions
   ) => {
     setCurrentStep('analyzing');
     setIsProcessing(true);
@@ -543,10 +548,25 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           : 'geracao';
 
       let result: any;
+      let editedSegmentIdSet: Set<number> | null = null;
 
       if (normalizedInstruction) {
+        const targetIdSet = targetOptions?.segmentIds?.length
+          ? new Set(targetOptions.segmentIds)
+          : null;
+        const segmentsForEdition = targetIdSet
+          ? project.segments.filter(seg => targetIdSet.has(seg.id))
+          : project.segments;
+
+        if (segmentsForEdition.length === 0) {
+          setCurrentStep('images');
+          return;
+        }
+
+        editedSegmentIdSet = new Set(segmentsForEdition.map(seg => seg.id));
+
         const editRequest = {
-          segments: project.segments.map(seg => {
+          segments: segmentsForEdition.map(seg => {
             if (seg.assetType === 'video_frame_animate') {
               return {
                 id: seg.id,
@@ -637,7 +657,11 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           segments: updatedSegments,
         }));
 
-        summarizeScenePrompts(updatedSegments).catch(() => {});
+        summarizeScenePrompts(
+          editedSegmentIdSet
+            ? updatedSegments.filter(seg => editedSegmentIdSet.has(seg.id))
+            : updatedSegments
+        ).catch(() => {});
       }
       
       setCurrentStep('images');
