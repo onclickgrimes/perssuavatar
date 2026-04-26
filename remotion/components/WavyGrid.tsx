@@ -1,3 +1,4 @@
+import type { ReactElement } from "react";
 import { useCurrentFrame, useVideoConfig } from "remotion";
 
 export function WavyGrid() {
@@ -60,7 +61,7 @@ export function WavyGrid() {
   
   // Criar linhas da grade
   const renderGridLines = () => {
-    const lines: JSX.Element[] = [];
+    const lines: ReactElement[] = [];
     
     // Linhas horizontais
     for (let row = 0; row <= gridRows; row++) {
