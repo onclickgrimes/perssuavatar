@@ -125,6 +125,7 @@ const VEO2_API_ALLOWED_SECONDS = [5, 6, 8] as const;
 const GROK_ALLOWED_SECONDS = [6, 10] as const;
 const TRANSLATION_DEBOUNCE_MS = 3000;
 const VEO3_API_AUTO_REWRITE_MAX_RETRIES = 3;
+const VEO3_API_FAILED_PROMPT_CONTEXT_MAX_CHARS = 1200;
 const VEO3_API_SUPPORT_CODE_CATEGORY: Record<string, string> = {
   '58061214': 'Filho',
   '17301594': 'Filho',
@@ -153,9 +154,16 @@ const VEO3_API_SUPPORT_CODE_CATEGORY: Record<string, string> = {
   '32635315': 'Vulgar',
 };
 
+type Veo3ApiSafetyFailure = {
+  message: string;
+  supportCodes: string[];
+  categories: string[];
+  isSafetyError: boolean;
+};
+
 const parseVeo3ApiSafetyError = (
   rawError: unknown
-): { message: string; supportCodes: string[]; categories: string[]; isSafetyError: boolean } => {
+): Veo3ApiSafetyFailure => {
   const message = String(rawError || '').trim();
   const lowerMessage = message.toLowerCase();
   const numberMatches = message.match(/\b\d{8}\b/g) || [];
@@ -182,6 +190,36 @@ const parseVeo3ApiSafetyError = (
   };
 };
 
+const buildVeo3ApiSafetyRewriteInstruction = (
+  parsedFailure: Veo3ApiSafetyFailure,
+  failedPrompt: string,
+  attempt: number
+): string => {
+  const supportCodes = parsedFailure.supportCodes.length > 0
+    ? parsedFailure.supportCodes.join(', ')
+    : 'n/a';
+  const categories = parsedFailure.categories.length > 0
+    ? parsedFailure.categories.join(', ')
+    : 'media-filter';
+  const normalizedFailedPrompt = failedPrompt.trim();
+  const promptContext = normalizedFailedPrompt.length > VEO3_API_FAILED_PROMPT_CONTEXT_MAX_CHARS
+    ? `${normalizedFailedPrompt.slice(0, VEO3_API_FAILED_PROMPT_CONTEXT_MAX_CHARS)}...`
+    : normalizedFailedPrompt;
+
+  return [
+    'Veo 3.1 rejected the previous animation prompt with a Responsible AI/media-filter error.',
+    `Support codes: ${supportCodes}. Categories: ${categories}. Retry attempt: ${attempt}.`,
+    parsedFailure.message ? `Failure message: ${parsedFailure.message}` : '',
+    'Regenerate the animateFrame as a safer retry while preserving the visible first-frame continuity, subject identity, camera intent, and scene mood.',
+    'Do not reuse potentially sensitive words from the failed prompt. Replace wording such as carcass, corpse, dead body, blood, blood-stained, gore, wound, kill, attack, weapon, danger, hate, sexual, minor, celebrity, or otherwise policy-sensitive terms with neutral cinematic visual language.',
+    'Example of the expected rewrite style: prefer "fallen animal", "massive shape in the snow", "dark marks on the frozen ground", "cold winter wind Foley", and calm camera language instead of explicit gore or harm wording.',
+    'Keep the final prompt concise, literal, and generation-ready. It must not mention the error, support codes, safety policy, or this instruction.',
+    promptContext ? `Failed prompt to rewrite safely:\n${promptContext}` : '',
+  ]
+    .filter(Boolean)
+    .join('\n');
+};
+
 const PROMPT_FIELD_TO_TRANSLATED_KEY: Record<ScenePromptField, ScenePromptTranslatedField> = {
   imagePrompt: 'imagePromptTraduzido',
   firstFrame: 'firstFrameTraduzido',
@@ -197,6 +235,12 @@ const normalizeGenerationCount = (value: unknown): number => {
   const numericValue = Number(value);
   if (!Number.isFinite(numericValue)) return 1;
   return Math.max(1, Math.min(4, Math.round(numericValue)));
+};
+
+const normalizeVeo3ApiAutoRewriteRetries = (value: unknown): number => {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) return VEO3_API_AUTO_REWRITE_MAX_RETRIES;
+  return Math.max(0, Math.min(VEO3_API_AUTO_REWRITE_MAX_RETRIES, Math.round(numericValue)));
 };
 
 const getSceneDurationInfo = (segment: Pick<TranscriptionSegment, 'start' | 'end'>): { rawSeconds: number; roundedSeconds: number } => {
@@ -1718,9 +1762,10 @@ export function ImagesStep({
 
   const handleRegenerateAnimateFramePrompt = async (
     segment: TranscriptionSegment,
-    options?: { silent?: boolean }
+    options?: { silent?: boolean; userInstruction?: string }
   ): Promise<boolean> => {
     const silent = Boolean(options?.silent);
+    const normalizedUserInstruction = String(options?.userInstruction || '').trim();
     if (!onSegmentsUpdate) return false;
 
     const regenerateAnimateFrame = window.electron?.videoProject?.regenerateAnimateFrame;
@@ -1766,6 +1811,7 @@ export function ImagesStep({
             animateFrame: segment.animateFrame,
           },
           firstFrameImagePath,
+          ...(normalizedUserInstruction ? { userInstruction: normalizedUserInstruction } : {}),
         },
         {
           provider,
@@ -2362,6 +2408,7 @@ export function ImagesStep({
     current: 0, total: 0, currentSceneId: null,
   });
   const [batchResults, setBatchResults] = useState<Record<number, 'success' | 'error' | 'skipped'>>({});
+  const [veo3ApiAutoRewriteRetries, setVeo3ApiAutoRewriteRetries] = useState<number>(VEO3_API_AUTO_REWRITE_MAX_RETRIES);
   const [currentErrorHighlightIndex, setCurrentErrorHighlightIndex] = useState(0);
   const batchCancelledRef = useRef(false);
   const batchAnimateFrameCancelledRef = useRef(false);
@@ -2508,6 +2555,20 @@ export function ImagesStep({
 
     return hasMixedCounts ? 'mixed' : firstCount;
   }, [imageCount, selectedScenes]);
+  const selectedBatchGenerationRangeValue = useMemo(() => {
+    const firstSelectedSceneId = Array.from(selectedScenes)[0];
+    return firstSelectedSceneId == null ? 1 : normalizeGenerationCount(imageCount[firstSelectedSceneId]);
+  }, [imageCount, selectedScenes]);
+  const applySelectedBatchGenerationCount = useCallback((value: unknown) => {
+    const nextCount = normalizeGenerationCount(value);
+    setImageCount(prev => {
+      const next = { ...prev };
+      Array.from(selectedScenes).forEach(id => {
+        next[id] = nextCount;
+      });
+      return next;
+    });
+  }, [selectedScenes]);
   const hasFilteredScenes = filteredSceneIds.length > 0;
   const segmentsWithMediaCount = useMemo(
     () => segments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
@@ -3442,8 +3503,9 @@ export function ImagesStep({
         let generationPrompt = targetGenerationPrompt;
         let rewriteAttempt = 0;
         let lastError = '';
+        const maxRewriteAttempts = normalizeVeo3ApiAutoRewriteRetries(veo3ApiAutoRewriteRetries);
 
-        while (rewriteAttempt <= VEO3_API_AUTO_REWRITE_MAX_RETRIES) {
+        while (rewriteAttempt <= maxRewriteAttempts) {
           const result = await window.electron?.videoProject?.generateVeo3Api({
             prompt: generationPrompt,
             aspectRatio: aspectRatio,
@@ -3474,7 +3536,7 @@ export function ImagesStep({
           }
 
           const canRewriteAndRetry = parsedFailure.isSafetyError
-            && rewriteAttempt < VEO3_API_AUTO_REWRITE_MAX_RETRIES;
+            && rewriteAttempt < maxRewriteAttempts;
           if (!canRewriteAndRetry) {
             if (!silent) alert(`Falha na geração Veo 3.1: ${lastError}`);
             break;
@@ -3489,12 +3551,20 @@ export function ImagesStep({
           }
 
           rewriteAttempt++;
+          const safetyRewriteInstruction = buildVeo3ApiSafetyRewriteInstruction(
+            parsedFailure,
+            generationPrompt,
+            rewriteAttempt
+          );
           setVo3Progress(prev => ({
             ...prev,
-            [segmentId]: `Falha de segurança (${failureLabel}). Reescrevendo prompt (${rewriteAttempt}/${VEO3_API_AUTO_REWRITE_MAX_RETRIES})...`,
+            [segmentId]: `Falha de segurança (${failureLabel}). Reescrevendo prompt (${rewriteAttempt}/${maxRewriteAttempts})...`,
           }));
 
-          const regenerated = await handleRegenerateAnimateFramePrompt(latestSegment, { silent: true });
+          const regenerated = await handleRegenerateAnimateFramePrompt(latestSegment, {
+            silent: true,
+            userInstruction: safetyRewriteInstruction,
+          });
           if (!regenerated) {
             console.warn(`⚠️ [Veo3 API] Cena ${segmentId}: não foi possível regenerar animateFrame para retry automático.`);
             if (!silent) alert(`Falha na geração Veo 3.1: ${lastError}`);
@@ -3509,11 +3579,11 @@ export function ImagesStep({
           generationPrompt = refreshedAnimateFrame || refreshedFallbackPrompt;
 
           console.warn(
-            `⚠️ [Veo3 API] Cena ${segmentId}: prompt reescrito e reenfileirado (${rewriteAttempt}/${VEO3_API_AUTO_REWRITE_MAX_RETRIES}).`
+            `⚠️ [Veo3 API] Cena ${segmentId}: prompt reescrito e reenfileirado (${rewriteAttempt}/${maxRewriteAttempts}).`
           );
           setVo3Progress(prev => ({
             ...prev,
-            [segmentId]: `Prompt reescrito. Reenfileirando geração (${rewriteAttempt}/${VEO3_API_AUTO_REWRITE_MAX_RETRIES})...`,
+            [segmentId]: `Prompt reescrito. Reenfileirando geração (${rewriteAttempt}/${maxRewriteAttempts})...`,
           }));
         }
 
@@ -4161,34 +4231,83 @@ export function ImagesStep({
                     <span className="text-xs font-semibold text-white/50 uppercase tracking-wider">Ações em Lote</span>
                   </div>
                   <div className="p-2 space-y-1">
-                    <div className="space-y-1.5 pb-2 mb-1 border-b border-white/10">
-                      <label className="block px-2 text-[10px] text-white/40 uppercase">
-                        Número de gerações (Selecionadas)
-                      </label>
-                      <select
-                        value={selectedBatchGenerationCount}
+                    <div className="space-y-2 pb-2 mb-1 border-b border-white/10">
+                      <div className="flex items-center justify-between gap-3 px-2">
+                        <label
+                          htmlFor="batch-generation-count"
+                          className="text-[10px] text-white/40 uppercase"
+                        >
+                          Número de gerações
+                        </label>
+                        <span className="shrink-0 rounded-md bg-cyan-500/15 border border-cyan-500/25 px-2 py-0.5 text-[10px] font-semibold text-cyan-100">
+                          {selectedBatchGenerationCount === 'mixed'
+                            ? 'Misto'
+                            : `${selectedBatchGenerationCount}x`}
+                        </span>
+                      </div>
+                      <input
+                        id="batch-generation-count"
+                        type="range"
+                        min={GENERATION_COUNT_OPTIONS[0]}
+                        max={GENERATION_COUNT_OPTIONS[GENERATION_COUNT_OPTIONS.length - 1]}
+                        step={1}
+                        value={selectedBatchGenerationRangeValue}
                         disabled={selectedScenes.size === 0}
-                        onChange={(e) => {
-                          const nextCount = normalizeGenerationCount(e.target.value);
-                          setImageCount(prev => {
-                            const next = { ...prev };
-                            Array.from(selectedScenes).forEach(id => {
-                              next[id] = nextCount;
-                            });
-                            return next;
-                          });
+                        onPointerDown={() => {
+                          if (selectedBatchGenerationCount === 'mixed') {
+                            applySelectedBatchGenerationCount(selectedBatchGenerationRangeValue);
+                          }
                         }}
-                        className="w-full bg-black/40 border border-white/10 rounded-md px-2 py-1.5 text-xs text-white focus:border-cyan-500 focus:outline-none disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {selectedBatchGenerationCount === 'mixed' && (
-                          <option value="mixed" disabled>Misto</option>
-                        )}
+                        onChange={(e) => applySelectedBatchGenerationCount(e.target.value)}
+                        className="w-full accent-cyan-400 disabled:opacity-50 disabled:cursor-not-allowed"
+                        title="Quantidade de gerações para as cenas selecionadas"
+                      />
+                      <div className="grid grid-cols-4 px-2 text-[10px] text-white/35">
                         {GENERATION_COUNT_OPTIONS.map(count => (
-                          <option key={count} value={count}>
-                            {count} geração{count > 1 ? 's' : ''}
-                          </option>
+                          <span
+                            key={count}
+                            className={count === 1 ? 'text-left' : count === 4 ? 'text-right' : 'text-center'}
+                          >
+                            {count}
+                          </span>
                         ))}
-                      </select>
+                      </div>
+                    </div>
+                    <div className="space-y-2 pb-2 mb-1 border-b border-white/10">
+                      <div className="flex items-center justify-between gap-3 px-2">
+                        <label
+                          htmlFor="veo3-api-auto-rewrite-retries"
+                          className="text-[10px] text-white/40 uppercase"
+                        >
+                          Retry prompt Veo
+                        </label>
+                        <span className="shrink-0 rounded-md bg-cyan-500/15 border border-cyan-500/25 px-2 py-0.5 text-[10px] font-semibold text-cyan-100">
+                          {veo3ApiAutoRewriteRetries === 0
+                            ? 'OFF'
+                            : `${veo3ApiAutoRewriteRetries}x`}
+                        </span>
+                      </div>
+                      <input
+                        id="veo3-api-auto-rewrite-retries"
+                        type="range"
+                        min={0}
+                        max={VEO3_API_AUTO_REWRITE_MAX_RETRIES}
+                        step={1}
+                        value={veo3ApiAutoRewriteRetries}
+                        onChange={(e) => setVeo3ApiAutoRewriteRetries(normalizeVeo3ApiAutoRewriteRetries(e.target.value))}
+                        className="w-full accent-cyan-400"
+                        title="0 desativa; 3 permite três reescritas do prompt"
+                      />
+                      <div className="grid grid-cols-4 px-2 text-[10px] text-white/35">
+                        {[0, 1, 2, 3].map(value => (
+                          <span
+                            key={value}
+                            className={value === 0 ? 'text-left' : value === 3 ? 'text-right' : 'text-center'}
+                          >
+                            {value}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                     <div className="px-2 py-1 text-[10px] text-white/40 uppercase mb-1">Alterar Serviço (Selecionadas)</div>
                     {GENERATION_SERVICES.map(svc => (

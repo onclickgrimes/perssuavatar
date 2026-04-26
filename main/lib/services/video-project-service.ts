@@ -863,6 +863,21 @@ export class VideoProjectService extends EventEmitter {
         const segmentPrompt = this.stringifyPromptForEdition(segment.imagePrompt).trim();
         const firstFramePrompt = this.stringifyPromptForEdition(segment.firstFrame).trim();
         const currentAnimateFrame = this.stringifyPromptForEdition(segment.animateFrame).trim();
+        const isPlatformSafetyRetry = [
+            'Veo 3.1 rejected',
+            'Responsible AI',
+            'media-filter',
+            'raiMediaFiltered',
+            'Support codes:',
+            'falha de segurança',
+            'filtro de segurança',
+        ].some(marker => normalizedInstruction.toLowerCase().includes(marker.toLowerCase()));
+        const platformSafetyRetryRules = isPlatformSafetyRetry
+            ? [
+                'Because this regeneration is a platform safety retry, rewrite the animateFrame as a safer retry: preserve the visible first-frame continuity and cinematic intent, but avoid repeating likely trigger words from the failed prompt.',
+                'For this safety retry only, replace explicit or graphic wording with neutral visual language. Avoid terms such as carcass, corpse, dead body, blood, blood-stained, gore, wound, kill, attack, weapons, danger, hate, sexual, minor, celebrity, or other policy-sensitive terms unless they are harmless and absolutely necessary to identify a visible subject.',
+            ]
+            : [];
 
         return [
             'You are an expert text-to-video prompt engineer.',
@@ -873,6 +888,7 @@ export class VideoProjectService extends EventEmitter {
             'Respect the order in which things should happen. For example, if something is closed in the image, you should make it clear that it must be opened before use.',
             'Never insert or mention elements that are not in the image.',
             'Never include smoke, flickering lights, flashing lights, lightning, dust, particles, etc. in the scene... Place them in the negative prompt.',
+            ...platformSafetyRetryRules,
             'Do not mention editing instructions or meta commentary.',
             'Return valid JSON only with this shape:',
             '{"animateFrame":"..."}',
@@ -882,10 +898,13 @@ export class VideoProjectService extends EventEmitter {
             `- transcript: ${String(segment.text || '').trim()}`,
             `- current animateFrame: ${currentAnimateFrame}`,
             normalizedInstruction
-                ? `- user instruction: ${normalizedInstruction}`
+                ? `- ${isPlatformSafetyRetry ? 'platform safety retry context' : 'user instruction'}: ${normalizedInstruction}`
                 : '',
             '',
-            'Make it clear in every prompt that no character dialogue, music or soundtrack should be generated in the scene animation. Only realistic Foley sounds should be generated.'
+            'Make it clear in every prompt that no character dialogue, music or soundtrack should be generated in the scene animation. Only realistic Foley sounds should be generated.',
+            isPlatformSafetyRetry
+                ? 'Before returning, self-check that the new animateFrame does not repeat error-prone sensitive words from any failed prompt included above.'
+                : ''
         ]
             .filter(Boolean)
             .join('\n');
