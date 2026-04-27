@@ -1,4 +1,4 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { FILMORA, getRulerSteps, formatRulerTime } from './constants';
 import { Icons } from './Icons';
 import { SceneThumbnail } from './SceneThumbnail';
@@ -66,6 +66,7 @@ interface TimelineProps {
 }
 
 const RANGE_OVERLAP_EPSILON = 0.0001;
+const TIMELINE_VIRTUALIZATION_BUFFER_PX = 900;
 
 const isAudioTimelineSegment = (segment: any): boolean => {
   const assetType = String(segment?.assetType || segment?.asset_type || '').toLowerCase();
@@ -209,6 +210,7 @@ export function Timeline({
 
         return {
           ...range,
+          index,
           key: `${Number(range.sourceStart || 0).toFixed(4)}|${Number(range.sourceEnd || 0).toFixed(4)}|${Number(range.outputStart || 0).toFixed(4)}|${Number(range.outputEnd || 0).toFixed(4)}`,
           duration,
         };
@@ -245,6 +247,19 @@ export function Timeline({
     type: 'video' | 'audio';
   } | null>(null);
 
+  // Trim State
+  const [trimState, setTrimState] = useState<{
+    id: number;
+    edge: 'left' | 'right';
+    startX: number;
+    initialStart: number;
+    initialEnd: number;
+    currentStart: number;
+    currentEnd: number;
+    currentMouseX?: number;
+    currentMouseY?: number;
+  } | null>(null);
+
   // Marquee Selection State
   const [marqueeSelection, setMarqueeSelection] = useState<{
     startX: number;
@@ -253,6 +268,114 @@ export function Timeline({
     currentY: number;
   } | null>(null);
   const [libraryDropTarget, setLibraryDropTarget] = useState<{ trackType: 'video' | 'audio'; trackId: number } | null>(null);
+  const [scrollViewport, setScrollViewport] = useState({ left: 0, width: viewportWidth });
+  const scrollViewportRafRef = useRef<number | null>(null);
+
+  const scheduleScrollViewportUpdate = useCallback(() => {
+    if (scrollViewportRafRef.current !== null) return;
+
+    scrollViewportRafRef.current = requestAnimationFrame(() => {
+      scrollViewportRafRef.current = null;
+      const wrapper = scrollWrapperRef.current;
+      if (!wrapper) return;
+
+      const nextLeft = wrapper.scrollLeft;
+      const nextWidth = wrapper.clientWidth || viewportWidth;
+      setScrollViewport((previous) => {
+        if (
+          Math.abs(previous.left - nextLeft) < 1
+          && Math.abs(previous.width - nextWidth) < 1
+        ) {
+          return previous;
+        }
+
+        return { left: nextLeft, width: nextWidth };
+      });
+    });
+  }, [scrollWrapperRef, viewportWidth]);
+
+  useEffect(() => {
+    scheduleScrollViewportUpdate();
+    return () => {
+      if (scrollViewportRafRef.current !== null) {
+        cancelAnimationFrame(scrollViewportRafRef.current);
+        scrollViewportRafRef.current = null;
+      }
+    };
+  }, [scheduleScrollViewportUpdate, totalTimelineWidth, viewportWidth]);
+
+  const visibleTimeRange = useMemo(() => {
+    const safeZoom = Math.max(1, zoomLevel);
+    const width = scrollViewport.width || viewportWidth || 1000;
+    const bufferPx = Math.max(TIMELINE_VIRTUALIZATION_BUFFER_PX, width * 0.75);
+
+    return {
+      start: Math.max(0, (scrollViewport.left - bufferPx) / safeZoom),
+      end: (scrollViewport.left + width + bufferPx) / safeZoom,
+    };
+  }, [scrollViewport.left, scrollViewport.width, viewportWidth, zoomLevel]);
+
+  const allSegmentsByTrack = useMemo(() => {
+    const next = {
+      video: new Map<number, any[]>(),
+      audio: new Map<number, any[]>(),
+    };
+
+    visualSegments.forEach((segment) => {
+      const targetMap = isAudioTimelineSegment(segment) ? next.audio : next.video;
+      const track = Number(segment.track || 1);
+      const segments = targetMap.get(track) || [];
+      segments.push(segment);
+      targetMap.set(track, segments);
+    });
+
+    return next;
+  }, [visualSegments]);
+
+  const visibleSegmentsByTrack = useMemo(() => {
+    const next = {
+      video: new Map<number, any[]>(),
+      audio: new Map<number, any[]>(),
+    };
+
+    visualSegments.forEach((segment) => {
+      const isAudio = isAudioTimelineSegment(segment);
+      const isDragging = dragState?.id === segment.id;
+      const isTrimming = trimState?.id === segment.id;
+      const track = Number(isDragging ? dragState.currentTrack : (segment.track || 1));
+      const computedStart = Number(isTrimming
+        ? trimState.currentStart
+        : isDragging
+          ? dragState.currentStart
+          : segment.start);
+      const computedEnd = Number(isTrimming
+        ? trimState.currentEnd
+        : isDragging
+          ? dragState.currentStart + (segment.end - segment.start)
+          : segment.end);
+      const shouldKeepMounted = isDragging || isTrimming;
+      const isVisible = computedEnd >= visibleTimeRange.start && computedStart <= visibleTimeRange.end;
+
+      if (!shouldKeepMounted && !isVisible) {
+        return;
+      }
+
+      const targetMap = isAudio ? next.audio : next.video;
+      const segments = targetMap.get(track) || [];
+      segments.push(segment);
+      targetMap.set(track, segments);
+    });
+
+    return next;
+  }, [dragState, trimState, visibleTimeRange.end, visibleTimeRange.start, visualSegments]);
+
+  const visibleBaseAudioRanges = useMemo(() => {
+    return baseAudioRanges.filter((range) => {
+      const outputStart = Number(range.outputStart || 0);
+      const outputEnd = Number(range.outputEnd || outputStart + range.duration);
+      return outputEnd >= visibleTimeRange.start && outputStart <= visibleTimeRange.end;
+    });
+  }, [baseAudioRanges, visibleTimeRange.end, visibleTimeRange.start]);
 
   const hasLibraryDragType = (dataTransfer: DataTransfer | null) => {
     if (!dataTransfer) return false;
@@ -351,6 +474,7 @@ export function Timeline({
     let latestClientX = e.clientX;
     let latestClientY = e.clientY;
     let autoScrollFrame: number | null = null;
+    let selectionFrame: number | null = null;
 
     const updateSelection = (clientX: number, clientY: number) => {
       latestClientX = clientX;
@@ -424,6 +548,10 @@ export function Timeline({
         cancelAnimationFrame(autoScrollFrame);
         autoScrollFrame = null;
       }
+      if (selectionFrame !== null) {
+        cancelAnimationFrame(selectionFrame);
+        selectionFrame = null;
+      }
     };
 
     const startAutoScroll = () => {
@@ -465,7 +593,17 @@ export function Timeline({
     };
 
     const handleMouseMove = (mvEvent: MouseEvent) => {
-      updateSelection(mvEvent.clientX, mvEvent.clientY);
+      latestClientX = mvEvent.clientX;
+      latestClientY = mvEvent.clientY;
+
+      if (selectionFrame !== null) {
+        return;
+      }
+
+      selectionFrame = requestAnimationFrame(() => {
+        selectionFrame = null;
+        updateSelection(latestClientX, latestClientY);
+      });
     };
 
     const handleMouseUp = (upEvent: MouseEvent) => {
@@ -539,6 +677,23 @@ export function Timeline({
     let currentTrack = initialTrack;
 
     let hasMoved = false;
+    let dragFrame: number | null = null;
+    let pendingDragState: NonNullable<typeof dragState> | null = null;
+
+    const queueDragState = (nextState: NonNullable<typeof dragState>) => {
+      pendingDragState = nextState;
+      if (dragFrame !== null) {
+        return;
+      }
+
+      dragFrame = requestAnimationFrame(() => {
+        dragFrame = null;
+        if (pendingDragState) {
+          setDragState(pendingDragState);
+          pendingDragState = null;
+        }
+      });
+    };
 
     const handleMouseMove = (mvEvent: MouseEvent) => {
       const deltaX = mvEvent.clientX - startX;
@@ -580,12 +735,17 @@ export function Timeline({
         currentTrack = Math.max(1, Math.min(maxTracks, initialTrack + trackOffset));
       }
 
-      setDragState({ id: seg.id, startX, startY, initialStart, currentStart, initialTrack, currentTrack, type });
+      queueDragState({ id: seg.id, startX, startY, initialStart, currentStart, initialTrack, currentTrack, type });
     };
 
     const handleMouseUp = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      if (dragFrame !== null) {
+        cancelAnimationFrame(dragFrame);
+        dragFrame = null;
+      }
+      pendingDragState = null;
 
       if (currentStart !== initialStart || currentTrack !== initialTrack) {
         onSegmentMove(seg.id, currentStart, currentTrack, { pushHistory: true });
@@ -596,19 +756,6 @@ export function Timeline({
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
   };
-
-  // Trim State
-  const [trimState, setTrimState] = useState<{
-    id: number;
-    edge: 'left' | 'right';
-    startX: number;
-    initialStart: number;
-    initialEnd: number;
-    currentStart: number;
-    currentEnd: number;
-    currentMouseX?: number;
-    currentMouseY?: number;
-  } | null>(null);
 
   const handleTrimMouseDown = (e: React.MouseEvent, seg: any, edge: 'left' | 'right') => {
     handleSegmentMouseLeave(); // Garante que o tooltip de hover suma ao clicar
@@ -625,6 +772,23 @@ export function Timeline({
     let currentEnd = initialEnd;
 
     let hasMoved = false;
+    let trimFrame: number | null = null;
+    let pendingTrimState: NonNullable<typeof trimState> | null = null;
+
+    const queueTrimState = (nextState: NonNullable<typeof trimState>) => {
+      pendingTrimState = nextState;
+      if (trimFrame !== null) {
+        return;
+      }
+
+      trimFrame = requestAnimationFrame(() => {
+        trimFrame = null;
+        if (pendingTrimState) {
+          setTrimState(pendingTrimState);
+          pendingTrimState = null;
+        }
+      });
+    };
 
     // Inicializa o estado para o tooltip já aparecer no clique
     setTrimState({
@@ -638,7 +802,17 @@ export function Timeline({
       
       if (!hasMoved && Math.abs(deltaX) < 3) {
         // Se mexeu muito pouco, apenas atualiza a posição do mouse no tooltip
-        setTrimState(prev => prev ? { ...prev, currentMouseX: mvEvent.clientX, currentMouseY: mvEvent.clientY } : null);
+        queueTrimState({
+          id: seg.id,
+          edge,
+          startX,
+          initialStart,
+          initialEnd,
+          currentStart,
+          currentEnd,
+          currentMouseX: mvEvent.clientX,
+          currentMouseY: mvEvent.clientY,
+        });
         return;
       }
       hasMoved = true;
@@ -655,7 +829,7 @@ export function Timeline({
         currentEnd = Math.max(initialStart + 0.1, snappedEnd);
       }
       
-      setTrimState({
+      queueTrimState({
         id: seg.id, edge, startX, initialStart, initialEnd, currentStart, currentEnd,
         currentMouseX: mvEvent.clientX,
         currentMouseY: mvEvent.clientY
@@ -665,6 +839,11 @@ export function Timeline({
     const handleMouseUp = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      if (trimFrame !== null) {
+        cancelAnimationFrame(trimFrame);
+        trimFrame = null;
+      }
+      pendingTrimState = null;
 
       if (currentStart !== initialStart || currentEnd !== initialEnd) {
         onSegmentTrim(seg.id, currentStart, currentEnd, { pushHistory: true });
@@ -852,6 +1031,7 @@ export function Timeline({
             if (labelsScrollRef.current) {
               labelsScrollRef.current.scrollTop = e.currentTarget.scrollTop;
             }
+            scheduleScrollViewportUpdate();
           }}
         >
           <div 
@@ -932,14 +1112,7 @@ export function Timeline({
                   backgroundSize: `${zoomLevel}px 100%`
                 }} />
 
-                {visualSegments
-                  .filter((s) => !isAudioTimelineSegment(s))
-                  .filter(s => {
-                    const isDragging = dragState?.id === s.id;
-                    const trackToRender = isDragging ? dragState.currentTrack : (s.track || 1);
-                    return trackToRender === trackIndex;
-                  })
-                  .map((seg) => {
+                {(visibleSegmentsByTrack.video.get(trackIndex) || []).map((seg) => {
                   const isDragging = dragState?.id === seg.id;
                   const isTrimming = trimState?.id === seg.id;
                   
@@ -1105,7 +1278,7 @@ export function Timeline({
                   <>
                     {hasCompactedBaseRanges ? (
                       <>
-                        {baseAudioRanges.map((range, index) => {
+                        {visibleBaseAudioRanges.map((range) => {
                           const left = range.outputStart * zoomLevel;
                           const width = Math.max(4, range.duration * zoomLevel);
                           const rangeKeepRange: TimelineKeepRange[] = [{
@@ -1162,7 +1335,7 @@ export function Timeline({
                                   className="text-[7px] font-bold uppercase tracking-wider px-1 py-[1px] rounded-sm"
                                   style={{ background: `${FILMORA.trackAudio}40`, color: `${FILMORA.trackAudio}` }}
                                 >
-                                  {`♫ Base ${index + 1}`}
+                                  {`♫ Base ${Number(range.index || 0) + 1}`}
                                 </span>
                               </div>
                             </div>
@@ -1201,14 +1374,7 @@ export function Timeline({
                 )}
 
                 {/* Segmentos de áudio upados pra essa faixa */}
-                {visualSegments
-                  .filter((s) => isAudioTimelineSegment(s))
-                  .filter(s => {
-                    const isDragging = dragState?.id === s.id;
-                    const trackToRender = isDragging ? dragState.currentTrack : (s.track || 1);
-                    return trackToRender === trackIndex;
-                  })
-                  .map((seg) => {
+                {(visibleSegmentsByTrack.audio.get(trackIndex) || []).map((seg) => {
                   const isDragging = dragState?.id === seg.id;
                   const isTrimming = trimState?.id === seg.id;
                   
@@ -1302,7 +1468,7 @@ export function Timeline({
                   );
                 })}
 
-                {trackIndex === 1 && !audioUrl && visualSegments.filter((s) => (s.track || 1) === trackIndex && isAudioTimelineSegment(s)).length === 0 && (
+                {trackIndex === 1 && !audioUrl && (allSegmentsByTrack.audio.get(trackIndex)?.length || 0) === 0 && (
                   <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                     <span className="text-[10px]" style={{ color: FILMORA.textDim }}>Sem áudio</span>
                   </div>

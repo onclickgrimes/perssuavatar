@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 interface SceneThumbnailProps {
   imageUrl?: string;
@@ -11,6 +11,7 @@ interface SceneThumbnailProps {
 // SCENE THUMBNAIL (LEVE PARA TIMELINE)
 // ========================================
 export function SceneThumbnail({ imageUrl, text, isVideo, duration }: SceneThumbnailProps) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   const src = useMemo(() => {
@@ -25,9 +26,38 @@ export function SceneThumbnail({ imageUrl, text, isVideo, duration }: SceneThumb
   }, [imageUrl]);
 
   const isVideoAsset = !!src && (isVideo || /\.(mp4|webm|mov|mkv)(\?.*)?$/i.test(src));
+  const [shouldLoadVideo, setShouldLoadVideo] = useState(!isVideoAsset);
 
   useEffect(() => {
-    if (!isVideoAsset || !videoRef.current) return;
+    if (!isVideoAsset) {
+      setShouldLoadVideo(true);
+      return;
+    }
+
+    setShouldLoadVideo(false);
+
+    const node = wrapperRef.current;
+    if (!node || typeof IntersectionObserver === 'undefined') {
+      setShouldLoadVideo(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setShouldLoadVideo(true);
+          observer.disconnect();
+        }
+      },
+      { root: null, rootMargin: '240px 0px', threshold: 0.01 },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isVideoAsset, src]);
+
+  useEffect(() => {
+    if (!isVideoAsset || !shouldLoadVideo || !videoRef.current) return;
 
     const video = videoRef.current;
 
@@ -49,21 +79,23 @@ export function SceneThumbnail({ imageUrl, text, isVideo, duration }: SceneThumb
     return () => {
       video.removeEventListener('loadedmetadata', handleLoadedMetadata);
     };
-  }, [isVideoAsset, duration, src]);
+  }, [isVideoAsset, shouldLoadVideo, duration, src]);
 
   if (!src) return null;
 
   if (isVideoAsset) {
     return (
-      <div className="absolute inset-0 pointer-events-none">
-        <video
-          ref={videoRef}
-          src={src}
-          className="absolute inset-0 w-full h-full object-cover"
-          preload="metadata"
-          muted
-          playsInline
-        />
+      <div ref={wrapperRef} className="absolute inset-0 pointer-events-none bg-black/25">
+        {shouldLoadVideo && (
+          <video
+            ref={videoRef}
+            src={src}
+            className="absolute inset-0 w-full h-full object-cover"
+            preload="metadata"
+            muted
+            playsInline
+          />
+        )}
       </div>
     );
   }
@@ -73,6 +105,8 @@ export function SceneThumbnail({ imageUrl, text, isVideo, duration }: SceneThumb
       src={src}
       alt={text}
       className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+      loading="lazy"
+      decoding="async"
       onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
     />
   );

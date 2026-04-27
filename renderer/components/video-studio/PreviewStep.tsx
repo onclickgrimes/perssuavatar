@@ -1839,11 +1839,13 @@ export function PreviewStep({
   ) => {
     e.preventDefault();
     let lastPos = isHorizontal ? e.clientX : e.clientY;
+    let pendingDelta = 0;
+    let resizeFrame: number | null = null;
 
-    const handleMouseMove = (moveEvent: MouseEvent) => {
-      const currentPos = isHorizontal ? moveEvent.clientX : moveEvent.clientY;
-      const delta = currentPos - lastPos;
-      lastPos = currentPos;
+    const flushResize = () => {
+      if (pendingDelta === 0) return;
+      const delta = pendingDelta;
+      pendingDelta = 0;
 
       setter(prev => {
         // Se invert for true, mover o mouse para a direita/baixo diminui o tamanho do painel
@@ -1852,9 +1854,30 @@ export function PreviewStep({
       });
     };
 
+    const handleMouseMove = (moveEvent: MouseEvent) => {
+      const currentPos = isHorizontal ? moveEvent.clientX : moveEvent.clientY;
+      const delta = currentPos - lastPos;
+      lastPos = currentPos;
+      pendingDelta += delta;
+
+      if (resizeFrame !== null) {
+        return;
+      }
+
+      resizeFrame = requestAnimationFrame(() => {
+        resizeFrame = null;
+        flushResize();
+      });
+    };
+
     const handleMouseUp = () => {
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      if (resizeFrame !== null) {
+        cancelAnimationFrame(resizeFrame);
+        resizeFrame = null;
+      }
+      flushResize();
       // Força a timeline a recalcular largura após o resize da janela
       setViewportWidth(scrollWrapperRef.current?.clientWidth || 1000);
     };
