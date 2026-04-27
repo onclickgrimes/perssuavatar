@@ -20,6 +20,7 @@ import { RenderingStep } from '../RenderingStep';
 import { CompleteStep } from '../CompleteStep';
 import {
   ensureFlowWatermarkTransform,
+  hasSegmentTextOrWords,
   toSaveFormat,
   fromSaveFormat,
   type StoryReferencesState,
@@ -334,7 +335,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       });
 
       if (characterById.size === 0 || locationById.size === 0) {
-        project.segments.forEach(segment => {
+        project.segments.filter(segment => hasSegmentTextOrWords(segment)).forEach(segment => {
           if (characterById.size === 0) {
             parseIds((segment as any).IdOfTheCharactersInTheScene).forEach(id => {
               if (!characterById.has(id)) {
@@ -386,9 +387,15 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
   ) => {
     if (!window.electron?.videoProject?.summarizeScenePrompts) return;
 
+    const nonKeyframeSegmentIds = new Set(
+      project.segments
+        .filter(segment => !hasSegmentTextOrWords(segment))
+        .map(segment => segment.id)
+    );
     const requestedPromptById: Record<number, string> = {};
     const payload = segmentsToSummarize
       .map(segment => {
+        if (nonKeyframeSegmentIds.has(segment.id)) return null;
         const normalizedPrompt = normalizePromptForSummary(segment.imagePrompt);
         if (!normalizedPrompt) return null;
         if (lastSummarizedPromptRef.current[segment.id] === normalizedPrompt) return null;
@@ -471,7 +478,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
     } catch (summaryError) {
       console.error('Error summarizing scene prompts:', summaryError);
     }
-  }, [normalizePromptForSummary, selectedProvider, selectedModel]);
+  }, [normalizePromptForSummary, project.segments, selectedProvider, selectedModel]);
 
   const scheduleSingleSceneSummary = useCallback((segmentId: number, prompt: string) => {
     const pendingTimer = promptSummaryDebounceRef.current[segmentId];
@@ -540,7 +547,13 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       }
 
       const normalizedInstruction = userInstruction?.trim();
-      const hasExistingPrompts = project.segments.some(seg => !!seg.imagePrompt);
+      const targetIdSet = targetOptions?.segmentIds?.length
+        ? new Set(targetOptions.segmentIds)
+        : null;
+      const segmentsForAI = project.segments.filter(seg =>
+        hasSegmentTextOrWords(seg) && (!targetIdSet || targetIdSet.has(seg.id))
+      );
+      const hasExistingPrompts = segmentsForAI.some(seg => !!seg.imagePrompt);
       const debugAction = normalizedInstruction
         ? 'edicao-global'
         : hasExistingPrompts
@@ -551,12 +564,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       let editedSegmentIdSet: Set<number> | null = null;
 
       if (normalizedInstruction) {
-        const targetIdSet = targetOptions?.segmentIds?.length
-          ? new Set(targetOptions.segmentIds)
-          : null;
-        const segmentsForEdition = targetIdSet
-          ? project.segments.filter(seg => targetIdSet.has(seg.id))
-          : project.segments;
+        const segmentsForEdition = segmentsForAI;
 
         if (segmentsForEdition.length === 0) {
           setCurrentStep('images');
@@ -593,8 +601,16 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
           editRequest.options
         );
       } else {
+        if (segmentsForAI.length === 0) {
+          setCurrentStep('images');
+          return;
+        }
+
         const analyzeRequest = {
-          project,
+          project: {
+            ...project,
+            segments: segmentsForAI,
+          },
           options: {
             provider: selectedProvider,
             nichePrompt: await loadNichePrompt(referencesContext),
@@ -650,7 +666,19 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
                 ...(hasLocation ? { IdOfTheLocationInTheScene: editedSegment.IdOfTheLocationInTheScene } : {}),
               };
             })
-          : result.segments;
+          : (() => {
+              const analyzedById = new Map<number, any>(
+                result.segments.map((segment: any) => [segment.id, segment])
+              );
+              const existingIds = new Set(project.segments.map(seg => seg.id));
+              const mergedSegments = project.segments.map(seg => {
+                if (!hasSegmentTextOrWords(seg)) return seg;
+                const analyzedSegment = analyzedById.get(seg.id);
+                return analyzedSegment ? { ...seg, ...analyzedSegment } : seg;
+              });
+              const appendedSegments = result.segments.filter((segment: any) => !existingIds.has(segment.id));
+              return [...mergedSegments, ...appendedSegments];
+            })();
 
         setProject(prev => ({
           ...prev,
@@ -660,7 +688,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         summarizeScenePrompts(
           editedSegmentIdSet
             ? updatedSegments.filter(seg => editedSegmentIdSet.has(seg.id))
-            : updatedSegments
+            : updatedSegments.filter(seg => hasSegmentTextOrWords(seg))
         ).catch(() => {});
       }
       
@@ -681,6 +709,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
 
     const targetSegment = project.segments.find(seg => seg.id === segmentId);
     if (!targetSegment) return;
+    if (!hasSegmentTextOrWords(targetSegment)) return;
 
     setIsProcessing(true);
 
@@ -845,6 +874,7 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
       if (!window.electron?.videoProject?.generateFirstFramePrompts) return;
 
       const payload = project.segments
+        .filter(segment => hasSegmentTextOrWords(segment))
         .map(segment => {
           const normalizedPrompt = normalizePromptForSummary(segment.imagePrompt);
           if (!normalizedPrompt) return null;
@@ -953,8 +983,10 @@ export function AudioToVideoTool({ onBack }: AudioToVideoToolProps) {
         toSeg.text = toSeg.words.map((w: any) => w.punctuatedWord || w.word).join(' ');
       }
 
-      // Filter out empty segments to keep it clean
-      const finalSegments = newSegments.filter((s: any) => s.words && s.words.length > 0);
+      // Filter out empty transcription segments while preserving timeline overlays.
+      const finalSegments = newSegments.filter((s: any) =>
+        !hasSegmentTextOrWords(s) || (s.words && s.words.length > 0)
+      );
       
       // Re-sort segments 
       finalSegments.sort((a: any, b: any) => a.start - b.start);

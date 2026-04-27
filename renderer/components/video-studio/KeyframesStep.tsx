@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { TranscriptionSegment } from '../../types/video-studio';
 import { ChannelNiche } from './NicheModal';
+import { hasSegmentTextOrWords } from '../../shared/utils/project-converter';
 
 interface KeyframesStepProps {
   segments: TranscriptionSegment[];
@@ -22,6 +23,64 @@ export function KeyframesStep({
   niche,
 }: KeyframesStepProps) {
   const emotions = ['surpresa', 'empolgação', 'nostalgia', 'seriedade', 'alegria', 'tristeza', 'raiva', 'medo', 'neutro'];
+  const keyframeSegments = useMemo(
+    () => segments.filter(segment => hasSegmentTextOrWords(segment)),
+    [segments]
+  );
+  const preservedNonKeyframeSegments = useMemo(
+    () => segments.filter(segment => !hasSegmentTextOrWords(segment)),
+    [segments]
+  );
+
+  const renumberKeyframeSegments = (nextKeyframeSegments: TranscriptionSegment[]) => {
+    return nextKeyframeSegments.map((segment, index) => ({
+      ...segment,
+      id: index + 1,
+    }));
+  };
+
+  const mergeWithPreservedSegments = (nextKeyframeSegments: TranscriptionSegment[]) => {
+    const renumberedKeyframeSegments = renumberKeyframeSegments(nextKeyframeSegments);
+    const usedIds = new Set(renumberedKeyframeSegments.map(segment => segment.id));
+    let nextPreservedId = renumberedKeyframeSegments.length + 1;
+    const preservedSegments = preservedNonKeyframeSegments.map(segment => {
+      if (!usedIds.has(segment.id)) {
+        usedIds.add(segment.id);
+        return segment;
+      }
+
+      while (usedIds.has(nextPreservedId)) {
+        nextPreservedId += 1;
+      }
+
+      const nextSegment = { ...segment, id: nextPreservedId };
+      usedIds.add(nextPreservedId);
+      nextPreservedId += 1;
+      return nextSegment;
+    });
+
+    return [...renumberedKeyframeSegments, ...preservedSegments].sort((left, right) => {
+      const startDiff = Number(left.start || 0) - Number(right.start || 0);
+      if (Math.abs(startDiff) > 0.001) return startDiff;
+
+      const trackDiff = Number(left.track || 1) - Number(right.track || 1);
+      if (trackDiff !== 0) return trackDiff;
+
+      return Number(left.id || 0) - Number(right.id || 0);
+    });
+  };
+
+  const commitKeyframeSegments = (nextKeyframeSegments: TranscriptionSegment[]) => {
+    onSegmentsUpdate?.(mergeWithPreservedSegments(nextKeyframeSegments));
+  };
+
+  useEffect(() => {
+    if (!onSegmentsUpdate) return;
+    const needsSequentialIds = keyframeSegments.some((segment, index) => segment.id !== index + 1);
+    if (needsSequentialIds) {
+      commitKeyframeSegments(keyframeSegments);
+    }
+  }, [keyframeSegments, onSegmentsUpdate]);
 
   const [selectedWords, setSelectedWords] = useState<{ segmentId: number, indices: number[] }>({ segmentId: -1, indices: [] });
   const [isDragging, setIsDragging] = useState(false);
@@ -50,7 +109,7 @@ export function KeyframesStep({
       }
 
       const result = await window.electron.videoProject.syncTranscriptionWithScript(
-        segments,
+        keyframeSegments,
         originalScriptText
       );
 
@@ -58,7 +117,7 @@ export function KeyframesStep({
         throw new Error(result?.error || 'Falha ao sincronizar roteiro com IA.');
       }
 
-      onSegmentsUpdate(result.segments);
+      commitKeyframeSegments(result.segments);
       setIsSyncModalOpen(false);
       setOriginalScriptText('');
     } catch (e) {
@@ -70,13 +129,13 @@ export function KeyframesStep({
   };
 
   const segmentProjections = useMemo(() => {
-    return segments.map((segment, index) => {
+    return keyframeSegments.map((segment, index) => {
       let projectedStart = segment.start;
       let projectedEnd = segment.end;
 
       if (selectedWords.indices.length > 0) {
-        const selSegIdx = segments.findIndex(s => s.id === selectedWords.segmentId);
-        const selSeg = segments[selSegIdx];
+        const selSegIdx = keyframeSegments.findIndex(s => s.id === selectedWords.segmentId);
+        const selSeg = keyframeSegments[selSegIdx];
 
         if (selSeg && selSeg.words) {
           const sorted = [...selectedWords.indices].sort((a, b) => a - b);
@@ -99,10 +158,10 @@ export function KeyframesStep({
                 projectedEnd = selSeg.words[sorted[0] - 1]?.end || segment.start;
               }
             } else {
-              if (isAtStart && selSegIdx > 0 && segment.id === segments[selSegIdx - 1].id) {
+              if (isAtStart && selSegIdx > 0 && segment.id === keyframeSegments[selSegIdx - 1].id) {
                 projectedEnd = endSelectedTime;
               }
-              if (isAtEnd && selSegIdx < segments.length - 1 && segment.id === segments[selSegIdx + 1].id) {
+              if (isAtEnd && selSegIdx < keyframeSegments.length - 1 && segment.id === keyframeSegments[selSegIdx + 1].id) {
                 projectedStart = startSelectedTime;
               }
             }
@@ -117,14 +176,14 @@ export function KeyframesStep({
         projectedStart, projectedEnd, projectedDuration, isDurationChanged
       };
     });
-  }, [segments, selectedWords]);
+  }, [keyframeSegments, selectedWords]);
 
   const highlightedSegmentIds = useMemo(() => {
-    return segments.filter((segment, index) => {
+    return keyframeSegments.filter((segment, index) => {
       const dur = segmentProjections[index].projectedDuration;
       return dur !== 0 && (dur < minHighlightThreshold || dur > maxHighlightThreshold);
     }).map(s => s.id);
-  }, [segments, segmentProjections, minHighlightThreshold, maxHighlightThreshold]);
+  }, [keyframeSegments, segmentProjections, minHighlightThreshold, maxHighlightThreshold]);
 
   useEffect(() => {
     if (highlightedSegmentIds.length > 0 && currentHighlightIndex >= highlightedSegmentIds.length) {
@@ -186,7 +245,7 @@ export function KeyframesStep({
     const isAtStart = sorted[0] === 0;
     if (!(isContiguous && isAtStart)) return;
 
-    const prevSegment = segments[segmentIndex - 1];
+    const prevSegment = keyframeSegments[segmentIndex - 1];
     if (onMoveWords) {
       onMoveWords(segmentId, prevSegment.id, selectedWords.indices);
       setSelectedWords({ segmentId: -1, indices: [] });
@@ -194,8 +253,8 @@ export function KeyframesStep({
   };
 
   const handleMoveDown = (segmentId: number, segmentIndex: number) => {
-    if (segmentIndex === segments.length - 1) return;
-    const segment = segments[segmentIndex];
+    if (segmentIndex === keyframeSegments.length - 1) return;
+    const segment = keyframeSegments[segmentIndex];
     if (!segment || !segment.words) return;
     
     const sorted = [...selectedWords.indices].sort((a, b) => a - b);
@@ -203,7 +262,7 @@ export function KeyframesStep({
     const isAtEnd = sorted[sorted.length - 1] === segment.words.length - 1;
     if (!(isContiguous && isAtEnd)) return;
 
-    const nextSegment = segments[segmentIndex + 1];
+    const nextSegment = keyframeSegments[segmentIndex + 1];
     if (onMoveWords) {
       onMoveWords(segmentId, nextSegment.id, selectedWords.indices);
       setSelectedWords({ segmentId: -1, indices: [] });
@@ -211,7 +270,7 @@ export function KeyframesStep({
   };
 
   const handleAddSegment = (index: number) => {
-    const newSegments = JSON.parse(JSON.stringify(segments));
+    const newSegments = JSON.parse(JSON.stringify(keyframeSegments));
     
     // Default duration for new segment
     const defaultDuration = 0.0;
@@ -248,8 +307,8 @@ export function KeyframesStep({
     const defaultAssetType = niche?.asset_types?.[0] || 'image_static';
 
     const newSegment: TranscriptionSegment = {
-      id: 0, // Temporary ID, will be renumbered
-      text: '',
+      id: segments.reduce((maxId, segment) => Math.max(maxId, Number(segment.id || 0)), 0) + 1,
+      text: ' ',
       start: insertionTime,
       end: insertionTime + defaultDuration,
       speaker: 0,
@@ -261,19 +320,14 @@ export function KeyframesStep({
     // Insert new segment
     newSegments.splice(index + 1, 0, newSegment);
 
-    // Renumber IDs sequentially
-    newSegments.forEach((seg: any, idx: number) => {
-      seg.id = idx + 1;
-    });
-
     if (onSegmentsUpdate) {
-      onSegmentsUpdate(newSegments);
+      commitKeyframeSegments(newSegments);
       setSelectedWords({ segmentId: -1, indices: [] });
     }
   };
 
   const handleDeleteSegment = (index: number) => {
-    const newSegments = JSON.parse(JSON.stringify(segments));
+    const newSegments = JSON.parse(JSON.stringify(keyframeSegments));
     const deletedSegment = newSegments[index];
     const duration = deletedSegment.end - deletedSegment.start;
 
@@ -293,27 +347,22 @@ export function KeyframesStep({
       }
     }
 
-    // Renumber IDs sequentially
-    newSegments.forEach((seg: any, idx: number) => {
-      seg.id = idx + 1;
-    });
-
     if (onSegmentsUpdate) {
-      onSegmentsUpdate(newSegments);
+      commitKeyframeSegments(newSegments);
       setSelectedWords({ segmentId: -1, indices: [] });
     }
   };
 
   const handleContinueWithCleanup = () => {
-    const validSegments = segments.filter(seg => {
+    const validKeyframeSegments = keyframeSegments.filter(seg => {
       const hasWords = seg.words && seg.words.length > 0;
       const hasText = seg.text && seg.text.trim().length > 0;
       return hasWords || hasText;
     });
 
-    if (validSegments.length !== segments.length && onSegmentsUpdate) {
-      console.log(`Removidos ${segments.length - validSegments.length} segmentos vazios.`);
-      onSegmentsUpdate(validSegments);
+    if (validKeyframeSegments.length !== keyframeSegments.length && onSegmentsUpdate) {
+      console.log(`Removidos ${keyframeSegments.length - validKeyframeSegments.length} segmentos vazios.`);
+      commitKeyframeSegments(validKeyframeSegments);
       setTimeout(() => {
          onContinue();
       }, 100);
@@ -428,7 +477,7 @@ export function KeyframesStep({
           </div>
         </div>
 
-        {segments.map((segment, index) => {
+        {keyframeSegments.map((segment, index) => {
           const proj = segmentProjections[index];
           const projectedStart = proj.projectedStart;
           const projectedEnd = proj.projectedEnd;
@@ -515,7 +564,7 @@ export function KeyframesStep({
                           const endSelectedTime = segment.words[lastSelectedIdx].end;
                           selectedDuration = endSelectedTime - startSelectedTime;
                           canMoveUp = isAtStart && index > 0;
-                          canMoveDown = isAtEnd && index < segments.length - 1;
+                          canMoveDown = isAtEnd && index < keyframeSegments.length - 1;
                         }
                       }
 
@@ -603,7 +652,7 @@ export function KeyframesStep({
           </div>
         </div>
           
-          {index < segments.length - 1 && (
+          {index < keyframeSegments.length - 1 && (
             <div 
               className="relative h-6 -mt-2 mb-2 group w-full flex items-center justify-center cursor-pointer z-10"
               onClick={() => handleAddSegment(index)}
@@ -621,7 +670,7 @@ export function KeyframesStep({
         {/* Botão de adicionar no final */}
         <div 
           className="relative h-6 -mt-2 mb-2 group w-full flex items-center justify-center cursor-pointer z-10"
-          onClick={() => handleAddSegment(segments.length - 1)}
+          onClick={() => handleAddSegment(keyframeSegments.length - 1)}
           title="Inserir nova cena no final"
         >
           <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 border-t-2 border-dashed border-white/20 opacity-0 group-hover:opacity-100 transition-all duration-300 w-[98%] mx-auto" />

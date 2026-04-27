@@ -12,7 +12,10 @@ import {
   getAssetTypeInfo,
   normalizeCharactersField,
 } from './prompt-utils';
-import type { StoryReferencesState as PersistedStoryReferencesState } from '../../shared/utils/project-converter';
+import {
+  hasSegmentTextOrWords,
+  type StoryReferencesState as PersistedStoryReferencesState,
+} from '../../shared/utils/project-converter';
 
 type AnalysisProvider = 'gemini' | 'gemini_scraping' | 'openai' | 'deepseek';
 
@@ -501,6 +504,15 @@ export function ImagesStep({
     const videoExtensions = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.m4v'];
     return videoExtensions.some(ext => url.toLowerCase().endsWith(ext));
   }, []);
+
+  const visibleSegments = useMemo(
+    () => segments.filter(segment => hasSegmentTextOrWords(segment)),
+    [segments]
+  );
+  const visibleSegmentIds = useMemo(
+    () => visibleSegments.map(segment => segment.id),
+    [visibleSegments]
+  );
   
   const [generatingSegments, setGeneratingSegments] = useState<Set<number>>(new Set());
   const [uploadingSegments, setUploadingSegments] = useState<Set<number>>(new Set());
@@ -563,6 +575,7 @@ export function ImagesStep({
   const hoverPreviewTimerRef = useRef<number | null>(null);
   const hoverPreviewRequestKeyRef = useRef<string | null>(null);
   const segmentsRef = useRef<TranscriptionSegment[]>(segments);
+  const visibleSegmentsRef = useRef<TranscriptionSegment[]>(visibleSegments);
   const [promptViewModes, setPromptViewModes] = useState<Record<string, PromptLanguageView>>({});
   const [translatingPromptFields, setTranslatingPromptFields] = useState<Record<string, boolean>>({});
   const promptTranslationTimeoutRef = useRef<Record<string, number>>({});
@@ -575,6 +588,10 @@ export function ImagesStep({
   useEffect(() => {
     segmentsRef.current = segments;
   }, [segments]);
+
+  useEffect(() => {
+    visibleSegmentsRef.current = visibleSegments;
+  }, [visibleSegments]);
 
   const showHoverImagePreview = (
     event: React.MouseEvent<HTMLElement>,
@@ -1250,11 +1267,11 @@ export function ImagesStep({
   }, []);
 
   const hasGlobalInstruction = globalInstruction.trim().length > 0;
-  const hasVideoStockWithoutUrl = segments.some(
+  const hasVideoStockWithoutUrl = visibleSegments.some(
     seg => seg.assetType === 'video_stock' && !seg.imageUrl
   );
-  const hasImagePrompts = segments.some(s => !!s.imagePrompt);
-  const hasFrameAnimatePrompts = segments.some(
+  const hasImagePrompts = visibleSegments.some(s => !!s.imagePrompt);
+  const hasFrameAnimatePrompts = visibleSegments.some(
     s => s.assetType === 'video_frame_animate' && (!!s.firstFrame || !!s.animateFrame)
   );
   const hasPrompts = hasImagePrompts || hasFrameAnimatePrompts;
@@ -1742,10 +1759,15 @@ export function ImagesStep({
       return;
     }
 
+    if (!instruction && visibleSegmentIds.length === 0) {
+      alert('Nenhuma cena disponível para analisar.');
+      return;
+    }
+
     await onAnalyze(
       instruction,
       buildAnalysisReferencesContext(),
-      instruction ? { segmentIds: filteredSceneIds } : undefined
+      { segmentIds: instruction ? filteredSceneIds : visibleSegmentIds }
     );
   };
 
@@ -2080,7 +2102,7 @@ export function ImagesStep({
   };
 
   const handleExportFlowExtensionJson = () => {
-    const selectedSegments = segments.filter(segment => selectedScenes.has(segment.id));
+    const selectedSegments = visibleSegments.filter(segment => selectedScenes.has(segment.id));
 
     if (selectedSegments.length === 0) {
       alert('Selecione ao menos uma cena para exportar.');
@@ -2404,7 +2426,7 @@ export function ImagesStep({
 
   // ── Batch Processing (Processamento em lote) ──
   // Por padrão, todas as cenas estão selecionadas
-  const [selectedScenes, setSelectedScenes] = useState<Set<number>>(() => new Set(segments.map(s => s.id)));
+  const [selectedScenes, setSelectedScenes] = useState<Set<number>>(() => new Set(visibleSegments.map(s => s.id)));
   const [sceneMediaChecks, setSceneMediaChecks] = useState<{ noMedia: boolean; image: boolean; video: boolean }>({
     noMedia: true,
     image: true,
@@ -2435,18 +2457,18 @@ export function ImagesStep({
   //   [segments]
   // );
   const maxSceneDurationSeconds = useMemo(() => {
-    const maxDuration = segments.reduce((currentMax, segment) => {
+    const maxDuration = visibleSegments.reduce((currentMax, segment) => {
       const segmentDuration = getSceneDurationInfo(segment).rawSeconds;
       return Math.max(currentMax, segmentDuration);
     }, 0);
     return Math.max(1, Math.ceil(maxDuration));
-  }, [segments]);
+  }, [visibleSegments]);
   const [sceneDurationMaxFilter, setSceneDurationMaxFilter] = useState<number>(() => maxSceneDurationSeconds);
   const previousMaxSceneDurationRef = useRef<number>(maxSceneDurationSeconds);
   const generationServiceFilterOptions = useMemo(() => {
     const services = Array.from(
       new Set(
-        segments
+        visibleSegments
           .map(segment => (typeof segment.generationService === 'string' ? segment.generationService.trim() : ''))
           .filter((serviceId): serviceId is string => serviceId.length > 0)
       )
@@ -2456,14 +2478,14 @@ export function ImagesStep({
       value: serviceId,
       label: getGenerationServiceLabel(serviceId),
     }));
-  }, [segments]);
+  }, [visibleSegments]);
   const segmentIdsSignature = useMemo(
-    () => Array.from(new Set(segments.map(segment => segment.id))).sort((left, right) => left - right).join(','),
-    [segments]
+    () => Array.from(new Set(visibleSegments.map(segment => segment.id))).sort((left, right) => left - right).join(','),
+    [visibleSegments]
   );
   const [sceneFilterRevision, setSceneFilterRevision] = useState(0);
   const [filteredSceneIds, setFilteredSceneIds] = useState<number[]>(() =>
-    segments.map(segment => segment.id)
+    visibleSegments.map(segment => segment.id)
   );
   const sceneFilterStateRef = useRef<{
     mediaChecks: { noMedia: boolean; image: boolean; video: boolean };
@@ -2504,7 +2526,7 @@ export function ImagesStep({
       durationMax,
     } = sceneFilterStateRef.current;
 
-    const nextFilteredSceneIds = segmentsRef.current
+    const nextFilteredSceneIds = visibleSegmentsRef.current
       .filter(segment => {
         const hasMedia = Boolean(segment.imageUrl);
         const isVideoMedia = isVideo(segment.imageUrl);
@@ -2549,9 +2571,9 @@ export function ImagesStep({
   ]);
   const filteredSceneIdSet = useMemo(() => new Set(filteredSceneIds), [filteredSceneIds]);
   const filteredSegments = useMemo(() => {
-    return segments.filter(segment => filteredSceneIdSet.has(segment.id));
+    return visibleSegments.filter(segment => filteredSceneIdSet.has(segment.id));
   }, [
-    segments,
+    visibleSegments,
     filteredSceneIdSet,
   ]);
   const selectedFilteredSceneIds = useMemo(
@@ -2589,8 +2611,8 @@ export function ImagesStep({
   }, [selectedFilteredSceneIds]);
   const hasFilteredScenes = filteredSceneIds.length > 0;
   const segmentsWithMediaCount = useMemo(
-    () => segments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
-    [segments]
+    () => visibleSegments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
+    [visibleSegments]
   );
   const filteredSegmentsWithMediaCount = useMemo(
     () => filteredSegments.reduce((count, seg) => count + (seg.imageUrl ? 1 : 0), 0),
@@ -2863,20 +2885,31 @@ export function ImagesStep({
     };
   }, []);
 
-  // Quando os segmentos mudam, atualizar a seleção para incluir novos segmentos
+  // Quando os segmentos visíveis mudam, atualizar a seleção e remover cenas ocultas.
   useEffect(() => {
     setSelectedScenes(prev => {
+      const visibleIds = new Set(visibleSegments.map(s => s.id));
       let changed = false;
-      const next = new Set(prev);
-      segments.forEach(s => {
-        if (!prev.has(s.id)) {
-          next.add(s.id);
+      const next = new Set<number>();
+
+      prev.forEach(id => {
+        if (visibleIds.has(id)) {
+          next.add(id);
+        } else {
           changed = true;
         }
       });
+
+      visibleIds.forEach(id => {
+        if (!next.has(id)) {
+          next.add(id);
+          changed = true;
+        }
+      });
+
       return changed ? next : prev;
     });
-  }, [segments]);
+  }, [visibleSegments]);
 
   // Listener de progresso Veo3
   useEffect(() => {
@@ -4101,13 +4134,13 @@ export function ImagesStep({
         <div className="flex items-center gap-2">
           <div className="w-3 h-3 rounded-full bg-green-500"></div>
           <span className="text-white/60 text-sm">
-            {segmentsWithMediaCount}/{segments.length}
+            {segmentsWithMediaCount}/{visibleSegments.length}
           </span>
         </div>
 
         {/* <div className="flex items-center gap-2 border-l border-white/10 pl-4">
           <span className="text-white/60 text-sm">
-            Exibindo {filteredSegmentsWithMediaCount} prontas em {filteredSegments.length}/{segments.length}
+            Exibindo {filteredSegmentsWithMediaCount} prontas em {filteredSegments.length}/{visibleSegments.length}
           </span>
         </div> */}
 
@@ -4382,7 +4415,7 @@ export function ImagesStep({
                       Filtros de Cena
                     </span>
                     <span className="text-[10px] text-white/50">
-                      {filteredSegments.length}/{segments.length}
+                      {filteredSegments.length}/{visibleSegments.length}
                     </span>
                   </div>
                   <div className="p-3 space-y-3">

@@ -304,6 +304,12 @@ const PROJECT_PROPERTIES: (keyof VideoProject)[] = [
   'nicheId', 'nicheName', 'storyReferences', 'config',
 ];
 
+export const hasSegmentTextOrWords = (segment: Partial<VideoSegment> | null | undefined): boolean => {
+  const hasText = typeof segment?.text === 'string' && segment.text.length > 0;
+  const hasWords = Array.isArray(segment?.words) && segment.words.length > 0;
+  return hasText || hasWords;
+};
+
 // ========================================
 // FUNÇÕES DE CONVERSÃO
 // ========================================
